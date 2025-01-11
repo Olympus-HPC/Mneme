@@ -2,7 +2,7 @@
 #include "macro.hpp"
 #if ENALBE_CUDA
 #include <cuda_runtime.h>
-#elif defined(ENABLE_HIP)
+#elif defined(MNEME_ENABLE_HIP)
 #include <hip/hip_runtime.h>
 #endif
 
