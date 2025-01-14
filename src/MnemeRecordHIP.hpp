@@ -1,21 +1,16 @@
 #include "MnemeMemoryHIP.hpp"
 #include "MnemeRecord.hpp"
 #include <dlfcn.h>
+#include <hip/hip_runtime.h>
 
 namespace mneme {
 
-class MnemeRecorderHIP;
-template <> struct DeviceTraits<MnemeRecorderHIP> {
-  using DeviceError_t = hipError_t;
-  using DeviceStream_t = hipStream_t;
-  using KernelFunction_t = hipFunction_t;
-  using AllocGranularityFlags = hipMemAllocationGranularity_flags;
-};
-
 class MnemeRecorderHIP
-    : public MnemeRecorder<MnemeRecorderHIP, MnemeMemoryBlobHIP> {
+    : public MnemeRecorder<MnemeRecorderHIP, MnemeMemoryBlobHIP, HIP> {
 private:
   MnemeRecorderHIP() = default;
+
+  const std::string &getArch();
 
 public:
   static auto *getRTLib() { return dlopen("libamdhip64.so", RTLD_NOW); }
@@ -33,11 +28,17 @@ public:
     return "__hipRegisterFatBinary";
   }
 
+  static hipError_t DeviceStreamSynchronize(hipStream_t Stream) {
+    return hipStreamSynchronize(Stream);
+  }
+
   static constexpr bool hasFatBinEnd = false;
 
   static MnemeRecorderHIP &instance();
 
   void extractIR();
+  void initializeGlobal(GlobalVarInfo &GVar);
+
   MnemeRecorderHIP(MnemeRecorderHIP &) = delete;
   MnemeRecorderHIP(MnemeRecorderHIP &&) = delete;
 };

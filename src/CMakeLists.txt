@@ -1,5 +1,5 @@
 
-set(RecordLibSRC memory.cpp)
+set(RecordLibSRC "")
 if (ENABLE_HIP)
   list(APPEND RecordLibSRC MnemeRecordHIP.cpp)
 endif()

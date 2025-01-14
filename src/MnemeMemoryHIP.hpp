@@ -4,21 +4,15 @@
 #include <cstdint>
 
 #include "DeviceTraits.hpp"
-#include "MnemeMemoryBlob.hpp"
 #include "Logger.hpp"
+#include "MnemeMemory.hpp"
 #include "Utils.hpp"
 
 namespace mneme {
 
 class MnemeMemoryBlobHIP;
-template <> struct DeviceTraits<MnemeRecorderHIP> {
-  using DeviceError_t = hipError_t;
-  using DeviceStream_t = hipStream_t;
-  using KernelFunction_t = hipFunction_t;
-  using AllocGranularityFlags = hipMemAllocationGranularity_flags;
-};
 
-class MnemeMemoryBlobHIP : public MnemeMemoryBlob<MnemeMemoryBlobHIP> {
+class MnemeMemoryBlobHIP : public MnemeMemoryBlob<MnemeMemoryBlobHIP, HIP> {
 private:
   static inline uint64_t
   getPageSize(int DeviceID,
@@ -38,12 +32,23 @@ private:
   }
 
 public:
-  void allocate(hipMemGenericAllocationHandle_t &MHandle, uintptr_t Addr,
-                uintptr_t Size, int DeviceId) {
+  static constexpr hipMemcpyKind MemcpyHostToDeviceKind() {
+    return hipMemcpyHostToDevice;
+  }
+
+  static hipError_t DeviceCopy(void *Dest, void *Src, size_t SizeBytes,
+                               hipMemcpyKind Kind) {
+    return hipMemcpy(Dest, Src, SizeBytes, Kind);
+  }
+
+  void mmap(hipMemGenericAllocationHandle_t &MHandle, void *Addr,
+            uintptr_t Size, int DeviceId) {
     hipMemAllocationProp Prop = {};
     Prop.type = hipMemAllocationTypePinned;
     Prop.location.type = hipMemLocationTypeDevice;
     Prop.location.id = DeviceId;
+    DBG(Logger::logs("mneme") << "Requesting address with Size " << Size
+                              << " on device " << DeviceID << "\n");
 
     hipErrCheck(hipMemCreate(&MHandle, Size, &Prop, 0));
     hipErrCheck(hipMemMap((void *)Addr, Size, 0, MHandle, 0));
@@ -54,9 +59,9 @@ public:
     ADesc.flags = hipMemAccessFlagsProtReadWrite;
 
     // Sets address
-    DBG(Logger::logs("mneme") << "Setting Access 'RW' to " << (void *)Addr
-                              << " with size " << Size << "\n");
-    hipErrCheck(hipMemSetAccess((void *)Addr, Size, &ADesc, 1));
+    DBG(Logger::logs("mneme")
+        << "Setting Access 'RW' to " << Addr << " with size " << Size << "\n");
+    hipErrCheck(hipMemSetAccess(Addr, Size, &ADesc, 1));
   }
 
   static uint64_t getMinPageSize(int DeviceID) {
@@ -76,8 +81,8 @@ public:
     return (void *)devPtr;
   }
 
-  void release(hipMemGenericAllocationHandle_t &MHandle, uintptr_t Addr,
-               uintptr_t Size) {
+  void unmap(hipMemGenericAllocationHandle_t &MHandle, uintptr_t Addr,
+             uintptr_t Size) {
     hipErrCheck(hipMemUnmap((void *)Addr, Size));
     hipErrCheck(hipMemRelease(MHandle));
     hipErrCheck(hipMemAddressFree((void *)Addr, Size));

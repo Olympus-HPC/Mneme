@@ -1,5 +1,9 @@
+#include "DeviceTraits.hpp"
+#include "MnemeMemoryHIP.hpp"
 #include "MnemeRecord.hpp"
 #include "MnemeRecordHIP.hpp"
+#include "MnemeSnapshot.hpp"
+#include "Utils.hpp"
 
 #include "llvm/Bitcode/BitcodeWriter.h"
 #include "llvm/IRReader/IRReader.h"
@@ -9,6 +13,8 @@
 #include "llvm/Support/SourceMgr.h"
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/StringRef.h>
+
+#include <hip/hip_runtime.h>
 
 using namespace mneme;
 using namespace llvm;
@@ -36,7 +42,6 @@ void MnemeRecorderHIP::extractIR() {
 
     uint64_t NumberOfBundles = Read8ByteIntLE(Binary, Pos);
     Pos += 8;
-    DBG(Logger::logs("mneme") << "NumberOfbundles " << NumberOfBundles << "\n");
 
     StringRef DeviceBinary;
     for (uint64_t i = 0; i < NumberOfBundles; ++i) {
@@ -52,12 +57,7 @@ void MnemeRecorderHIP::extractIR() {
       StringRef Triple(Binary + Pos, TripleSize);
       Pos += TripleSize;
 
-      DBG(Logger::logs("proteus") << "Offset " << Offset << "\n");
-      DBG(Logger::logs("proteus") << "Size " << Size << "\n");
-      DBG(Logger::logs("proteus") << "TripleSize " << TripleSize << "\n");
-      DBG(Logger::logs("proteus") << "Triple " << Triple.str() << "\n");
-
-      if (!Triple.contains("amdgcn"))
+      if (!Triple.contains("amdgcn") || !Triple.contains(getArch()))
         continue;
 
       DeviceBinary = StringRef(Binary + Offset, Size);
@@ -166,13 +166,44 @@ void MnemeRecorderHIP::extractIR() {
     }
 
     for (auto &Mod : LLVMModules) {
-      auto FName = storeModule(*Mod);
+      auto [StableHash, FName] = storeModule(*Mod);
       for (auto &KI : CurrKernels) {
         KI->ModuleFiles.push_back(FName);
+        KI->updateHash(StableHash);
       }
     }
   }
 }
+
+void MnemeRecorderHIP::initializeGlobal(GlobalVarInfo &GVar) {
+  hipErrCheck(hipGetSymbolAddress(&GVar.DevAddr, GVar.HostSymbolAddr));
+};
+
+const std::string &MnemeRecorderHIP::getArch() {
+  static std::string Arch{[]() {
+    int Device;
+    hipErrCheck(hipInit(0));
+    hipErrCheck(hipGetDevice(&Device));
+    hipDeviceProp_t DeviceProperties;
+
+    // Get properties of the current device
+    hipErrCheck(hipGetDeviceProperties(&DeviceProperties, Device));
+
+    // Get the full architecture name (e.g., gfx90a:sramecc+:xnack-)
+    std::string arch_name = DeviceProperties.gcnArchName;
+
+    // Find the colon (:) to isolate the base architecture
+    auto DevArch = std::string(arch_name.substr(0, arch_name.find(':')));
+    DBG(Logger::logs("mneme") << "Device Architecture is " << DevArch << "\n");
+    return DevArch;
+  }()};
+
+  return Arch;
+}
+
+template llvm::raw_ostream &mneme::operator<<(
+    llvm::raw_ostream &,
+    const mneme::MnemeMemoryBlob<MnemeMemoryBlobHIP, DeviceVendors::HIP> &);
 
 extern "C" {
 void __hipRegisterFatBinaryEnd(void *ptr) {

@@ -7,15 +7,20 @@
 #include <dlfcn.h>
 
 #include "llvm/Support/raw_ostream.h"
+#include <filesystem>
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StableHashing.h>
+#include <llvm/ADT/StringRef.h>
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/Module.h>
 #include <mutex>
 
 #include "DeviceTraits.hpp"
+#include "MnemeSnapshot.hpp"
+#include "MnemeSymbols.hpp"
+#include "llvm/Bitcode/BitcodeWriter.h"
 
 namespace mneme {
 
@@ -26,31 +31,8 @@ struct FatBinaryWrapper_t {
   void **PrelinkedFatBins;
 };
 
-struct KernelInfo {
-  const char *Name;
-  llvm::SmallVector<size_t> KernelArgs;
-  llvm::SmallVector<std::string> ModuleFiles;
-  KernelInfo(char *Name) : Name(Name) {};
-  KernelInfo() : Name(nullptr) {};
-
-public:
-  const char *getName() { return Name; }
-  void setArgs(llvm::ArrayRef<size_t> ArgSizes) {
-    KernelArgs = llvm::SmallVector<size_t>(ArgSizes);
-  }
-};
-
-struct GlobalVarInfo {
-  const char *Name;
-  const void *HostSymbolAddr;
-  const void *DevAddr;
-  size_t VarSize;
-  GlobalVarInfo(const char *Name, const void *HostSymbolAddr, size_t VarSize)
-      : Name(Name), HostSymbolAddr(HostSymbolAddr), VarSize(VarSize),
-        DevAddr(nullptr) {};
-};
-
-template <typename ImplT, typename MemBlobT> class MnemeRecorder {
+template <typename ImplT, typename MemBlobT, DeviceVendors VendorTypes>
+class MnemeRecorder {
 protected:
   void *rtLib;
   std::string RecordReplayDir;
@@ -63,12 +45,13 @@ protected:
   llvm::DenseMap<void *, MemBlobT> AllocatedBlobs;
 
 public:
-  using DeviceError_t = typename DeviceTraits<ImplT>::DeviceError_t;
-  using DeviceStream_t = typename DeviceTraits<ImplT>::DeviceStream_t;
-  using KernelFunction_t = typename DeviceTraits<ImplT>::KernelFunction_t;
+  using DeviceError_t = typename DeviceTraits<VendorTypes>::DeviceError_t;
+  using DeviceStream_t = typename DeviceTraits<VendorTypes>::DeviceStream_t;
+  using KernelFunction_t = typename DeviceTraits<VendorTypes>::KernelFunction_t;
 
 private:
   bool ExtractedIR;
+  RecordDatabase DB;
   std::once_flag ExtractFlag;
 
   DeviceError_t (*origLaunchKernel)(const void *func, dim3 gridDim,
@@ -102,9 +85,18 @@ private:
   void (*origRegisterFatBinaryEnd)(void *);
 
 private:
-  void extractIR() {
-    std::cout << "I am here\n";
-    static_cast<ImplT &>(*this).extractIR();
+  void extractIR() { static_cast<ImplT &>(*this).extractIR(); }
+
+  void getGlobalAddresses() {
+    for (auto &[Handle, GVars] : HandleToGlobalSymbol) {
+      for (auto &GVar : GVars) {
+        static_cast<ImplT &>(*this).initializeGlobal(GVar);
+        DBG(Logger::logs("mneme")
+                << "GlobalVar: " << GVar.Name << " DevAddr: " << GVar.DevAddr
+                << " HostSymbolAddr " << GVar.HostSymbolAddr
+                << " Size: " << std::dec << GVar.VarSize << "\n";)
+      }
+    }
   }
 
 public:
@@ -125,7 +117,10 @@ public:
               << "Handle : " << std::hex << H << std::dec << " mapped to "
               << std::hex << B << std::dec << "\n";)
     }
-    Logger::logs("mneme") << "Add of this is " << std::hex << this << "\n";
+    Logger::logs("mneme") << "Add of this is " << std::hex << this << std::dec
+                          << "\n";
+
+    HandleToGlobalSymbol.insert({Handle, {}});
 
     return Handle;
   }
@@ -153,10 +148,12 @@ public:
         << std::dec << " HostFun:" << hostFun << " deviceFun:" << deviceFun
         << " deviceName:" << deviceName << " thread_limit:" << thread_limit
         << "\n");
-    Logger::logs("mneme") << "Add of this is " << std::hex << this << "\n";
+    Logger::logs("mneme") << "Add of this is " << std::hex << this << std::dec
+                          << "\n";
     if (!HandleToBin.contains(fatBinHandle))
       FATAL_ERROR("Handle container does not contain fatbin handle");
-    std::shared_ptr<KernelInfo> KI = std::make_shared<KernelInfo>(deviceFun);
+    std::shared_ptr<KernelInfo> KI =
+        std::make_shared<KernelInfo>(fatBinHandle, deviceFun);
     KernelInfoMap.insert({(const void *)hostFun, KI});
     HandleToKernels[fatBinHandle].emplace_back(KI);
     origRegisterFunction(fatBinHandle, hostFun, deviceFun, deviceName,
@@ -164,7 +161,10 @@ public:
   };
 
   DeviceError_t rtMalloc(void **ptr, size_t size) {
-    auto ret = origMallocDevice(ptr, size);
+    auto MemBlob = MemBlobT();
+    auto ret = MemBlob.allocate(0, size);
+    *ptr = MemBlob.ptr();
+    AllocatedBlobs.insert({*ptr, std::move(MemBlob)});
     DBG(Logger::logs("mneme") << "Malloced Device Pointer " << *ptr
                               << " with size: " << size << "\n");
     return ret;
@@ -185,7 +185,10 @@ public:
   }
 
   DeviceError_t rtFree(void *ptr) {
-    auto ret = origFreeDevice(ptr);
+    if (!AllocatedBlobs.contains(ptr))
+      FATAL_ERROR("Free address that is not being allocated through Mneme\n");
+    auto ret = AllocatedBlobs[ptr].release();
+    AllocatedBlobs.erase(ptr);
     DBG(Logger::logs("mneme")
         << "Free Address " << std::hex << ptr << std::dec << "\n");
     return ret;
@@ -205,10 +208,22 @@ public:
     if (!KernelInfoMap.contains(func))
       FATAL_ERROR("Non registered kernel");
 
-    std::cout << "My ID is " << this << "\n";
-    std::call_once(ExtractFlag, [this]() { extractIR(); });
+    std::call_once(ExtractFlag, [this]() {
+      extractIR();
+      getGlobalAddresses();
+    });
 
-    auto &KInfo = KernelInfoMap[func];
+    auto KInfo = KernelInfoMap[func];
+    auto Handle = KInfo->getHandle();
+    if (!HandleToGlobalSymbol.contains(Handle))
+      FATAL_ERROR("Accessing Kernel Without a Handle");
+
+    if (!DB.shouldRecord(*KInfo))
+      return origLaunchKernel(func, GridDim, BlockDim, Args, SharedMem, Stream);
+
+    auto RecordAction = DB.takeSnapshot<ImplT, MemBlobT, VendorTypes>(
+        KInfo, HandleToGlobalSymbol[Handle], AllocatedBlobs, GridDim, BlockDim,
+        Args, SharedMem, Stream);
     DBG(Logger::logs("mneme")
             << "Launching Kernel " << std::hex << func << std::dec << " KName"
             << KInfo->Name << " GDimX: " << GridDim.x << " GDimY: " << GridDim.y
@@ -216,30 +231,44 @@ public:
             << " BDimY: " << BlockDim.y << " BDimZ: " << BlockDim.z << "\n";);
     auto ret =
         origLaunchKernel(func, GridDim, BlockDim, Args, SharedMem, Stream);
+    if (RecordAction)
+      (*RecordAction)(HandleToGlobalSymbol[Handle], AllocatedBlobs, Args,
+                      SharedMem, Stream);
     return ret;
   }
 
-  std::string storeModule(llvm::Module &M) {
+  std::pair<llvm::stable_hash, std::string> storeModule(llvm::Module &M) {
     static int TotalModules = 0;
     std::error_code EC;
-    std::string Filename(llvm::Twine(RecordReplayDir + "RecordedIR_" +
-                                     std::to_string(TotalModules) + ".bc")
-                             .str());
+
+    std::string StrBuffer;
+    llvm::raw_string_ostream RSO(StrBuffer);
+
+    // Serialize the module into the string buffer
+    llvm::WriteBitcodeToFile(M, RSO);
+    RSO.flush();
+
+    uint64_t StableHash = llvm::stable_hash_combine_string(
+        llvm::StringRef(StrBuffer.data(), StrBuffer.size()));
+
+    std::string Filename(std::filesystem::canonical(
+        std::filesystem::path(llvm::Twine(RecordReplayDir + "RecordedIR_" +
+                                          std::to_string(TotalModules) + ".bc")
+                                  .str())
+            .string()));
     llvm::raw_fd_ostream OutBC(Filename, EC);
     if (EC)
       FATAL_ERROR("Cannot write module ir file");
 
-    OutBC << M;
-    DBG(std::cout << "Registered Record replay descr");
+    OutBC << StrBuffer;
+    DBG(std::cout << "Registered Record replay descr\n");
     OutBC.close();
-    return Filename;
+    return std::make_pair(StableHash, Filename);
   }
 
   MnemeRecorder() : ExtractedIR(true) {
     rtLib = ImplT::getRTLib();
-    auto Dir = std::getenv("RR_DATA_DIR");
-    if (Dir)
-      RecordReplayDir = Dir;
+    RecordReplayDir = DB.getDir();
     // MemManager = nullptr;
 
     // Redirect overloaded device runtime functions.

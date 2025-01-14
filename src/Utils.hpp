@@ -1,4 +1,4 @@
-
+#pragma once
 #include "llvm/ADT/DenseMapInfo.h"
 #include <llvm/ADT/Twine.h>
 #include <string>
@@ -57,11 +57,11 @@ template <> struct DenseMapInfo<std::string> {
 #error pending implementation
 #endif
 
-namespace mneme{
-  namespace util{
+namespace mneme {
+namespace util {
 template <typename Ty> Ty roundUp(Ty Size, Ty Divider) {
   return (Size + Divider - 1) & ~(Divider - 1);
 }
 
-  }
-}
+} // namespace util
+} // namespace mneme
