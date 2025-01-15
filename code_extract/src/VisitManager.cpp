@@ -5,10 +5,12 @@
 #include <ostream>
 #include <sstream>
 #include <string>
+#include <vector>
 
 #include "clang/AST/Attrs.inc"
 #include "clang/AST/Decl.h"
 #include "clang/AST/DeclBase.h"
+#include "clang/AST/Mangle.h"
 #include "llvm/Support/raw_ostream.h"
 
 void VisitManager::registerDecl(clang::NamedDecl const *decl) {
@@ -66,16 +68,14 @@ void VisitManager::markVisited(std::string name, ObjInfo const *objInfo) {
 
 void VisitManager::addToVisit(clang::Stmt *stmt) { toVisitNodes.push(stmt); }
 
-std::string VisitManager::getParamInstantiationsAsString(
-    clang::FunctionDecl const *fnDecl) {
+void VisitManager::getParamInstantiationsAsString(
+    clang::FunctionDecl const *fnDecl, std::vector<std::string> &params) {
   auto numParams = fnDecl->getNumParams();
   if (!numParams)
-    return "";
+    return;
 
   // Typically we would want to find all function call to this method
-  // but for now we can just use types from functionDecl
-  std::string paramInst;
-  std::stringstream paramInstStream(paramInst);
+  // but for now we can just use types from functionDecl.
   // Right now we only build the declarations, eventually we should be able to
   // recreate the values...
   /// TODO: this
@@ -85,14 +85,16 @@ std::string VisitManager::getParamInstantiationsAsString(
     auto prefixEnd = std::min(typeString.find_last_of(')'), typeString.size());
     std::string prefix = typeString.substr(0, prefixEnd);
     std::string suffix = typeString.substr(prefixEnd);
-    paramInstStream << prefix << " p" << i + 1 << suffix << ";\n";
+    params.push_back(prefix + " p" + std::to_string(i) + suffix + ";\n");
   }
-
-  return paramInstStream.str();
 }
 
 void VisitManager::emitStandaloneFile(std::string &output,
                                       std::string const &configString) {
+  auto body =
+      static_cast<clang::FunctionDecl const *>(primaryFn.getDefiniton());
+  bool cudaKernel = body->hasAttr<clang::CUDAGlobalAttr>();
+
   llvm::raw_string_ostream ss(output);
 
   for (auto &inc : includes) {
@@ -103,6 +105,8 @@ void VisitManager::emitStandaloneFile(std::string &output,
       ss << "\"" << inc << "\"";
     ss << "\n";
   }
+  if (cudaKernel) 
+    ss << "#include \"RRHooks.h\"\n";
   ss << '\n';
 
   for (auto &tags : tagDecls) {
@@ -120,32 +124,49 @@ void VisitManager::emitStandaloneFile(std::string &output,
     ss << "\n";
   }
 
-  auto body =
-      static_cast<clang::FunctionDecl const *>(primaryFn.getDefiniton());
-  bool cudaKernel = body->hasAttr<clang::CUDAGlobalAttr>();
-
   // Building main
   ss << "int main(int argc, char *argv[]) {\n";
 
-  // If we have a cuda kernel, we should add the config string
-  if (cudaKernel)
+  if (cudaKernel) {
+    // First add the prologue
+    ss << "init_RR(";
+    ss << "\"" << clang::ASTNameGenerator(body->getASTContext()).getName(body) << "\"";
+    ss << ", argc, argv);\n";
+
+    // If we have a cuda kernel, we should add the config string...
     ss << "dim3 grid;\n"
        << "dim3 block;\n";
-  ss << getParamInstantiationsAsString(body);
+
+    // ...and load it from RR
+    ss << "init_dims(\"Grid\", grid);\n"
+       << "init_dims(\"Block\", block);\n";
+  }
+
+  std::vector<std::string> paramVec;
+  getParamInstantiationsAsString(body, paramVec);
+  for (int i = 0; i < paramVec.size(); i++) {
+    ss << paramVec[i];
+    if (cudaKernel)
+      ss << "init_param(" << i << ", p" << i << ");\n";
+  }
 
   // Build function call
   ss << body->getNameAsString();
   if (cudaKernel)
     ss << "<<<grid, block>>>";
   auto numParams = body->getNumParams();
-  int paramCount = 1;
+  int paramCount = 0;
   ss << "(";
-  for (; paramCount < numParams; paramCount++)
+  for (; paramCount < numParams - 1; paramCount++)
     ss << "p" << paramCount << ", ";
 
-  if (paramCount <= numParams)
+  if (paramCount < numParams)
     ss << "p" << paramCount;
   ss << ");\n";
+
+  if (cudaKernel) 
+    ss << "verify_rr();\n";
+
   ss << "}\n";
 }
 

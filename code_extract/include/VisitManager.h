@@ -67,13 +67,13 @@ public:
 
   /// @brief Cleans up and adds the the includePath to the files to include.
   /// @return Returns wether the include file was registered or not.
-  bool registerInclude(std::string const& includePath);
+  bool registerInclude(std::string const &includePath);
 
   /// @brief Default instantiates all function parameters for the given
-  /// functionDecl. For now it can be only called once as it writes out the
-  /// instantiated parameters in code as 'p1, p2 ...'.
+  /// functionDecl and returns a vector of decl strings for each param.
   /// @param fnDecl The function to instantiate params for.
-  std::string getParamInstantiationsAsString(clang::FunctionDecl const *fnDecl);
+  void getParamInstantiationsAsString(clang::FunctionDecl const *fnDecl,
+                                      std::vector<std::string> &params);
 
   /// @brief Emits the standalone code file containing the searched function and
   /// all other dependencies into output.

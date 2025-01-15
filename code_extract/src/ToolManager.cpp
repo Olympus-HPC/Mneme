@@ -116,5 +116,4 @@ void ToolManager::getStandaloneFnContext(std::string const &fnName) {
   } else {
     std::cout << "Compilation successful!" << std::endl;
   }
-  /// FIXME: We need to add a lot more here....should not be restrited to a
 }
