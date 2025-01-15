@@ -2,8 +2,6 @@
 #include "Visitor.h"
 
 #include <iostream>
-#include <ostream>
-#include <sstream>
 #include <string>
 #include <vector>
 
@@ -103,16 +101,15 @@ void VisitManager::emitStandaloneFile(std::string &output,
       ss << "<" << inc << ">";
     else
       ss << "\"" << inc << "\"";
-    ss << "\n";
+    ss << "\n\n";
   }
   if (cudaKernel) 
-    ss << "#include \"RRHooks.h\"\n";
-  ss << '\n';
+    ss << "#include \"RRHooks.h\"\n\n";
 
   for (auto &tags : tagDecls) {
     // Same with tags, add missing semicolon!
     tags->print(ss);
-    ss << ";\n";
+    ss << ";\n\n";
   }
 
   // Emit all declrefs (functions calls + global refs)
@@ -121,7 +118,7 @@ void VisitManager::emitStandaloneFile(std::string &output,
     decl->print(ss);
     if (decl->getKind() == clang::Decl::Kind::Var)
       ss << ";";
-    ss << "\n";
+    ss << "\n\n";
   }
 
   // Building main
@@ -154,14 +151,14 @@ void VisitManager::emitStandaloneFile(std::string &output,
   ss << body->getNameAsString();
   if (cudaKernel)
     ss << "<<<grid, block>>>";
+
   auto numParams = body->getNumParams();
   int paramCount = 0;
   ss << "(";
-  for (; paramCount < numParams - 1; paramCount++)
-    ss << "p" << paramCount << ", ";
-
   if (paramCount < numParams)
     ss << "p" << paramCount;
+  for (paramCount++; paramCount < numParams; paramCount++)
+    ss  << ", " << "p" << paramCount;
   ss << ");\n";
 
   if (cudaKernel) 

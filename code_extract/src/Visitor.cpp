@@ -94,10 +94,6 @@ clang::Type const *getUnderlyingCanonicalType(clang::QualType const &type) {
   return canonType;
 }
 
-clang::RecordDecl *getAsRecordType(clang::QualType qt) {
-  return getUnderlyingCanonicalType(qt)->getAsRecordDecl();
-}
-
 // Use the fact that builtin functions are typically prepended with "__"
 bool isPotentialBuiltinByName(std::string const &name) {
   return name.size() > 2 && '_' == name[0] && '_' == name[1];
@@ -141,7 +137,7 @@ void handleTypedefs(clang::TypedefType const *typ, VisitManager &vm,
 
 void handleVarDecl(clang::QualType qt, VisitManager &vm, CodeDB const &codedb) {
   auto cannonType = getUnderlyingCanonicalType(qt);
-  clang::RecordDecl const *decl = helper::getAsRecordType(qt);
+  clang::RecordDecl const *decl = cannonType->getAsRecordDecl();
   if (!decl) {
     auto typedefType = cannonType->getAs<clang::TypedefType>();
     // recursively visit underlying type(defs).

@@ -3,6 +3,7 @@
 #include "Visitor.h"
 
 #include <cstdlib>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <memory>
@@ -46,7 +47,7 @@ ToolManager::ToolManager(std::string const &dirPath)
 
   // Build code database
   tool->buildASTs(asts);
-  db.reset(new CodeDB(dirPath));
+  db.reset(new CodeDB(std::filesystem::canonical(dirPath)));
   // Build code database
   for (auto &ast : asts) {
     CodeExtractVisitor vis(*db.get(), *ast, dirPath);
