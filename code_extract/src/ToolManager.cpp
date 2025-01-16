@@ -16,10 +16,13 @@ std::string
 getCompilationFlags(std::vector<std::string> const &cli,
                     std::unordered_set<std::string> const &blacklistedFlags) {
   std::string flags;
+  bool prev = false;
   for (auto &command : cli) {
-    if (command[0] == '-' &&
-        blacklistedFlags.find(command) == blacklistedFlags.end())
+    if (prev || (command[0] == '-' &&
+        blacklistedFlags.find(command) == blacklistedFlags.end())){
       flags += command + " ";
+      prev = !prev;
+    }
   }
   return flags;
 }
