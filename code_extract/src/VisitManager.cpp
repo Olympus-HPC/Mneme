@@ -27,7 +27,10 @@ void VisitManager::registerDecl(clang::FunctionDecl const *decl) {
   // Do not emit inlined functions
   if (decl->isCXXClassMember() && decl->isInlined())
     return;
-  declRefs.push_back(decl);
+  if (auto tmpDecl = decl->getDescribedFunctionTemplate())
+    declRefs.push_back(tmpDecl);
+  else 
+    declRefs.push_back(decl);
 }
 
 bool VisitManager::registerInclude(std::string const &includePath) {

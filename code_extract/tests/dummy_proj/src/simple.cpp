@@ -76,18 +76,19 @@ int func11() {
     return obj->f1();
 }
 
-int main() {
-    // init_gpu_memory(char const* arg1, char const* arg2) -- call to record replay to init all params.
-    int a =1;
-    int b = 2;
-    func2(1);
-    // verify_ouput() -- check the output of the pulled function, use record replay to check against recorded output
+template <typename T> 
+int func12(T lambda) {
+    return lambda(10, 12);
+}
 
-    // // inject prologue
-    // register_value(&a);
-    // register_value(&b);
-    // func(a, b);
-    // // inject epilogue
-    // func4();
+int func13() {
+    auto glambda = [](int a, int b) { return a < b; };
+    return func12(glambda);
+}
+
+int main() {
+    auto glambda = [](int a, int b) { return a < b; };
+    func12(glambda);
+    
     return 0;
 }

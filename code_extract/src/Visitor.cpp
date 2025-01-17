@@ -5,6 +5,9 @@
 #include "clang/Basic/SourceLocation.h"
 #include "clang/Frontend/ASTUnit.h"
 
+#include <iostream>
+#include <type_traits>
+
 namespace helper {
 void addIncludeIfExternal(std::string const &name, clang::SourceLocation sloc,
                           clang::ASTContext const &ctx, CodeDB &codedb) {
@@ -32,6 +35,7 @@ void storeDecl(T *decl, clang::ASTUnit const &unit, CodeDB &cdb,
   if (name.empty())
     name = decl->getQualifiedNameAsString();
   clang::Decl *defDecl = decl->getDefinition();
+
   if (!cdb.isRegistered(name)) {
     cdb.registerDecl(unit, name, decl, defDecl);
   } else {
@@ -104,7 +108,8 @@ void handleRecordDecl(clang::RecordDecl const *recordDecl, VisitManager &vm,
   // If externally defined (or built-in), do not include def as we will include
   // the file itself.
   if (checkPotentialInclude(recordDecl, vm, codedb) ||
-      isPotentialBuiltinByName(recordDecl->getNameAsString()))
+      isPotentialBuiltinByName(recordDecl->getNameAsString()) ||
+      recordDecl->isImplicit())
     return;
 
   // We will typically not find RecordDecls within function bodies or init
@@ -231,9 +236,7 @@ bool MatchVisitor::VisitDeclRefExpr(clang::DeclRefExpr *declRef) {
 
 bool MatchVisitor::VisitCallExpr(clang::CallExpr *callExpr) {
   auto decl = callExpr->getDirectCallee();
-  assert(decl && "As of now we only support function decls as callees!");
-
-  if (helper::checkPotentialInclude(decl, vm, codedb) ||
+  if (!decl || helper::checkPotentialInclude(decl, vm, codedb) ||
       helper::isPotentialBuiltinByName(decl->getNameAsString()))
     return true;
 
