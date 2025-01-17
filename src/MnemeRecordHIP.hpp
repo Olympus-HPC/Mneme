@@ -1,26 +1,42 @@
+#pragma once
+
+#include <hip/hip_runtime.h>
+
+#include "DeviceTraits.hpp"
 #include "MnemeMemoryHIP.hpp"
 #include "MnemeRecord.hpp"
+#include "Utils.hpp"
+
 #include <dlfcn.h>
 #include <hip/hip_runtime.h>
+#include <llvm/ADT/ArrayRef.h>
+#include <llvm/ADT/StringRef.h>
+#include <llvm/Bitcode/BitcodeWriter.h>
+#include <llvm/IRReader/IRReader.h>
+#include <llvm/Linker/Linker.h>
+#include <llvm/Object/ELF.h>
+#include <llvm/Support/MemoryBuffer.h>
+#include <llvm/Support/SourceMgr.h>
 
 namespace mneme {
 
 class MnemeRecorderHIP
     : public MnemeRecorder<MnemeRecorderHIP, MnemeMemoryBlobHIP, HIP> {
-private:
-  MnemeRecorderHIP() = default;
-
-  const std::string &getArch();
-
 public:
   static auto *getRTLib() { return dlopen("libamdhip64.so", RTLD_NOW); }
-  static const char *getLaunchKernelFnName() { return "hipLaunchKernel"; }
-  static const char *getDeviceMallocFnName() { return "hipMalloc"; }
-  static const char *getPinnedMallocFnName() { return "hipHostMalloc"; }
-  static const char *getManagedMallocFnName() { return "hipMallocManaged"; }
-  static const char *getDeviceFreeFnName() { return "hipFree"; }
-  static const char *getPinnedFreeFnName() { return "hipHostFree"; }
-  static const char *getUURegisterFunctionFnName() {
+  static constexpr const char *getLaunchKernelFnName() {
+    return "hipLaunchKernel";
+  }
+  static constexpr const char *getDeviceMallocFnName() { return "hipMalloc"; }
+  static constexpr const char *getPinnedMallocFnName() {
+    return "hipHostMalloc";
+  }
+  static constexpr const char *getManagedMallocFnName() {
+    return "hipMallocManaged";
+  }
+  static constexpr const char *getDeviceFreeFnName() { return "hipFree"; }
+  static constexpr const char *getPinnedFreeFnName() { return "hipHostFree"; }
+  static constexpr const char *getUURegisterFunctionFnName() {
     return "__hipRegisterFunction";
   }
   static const char *getUURegisterVarFnName() { return "__hipRegisterVar"; }
@@ -28,18 +44,194 @@ public:
     return "__hipRegisterFatBinary";
   }
 
-  static hipError_t DeviceStreamSynchronize(hipStream_t Stream) {
-    return hipStreamSynchronize(Stream);
-  }
-
   static constexpr bool hasFatBinEnd = false;
 
-  static MnemeRecorderHIP &instance();
+  const std::string getArch() {
+    static std::string Arch{[]() {
+      int Device;
+      hipErrCheck(hipInit(0));
+      hipErrCheck(hipGetDevice(&Device));
+      hipDeviceProp_t DeviceProperties;
 
-  void extractIR();
-  void initializeGlobal(GlobalVarInfo &GVar);
+      // Get properties of the current device
+      hipErrCheck(hipGetDeviceProperties(&DeviceProperties, Device));
+
+      // Get the full architecture name (e.g., gfx90a:sramecc+:xnack-)
+      std::string arch_name = DeviceProperties.gcnArchName;
+
+      // Find the colon (:) to isolate the base architecture
+      auto DevArch = std::string(arch_name.substr(0, arch_name.find(':')));
+      DBG(Logger::logs("mneme")
+          << "Device Architecture is " << DevArch << "\n");
+      return DevArch;
+    }()};
+
+    return Arch;
+  }
+
+  void extractIR() {
+    DBG(Logger::logs("mneme") << "Extracting IR \n");
+    constexpr char OFFLOAD_BUNDLER_MAGIC_STR[] = "__CLANG_OFFLOAD_BUNDLE__";
+    size_t Pos = 0;
+
+    for (auto &[Handle, FatbinWrapper] : HandleToBin) {
+      const char *Binary = FatbinWrapper->Binary;
+      llvm::StringRef Magic(Binary, sizeof(OFFLOAD_BUNDLER_MAGIC_STR) - 1);
+      if (!Magic.equals(OFFLOAD_BUNDLER_MAGIC_STR))
+        FATAL_ERROR("Error missing magic string");
+      Pos += sizeof(OFFLOAD_BUNDLER_MAGIC_STR) - 1;
+
+      auto Read8ByteIntLE = [](const char *S, size_t Pos) {
+        return llvm::support::endian::read64le(S + Pos);
+      };
+
+      uint64_t NumberOfBundles = Read8ByteIntLE(Binary, Pos);
+      Pos += 8;
+
+      llvm::StringRef DeviceBinary;
+      for (uint64_t i = 0; i < NumberOfBundles; ++i) {
+        uint64_t Offset = Read8ByteIntLE(Binary, Pos);
+        Pos += 8;
+
+        uint64_t Size = Read8ByteIntLE(Binary, Pos);
+        Pos += 8;
+
+        uint64_t TripleSize = Read8ByteIntLE(Binary, Pos);
+        Pos += 8;
+
+        llvm::StringRef Triple(Binary + Pos, TripleSize);
+        Pos += TripleSize;
+
+        if (!Triple.contains("amdgcn") || !Triple.contains(getArch()))
+          continue;
+
+        DeviceBinary = llvm::StringRef(Binary + Offset, Size);
+        break;
+      }
+
+      auto DeviceElf = llvm::object::ELF64LEFile::create(DeviceBinary);
+      if (DeviceElf.takeError())
+        FATAL_ERROR("Cannot create the device elf");
+
+      auto Sections = DeviceElf->sections();
+      if (Sections.takeError())
+        FATAL_ERROR("Error reading sections");
+
+      llvm::ArrayRef<uint8_t> DeviceBitcode;
+
+      llvm::LLVMContext Ctx;
+
+      auto extractModuleFromSection = [&DeviceElf,
+                                       &Ctx](auto &Section,
+                                             llvm::StringRef SectionName) {
+        llvm::ArrayRef<uint8_t> BitcodeData;
+        auto SectionContents = DeviceElf->getSectionContents(Section);
+        if (SectionContents.takeError())
+          FATAL_ERROR("Error reading section contents");
+        BitcodeData = *SectionContents;
+        auto Bitcode =
+            llvm::StringRef{reinterpret_cast<const char *>(BitcodeData.data()),
+                            BitcodeData.size()};
+
+        llvm::SMDiagnostic Err;
+        auto M = parseIR(llvm::MemoryBufferRef{Bitcode, SectionName}, Err, Ctx);
+        if (!M)
+          FATAL_ERROR("unexpected");
+        return M;
+      };
+
+      // We extract bitcode from sections. If there is a .jit.bitcode.lto
+      // section due to RDC compilation that's the only bitcode we need,
+      // othewise we collect all .jit.bitcode sections.
+
+      llvm::SmallVector<std::unique_ptr<llvm::Module>> LLVMModules;
+      for (auto Section : *Sections) {
+        auto SectionName = DeviceElf->getSectionName(Section);
+        if (SectionName.takeError())
+          FATAL_ERROR("Error reading section name");
+        DBG(Logger::logs("proteus")
+            << "SectionName " << SectionName.get().str() << "\n");
+
+        if (!SectionName->starts_with(".jit.bitcode"))
+          continue;
+
+        auto M = extractModuleFromSection(Section, *SectionName);
+
+        if (SectionName->equals(".jit.bitcode.lto")) {
+          LLVMModules.clear();
+          LLVMModules.push_back(std::move(M));
+          break;
+        } else {
+          LLVMModules.push_back(std::move(M));
+        }
+      }
+
+      llvm::DenseMap<std::string, llvm::Function *> KernelNameToFunction;
+      for (auto &Mod : LLVMModules) {
+        for (llvm::Function &Func : *Mod.get()) {
+          // Skip non kernels
+          if (Func.getCallingConv() != llvm::CallingConv::AMDGPU_KERNEL)
+            continue;
+
+          // Can a declarion have a calling conv, if no this is unecessary.
+          if (Func.isDeclaration())
+            continue;
+
+          KernelNameToFunction[Func.getName().str()] = &Func;
+        }
+      }
+
+      auto getFuncDescr = [&, this](llvm::Function &F) {
+        llvm::SmallVector<uint64_t, 8> RRInfo;
+        auto DL = F.getParent()->getDataLayout();
+        for (auto &A : F.args()) {
+          // Datatypes such as structs passed by value to kernels are copied
+          // into a parameter vector. Over here we test whether an argument is
+          // byval, if it is we know on the host side this invocation forwards
+          // the arguments by value
+          if (A.hasByRefAttr() || A.hasByValAttr()) {
+            RRInfo.emplace_back(
+                DL.getTypeStoreSize(A.getPointeeInMemoryValueType()));
+          } else {
+            RRInfo.emplace_back(DL.getTypeStoreSize(A.getType()));
+          }
+        }
+        return RRInfo;
+      };
+
+      auto &CurrKernels = HandleToKernels[Handle];
+      for (auto &KI : CurrKernels) {
+        auto Iter = KernelNameToFunction.find(KI->getName());
+        if (Iter == KernelNameToFunction.end())
+          FATAL_ERROR("KernelName not in Module");
+
+        llvm::Function *KFunc = Iter->second;
+        auto FuncArgs = getFuncDescr(*KFunc);
+        KI->setArgSizes(FuncArgs);
+      }
+
+      for (auto &Mod : LLVMModules) {
+        auto [StableHash, FName] = storeModule(*Mod);
+        for (auto &KI : CurrKernels) {
+          KI->ModuleFiles.push_back(FName);
+          KI->updateHash(StableHash);
+        }
+      }
+    }
+  }
+
+  void initializeGlobal(GlobalVarInfo &GVar) {
+    hipErrCheck(hipGetSymbolAddress(&GVar.DevAddr, GVar.HostSymbolAddr));
+  };
 
   MnemeRecorderHIP(MnemeRecorderHIP &) = delete;
   MnemeRecorderHIP(MnemeRecorderHIP &&) = delete;
+
+  MnemeRecorderHIP() = default;
 };
+
 } // namespace mneme
+
+template llvm::raw_ostream &mneme::operator<<(
+    llvm::raw_ostream &,
+    const mneme::MnemeMemoryBlob<MnemeMemoryBlobHIP, DeviceVendors::HIP> &);

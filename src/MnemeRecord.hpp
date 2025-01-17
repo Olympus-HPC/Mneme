@@ -221,7 +221,7 @@ public:
     if (!DB.shouldRecord(*KInfo))
       return origLaunchKernel(func, GridDim, BlockDim, Args, SharedMem, Stream);
 
-    auto RecordAction = DB.takeSnapshot<ImplT, MemBlobT, VendorTypes>(
+    auto RecordAction = DB.takeSnapshot<MemBlobT, VendorTypes>(
         KInfo, HandleToGlobalSymbol[Handle], AllocatedBlobs, GridDim, BlockDim,
         Args, SharedMem, Stream);
     DBG(Logger::logs("mneme")
@@ -233,7 +233,7 @@ public:
         origLaunchKernel(func, GridDim, BlockDim, Args, SharedMem, Stream);
     if (RecordAction)
       (*RecordAction)(HandleToGlobalSymbol[Handle], AllocatedBlobs, Args,
-                      SharedMem, Stream);
+                      Stream);
     return ret;
   }
 

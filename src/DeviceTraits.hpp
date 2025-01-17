@@ -1,5 +1,6 @@
 #pragma once
 #include "Utils.hpp"
+#include <hip/hip_runtime.h>
 namespace mneme {
 enum DeviceVendors { HIP, CUDA };
 
@@ -17,6 +18,27 @@ template <> struct DeviceTraits<DeviceVendors::HIP> {
     if (ErrorCode == hipSuccess)
       return std::nullopt;
     return std::string(hipGetErrorString(ErrorCode));
+  }
+
+  static hipError_t DeviceStreamSynchronize(hipStream_t Stream) {
+    return hipStreamSynchronize(Stream);
+  }
+
+  static hipError_t DeviceMalloc(void **ptr, size_t size) {
+    return hipMalloc(ptr, size);
+  }
+
+  static hipError_t DeviceMemcpy();
+
+  static hipError_t DeviceFree(void *ptr) { return hipFree(ptr); }
+
+  static constexpr hipMemcpyKind MemcpyHostToDeviceKind() {
+    return hipMemcpyHostToDevice;
+  }
+
+  static hipError_t DeviceCopy(void *Dest, void *Src, size_t SizeBytes,
+                               hipMemcpyKind Kind) {
+    return hipMemcpy(Dest, Src, SizeBytes, Kind);
   }
 };
 #elif defined(ENABLE_CUDA)

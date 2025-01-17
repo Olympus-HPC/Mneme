@@ -1,5 +1,7 @@
 #pragma once
 #include "llvm/ADT/DenseMapInfo.h"
+#include <iomanip>
+#include <iostream>
 #include <llvm/ADT/Twine.h>
 #include <string>
 
@@ -61,6 +63,18 @@ namespace mneme {
 namespace util {
 template <typename Ty> Ty roundUp(Ty Size, Ty Divider) {
   return (Size + Divider - 1) & ~(Divider - 1);
+}
+template <typename Ty> Ty extractScalar(const char *&Buffer) {
+  Ty Value = *reinterpret_cast<const Ty *>(Buffer);
+  Buffer += sizeof(Ty);
+  return Value;
+}
+
+template <typename T> std::string pointerToHexString(T *ptr) {
+  std::ostringstream oss;
+  oss << "0x" << std::hex << std::setw(sizeof(void *) * 2) << std::setfill('0')
+      << reinterpret_cast<std::uintptr_t>(ptr);
+  return oss.str();
 }
 
 } // namespace util

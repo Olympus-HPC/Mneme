@@ -32,6 +32,8 @@ private:
   }
 
 public:
+  using MnemeMemoryBlob<MnemeMemoryBlobHIP, HIP>::MnemeMemoryBlob;
+
   static constexpr hipMemcpyKind MemcpyHostToDeviceKind() {
     return hipMemcpyHostToDevice;
   }

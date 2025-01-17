@@ -1,0 +1,25 @@
+if(ENABLE_HIP)
+    SET(lang HIP)
+else()
+    SET(lang CUDA)
+endif()
+
+function(BUILD_UNIT_TEST exe)
+  message(STATUS "Building test ${exe} ${ARGN}")
+  add_executable(${exe} ${ARGN})
+  target_include_directories(${exe} PRIVATE ${CMAKE_SOURCE_DIR}/src/ ${CMAKE_SOURCE_DIR}/common/)
+  if (ENABLE_HIP)
+    message(STATUS "Building test ${exe}")
+    target_link_libraries(${exe} PRIVATE hip::host)
+  endif()
+  target_link_libraries(${exe} PRIVATE ${LLVM_AVAILABLE_LIBS})
+endfunction()
+
+BUILD_UNIT_TEST("SerializeGlobals" SerializeGlobals.cpp)
+add_test(NAME Serialize::Globals COMMAND SerializeGlobals)
+
+BUILD_UNIT_TEST("SerializeBlob" SerializeBlob.cpp)
+add_test(NAME Serialize::Blob COMMAND SerializeBlob)
+
+BUILD_UNIT_TEST("ReadWriteSnapshot" ReadWriteSnapshot.cpp)
+add_test(NAME Serialize::RWSnapshot COMMAND ReadWriteSnapshot)

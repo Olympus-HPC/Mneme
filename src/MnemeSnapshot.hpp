@@ -1,9 +1,11 @@
 #pragma once
 #include "DeviceTraits.hpp"
+#include "Logger.hpp"
 #include "MnemeMemory.hpp"
 #include "MnemeSymbols.hpp"
 #include "Utils.hpp"
 #include "llvm/Support/JSON.h"
+#include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/raw_ostream.h"
 #include <cstdint>
 #include <filesystem>
@@ -14,15 +16,13 @@
 #include <optional>
 
 #include "llvm/Demangle/Demangle.h"
-#include "llvm/Support/raw_ostream.h"
 #include <llvm/ADT/StableHashing.h>
 #include <llvm/ADT/StringRef.h>
 #include <string>
 #include <sys/types.h>
 namespace mneme {
 
-template <typename ImplT, typename MemBlobT, DeviceVendors VendorTypes>
-class MnemeSnapshot {
+template <typename MemBlobT, DeviceVendors VendorTypes> class MnemeSnapshot {
   using DeviceError_t = typename DeviceTraits<VendorTypes>::DeviceError_t;
   using DeviceStream_t = typename DeviceTraits<VendorTypes>::DeviceStream_t;
   using KernelFunction_t = typename DeviceTraits<VendorTypes>::KernelFunction_t;
@@ -31,54 +31,118 @@ public:
   std::filesystem::path static takeMnemeSnapshot(
       llvm::SmallVector<GlobalVarInfo> &GlobalVars,
       llvm::DenseMap<void *, MemBlobT> &DeviceMemory,
-      std::filesystem::path &MnemeDir, uint64_t DynamicHash,
-      std::shared_ptr<KernelInfo> KInfo, void **Args, size_t SharedMem,
-      DeviceStream_t Stream, bool IsPrologue = true) {
+      std::filesystem::path &Filename, std::shared_ptr<KernelInfo> KInfo,
+      void **Args, DeviceStream_t Stream) {
     DBG(Logger::logs("mneme") << "KInfo is " << KInfo.get() << "\n");
     llvm::stable_hash KHash = llvm::stable_hash_combine_string(KInfo->Name);
     std::error_code EC;
-    std::filesystem::path Filename(
-        MnemeDir /
-        (std::string("DeviceState") +
-         std::string(IsPrologue ? ".prologue." : ".epilogue.") +
-         std::to_string(KHash) + "." + std::to_string(DynamicHash) + ".mneme"));
     // Syncrhonize cause we need to get a consistent GPU state.
     // We may want to do a DeviceSynchronize().
     auto DEC = DeviceTraits<VendorTypes>::DeviceErrorCheck(
-        ImplT::DeviceStreamSynchronize(Stream));
+        DeviceTraits<VendorTypes>::DeviceStreamSynchronize(Stream));
     if (DEC)
       FATAL_ERROR("Synnchronizing stream  failed");
     llvm::raw_fd_ostream OutBC(Filename.string(), EC);
     // First write Global Variables.
+    size_t TotalGlobals = GlobalVars.size();
+    DBG(Logger::logs("mneme")
+        << "Writting " << TotalGlobals << " globals at location "
+        << OutBC.tell() << "\n");
+
+    OutBC << llvm::StringRef(reinterpret_cast<const char *>(&TotalGlobals),
+                             sizeof(size_t));
     for (auto &GV : GlobalVars) {
-      GV.HostAddr = static_cast<void *>(new uint8_t[GV.VarSize]);
       auto DEC = DeviceTraits<VendorTypes>::DeviceErrorCheck(
-          MemBlobT::DeviceCopy(GV.HostAddr, GV.DevAddr, GV.VarSize,
-                               MemBlobT::MemcpyHostToDeviceKind()));
+          DeviceTraits<VendorTypes>::DeviceCopy(
+              GV.DevAddr, GV.HostAddr.get(), GV.VarSize,
+              DeviceTraits<VendorTypes>::MemcpyHostToDeviceKind()));
       if (DEC)
         FATAL_ERROR(
             "Copying from device to host for global variables failed\n");
       OutBC << GV;
-
-      delete[] static_cast<uint8_t *>(GV.HostAddr);
-      GV.HostAddr = nullptr;
     }
+
+    size_t TotalBlobs = DeviceMemory.size();
+    DBG(Logger::logs("mneme")
+        << "Writting " << TotalBlobs << " memory blobs at location "
+        << OutBC.tell() << "\n");
+    OutBC << llvm::StringRef(reinterpret_cast<const char *>(&TotalGlobals),
+                             sizeof(size_t));
+
     // Write the Device Memory
     for (auto &[Ptr, Blob] : DeviceMemory)
       OutBC << Blob;
     // Lastly write the arguments
-    size_t NumArgs = KInfo->KernelArgs.size();
+    size_t NumArgs = KInfo->KernelArgSizes.size();
     OutBC << llvm::StringRef(reinterpret_cast<const char *>(&NumArgs),
                              sizeof(NumArgs));
+
+    DBG(Logger::logs("mneme")
+        << "Writting " << NumArgs << " Arguments at location " << OutBC.tell()
+        << "\n");
     for (int I = 0; I < NumArgs; I++) {
       OutBC << llvm::StringRef(
-          reinterpret_cast<const char *>(&KInfo->KernelArgs[I]),
+          reinterpret_cast<const char *>(&KInfo->KernelArgSizes[I]),
           sizeof(size_t));
+      DBG(Logger::logs("mneme")
+              << "Argument " << I << " is of Size " << KInfo->KernelArgSizes[I]
+              << " at location " << OutBC.tell() << "\n";)
       OutBC << llvm::StringRef(reinterpret_cast<const char *>(Args[I]),
-                               KInfo->KernelArgs[I]);
+                               KInfo->KernelArgSizes[I]);
     }
 
     return std::filesystem::canonical(Filename);
+  }
+
+  void static readMnemeSnapShot(
+      std::string Filename,
+      llvm::DenseMap<std::string, GlobalVarInfo> &GlobalVars,
+      llvm::DenseMap<void *, MemBlobT> &DeviceMemory,
+      std::shared_ptr<KernelInfo> KInfo) {
+    if (!std::filesystem::exists(Filename))
+      FATAL_ERROR("Mneme Snapshot file does not exist");
+
+    DBG(Logger::logs("mneme") << "Reading file " << Filename << "\n");
+
+    std::error_code EC;
+    llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> bufferOrErr =
+        llvm::MemoryBuffer::getFile(Filename);
+    if (std::error_code ec = bufferOrErr.getError())
+      FATAL_ERROR("Error when opening file " + ec.message());
+
+    // Get a pointer to the raw data in the MemoryBuffer
+    llvm::MemoryBuffer *Buffer = bufferOrErr.get().get();
+    auto *Start = Buffer->getBufferStart();
+    auto *CurrentPtr = Start;
+    size_t TotalGlobals = util::extractScalar<size_t>(CurrentPtr);
+    DBG(Logger::logs("mneme")
+        << "Snapshot contains " << TotalGlobals
+        << " global variables at location "
+        << (uintptr_t)CurrentPtr - (uintptr_t)Start << "\n");
+    for (auto I = 0; I < TotalGlobals; I++) {
+      auto GV = GlobalVarInfo::fromBuffer(CurrentPtr);
+      GlobalVars.insert({GV.Name, std::move(GV)});
+    }
+
+    auto TotalMemBlobs = util::extractScalar<size_t>(CurrentPtr);
+    DBG(Logger::logs("mneme")
+        << "Snapshot contains " << TotalMemBlobs << " Memory Blobs\n");
+    for (auto M = 0; M < TotalMemBlobs; M++) {
+      DeviceMemory.insert(MemBlobT::template fromBuffer<MemBlobT>(CurrentPtr));
+    }
+
+    // Get kernel arguments.
+    auto TotalArguments = util::extractScalar<size_t>(CurrentPtr);
+    DBG(Logger::logs("mneme")
+        << "Snapshot contains " << TotalArguments << " Arguments at location "
+        << (uintptr_t)CurrentPtr - (uintptr_t)Start << "\n");
+
+    KInfo->KernelArgSizes.resize(TotalArguments);
+    KInfo->ArgData.resize(TotalArguments);
+    for (auto A = 0; A < TotalArguments; A++) {
+      KInfo->KernelArgSizes[A] = util::extractScalar<size_t>(CurrentPtr);
+      KInfo->setArgData(CurrentPtr, A);
+    }
   }
 };
 
@@ -87,6 +151,7 @@ struct KernelInstance {
   std::string EpilogueFn;
   dim3 BlockDim;
   dim3 GridDim;
+  uint64_t SharedMem;
   static llvm::json::Object toJSON(const dim3 &Dim) {
     llvm::json::Object JSONDim;
     JSONDim["x"] = Dim.x;
@@ -100,10 +165,11 @@ struct KernelInstance {
     instance["Epilogue"] = EpilogueFn;
     instance["BlockDims"] = KernelInstance::toJSON(BlockDim);
     instance["GridDims"] = KernelInstance::toJSON(GridDim);
+    instance["SharedMem"] = SharedMem;
     return instance;
   }
-  KernelInstance(dim3 &GridDim, dim3 &BlockDim)
-      : GridDim(GridDim), BlockDim(BlockDim) {}
+  KernelInstance(dim3 &GridDim, dim3 &BlockDim, uint64_t SharedMem)
+      : GridDim(GridDim), BlockDim(BlockDim), SharedMem(SharedMem) {}
   KernelInstance() = default;
 };
 
@@ -115,7 +181,7 @@ public:
   llvm::json::Object toJSON() const {
     llvm::json::Object Collection;
     Collection["KernelName"] = KInfo->getName();
-    Collection["DemangedName"] = llvm::demangle(KInfo->getName());
+    Collection["DemangledName"] = llvm::demangle(KInfo->getName());
     Collection["Modules"] = llvm::json::Array(KInfo->ModuleFiles);
     llvm::json::Object JSONInstances;
     for (auto &[hash, KI] : Instances) {
@@ -127,58 +193,64 @@ public:
 
   KernelInstancesCollection(std::shared_ptr<KernelInfo> KInfo) : KInfo(KInfo) {}
 
-  llvm::stable_hash computeHash(dim3 &GridDim, dim3 &BlockDim) {
+  llvm::stable_hash computeHash(dim3 &GridDim, dim3 &BlockDim,
+                                uint64_t SharedMem) {
     auto BlockHash = llvm::stable_hash_combine((llvm::stable_hash)BlockDim.x,
                                                (llvm::stable_hash)BlockDim.y,
                                                (llvm::stable_hash)BlockDim.z);
     auto GridHash = llvm::stable_hash_combine((llvm::stable_hash)GridDim.x,
                                               (llvm::stable_hash)GridDim.y,
                                               (llvm::stable_hash)GridDim.z);
-    return llvm::stable_hash_combine(GridHash, BlockHash);
+    return llvm::stable_hash_combine(GridHash, BlockHash, SharedMem);
   }
 
-  bool shouldSnapshot(dim3 &GridDim, dim3 &BlockDim) {
-    return !Instances.contains(computeHash(GridDim, BlockDim));
-  }
-
-  template <typename ImplT, typename MemBlobT, DeviceVendors VendorTypes>
+  template <typename MemBlobT, DeviceVendors VendorTypes>
   std::optional<std::function<void(
       llvm::SmallVector<GlobalVarInfo> &, llvm::DenseMap<void *, MemBlobT> &,
-      void **, size_t, typename DeviceTraits<VendorTypes>::DeviceStream_t)>>
+      void **, typename DeviceTraits<VendorTypes>::DeviceStream_t)>>
   takeSnapshot(std::filesystem::path &MnemeDir,
                llvm::SmallVector<GlobalVarInfo> &GlobalVars,
                llvm::DenseMap<void *, MemBlobT> &DeviceMemory, dim3 &GridDim,
                dim3 &BlockDim, void **Args, size_t SharedMem,
-               typename DeviceTraits<VendorTypes>::DeviceStream_t Stream) {
-    auto hash = computeHash(GridDim, BlockDim);
+               typename DeviceTraits<VendorTypes>::DeviceStream_t Stream,
+               uint64_t StaticHash) {
+    auto DynamicHash = computeHash(GridDim, BlockDim, SharedMem);
 
-    if (Instances.contains(hash))
+    if (Instances.contains(DynamicHash))
       return std::nullopt;
 
     DBG(Logger ::logs("mneme") << "Capturing prologue for Kernel with hash: "
                                << std::hex << this << std::dec << "\n");
-    Instances.insert({hash, KernelInstance(GridDim, BlockDim)});
-    Instances[hash].PrologueFn =
-        MnemeSnapshot<ImplT, MemBlobT, VendorTypes>::takeMnemeSnapshot(
-            GlobalVars, DeviceMemory, MnemeDir, hash, KInfo, Args, SharedMem,
-            Stream)
+    Instances.insert(
+        {DynamicHash, KernelInstance(GridDim, BlockDim, SharedMem)});
+    std::filesystem::path Filename(MnemeDir /
+                                   (std::string("DeviceState.prologue.") +
+                                    std::to_string(StaticHash) + "." +
+                                    std::to_string(DynamicHash) + ".mneme"));
+
+    Instances[DynamicHash].PrologueFn =
+        MnemeSnapshot<MemBlobT, VendorTypes>::takeMnemeSnapshot(
+            GlobalVars, DeviceMemory, Filename, KInfo, Args, Stream)
             .string();
 
     std::function<void(llvm::SmallVector<GlobalVarInfo> &,
-                       llvm::DenseMap<void *, MemBlobT> &, void **, size_t,
+                       llvm::DenseMap<void *, MemBlobT> &, void **,
                        typename DeviceTraits<VendorTypes>::DeviceStream_t)>
-        CaptureEpilogue = [this, hash, &MnemeDir](
-                              llvm::SmallVector<GlobalVarInfo> &GlobalVars,
-                              llvm::DenseMap<void *, MemBlobT> &DeviceMemory,
-                              void **Args, size_t SharedMem,
-                              typename DeviceTraits<VendorTypes>::DeviceStream_t
-                                  Stream) {
-          Instances[hash].EpilogueFn =
-              MnemeSnapshot<ImplT, MemBlobT, VendorTypes>::takeMnemeSnapshot(
-                  GlobalVars, DeviceMemory, MnemeDir, hash, KInfo, Args,
-                  SharedMem, Stream, true)
-                  .string();
-        };
+        CaptureEpilogue =
+            [this, DynamicHash, StaticHash, &MnemeDir](
+                llvm::SmallVector<GlobalVarInfo> &GlobalVars,
+                llvm::DenseMap<void *, MemBlobT> &DeviceMemory, void **Args,
+                typename DeviceTraits<VendorTypes>::DeviceStream_t Stream) {
+              std::filesystem::path Filename(
+                  MnemeDir / (std::string("DeviceState.epilogue.") +
+                              std::to_string(StaticHash) + "." +
+                              std::to_string(DynamicHash) + ".mneme"));
+
+              Instances[DynamicHash].EpilogueFn =
+                  MnemeSnapshot<MemBlobT, VendorTypes>::takeMnemeSnapshot(
+                      GlobalVars, DeviceMemory, Filename, KInfo, Args, Stream)
+                      .string();
+            };
     return CaptureEpilogue;
   }
 };
@@ -221,7 +293,7 @@ public:
     return true;
   }
 
-  template <typename ImplT, typename MemBlobT, DeviceVendors VendorTypes>
+  template <typename MemBlobT, DeviceVendors VendorTypes>
   auto takeSnapshot(std::shared_ptr<KernelInfo> KInfo,
                     llvm::SmallVector<GlobalVarInfo> &GlobalVars,
                     llvm::DenseMap<void *, MemBlobT> &DeviceMemory,
@@ -230,9 +302,9 @@ public:
                     typename DeviceTraits<VendorTypes>::DeviceStream_t Stream) {
     auto IT = KernelRecords.try_emplace(KInfo->StaticHash,
                                         KernelInstancesCollection(KInfo));
-    return IT.first->second.takeSnapshot<ImplT, MemBlobT, VendorTypes>(
+    return IT.first->second.takeSnapshot<MemBlobT, VendorTypes>(
         MnemeDirectory, GlobalVars, DeviceMemory, GridDim, BlockDim, Args,
-        SharedMem, Stream);
+        SharedMem, Stream, KInfo->StaticHash);
   }
 
   std::string getDir() const { return MnemeDirectory.string(); }
