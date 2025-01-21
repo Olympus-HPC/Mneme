@@ -34,6 +34,8 @@ option(ENABLE_HIP "Enable CUDA" OFF)
 option(ENABLE_TESTS "Enable Testing" OFF)
 option(ENABLE_DEBUG "Enable Debug Output" OFF)
 
+find_package(proteus REQUIRED)
+
 message(STATUS "Installation prefix is ${CMAKE_INSTALL_PREFIX}")
 
 include(CMakePackageConfigHelpers)
@@ -59,7 +61,6 @@ if(ENABLE_DEBUG)
 endif()
 
 include(cmake/SetupLLVM.cmake)
-include(cmake/AddProteus.cmake)
 
 add_subdirectory(pass)
 add_subdirectory(src)

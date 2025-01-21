@@ -14,6 +14,7 @@ set(libs ${LLVM_AVAILABLE_LIBS})
 
 target_include_directories(mnemerecord SYSTEM PRIVATE ${LLVM_INCLUDE_DIRS} ${CMAKE_SOURCE_DIR}/common)
 target_include_directories(mnemereplay SYSTEM PRIVATE ${LLVM_INCLUDE_DIRS} ${CMAKE_SOURCE_DIR}/common)
+target_link_libraries(mnemereplay PRIVATE proteus::JITEngine)
 if(ENABLE_HIP)
   target_link_libraries(mnemerecord PRIVATE hip::host)
   target_link_libraries(mnemereplay PRIVATE ${LLVM_AVAILABLE_LIBS})

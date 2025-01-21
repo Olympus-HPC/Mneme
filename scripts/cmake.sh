@@ -53,7 +53,7 @@ popd
 
 cmake .. \
 -DCMAKE_BUILD_TYPE=Relwithdebinfo \
--DPROTEUS_Dir=$installDir \
+-Dproteus_Dir=$installDir \
 -DCMAKE_INSTALL_PREFIX=$installDir \
 -DCMAKE_CXX_COMPILER=amdclang++ \
 -DCMAKE_C_COMPILER=amdclang \
