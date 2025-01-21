@@ -5,6 +5,7 @@ if (ENABLE_HIP)
 endif()
 
 add_library(mnemerecord SHARED ${RecordLibSRC})
+add_executable(mnemereplay MnemeReplay.cpp)
 
 #add_executable(replay replay.cpp memory.cpp jit.cpp common.cpp)
 
@@ -12,11 +13,13 @@ set(libs ${LLVM_AVAILABLE_LIBS})
 
 
 target_include_directories(mnemerecord SYSTEM PRIVATE ${LLVM_INCLUDE_DIRS} ${CMAKE_SOURCE_DIR}/common)
+target_include_directories(mnemereplay SYSTEM PRIVATE ${LLVM_INCLUDE_DIRS} ${CMAKE_SOURCE_DIR}/common)
 if(ENABLE_HIP)
   target_link_libraries(mnemerecord PRIVATE hip::host)
-  message(STATUS "Linking with libraries: ${LLVM_AVAILABLE_LIBS}")
-  #target_link_libraries(replay PRIVATE ${LLVM_AVAILABLE_LIBS})
+  target_link_libraries(mnemereplay PRIVATE ${LLVM_AVAILABLE_LIBS})
+
   target_link_libraries(mnemerecord PRIVATE ${LLVM_AVAILABLE_LIBS})
+  target_link_libraries(mnemereplay PRIVATE hip::host)
 endif()
 
 

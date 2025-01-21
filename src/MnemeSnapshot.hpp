@@ -66,7 +66,7 @@ public:
     DBG(Logger::logs("mneme")
         << "Writting " << TotalBlobs << " memory blobs at location "
         << OutBC.tell() << "\n");
-    OutBC << llvm::StringRef(reinterpret_cast<const char *>(&TotalGlobals),
+    OutBC << llvm::StringRef(reinterpret_cast<const char *>(&TotalBlobs),
                              sizeof(size_t));
 
     // Write the Device Memory
@@ -126,7 +126,9 @@ public:
 
     auto TotalMemBlobs = util::extractScalar<size_t>(CurrentPtr);
     DBG(Logger::logs("mneme")
-        << "Snapshot contains " << TotalMemBlobs << " Memory Blobs\n");
+        << "Snapshot contains " << TotalMemBlobs << " Memory Blobs at location "
+        << (uintptr_t)CurrentPtr - (uintptr_t)Start << "\n");
+
     for (auto M = 0; M < TotalMemBlobs; M++) {
       DeviceMemory.insert(MemBlobT::template fromBuffer<MemBlobT>(CurrentPtr));
     }
@@ -257,7 +259,6 @@ public:
 
 class RecordDatabase {
   std::filesystem::path MnemeDirectory;
-  llvm::DenseMap<uint64_t, bool> IsRecordedKernel;
   llvm::DenseMap<uint64_t, KernelInstancesCollection> KernelRecords;
 
 public:
@@ -283,14 +284,6 @@ public:
       JsonOS << llvm::json::Value(std::move(JSONRecord));
       JsonOS.close();
     }
-  }
-
-  bool shouldRecord(KernelInfo &KI) {
-    // We always return true here.
-    if (!IsRecordedKernel.contains(KI.StaticHash))
-      return IsRecordedKernel[KI.StaticHash];
-
-    return true;
   }
 
   template <typename MemBlobT, DeviceVendors VendorTypes>

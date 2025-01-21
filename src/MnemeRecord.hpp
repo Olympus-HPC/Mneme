@@ -204,9 +204,10 @@ public:
   DeviceError_t rtLaunchKernel(const void *func, dim3 &GridDim, dim3 &BlockDim,
                                void **Args, size_t SharedMem,
                                DeviceStream_t Stream) {
-    std::cout << "Entering " << &ExtractedIR << "\n";
-    if (!KernelInfoMap.contains(func))
-      FATAL_ERROR("Non registered kernel");
+    if (!KernelInfoMap.contains(func)) {
+      Logger::warn() << "Kernel not included in Map, skippping ...\n";
+      return origLaunchKernel(func, GridDim, BlockDim, Args, SharedMem, Stream);
+    }
 
     std::call_once(ExtractFlag, [this]() {
       extractIR();
@@ -217,9 +218,6 @@ public:
     auto Handle = KInfo->getHandle();
     if (!HandleToGlobalSymbol.contains(Handle))
       FATAL_ERROR("Accessing Kernel Without a Handle");
-
-    if (!DB.shouldRecord(*KInfo))
-      return origLaunchKernel(func, GridDim, BlockDim, Args, SharedMem, Stream);
 
     auto RecordAction = DB.takeSnapshot<MemBlobT, VendorTypes>(
         KInfo, HandleToGlobalSymbol[Handle], AllocatedBlobs, GridDim, BlockDim,
@@ -251,11 +249,11 @@ public:
     uint64_t StableHash = llvm::stable_hash_combine_string(
         llvm::StringRef(StrBuffer.data(), StrBuffer.size()));
 
-    std::string Filename(std::filesystem::canonical(
+    std::string Filename(
         std::filesystem::path(llvm::Twine(RecordReplayDir + "RecordedIR_" +
                                           std::to_string(TotalModules) + ".bc")
                                   .str())
-            .string()));
+            .string());
     llvm::raw_fd_ostream OutBC(Filename, EC);
     if (EC)
       FATAL_ERROR("Cannot write module ir file");
@@ -263,7 +261,8 @@ public:
     OutBC << StrBuffer;
     DBG(std::cout << "Registered Record replay descr\n");
     OutBC.close();
-    return std::make_pair(StableHash, Filename);
+    return std::make_pair(StableHash,
+                          std::filesystem::canonical(Filename).string());
   }
 
   MnemeRecorder() : ExtractedIR(true) {
