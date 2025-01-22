@@ -77,12 +77,12 @@ int func11() {
 }
 
 template <typename T> 
-int func12(T lambda) {
-    return lambda(10, 12);
+int func12(T lmb) {
+    return lmb(10, 12);
 }
 
-int func13() {
-    auto glambda = [](int a, int b) { return a < b; };
+int func13(int x) {
+    auto glambda = [=](int a, int b) { return x + a < b; };
     return func12(glambda);
 }
 

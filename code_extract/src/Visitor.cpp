@@ -240,6 +240,14 @@ bool MatchVisitor::VisitCallExpr(clang::CallExpr *callExpr) {
       helper::isPotentialBuiltinByName(decl->getNameAsString()))
     return true;
 
+  clang::CXXRecordDecl *parentDecl = nullptr;
+  if (decl->isCXXClassMember()) {
+    parentDecl = static_cast<clang::CXXMethodDecl *>(decl)->getParent();
+    // If parent decl is implicit, do not visit as callexpr maybe lambda
+    if (parentDecl->isImplicit())
+      return true;
+  }
+
   auto [defDecl, visitBody] =
       helper::visitAndRegister<clang::FunctionDecl>(decl, vm, codedb);
   if (!visitBody || !defDecl->hasBody())
@@ -247,17 +255,15 @@ bool MatchVisitor::VisitCallExpr(clang::CallExpr *callExpr) {
   vm.addToVisit(defDecl->getBody());
 
   // Handle function param var decls
-  VisitParms(defDecl);
+  VisitParams(defDecl);
 
-  if (defDecl->isCXXClassMember() && decl->isStatic()) {
-    auto recordDecl = static_cast<clang::CXXMethodDecl *>(decl)->getParent();
-    helper::handleRecordDecl(recordDecl, vm, codedb);
-  }
+  if (parentDecl && decl->isStatic())
+    helper::handleRecordDecl(parentDecl, vm, codedb);
+
   return true;
 }
 
-void MatchVisitor::VisitParms(clang::FunctionDecl const *defDecl) {
-  for (auto param_it = defDecl->param_begin(); param_it != defDecl->param_end();
-       param_it++)
-    helper::handleVarDecl((*param_it)->getType(), vm, codedb);
+void MatchVisitor::VisitParams(clang::FunctionDecl const *defDecl) {
+  for (auto param_it : defDecl->parameters())
+    helper::handleVarDecl(param_it->getType(), vm, codedb);
 }

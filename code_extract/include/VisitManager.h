@@ -16,6 +16,7 @@ class TagDecl;
 class VarDecl;
 class Stmt;
 class ASTContext;
+class Type;
 } // namespace clang
 
 /// @brief Manages nodes to visit and decls to add to the extracted body.
@@ -27,6 +28,13 @@ class VisitManager {
   std::vector<clang::NamedDecl const *> tagDecls;
   std::unordered_map<std::string, ObjInfo const *> visitedNodes;
   std::unordered_set<std::string> includes;
+  std::vector<std::pair<std::string, clang::Expr const *>> params_expr;
+  std::vector<std::pair<std::string, clang::ValueDecl const *>> params_decl;
+
+  /// @brief Fills params from the given vals into the params map with string id as
+  /// prefix + param_position.
+  template <typename T>
+  void fillParams(std::string const &prefix, T* begin, T* end);
 
 public:
   VisitManager(ObjInfo &pf, CodeDB const &cdb) : db(cdb), primaryFn(pf) {}
@@ -71,9 +79,14 @@ public:
 
   /// @brief Default instantiates all function parameters for the given
   /// functionDecl and returns a vector of decl strings for each param.
-  /// @param fnDecl The function to instantiate params for.
-  void getParamInstantiationsAsString(clang::FunctionDecl const *fnDecl,
+  /// @param fnObj The function ObjInfo to instantiate params for.
+  void getParamInstantiationsAsString(ObjInfo *fnObj,
                                       std::vector<std::string> &params);
+
+  /// @brief Registers all variable parameters that will be used to build the
+  /// standalone function call for fnObj. These params may be params to fnObj or
+  /// to function call/lambda expression params.
+  void registerParameterPrologue(ObjInfo *fnObj);
 
   /// @brief Emits the standalone code file containing the searched function and
   /// all other dependencies into output.

@@ -2,6 +2,7 @@
 #include "CodeDB.h"
 #include "Visitor.h"
 
+#include <clang/AST/Mangle.h>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -19,7 +20,7 @@ getCompilationFlags(std::vector<std::string> const &cli,
   bool prev = false;
   for (auto &command : cli) {
     if (prev || (command[0] == '-' &&
-        blacklistedFlags.find(command) == blacklistedFlags.end())){
+                 blacklistedFlags.find(command) == blacklistedFlags.end())) {
       flags += command + " ";
       prev = !prev;
     }
@@ -28,8 +29,7 @@ getCompilationFlags(std::vector<std::string> const &cli,
 }
 } // namespace helper
 
-ToolManager::ToolManager(std::string const &dirPath)
-{
+ToolManager::ToolManager(std::string const &dirPath) {
   // Setup our tool
   std::string errorMsg;
   compDb = ct::CompilationDatabase::autoDetectFromDirectory(dirPath, errorMsg);
@@ -59,7 +59,8 @@ ToolManager::ToolManager(std::string const &dirPath)
   }
 }
 
-ObjInfo *ToolManager::findFnDeclByName(std::string const &fnName) {
+ObjInfo *ToolManager::findFnDeclByName(std::string const &fnName,
+                                       std::string mangledName) {
   auto obj = db->getObjInfoOrNull(fnName);
 
   if (!obj) {
@@ -75,11 +76,38 @@ ObjInfo *ToolManager::findFnDeclByName(std::string const &fnName) {
     exit(1);
   }
 
+  auto fnDecl = static_cast<clang::FunctionDecl *>(obj->getDefiniton());
+  clang::ASTNameGenerator astNameGen(fnDecl->getASTContext());
+  if (auto tmpDecl = fnDecl->getDescribedFunctionTemplate()) {
+    if (mangledName.empty()) {
+      std::cerr << "Extraction of function template " << fnName
+                << " requested without specifying specialization to pull. "
+                << "Please specify the mangled name of the specialization you "
+                   "wish to extract."
+                << std::endl;
+      exit(1);
+    }
+    clang::Decl *specDecl = nullptr;
+    for (auto it = tmpDecl->spec_begin(); it != tmpDecl->spec_end(); it++) {
+      if (mangledName == astNameGen.getName(*it)) {
+        specDecl = *it;
+        obj->addSpecializationDecl(specDecl);
+        break;
+      }
+    }
+    if (!specDecl) {
+      std::cerr << "Could not find specialization for " << fnName
+                << " with mangled name " << mangledName << "!" << std::endl;
+      exit(1);
+    }
+  }
+
   return obj;
 }
 
-void ToolManager::getStandaloneFnContext(std::string const &fnName) {
-  primaryFn = findFnDeclByName(fnName);
+void ToolManager::getStandaloneFnContext(std::string const &fnName,
+                                         std::string mangledFnName) {
+  primaryFn = findFnDeclByName(fnName, mangledFnName);
   auto fnSrcFile = primaryFn->getRefFile();
   bool isCuda = fnSrcFile.substr(fnSrcFile.size() - 2, 2) == "cu";
   std::string filename = fnName + (isCuda ? ".cu" : ".cpp");
@@ -111,8 +139,9 @@ void ToolManager::getStandaloneFnContext(std::string const &fnName) {
   // Then compile
   // For now only get one compilation command
   auto cli = compDb->getCompileCommands(fnSrcFile)[0].CommandLine;
-  command = cli[0] + " -o " + objname + " " + filename + " " +
-            helper::getCompilationFlags(cli, {"-c", "-o", "--driver-mode=g++", "--"});
+  command =
+      cli[0] + " -o " + objname + " " + filename + " " +
+      helper::getCompilationFlags(cli, {"-c", "-o", "--driver-mode=g++", "--"});
   std::cout << "Compiling " << fnName << " with command:\n"
             << command << std::endl;
   if (system(command.c_str()) != 0) {

@@ -9,7 +9,38 @@
 #include "clang/AST/Decl.h"
 #include "clang/AST/DeclBase.h"
 #include "clang/AST/Mangle.h"
+#include "clang/ASTMatchers/ASTMatchFinder.h"
+#include "clang/ASTMatchers/ASTMatchers.h"
 #include "llvm/Support/raw_ostream.h"
+
+namespace helper {
+
+class LambdaCallback : public clang::ast_matchers::MatchFinder::MatchCallback {
+public:
+  clang::LambdaExpr const *lambdaExpr;
+
+  virtual void
+  run(const clang::ast_matchers::MatchFinder::MatchResult &Result) final {
+    if (auto lmbdExpr =
+            Result.Nodes.getNodeAs<clang::LambdaExpr>("lambdaExpr")) {
+      assert(lambdaExpr && "Should only match one lambda expression.");
+      lambdaExpr = lmbdExpr;
+    }
+  }
+};
+
+std::string getParamDeclAsString(std::string const &typeString,
+                                 std::string const &name,
+                                 std::string const &init = "") {
+  auto prefixEnd = std::min(typeString.find_last_of(')'), typeString.size());
+  std::string prefix = typeString.substr(0, prefixEnd);
+  std::string suffix = typeString.substr(prefixEnd);
+  std::string decl = prefix + " " + name + suffix;
+  if (!init.empty())
+    decl += " = " + init;
+  return decl + ";\n";
+}
+} // namespace helper
 
 void VisitManager::registerDecl(clang::NamedDecl const *decl) {
   declRefs.push_back(decl);
@@ -29,7 +60,7 @@ void VisitManager::registerDecl(clang::FunctionDecl const *decl) {
     return;
   if (auto tmpDecl = decl->getDescribedFunctionTemplate())
     declRefs.push_back(tmpDecl);
-  else 
+  else
     declRefs.push_back(decl);
 }
 
@@ -69,25 +100,64 @@ void VisitManager::markVisited(std::string name, ObjInfo const *objInfo) {
 
 void VisitManager::addToVisit(clang::Stmt *stmt) { toVisitNodes.push(stmt); }
 
-void VisitManager::getParamInstantiationsAsString(
-    clang::FunctionDecl const *fnDecl, std::vector<std::string> &params) {
+template <typename T>
+void VisitManager::fillParams(std::string const &prefix, T *begin, T *end) {
+  int idx = 0;
+  for (auto paramIt = begin; paramIt != end; paramIt++) {
+    clang::ValueDecl const *expr = nullptr;
+    std::string key = "p" + prefix + std::to_string(idx++);
+    if constexpr (std::is_same_v<T, clang::LambdaCapture const>) {
+      expr = paramIt->getCapturedVar();
+      // We nee to restore the captures with the same name, hence we do not
+      // follow the p<position> naming convention.
+      key = expr->getNameAsString();
+    } else {
+      expr = *paramIt;
+    }
+    auto type = expr->getType();
+    // If expression is lambda, save that...
+    if (type->hasUnnamedOrLocalType()) {
+      // Could possibly be lambda object,
+      // find underlying expression.
+      auto recordDecl = type->getAsCXXRecordDecl();
+
+      using namespace clang::ast_matchers;
+      StatementMatcher lmbdExpr =
+          lambdaExpr(hasType(asString(type.getAsString()))).bind("lambdaExpr");
+      MatchFinder finder;
+      helper::LambdaCallback callback;
+      finder.addMatcher(lmbdExpr, &callback);
+      finder.matchAST(recordDecl->getASTContext());
+
+      auto lmbExpr = callback.lambdaExpr;
+      assert(lmbExpr && "Could not find lambda expression!");
+
+      addToVisit(lmbExpr->getBody());
+      params_expr.push_back({key, lmbExpr});
+
+      fillParams(key, lmbExpr->capture_begin(), lmbExpr->capture_end());
+    } else {
+      expr->getNameAsString();
+      params_decl.push_back({key, expr});
+    }
+    /// FIXME: We can do more here, like also handling function pointers like we
+    /// do lambdas...
+  }
+}
+
+void VisitManager::registerParameterPrologue(ObjInfo *fnObj) {
+  auto specDecl = fnObj->getSpecialization();
+  clang::FunctionDecl *fnDecl = nullptr;
+  if (specDecl)
+    fnDecl = specDecl->getAsFunction();
+  else
+    fnDecl = fnObj->getDefiniton()->getAsFunction();
+
   auto numParams = fnDecl->getNumParams();
   if (!numParams)
     return;
 
-  // Typically we would want to find all function call to this method
-  // but for now we can just use types from functionDecl.
-  // Right now we only build the declarations, eventually we should be able to
-  // recreate the values...
-  /// TODO: this
-  for (int i = 0; i < numParams; i++) {
-    auto expr = fnDecl->parameters()[i];
-    std::string typeString = expr->getType().getCanonicalType().getAsString();
-    auto prefixEnd = std::min(typeString.find_last_of(')'), typeString.size());
-    std::string prefix = typeString.substr(0, prefixEnd);
-    std::string suffix = typeString.substr(prefixEnd);
-    params.push_back(prefix + " p" + std::to_string(i) + suffix + ";\n");
-  }
+  fillParams("", fnDecl->param_begin(), fnDecl->param_end());
 }
 
 void VisitManager::emitStandaloneFile(std::string &output,
@@ -106,7 +176,7 @@ void VisitManager::emitStandaloneFile(std::string &output,
       ss << "\"" << inc << "\"";
     ss << "\n\n";
   }
-  if (cudaKernel) 
+  if (cudaKernel)
     ss << "#include \"RRHooks.h\"\n\n";
 
   for (auto &tags : tagDecls) {
@@ -130,7 +200,8 @@ void VisitManager::emitStandaloneFile(std::string &output,
   if (cudaKernel) {
     // First add the prologue
     ss << "init_RR(";
-    ss << "\"" << clang::ASTNameGenerator(body->getASTContext()).getName(body) << "\"";
+    ss << "\"" << clang::ASTNameGenerator(body->getASTContext()).getName(body)
+       << "\"";
     ss << ", argc, argv);\n";
 
     // If we have a cuda kernel, we should add the config string...
@@ -142,12 +213,24 @@ void VisitManager::emitStandaloneFile(std::string &output,
        << "init_dims(\"Block\", block);\n";
   }
 
-  std::vector<std::string> paramVec;
-  getParamInstantiationsAsString(body, paramVec);
-  for (int i = 0; i < paramVec.size(); i++) {
-    ss << paramVec[i];
+  // Build parameter decl prologue
+  // First emit all params without any initializers.
+  for (auto &param : params_decl) {
+    auto paramVar = param.second;
+    auto paramName = param.first;
+    std::string typeString =
+        paramVar->getType().getCanonicalType().getAsString();
+    ss << helper::getParamDeclAsString(typeString, paramName);
     if (cudaKernel)
-      ss << "init_param(" << i << ", p" << i << ");\n";
+      ss << "init_param(" << paramName << ", " << paramName << ");\n";
+  }
+  // Then, without initializers...
+  for (auto &param : params_expr) {
+    std::string init;
+    llvm::raw_string_ostream stream(init);
+    param.second->printPretty(stream, nullptr, body->getLangOpts());
+    ss << helper::getParamDeclAsString("auto", param.first, init);
+    // No call for init_param for params with recorded init.
   }
 
   // Build function call
@@ -161,10 +244,10 @@ void VisitManager::emitStandaloneFile(std::string &output,
   if (paramCount < numParams)
     ss << "p" << paramCount;
   for (paramCount++; paramCount < numParams; paramCount++)
-    ss  << ", " << "p" << paramCount;
+    ss << ", " << "p" << paramCount;
   ss << ");\n";
 
-  if (cudaKernel) 
+  if (cudaKernel)
     ss << "verify_rr();\n";
 
   ss << "}\n";
@@ -172,12 +255,15 @@ void VisitManager::emitStandaloneFile(std::string &output,
 
 void VisitManager::pullPrimaryFnContext() {
   auto primaryDecl = primaryFn.getDefiniton()->getAsFunction();
+
+  MatchVisitor mv(*this, db);
+  mv.VisitParams(primaryDecl);
+  registerParameterPrologue(&primaryFn);
+
   addToVisit(primaryDecl->getBody());
   registerDecl(primaryDecl);
   markVisited(primaryFn.getName(), &primaryFn);
 
-  MatchVisitor mv(*this, db);
-  mv.VisitParms(primaryDecl);
   while (!toVisitNodes.empty()) {
     auto stmt = toVisitNodes.front();
     toVisitNodes.pop();

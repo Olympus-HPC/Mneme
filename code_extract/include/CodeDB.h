@@ -17,6 +17,9 @@ class ObjInfo {
   std::string const name;
   clang::Decl *decl;
   clang::Decl *def = nullptr;
+  // Track the spec decl as we need to know the correct instantiation to be able
+  // to infer param types and lambda uses.
+  clang::Decl *specDecl = nullptr;
   bool defInSameTU = false;
   // If this decl is external to the project, store its source file's name for
   // include'ing later.
@@ -30,9 +33,12 @@ public:
       : unit(astUnit), name(name), decl(mainDecl), def(defDecl),
         defInSameTU(defDecl) {}
   void addDefinitionDecl(clang::Decl *defDecl) { def = defDecl; }
+  void addSpecializationDecl(clang::Decl *decl) { specDecl = decl; }
 
   clang::Decl *getDefiniton() { return getDef(); }
   clang::Decl const *getDefiniton() const { return getDef(); }
+
+  clang::Decl *getSpecialization() { return specDecl; }
 
   bool isDefInSameTU() const { return defInSameTU; }
 
@@ -69,7 +75,7 @@ public:
   std::string const projPath;
 
   CodeDB(std::string const &projDir) : projPath(projDir) {}
-  
+
   bool isRegistered(std::string const &name) const {
     return db.find(name) != db.end();
   }

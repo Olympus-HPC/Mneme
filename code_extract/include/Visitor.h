@@ -38,5 +38,5 @@ public:
   bool VisitDeclRefExpr(clang::DeclRefExpr *decl);
   bool VisitCXXConstructExpr(clang::CXXConstructExpr *expr);
   // Custom Defined
-  void VisitParms(clang::FunctionDecl const *defDecl);
+  void VisitParams(clang::FunctionDecl const *defDecl);
 };
