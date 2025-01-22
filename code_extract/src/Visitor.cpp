@@ -9,28 +9,36 @@
 #include <type_traits>
 
 namespace helper {
-void addIncludeIfExternal(std::string const &name, clang::SourceLocation sloc,
-                          clang::ASTContext const &ctx, CodeDB &codedb) {
+std::string locToIncFile(clang::SourceLocation sloc,
+                         clang::ASTContext const &ctx) {
   auto declFile = sloc.printToString(ctx.getSourceManager());
-  declFile = declFile.substr(0, declFile.find_first_of(':'));
+  return declFile.substr(0, declFile.find_first_of(':'));
+}
 
+bool isIncludeExternal(std::string const &incFile, CodeDB const &codedb) {
   /// FIXME: For now we use a trick to figure out if the include is system-wide
   /// or local. Typically local includes will show up as relative paths in the
-  /// code's source location. Eventually we should make this check more robust
-  /// by checking against the current project path.
-  if (declFile[0] == '/' && declFile.find(codedb.projPath) == std::string::npos)
-    codedb.addExtSource(name, declFile);
+  /// code's source location. Eventually we should make this check more robust.
+  return incFile[0] == '/' &&
+         incFile.find(codedb.projPath) == std::string::npos;
 }
 
 bool checkPotentialInclude(clang::NamedDecl const *decl, VisitManager &vm,
                            CodeDB const &codedb) {
-  auto extFileName = codedb.getExtSource(decl->getQualifiedNameAsString());
-  return vm.registerInclude(extFileName);
+  auto incFile = locToIncFile(decl->getLocation(), decl->getASTContext());
+  if (isIncludeExternal(incFile, codedb))
+    return vm.registerInclude(incFile);
+  else
+    return false;
 }
 
 template <typename T>
 void storeDecl(T *decl, clang::ASTUnit const &unit, CodeDB &cdb,
                std::string name = "") {
+  // If location is external, dont store it
+  if (isIncludeExternal(locToIncFile(decl->getLocation(), unit.getASTContext()),
+                        cdb))
+    return;
   // Make use of compile-time polymorphism
   if (name.empty())
     name = decl->getQualifiedNameAsString();
@@ -42,8 +50,6 @@ void storeDecl(T *decl, clang::ASTUnit const &unit, CodeDB &cdb,
     if (defDecl)
       cdb.addDefinitionDecl(name, defDecl);
   }
-  addIncludeIfExternal(name, decl->getSourceRange().getBegin(),
-                       unit.getASTContext(), cdb);
 }
 
 template <typename T>
@@ -179,8 +185,6 @@ bool CodeExtractVisitor::VisitTypedefNameDecl(clang::TypedefNameDecl *decl) {
   if (codedb.isRegistered(name))
     return true;
   codedb.registerDecl(unit, name, decl, decl);
-  helper::addIncludeIfExternal(name, decl->getSourceRange().getBegin(),
-                               unit.getASTContext(), codedb);
   return true;
 }
 
