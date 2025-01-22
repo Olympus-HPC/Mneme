@@ -1,4 +1,5 @@
 #include "DeviceTraits.hpp"
+#include "MnemeJITProteus.hpp"
 #include "MnemeSnapshot.hpp"
 #include "MnemeSymbols.hpp"
 #include "Utils.hpp"
