@@ -71,6 +71,32 @@ template <> struct DeviceTraits<DeviceVendors::HIP> {
 
     return std::string(HipArch);
   }
+
+  static hipFunction_t getKernelFunctionFromImage(std::string &KernelName,
+                                                  const void *Image) {
+    hipModule_t HipModule;
+    hipFunction_t KernelFunc;
+
+    auto EC = DeviceErrorCheck(hipModuleLoadData(&HipModule, Image));
+    if (EC)
+      FATAL_ERROR("Error with loading data from module\nEC:" + EC.value());
+
+    EC = DeviceErrorCheck(
+        hipModuleGetFunction(&KernelFunc, HipModule, KernelName.c_str()));
+    if (EC)
+      FATAL_ERROR("Error with loading kernel from Module");
+
+    return KernelFunc;
+  }
+
+  static hipError_t launchKernelFunction(hipFunction_t KernelFunc, dim3 GridDim,
+                                         dim3 BlockDim, void **KernelArgs,
+                                         uint64_t ShmemSize,
+                                         hipStream_t Stream) {
+    return hipModuleLaunchKernel(KernelFunc, GridDim.x, GridDim.y, GridDim.z,
+                                 BlockDim.x, BlockDim.y, BlockDim.z, ShmemSize,
+                                 Stream, KernelArgs, nullptr);
+  }
 };
 #elif defined(ENABLE_CUDA)
 template <> struct DeviceTraits<DeviceVendors::HIP> {

@@ -184,7 +184,7 @@ public:
   }
 
   llvm::ArrayRef<std::string> getModules() const { return ModuleFileNames; }
-  std::string getKernelName() const { return KernelName; }
+  std::string &getKernelName() { return KernelName; }
   llvm::SmallVector<std::unique_ptr<llvm::Module>>
   loadModules(llvm::LLVMContext &Ctx) {
     llvm::SmallVector<std::unique_ptr<llvm::Module>> RecordedModules;

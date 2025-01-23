@@ -64,4 +64,6 @@ int main(int argc, char *argv[]) {
   SmallPtrSet<void *, 8> GlobalLinkedBinaries;
   auto DeviceObject =
       ProteusJIT::codegenObject(*Mod, Arch, GlobalLinkedBinaries);
+  auto Func = DeviceVendorTraits::getKernelFunctionFromImage(
+      RInstance.getKernelName(), DeviceObject->getBufferStart());
 }
