@@ -9,7 +9,7 @@ build_dir=build_${host}
 installDir="$(pwd)/install"
 
 if [[ ! -d "proteus" ]]; then
-  git clone git@github.com:Olympus-HPC/proteus.git
+  git clone  --branch mneme/integration git@github.com:Olympus-HPC/proteus.git
 fi
 
 
