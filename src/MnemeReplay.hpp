@@ -2,9 +2,15 @@
 #include "MnemeSnapshot.hpp"
 #include "MnemeSymbols.hpp"
 #include "Utils.hpp"
+#include <algorithm>
+#include <llvm/Bitcode/BitcodeReader.h>
+#include <llvm/IR/LLVMContext.h>
+#include <llvm/IR/Module.h>
+#include <llvm/Support/FileSystem.h>
 #include <llvm/Support/JSON.h>
 #include <llvm/Support/MemoryBuffer.h>
 #include <memory>
+#include <proteus/Utils.h>
 
 namespace mneme {
 template <typename MemBlobT, DeviceVendors VendorTypes> class ReplayMemState {
@@ -111,7 +117,7 @@ class ReplayInstance : public mneme::KernelInstance {
   std::string DemangledName;
   DeviceMemState PrologueState;
   DeviceMemState EpilogueState;
-  llvm::SmallVector<std::string> ModuleFiles;
+  llvm::SmallVector<std::string> ModuleFileNames;
 
 private:
   static dim3 getDim3(llvm::json::Object &Info, std::string key) {
@@ -156,7 +162,7 @@ public:
       if (!Module)
         FATAL_ERROR("Could not read Module value");
 
-      ModuleFiles.emplace_back(Module.value());
+      ModuleFileNames.emplace_back(Module.value());
     }
 
     auto Instances = JSONRoot->getObject("instances");
@@ -177,8 +183,29 @@ public:
                                    DeviceMemState::InstanceType::Epilogue);
   }
 
-  llvm::ArrayRef<std::string> getModules() const { return ModuleFiles; }
+  llvm::ArrayRef<std::string> getModules() const { return ModuleFileNames; }
   std::string getKernelName() const { return KernelName; }
+  llvm::SmallVector<std::unique_ptr<llvm::Module>>
+  loadModules(llvm::LLVMContext &Ctx) {
+    llvm::SmallVector<std::unique_ptr<llvm::Module>> RecordedModules;
+    for (auto &Fn : ModuleFileNames) {
+      llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> Buffer =
+          llvm::MemoryBuffer::getFile(Fn);
+      if (!Buffer)
+        FATAL_ERROR("Error with loading file " + Fn +
+                    "\n Error Code:" + Buffer.getError().message());
+
+      llvm::Expected<std::unique_ptr<llvm::Module>> ModuleOrErr =
+          llvm::parseBitcodeFile(Buffer->get()->getMemBufferRef(), Ctx);
+
+      if (!ModuleOrErr)
+        FATAL_ERROR("Error parsing bitcode: " +
+                    llvm::toString(ModuleOrErr.takeError()));
+
+      RecordedModules.emplace_back(std::move(ModuleOrErr.get()));
+    }
+    return RecordedModules;
+  }
 };
 
 } // namespace mneme
