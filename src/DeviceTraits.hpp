@@ -6,12 +6,18 @@ enum DeviceVendors { HIP, CUDA };
 
 template <DeviceVendors Type> struct DeviceTraits;
 
-#ifdef ENABLE_HIP
+#if defined(ENABLE_HIP)
 template <> struct DeviceTraits<DeviceVendors::HIP> {
   using DeviceError_t = hipError_t;
   using DeviceStream_t = hipStream_t;
   using KernelFunction_t = hipFunction_t;
   using MemoryAllocationHandle_t = hipMemGenericAllocationHandle_t;
+  using DeviceModule_t = hipModule_t;
+  using DevicePtr_t = hipDeviceptr_t;
+  using DeviceHandle_t = hipDevice_t;
+  using DeviceContext_t = hipCtx_t;
+  using DeviceFunction_t = hipFunction_t;
+  using DeviceEvent_t = hipEvent_t;
 
   static inline std::optional<std::string>
   DeviceErrorCheck(hipError_t ErrorCode) {
@@ -39,6 +45,31 @@ template <> struct DeviceTraits<DeviceVendors::HIP> {
   static hipError_t DeviceCopy(void *Dest, void *Src, size_t SizeBytes,
                                hipMemcpyKind Kind) {
     return hipMemcpy(Dest, Src, SizeBytes, Kind);
+  }
+
+  static std::string GetDeviceArch() {
+    DeviceHandle_t Dev;
+    DeviceContext_t Ctx;
+    auto EC = DeviceErrorCheck(hipInit(0));
+    if (EC)
+      FATAL_ERROR("Could not initialize device\n EC:" + EC.value());
+
+    EC = DeviceErrorCheck(hipGetDevice(&Dev));
+    if (EC)
+      FATAL_ERROR("Could not get device\n EC:" + EC.value());
+
+    hipDeviceProp_t device_prop;
+
+    // Get properties of the current device
+    EC = DeviceErrorCheck(hipGetDeviceProperties(&device_prop, Dev));
+    if (EC)
+      FATAL_ERROR("Could not get device properties\n EC:" + EC.value());
+
+    std::string arch_name = device_prop.gcnArchName;
+
+    std::string HipArch = arch_name.substr(0, arch_name.find(':'));
+
+    return std::string(HipArch);
   }
 };
 #elif defined(ENABLE_CUDA)

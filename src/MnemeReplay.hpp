@@ -206,6 +206,9 @@ public:
     }
     return RecordedModules;
   }
+
+  dim3 getRecordedGrid() const { return GridDim; }
+  dim3 getRecordedBlock() const { return BlockDim; }
 };
 
 } // namespace mneme

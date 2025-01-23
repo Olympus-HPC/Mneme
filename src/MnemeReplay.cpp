@@ -36,14 +36,32 @@ int main(int argc, char *argv[]) {
   std::cout << "Kernel JSON File is " << MnemeJson
             << " with Dynamic Hash value " << MnemeKernelHash << "\n";
 
+  auto Arch = DeviceVendorTraits::GetDeviceArch();
+  Logger::logs("mneme") << "Device Architecture is " << Arch << "\n";
+
   ReplayInstance<MnemeMemoryBlobDevice, Vendor> RInstance(MnemeJson,
                                                           MnemeKernelHash);
   llvm::LLVMContext Ctx;
-  auto Mod = ProteusJIT::linkJitModule(Ctx, RInstance.getModules());
-  interalize(Mod, RInstance.getKernelName());
-  auto F = Mod.getFunction(RInstance.getKernelName());
-  ProteusJIT::setLaunchBoundsForKernel(F);
-  ProteusJIT::cleanup(M);
-  ProteusJIT::optimizeIR(M);
-  auto DeviceObject = ProteusJIT::codegenObject(M);
+  auto Modules = RInstance.loadModules(Ctx);
+  auto Mod = ProteusJIT::linkJitModule(Ctx, Modules);
+  auto ReplayKernelFunc = Mod->getFunction(RInstance.getKernelName());
+  internalizeModule(*Mod, [&ReplayKernelFunc](const GlobalValue &GV) {
+    // Do not internalize the kernel function.
+    if (&GV == ReplayKernelFunc)
+      return true;
+
+    // Internalize everything else.
+    return false;
+  });
+
+  ProteusJIT::optimizeIR(*Mod, Arch);
+  auto RecordedGrid = RInstance.getRecordedGrid();
+  auto RecordedBlock = RInstance.getRecordedBlock();
+  ProteusJIT::setLaunchBoundsForKernel(
+      *Mod, *ReplayKernelFunc, RecordedGrid.x * RecordedGrid.y * RecordedGrid.z,
+      RecordedBlock.x * RecordedBlock.y * RecordedBlock.z);
+  ProteusJIT::runCleanupPassPipeline(*Mod);
+  SmallPtrSet<void *, 8> GlobalLinkedBinaries;
+  auto DeviceObject =
+      ProteusJIT::codegenObject(*Mod, Arch, GlobalLinkedBinaries);
 }
