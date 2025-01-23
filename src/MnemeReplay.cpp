@@ -1,6 +1,8 @@
+#include "MnemeJITProteus.hpp"
+#include "MnemeReplay.hpp"
+#include <llvm/IR/LLVMContext.h>
 #include <llvm/Support/CommandLine.h>
 
-#include "MnemeReplay.hpp"
 using namespace mneme;
 using namespace llvm;
 
@@ -36,4 +38,12 @@ int main(int argc, char *argv[]) {
 
   ReplayInstance<MnemeMemoryBlobDevice, Vendor> RInstance(MnemeJson,
                                                           MnemeKernelHash);
+  llvm::LLVMContext Ctx;
+  auto Mod = ProteusJIT::linkJitModule(Ctx, RInstance.getModules());
+  interalize(Mod, RInstance.getKernelName());
+  auto F = Mod.getFunction(RInstance.getKernelName());
+  ProteusJIT::setLaunchBoundsForKernel(F);
+  ProteusJIT::cleanup(M);
+  ProteusJIT::optimizeIR(M);
+  auto DeviceObject = ProteusJIT::codegenObject(M);
 }

@@ -1,5 +1,4 @@
 #include "DeviceTraits.hpp"
-#include "MnemeJITProteus.hpp"
 #include "MnemeSnapshot.hpp"
 #include "MnemeSymbols.hpp"
 #include "Utils.hpp"
@@ -177,6 +176,9 @@ public:
     EpilogueState = DeviceMemState(KernelName, EpilogueFn,
                                    DeviceMemState::InstanceType::Epilogue);
   }
+
+  llvm::ArrayRef<std::string> getModules() const { return ModuleFiles; }
+  std::string getKernelName() const { return KernelName; }
 };
 
 } // namespace mneme
