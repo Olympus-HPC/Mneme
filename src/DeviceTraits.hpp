@@ -72,16 +72,31 @@ template <> struct DeviceTraits<DeviceVendors::HIP> {
     return std::string(HipArch);
   }
 
-  static hipFunction_t getKernelFunctionFromImage(std::string &KernelName,
-                                                  const void *Image) {
+  static hipModule_t getDeviceModuleFromImage(const void *Image) {
     hipModule_t HipModule;
-    hipFunction_t KernelFunc;
 
     auto EC = DeviceErrorCheck(hipModuleLoadData(&HipModule, Image));
     if (EC)
       FATAL_ERROR("Error with loading data from module\nEC:" + EC.value());
+    return HipModule;
+  }
 
-    EC = DeviceErrorCheck(
+  static std::pair<void *, size_t>
+  getGlobalAddrFromModule(hipModule_t &HipModule, std::string &GlobalName) {
+    size_t Size;
+    hipDeviceptr_t DevPtr;
+    auto EC = DeviceErrorCheck(
+        hipModuleGetGlobal(&DevPtr, &Size, HipModule, GlobalName.c_str()));
+    if (EC)
+      FATAL_ERROR("Could not load global variable '" + GlobalName +
+                  "' from device module\n:EC:" + EC.value());
+    return std::make_pair((void *)DevPtr, Size);
+  }
+
+  static hipFunction_t getKernelFunctionFromImage(hipModule_t &HipModule,
+                                                  std::string &KernelName) {
+    hipFunction_t KernelFunc;
+    auto EC = DeviceErrorCheck(
         hipModuleGetFunction(&KernelFunc, HipModule, KernelName.c_str()));
     if (EC)
       FATAL_ERROR("Error with loading kernel from Module");

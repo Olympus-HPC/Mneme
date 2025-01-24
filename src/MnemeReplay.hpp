@@ -113,6 +113,7 @@ public:
 template <typename MemBlobT, DeviceVendors VendorTypes>
 class ReplayInstance : public mneme::KernelInstance {
   using DeviceMemState = ReplayMemState<MemBlobT, VendorTypes>;
+  using DeviceModule_t = typename DeviceTraits<VendorTypes>::DeviceModule_t;
   std::string KernelName;
   std::string DemangledName;
   DeviceMemState PrologueState;
@@ -209,6 +210,27 @@ public:
 
   dim3 getRecordedGrid() const { return GridDim; }
   dim3 getRecordedBlock() const { return BlockDim; }
+
+  void initializeGlobals(DeviceModule_t VendorMod) {
+    for (auto &KV : PrologueState.GlobalVars) {
+      auto [LoadedAddr, LoadedSize] =
+          DeviceTraits<VendorTypes>::getGlobalAddrFromModule(VendorMod,
+                                                             KV.first);
+      if (KV.second.DevAddr != LoadedAddr) {
+        FATAL_ERROR(
+            "Global :" + KV.first +
+            " was loaded on different address between record and replay\n" +
+            "Record Address:" + util::pointerToHexString(KV.second.DevAddr) +
+            "\n" + "Replay Address:" + util::pointerToHexString(LoadedAddr));
+      }
+
+      if (KV.second.VarSize != LoadedSize)
+        FATAL_ERROR("Global :" + KV.first +
+                    "has a different size between record and replay\n" +
+                    "Record Size:" + std::to_string(KV.second.VarSize) +
+                    "\nReplay Size:" + std::to_string(LoadedSize));
+    }
+  }
 };
 
 } // namespace mneme
