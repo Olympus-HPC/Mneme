@@ -229,6 +229,16 @@ public:
                     "has a different size between record and replay\n" +
                     "Record Size:" + std::to_string(KV.second.VarSize) +
                     "\nReplay Size:" + std::to_string(LoadedSize));
+
+      auto EC = DeviceTraits<VendorTypes>::DeviceErrorCheck(
+          DeviceTraits<VendorTypes>::DeviceCopy(
+              KV.second.DevAddr, KV.second.HostAddr.get(), KV.second.VarSize,
+              DeviceTraits<VendorTypes>::MemcpyHostToDeviceKind()));
+      if (EC)
+        FATAL_ERROR("Copying Global :" + KV.first +
+                    " from host to device raised error\nEC: " + EC.value());
+      DBG(Logger::logs("mneme")
+          << "Successfully loaded global variable " << KV.first << "\n");
     }
   }
 };

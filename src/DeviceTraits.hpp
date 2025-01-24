@@ -34,8 +34,6 @@ template <> struct DeviceTraits<DeviceVendors::HIP> {
     return hipMalloc(ptr, size);
   }
 
-  static hipError_t DeviceMemcpy();
-
   static hipError_t DeviceFree(void *ptr) { return hipFree(ptr); }
 
   static constexpr hipMemcpyKind MemcpyHostToDeviceKind() {

@@ -26,8 +26,8 @@ add_executable(vecAdd vec_add.cu)
 # Get the full path of the LLVM pass plugin (MyLLVMPass)
 
 set_source_files_properties(vec_add.cu PROPERTIES LANGUAGE ${DEVICE_LANGUAGE})
-
-
+set(RRPassPath ${RR_Dir}/pass/libRRPass.so)
+message(STATUS "Pass is ${RRPassPath}")
 
 if (ENABLE_CUDA)
 target_link_libraries(vecAdd PRIVATE CUDA::cudart)
@@ -35,3 +35,10 @@ elseif(ENABLE_HIP)
   target_include_directories(vecAdd PRIVATE ${HIP_INCLUDE_DIRS})
 target_link_libraries(vecAdd PRIVATE hip::host)
 endif()
+
+target_compile_options(
+ vecAdd
+      PUBLIC
+      $<$<COMPILE_LANGUAGE:HIP>:-fpass-plugin=${RRPassPath}>
+    ) 
+

@@ -14,17 +14,7 @@
 
 #define CONCATENATE_DETAIL(prefix, call) prefix##call
 #define CONCATENATE(prefix, call) CONCATENATE_DETAIL(prefix, call)
-#define PREFIX(call) CONCATENATE(DEVICE_PREFIX, call)
-
-#define DeviceRTErrCheck(CALL)                                                 \
-  {                                                                            \
-    PREFIX(Error_t) err = CALL;                                                \
-    if (err != PREFIX(Success)) {                                              \
-      printf("ERROR @ %s:%d ->  %s\n", __FILE__, __LINE__,                     \
-             PREFIX(GetErrorString(err)));                                     \
-      abort();                                                                 \
-    }                                                                          \
-  }
+#define device_rt_call(call) CONCATENATE(DEVICE_PREFIX, call)
 
 template <typename T> __global__ 
 void vecAdd_test(T *in, T *out, size_t size) {
@@ -40,27 +30,28 @@ void vecAdd_test(T *in, T *out, size_t size) {
 
 int main(int argc, const char *argv[]) {
   void *deviceAddress;
+
   size_t numElements = atoi(argv[1]);
   double *in, *out;
   double val = numElements;
-  DeviceRTErrCheck(PREFIX(Malloc)((void **)&in, numElements * sizeof(double)));
-  DeviceRTErrCheck(PREFIX(Malloc)((void **)&out, numElements * sizeof(double)));
+  device_rt_call(Malloc)((void **)&in, numElements * sizeof(double));
+  device_rt_call(Malloc)((void **)&out, numElements * sizeof(double));
   std::cout << "In : " << in << " Out " << out << "\n";
 
   for (int i = 0; i < 10 ; i++){
-    DeviceRTErrCheck(PREFIX(Memset)(in, 0, numElements * sizeof(double)));
-    DeviceRTErrCheck(PREFIX(Memset)(out, 0, numElements * sizeof(double)));
+    device_rt_call(Memset)(in, 0, numElements * sizeof(double));
+    device_rt_call(Memset)(out, 0, numElements * sizeof(double));
 
     const int threads = 256;
     int num_blocks = (numElements + threads - 1) / threads;
     vecAdd_test<<< num_blocks, threads>>>(in, out, numElements);
-    DeviceRTErrCheck(PREFIX(DeviceSynchronize)());
+    device_rt_call(DeviceSynchronize)();
   }
 
   double *h_in = new double[numElements];
   double *h_out = new double[numElements];
-  DeviceRTErrCheck(PREFIX(Memcpy)(h_in, in, sizeof(double)*numElements, PREFIX(MemcpyDeviceToHost)));
-  DeviceRTErrCheck(PREFIX(Memcpy)(h_out, out, sizeof(double)*numElements, PREFIX(MemcpyDeviceToHost)));
+  device_rt_call(Memcpy)(h_in, in, sizeof(double)*numElements, device_rt_call(MemcpyDeviceToHost));
+  device_rt_call(Memcpy)(h_out, out, sizeof(double)*numElements, device_rt_call(MemcpyDeviceToHost));
   for (int i = 0; i < numElements; i++){
     if (h_in[i] + i != h_out[i]){
       std::cout << "Values at " << i << " differ\n";
@@ -71,7 +62,7 @@ int main(int argc, const char *argv[]) {
   
   delete [] h_in;
   delete [] h_out;
-  DeviceRTErrCheck(PREFIX(Free)(in));
-  DeviceRTErrCheck(PREFIX(Free)(out));
+  device_rt_call(Free)(in);
+  device_rt_call(Free)(out);
   return 0;
 }

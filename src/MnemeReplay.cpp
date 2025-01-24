@@ -66,7 +66,8 @@ int main(int argc, char *argv[]) {
       ProteusJIT::codegenObject(*Mod, Arch, GlobalLinkedBinaries);
   auto VendorModule = DeviceVendorTraits::getDeviceModuleFromImage(
       DeviceObject->getBufferStart());
-  auto Globals = DeviceVendorTraits::getDeviceGlobals(VendorModule);
+
+  RInstance.initializeGlobals(VendorModule);
 
   auto Func = DeviceVendorTraits::getKernelFunctionFromImage(
       VendorModule, RInstance.getKernelName());
