@@ -31,11 +31,11 @@ private:
   void loadPrologueMemory() {
     for (auto &[DevAddr, MemBlob] : DeviceMemoryState) {
       auto EC = DeviceTraits<VendorTypes>::DeviceErrorCheck(
-          MemBlob.allocate(DevAddr, MemBlob.Size));
+          MemBlob.allocate(DevAddr, MemBlob.getSize()));
       if (EC)
         FATAL_ERROR("Error raised during mapping prologue memeory:" + EC.get());
 
-      if (DevAddr != MemBlob.BlobAddr)
+      if (DevAddr != reinterpret_cast<void *>(MemBlob.getBlobAddr()))
         FATAL_ERROR("Could not map Record Address " +
                     util::pointerToHexString(DevAddr) +
                     " instead ReplayInstance got " +
@@ -72,37 +72,7 @@ public:
         << (IType == InstanceType::Prologue ? "Prologue" : "Epilogue") << "\n");
   }
 
-  void load(llvm::DenseMap<std::string, void *> LoadedGlobals) {
-    // On replay, we first need to verify that the module's loaded globals
-    // reside at the same address as the ones at replay time.
-    for (auto &[GlobalName, GlobalDeviceAddress] : LoadedGlobals) {
-      auto it = GlobalVars.find(GlobalName);
-      if (it == GlobalVars.end())
-        FATAL_ERROR("Cannot find global " + GlobalName +
-                    " in persistent snapshot");
-      auto &RecordedGlobal = it->second;
-      if (RecordedGlobal.DevAddr != GlobalDeviceAddress)
-        Logger::warn() << " Replay Global Address (" << std::hex
-                       << GlobalDeviceAddress << std::dec
-                       << ") differs than recorded address (" << std::hex
-                       << RecordedGlobal.DevAddr
-                       << ") ... \n This can result in incorrect execution. "
-                          "Check verification\n";
-
-      // Globals are not loaded in the case of Epilogue instances.
-      // We will verify the values of the globals, after kernel execution.
-      // But there is no case that we cannot reach the epilogue state
-      if (IType == InstanceType::Epilogue)
-        continue;
-
-      auto Res =
-          DeviceTraits<VendorTypes>::DeviceErrorCheck(MemBlobT::DeviceCopy(
-              GlobalDeviceAddress, RecordedGlobal.HostAddr,
-              RecordedGlobal.VarSize, MemBlobT::MemcpyHostToDeviceKind()));
-      if (Res)
-        FATAL_ERROR("Could not copy Global " + GlobalName + " to device ");
-    }
-
+  void load() {
     if (IType == InstanceType::Prologue)
       loadPrologueMemory();
     else
@@ -241,6 +211,8 @@ public:
           << "Successfully loaded global variable " << KV.first << "\n");
     }
   }
+
+  void initializeDeviceMemory() { PrologueState.load(); }
 };
 
 } // namespace mneme

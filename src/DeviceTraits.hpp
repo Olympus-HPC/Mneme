@@ -18,6 +18,7 @@ template <> struct DeviceTraits<DeviceVendors::HIP> {
   using DeviceContext_t = hipCtx_t;
   using DeviceFunction_t = hipFunction_t;
   using DeviceEvent_t = hipEvent_t;
+  static constexpr auto DeviceSuccess = hipSuccess;
 
   static inline std::optional<std::string>
   DeviceErrorCheck(hipError_t ErrorCode) {

@@ -33,6 +33,8 @@ int main(int argc, char *argv[]) {
   cl::HideUnrelatedOptions(MnemeCategory);
   cl::ParseCommandLineOptions(argc, argv, "GPU Replay Tool\n");
 
+  ProteusJIT::InitLLVM();
+
   std::cout << "Kernel JSON File is " << MnemeJson
             << " with Dynamic Hash value " << MnemeKernelHash << "\n";
 
@@ -67,6 +69,7 @@ int main(int argc, char *argv[]) {
   auto VendorModule = DeviceVendorTraits::getDeviceModuleFromImage(
       DeviceObject->getBufferStart());
 
+  RInstance.initializeDeviceMemory();
   RInstance.initializeGlobals(VendorModule);
 
   auto Func = DeviceVendorTraits::getKernelFunctionFromImage(

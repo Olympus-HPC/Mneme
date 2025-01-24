@@ -147,6 +147,7 @@ operator<<(llvm::raw_ostream &OS,
                         sizeof(Blob.Size));
   OS << llvm::StringRef(reinterpret_cast<const char *>(&Blob.BlobAddr),
                         sizeof(Blob.BlobAddr));
+
   DBG(Logger::logs("mneme")
       << "Serializing a memory blob of size " << Blob.Size
       << " of  device address " << std::hex << (void *)Blob.BlobAddr << std::dec

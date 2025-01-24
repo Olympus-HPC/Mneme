@@ -16,6 +16,8 @@
 #define CONCATENATE(prefix, call) CONCATENATE_DETAIL(prefix, call)
 #define device_rt_call(call) CONCATENATE(DEVICE_PREFIX, call)
 
+__device__ int some_value = 1.0;
+
 template <typename T> __global__ 
 void vecAdd_test(T *in, T *out, size_t size) {
   auto tid = threadIdx.x + blockIdx.x * blockDim.x;
@@ -24,12 +26,18 @@ void vecAdd_test(T *in, T *out, size_t size) {
   auto stride = gridDim.x * blockDim.x;
 
   for (; tid < size; tid += stride) {
-    out[tid] += in[tid] + tid;
+    out[tid] += in[tid] + tid + some_value;
   }
 }
 
 int main(int argc, const char *argv[]) {
-  void *deviceAddress;
+
+      void* deviceAddress = nullptr;
+
+    // Get the address of the device variable
+    hipError_t err = hipGetSymbolAddress(&deviceAddress, HIP_SYMBOL(some_value));
+    std::cout << "Device address of deviceVar: " << deviceAddress << std::endl;
+
 
   size_t numElements = atoi(argv[1]);
   double *in, *out;
