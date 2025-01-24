@@ -35,10 +35,16 @@ bool checkPotentialInclude(clang::NamedDecl const *decl, VisitManager &vm,
 template <typename T>
 void storeDecl(T *decl, clang::ASTUnit const &unit, CodeDB &cdb,
                std::string name = "") {
-  // If location is external, dont store it
-  if (isIncludeExternal(locToIncFile(decl->getLocation(), unit.getASTContext()),
-                        cdb))
+  std::string srcDeclFile =
+      locToIncFile(decl->getLocation(), unit.getASTContext());
+  constexpr bool isFunctionDecl = std::is_same_v<T, clang::FunctionDecl>;
+  bool isExternal = isIncludeExternal(srcDeclFile, cdb);
+  // If location is external but not a function decl, dont store it
+  // We need to store external function decls as they may be requested for
+  // extraction.
+  if (isExternal && !isFunctionDecl)
     return;
+
   // Make use of compile-time polymorphism
   if (name.empty())
     name = decl->getQualifiedNameAsString();
@@ -50,6 +56,9 @@ void storeDecl(T *decl, clang::ASTUnit const &unit, CodeDB &cdb,
     if (defDecl)
       cdb.addDefinitionDecl(name, defDecl);
   }
+
+  if (isExternal)
+    cdb.addExtSource(name, srcDeclFile);
 }
 
 template <typename T>

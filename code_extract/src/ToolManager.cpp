@@ -8,6 +8,7 @@
 #include <fstream>
 #include <iostream>
 #include <memory>
+#include <regex>
 #include <unordered_set>
 
 namespace ct = clang::tooling;
@@ -83,21 +84,34 @@ ObjInfo *ToolManager::findFnDeclByName(std::string const &fnName,
       std::cerr << "Extraction of function template " << fnName
                 << " requested without specifying specialization to pull. "
                 << "Please specify the mangled name of the specialization you "
-                   "wish to extract."
+                   "wish to extract. Or present a non empty string to view the "
+                   "list of reachable specializations."
                 << std::endl;
       exit(1);
     }
     clang::Decl *specDecl = nullptr;
+    std::string candidates;
     for (auto it = tmpDecl->spec_begin(); it != tmpDecl->spec_end(); it++) {
-      if (mangledName == astNameGen.getName(*it)) {
+      auto itName = astNameGen.getName(*it);
+      if (mangledName == itName) {
         specDecl = *it;
         obj->addSpecializationDecl(specDecl);
         break;
       }
+      candidates += "Mangled name: " + itName + "\n";
     }
     if (!specDecl) {
       std::cerr << "Could not find specialization for " << fnName
                 << " with mangled name " << mangledName << "!" << std::endl;
+      if (candidates.empty()) {
+        std::cerr << "No candidates to report! Are you sure this function "
+                     "template is being instantiated in the project scope?"
+                  << std::endl;
+      } else {
+        std::cerr << "\nSpecializations found for " << fnName << ":\n"
+                  << candidates << "\n"
+                  << std::endl;
+      }
       exit(1);
     }
   }
@@ -110,8 +124,10 @@ void ToolManager::getStandaloneFnContext(std::string const &fnName,
   primaryFn = findFnDeclByName(fnName, mangledFnName);
   auto fnSrcFile = primaryFn->getRefFile();
   bool isCuda = fnSrcFile.substr(fnSrcFile.size() - 2, 2) == "cu";
-  std::string filename = fnName + (isCuda ? ".cu" : ".cpp");
-  std::string objname = fnName + ".o";
+
+  std::string filename = std::regex_replace(fnName, std::regex("[^\\w]"), "_");
+  std::string objname = filename + ".o";
+  filename += (isCuda ? ".cu" : ".cpp");
 
   VisitManager mv(*primaryFn, *db.get());
 

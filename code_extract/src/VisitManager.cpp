@@ -234,7 +234,7 @@ void VisitManager::emitStandaloneFile(std::string &output,
   }
 
   // Build function call
-  ss << body->getNameAsString();
+  ss << body->getQualifiedNameAsString();
   if (cudaKernel)
     ss << "<<<grid, block>>>";
 
@@ -260,8 +260,13 @@ void VisitManager::pullPrimaryFnContext() {
   mv.VisitParams(primaryDecl);
   registerParameterPrologue(&primaryFn);
 
-  addToVisit(primaryDecl->getBody());
-  registerDecl(primaryDecl);
+  auto extSource = primaryFn.getExtSourceFile();
+  if (extSource.empty()) {
+    addToVisit(primaryDecl->getBody());
+    registerDecl(primaryDecl);
+  } else {
+    registerInclude(extSource);
+  }
   markVisited(primaryFn.getName(), &primaryFn);
 
   while (!toVisitNodes.empty()) {
