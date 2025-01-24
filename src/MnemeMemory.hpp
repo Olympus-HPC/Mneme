@@ -103,7 +103,7 @@ public:
 
   MnemeMemoryBlob &operator=(MnemeMemoryBlob &&other) noexcept {
     if (this != &other) {
-      MemHandle = other.MHandle;
+      MemHandle = other.MemHandle;
       BlobAddr = other.BlobAddr;
       Size = other.Size;
       ActualSize = other.ActualSize;

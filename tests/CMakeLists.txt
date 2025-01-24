@@ -84,3 +84,4 @@
 #set_tests_properties("test_rdc_device.${lang}" PROPERTIES WILL_FAIL TRUE)
 #
 add_subdirectory(unit_tests)
+add_subdirectory(memory)

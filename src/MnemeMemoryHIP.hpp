@@ -27,7 +27,6 @@ private:
     // Prop.allocFlags.compressionType = CU_MEM_ALLOCATION_COMP_GENERIC;
 
     hipErrCheck(hipMemGetAllocationGranularity(&PageSize, &Prop, Granularity));
-    DBG(Logger::logs("mneme") << "Page Size is : " << PageSize << "\n";)
     return PageSize;
   }
 
@@ -76,10 +75,8 @@ public:
 
     hipErrCheck(hipMemAddressReserve(&devPtr, Size, Alignment,
                                      reinterpret_cast<hipDeviceptr_t>(VA), 0));
-    DBG(Logger::logs("mneme")
-        << "Allocated VASize "
-        << (double)((double)Size / (1024L * 1024L * 1024L)) << " at Address "
-        << std::hex << devPtr << std::dec << "\n");
+    DBG(Logger::logs("mneme") << "Allocated VASize " << Size << " at Address "
+                              << std::hex << devPtr << std::dec << "\n");
     return (void *)devPtr;
   }
 
