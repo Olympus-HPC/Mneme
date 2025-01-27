@@ -38,14 +38,16 @@ public:
       : ActualSize(ActualSize), BlobAddr(BlobAddr), Size(Size), DeviceID(0),
         HostData(nullptr), IsMapped(false) {}
 
-  hipError_t allocate(void *VA, uintptr_t Size, int DeviceID = 0) {
+  hipError_t allocate(void *VA, uint64_t ActualSize, uint64_t Size,
+                      int DeviceID = 0) {
     this->Size = Size;
     this->DeviceID = DeviceID;
     // We need to pass here "ActualSize". As device allocators depend on page
     // aligned allocations
-    MnemeDeviceRT::mmap(MemHandle, VA, Size, DeviceID);
+    MnemeDeviceRT::mmap(MemHandle, VA, ActualSize, DeviceID);
     this->BlobAddr = VA;
     this->IsMapped = true;
+    this->ActualSize = ActualSize;
 
     HostData = std::unique_ptr<uint8_t[]>(new uint8_t[Size]);
     std::cout << "Allocated Device Address at "

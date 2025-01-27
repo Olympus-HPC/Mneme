@@ -169,6 +169,8 @@ template <> struct DeviceTraits<DeviceVendors::HIP> {
 
   static void unmap(hipMemGenericAllocationHandle_t &MHandle, void *Addr,
                     uintptr_t Size) {
+    DBG(Logger::logs("mneme") << "Releasing memory at addr" << std::hex << Addr
+                              << std::dec << " with size " << Size << "\n");
     hipErrCheck(hipMemUnmap(Addr, Size));
     hipErrCheck(hipMemRelease(MHandle));
   }
