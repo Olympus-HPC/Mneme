@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Logger.hpp"
+#include "MnemePageManager.hpp"
 #include "Utils.hpp"
 #include <assert.h>
 #include <cstddef>
@@ -31,8 +32,7 @@ struct FatBinaryWrapper_t {
   void **PrelinkedFatBins;
 };
 
-template <typename ImplT, typename MemBlobT, DeviceVendors VendorTypes>
-class MnemeRecorder {
+template <typename ImplT, DeviceVendors VendorTypes> class MnemeRecorder {
 protected:
   void *rtLib;
   std::string RecordReplayDir;
@@ -42,12 +42,17 @@ protected:
   llvm::DenseMap<const void *, std::shared_ptr<KernelInfo>> KernelInfoMap;
   llvm::DenseMap<void **, llvm::SmallVector<GlobalVarInfo>>
       HandleToGlobalSymbol;
-  llvm::DenseMap<void *, MemBlobT> AllocatedBlobs;
+  llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> AllocatedBlobs;
+
+  std::unique_ptr<PageManager> PM;
+  void *VAStartAddr;
+  int64_t VATotalSize;
 
 public:
-  using DeviceError_t = typename DeviceTraits<VendorTypes>::DeviceError_t;
-  using DeviceStream_t = typename DeviceTraits<VendorTypes>::DeviceStream_t;
-  using KernelFunction_t = typename DeviceTraits<VendorTypes>::KernelFunction_t;
+  using MnemeDeviceRT = DeviceTraits<VendorTypes>;
+  using DeviceError_t = typename MnemeDeviceRT::DeviceError_t;
+  using DeviceStream_t = typename MnemeDeviceRT::DeviceStream_t;
+  using KernelFunction_t = typename MnemeDeviceRT::KernelFunction_t;
 
 private:
   bool ExtractedIR;
@@ -185,6 +190,10 @@ public:
   }
 
   DeviceError_t rtFree(void *ptr) {
+    if (VATotalSize == 0) {
+      auto MinPageSize = MemImplT::getMinPageSize(DeviceID);
+    }
+
     if (!AllocatedBlobs.contains(ptr))
       FATAL_ERROR("Free address that is not being allocated through Mneme\n");
     auto ret = AllocatedBlobs[ptr].release();
@@ -266,6 +275,8 @@ public:
   }
 
   MnemeRecorder() : ExtractedIR(true) {
+    VAStartAddr = nullptr;
+    VATotalSize = 0;
     rtLib = ImplT::getRTLib();
     RecordReplayDir = DB.getDir();
     // MemManager = nullptr;

@@ -14,13 +14,14 @@
 #include "Utils.hpp"
 
 namespace mneme {
-template <typename MemImplT, DeviceVendors VendorTypes> class MnemeMemoryBlob {
+template <DeviceVendors VendorTypes> class MnemeMemoryBlob {
 public:
-  using DeviceError_t = typename DeviceTraits<VendorTypes>::DeviceError_t;
-  using DeviceStream_t = typename DeviceTraits<VendorTypes>::DeviceStream_t;
-  using KernelFunction_t = typename DeviceTraits<VendorTypes>::KernelFunction_t;
+  using MnemeDeviceRT = DeviceTraits<VendorTypes>;
+  using DeviceError_t = typename MnemeDeviceRT::DeviceError_t;
+  using DeviceStream_t = typename MnemeDeviceRT::DeviceStream_t;
+  using KernelFunction_t = typename MnemeDeviceRT::KernelFunction_t;
   using MemoryAllocationHandle_t =
-      typename DeviceTraits<VendorTypes>::MemoryAllocationHandle_t;
+      typename MnemeDeviceRT::MemoryAllocationHandle_t;
 
 protected:
   uint64_t ActualSize;
@@ -40,16 +41,15 @@ public:
   hipError_t allocate(void *Addr, uintptr_t Size, int DeviceID = 0) {
     this->Size = Size;
     this->DeviceID = DeviceID;
-    auto MinPageSize = MemImplT::getMinPageSize(DeviceID);
+    auto MinPageSize = MnemeDeviceRT::getMinPageSize(DeviceID);
     this->ActualSize = util::roundUp(Size, MinPageSize);
-    void *VA = static_cast<MemImplT &>(*this).getVirtualAddress(
-        ActualSize, Addr, MinPageSize);
+    void *VA = MnemeDeviceRT::getVirtualAddress(ActualSize, Addr, MinPageSize);
     DBG(Logger::logs("mneme") << "Requested Addr: " << std::hex << Addr
                               << std::dec << " Reserved Addr: " << VA << "\n");
 
     // We need to pass here "ActualSize". As device allocators depend on page
     // aligned allocations
-    static_cast<MemImplT &>(*this).mmap(MemHandle, VA, ActualSize, DeviceID);
+    MnemeDeviceRT::mmap(MemHandle, VA, ActualSize, DeviceID);
     this->BlobAddr = VA;
     this->IsMapped = true;
 
@@ -64,7 +64,7 @@ public:
     if (!BlobAddr)
       return hipSuccess;
     if (IsMapped)
-      static_cast<MemImplT &>(*this).unmap(MemHandle, BlobAddr, ActualSize);
+      MnemeDeviceRT::unmap(MemHandle, BlobAddr, ActualSize);
     BlobAddr = 0;
     return hipSuccess;
   }
@@ -124,10 +124,9 @@ public:
     other.HostData = nullptr;
   }
 
-  template <typename MemImplT_, DeviceVendors VendorTypes_>
+  template <DeviceVendors VendorTypes_>
   friend llvm::raw_ostream &
-  operator<<(llvm::raw_ostream &OS,
-             const MnemeMemoryBlob<MemImplT_, VendorTypes_> &Blob);
+  operator<<(llvm::raw_ostream &OS, const MnemeMemoryBlob<VendorTypes_> &Blob);
 
   void *getBlobAddr() const { return BlobAddr; }
   uint64_t getActualSize() const { return ActualSize; }
@@ -135,10 +134,9 @@ public:
   const std::unique_ptr<uint8_t[]> &getHostData() const { return HostData; }
 };
 
-template <typename MemImplT, DeviceVendors VendorTypes>
-llvm::raw_ostream &
-operator<<(llvm::raw_ostream &OS,
-           const MnemeMemoryBlob<MemImplT, VendorTypes> &Blob) {
+template <DeviceVendors VendorTypes>
+llvm::raw_ostream &operator<<(llvm::raw_ostream &OS,
+                              const MnemeMemoryBlob<VendorTypes> &Blob) {
   // The format in the binary is the following:
   // | Var-Name-Size | Var-Name | Var-Size | Device Address | Var Data |
   OS << llvm::StringRef(reinterpret_cast<const char *>(&Blob.ActualSize),

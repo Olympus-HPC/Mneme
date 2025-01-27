@@ -1,3 +1,4 @@
+#include "Logger.hpp"
 #include "MnemePageManager.hpp"
 #include "Utils.hpp"
 #include <cstdint>
@@ -59,7 +60,7 @@ PageManager::findFreeBlock(size_t requestedSize) {
 }
 
 std::pair<uintptr_t, uint64_t>
-PageManager::ReserveBestFitPage(uint64_t VASize) {
+PageManager::reserveBestFitPage(uint64_t VASize) {
   // We need to always reserve at least a single page
   uint64_t ReqSize = util::roundUp(VASize, PageSize);
   auto FreeNode = findFreeBlock(ReqSize);
@@ -87,11 +88,24 @@ PageManager::ReserveBestFitPage(uint64_t VASize) {
   return std::make_pair(Ptr, ReqSize);
 }
 
-std::pair<uintptr_t, uint64_t> PageManager::RequestExactPage(uint64_t VASize,
+std::multiset<ContiguousAddrBlock>::iterator
+PageManager::findInclusivePage(uintptr_t Addr, size_t Size) {
+  uintptr_t request_end = Addr + Size;
+  for (auto it = FreeVARanges.begin(); it != FreeVARanges.end(); ++it) {
+    uintptr_t block_end = it->PageAddr + it->Size;
+    if (it->PageAddr <= Addr && block_end >= request_end) {
+      return it;
+    }
+  }
+  return FreeVARanges.end();
+}
+
+std::pair<uintptr_t, uint64_t> PageManager::requestExactPage(uint64_t VASize,
                                                              void *VA) {
   // We need to always reserve at least a single page
-  DEBUG(std::cout << "Requesting exact page at address:" << VA << "\n";)
-  uint64_t ReqSize = util::RoundUp(VASize, PageSize);
+  DBG(Logger::logs("mneme")
+      << "Requesting exact page at address:" << VA << "\n");
+  uint64_t ReqSize = util::roundUp(VASize, PageSize);
   auto FreeNode = findInclusivePage((uintptr_t)VA, ReqSize);
   if (FreeNode == FreeVARanges.end())
     return std::make_pair((uintptr_t) nullptr, 0);
@@ -99,8 +113,9 @@ std::pair<uintptr_t, uint64_t> PageManager::RequestExactPage(uint64_t VASize,
   auto Ptr = FreeNode->PageAddr;
   auto NodePageSize = FreeNode->Size;
 
-  DEBUG(std::cout << "Returned start: " << std::hex << Ptr << " End: "
-                  << std::hex << Ptr + NodePageSize << std::dec << "\n";)
+  DBG(Logger::logs("mneme")
+          << "Returned start: " << std::hex << Ptr << " End: " << std::hex
+          << Ptr + NodePageSize << std::dec << "\n";)
 
   FreeVARanges.erase(FreeNode);
 
@@ -116,7 +131,7 @@ std::pair<uintptr_t, uint64_t> PageManager::RequestExactPage(uint64_t VASize,
           << reinterpret_cast<uintptr_t>(VA)
           << " instead the returned address is " << std::hex
           << reinterpret_cast<uintptr_t>(Ptr) << std::dec << "\n";
-      throw std::runtime_error(oss.str());
+      FATAL_ERROR(oss.str());
     }
   }
 
@@ -140,11 +155,11 @@ std::pair<uintptr_t, uint64_t> PageManager::RequestExactPage(uint64_t VASize,
   return std::make_pair((uintptr_t)VA, ReqSize);
 }
 
-std::pair<uintptr_t, uint64_t> PageManager::AllocateAddr(uint64_t VASize,
+std::pair<uintptr_t, uint64_t> PageManager::allocateAddr(uint64_t VASize,
                                                          void *VA) {
   if (VA == nullptr)
-    return ReserveBestFitPage(VASize);
-  return RequestExactPage(VASize, VA);
+    return reserveBestFitPage(VASize);
+  return requestExactPage(VASize, VA);
 }
 
 PageManager::PageManager(uint64_t VASize, uint64_t PageSize, void *VA,
@@ -154,17 +169,8 @@ PageManager::PageManager(uint64_t VASize, uint64_t PageSize, void *VA,
   FreeVARanges.insert(ContiguousAddrBlock{ReservedVA, TotalVASize});
 }
 
-void PageManager::ReleaseAddr(uint64_t VASize, void *VA) {
+void PageManager::releaseAddr(uint64_t VASize, void *VA) {
   ContiguousAddrBlock AddrBlock{reinterpret_cast<uint64_t>(VA), VASize};
   FreeVARanges.insert(AddrBlock);
   coalesce();
-}
-
-PageManager::~PageManager() {
-  DEBUG(std::cout << "Releasing Reserved VA Memory\n";)
-  DEBUG(std::cout << "ReservedVA is " << std::hex << ReservedVA << std::dec
-                  << "\n";)
-  DEBUG(std::cout << "Total Size is "
-                  << ((double)TotalVASize / (1024.0 * 1024.0)) << " MB\n";)
-  gpu::MemAddrFree(ReservedVA, TotalVASize);
 }

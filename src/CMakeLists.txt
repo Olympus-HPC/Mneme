@@ -1,11 +1,11 @@
 
 set(RecordLibSRC "")
 if (ENABLE_HIP)
-  list(APPEND RecordLibSRC MnemeRecordPreloadHIP.cpp)
+  list(APPEND RecordLibSRC MnemeRecordPreloadHIP.cpp MnemePageManager.cpp)
 endif()
 
 add_library(mnemerecord SHARED ${RecordLibSRC})
-add_executable(mnemereplay MnemeReplay.cpp)
+add_executable(mnemereplay MnemeReplay.cpp MnemePageManager.cpp)
 
 #add_executable(replay replay.cpp memory.cpp jit.cpp common.cpp)
 

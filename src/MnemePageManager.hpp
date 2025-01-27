@@ -16,9 +16,7 @@ struct ContiguousAddrBlock {
   bool operator<(const ContiguousAddrBlock &other) const;
 };
 
-class MemoryManager;
 class PageManager {
-  friend MemoryManager;
 
 protected:
   std::multiset<ContiguousAddrBlock> FreeVARanges;
@@ -38,16 +36,16 @@ protected:
   // Find a block that includes the range [Addr, Addr + size)
 
   std::multiset<ContiguousAddrBlock>::iterator findInclusivePage(uintptr_t Addr,
-                                                                 size_t size);
+                                                                 size_t Size);
 
-  std::pair<uintptr_t, uint64_t> ReserveBestFitPage(uint64_t VASize);
+  std::pair<uintptr_t, uint64_t> reserveBestFitPage(uint64_t VASize);
 
-  std::pair<uintptr_t, uint64_t> RequestExactPage(uint64_t VASize, void *VA);
+  std::pair<uintptr_t, uint64_t> requestExactPage(uint64_t VASize, void *VA);
 
 public:
   PageManager(uint64_t VASize, uint64_t PageSize, void *VA, int32_t DeviceID);
 
-  std::pair<uintptr_t, uint64_t> AllocateAddr(uint64_t VASize, void *VA);
+  std::pair<uintptr_t, uint64_t> allocateAddr(uint64_t VASize, void *VA);
 
-  void ReleaseAddr(uint64_t VASize, void *VA);
+  void releaseAddr(uint64_t VASize, void *VA);
 };
