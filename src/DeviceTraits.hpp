@@ -176,6 +176,13 @@ template <> struct DeviceTraits<DeviceVendors::HIP> {
   static constexpr size_t getFixedMemorySize() {
     return 16L * 1024L * 1024L * 1024L;
   }
+
+  static void freeVirtualAddress(void *Addr, size_t Size) {
+    auto EC = DeviceErrorCheck(hipMemAddressFree(Addr, Size));
+    if (EC) {
+      FATAL_ERROR("Could not release VA addresses " + EC.value());
+    }
+  }
 };
 #elif defined(ENABLE_CUDA)
 template <> struct DeviceTraits<DeviceVendors::HIP> {

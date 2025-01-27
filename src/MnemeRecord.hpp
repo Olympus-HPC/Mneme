@@ -184,7 +184,8 @@ public:
 
     auto [Addr, ReservedSize] = PM->allocateAddr(size, nullptr);
     MnemeMemoryBlob<VendorTypes> MemBlob;
-    auto ret = MemBlob.allocate(Addr, ReservedSize, DeviceID);
+    auto ret = MemBlob.allocate(reinterpret_cast<void *>(Addr), ReservedSize,
+                                DeviceID);
     *ptr = MemBlob.ptr();
     AllocatedBlobs.insert({*ptr, std::move(MemBlob)});
     DBG(Logger::logs("mneme") << "Malloced Device Pointer " << *ptr
@@ -342,6 +343,10 @@ public:
     if (ImplT::hasFatBinEnd) {
       assert(origRegisterDeviceVar && "Expected non-null register Device Var");
     }
+  }
+
+  ~MnemeRecorder() {
+    MnemeDeviceRT::freeVirtualAddress(VAStartAddr, VATotalSize);
   }
 };
 } // namespace mneme
