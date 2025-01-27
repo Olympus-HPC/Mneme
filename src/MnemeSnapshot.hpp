@@ -288,12 +288,12 @@ public:
   }
 
   template <DeviceVendors VendorTypes>
-  auto takeSnapshot(std::shared_ptr<KernelInfo> KInfo,
-                    llvm::SmallVector<GlobalVarInfo> &GlobalVars,
-                    llvm::DenseMap < void *,
-                    MnemeMemoryBlob<VendorTypes> &DeviceMemory, dim3 &GridDim,
-                    dim3 &BlockDim, void **Args, size_t SharedMem,
-                    typename DeviceTraits<VendorTypes>::DeviceStream_t Stream) {
+  auto takeSnapshot(
+      std::shared_ptr<KernelInfo> KInfo,
+      llvm::SmallVector<GlobalVarInfo> &GlobalVars,
+      llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &DeviceMemory,
+      dim3 &GridDim, dim3 &BlockDim, void **Args, size_t SharedMem,
+      typename DeviceTraits<VendorTypes>::DeviceStream_t Stream) {
     auto IT = KernelRecords.try_emplace(KInfo->StaticHash,
                                         KernelInstancesCollection(KInfo));
     return IT.first->second.takeSnapshot<VendorTypes>(

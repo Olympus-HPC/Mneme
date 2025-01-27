@@ -39,10 +39,6 @@ template <> struct DeviceTraits<DeviceVendors::HIP> {
 
   static hipError_t DeviceFree(void *ptr) { return hipFree(ptr); }
 
-  static constexpr hipMemcpyKind MemcpyHostToDeviceKind() {
-    return hipMemcpyHostToDevice;
-  }
-
   static hipError_t DeviceCopy(void *Dest, void *Src, size_t SizeBytes,
                                hipMemcpyKind Kind) {
     return hipMemcpy(Dest, Src, SizeBytes, Kind);
@@ -134,17 +130,12 @@ template <> struct DeviceTraits<DeviceVendors::HIP> {
     return hipMemcpyHostToDevice;
   }
 
-  static hipError_t DeviceCopy(void *Dest, void *Src, size_t SizeBytes,
-                               hipMemcpyKind Kind) {
-    return hipMemcpy(Dest, Src, SizeBytes, Kind);
-  }
-
   void mmap(hipMemGenericAllocationHandle_t &MHandle, void *Addr,
-            uintptr_t Size, int DeviceId) {
+            uintptr_t Size, int DeviceID) {
     hipMemAllocationProp Prop = {};
     Prop.type = hipMemAllocationTypePinned;
     Prop.location.type = hipMemLocationTypeDevice;
-    Prop.location.id = DeviceId;
+    Prop.location.id = DeviceID;
     DBG(Logger::logs("mneme") << "Requesting address with Size " << Size
                               << " on device " << DeviceID << "\n");
 
@@ -153,7 +144,7 @@ template <> struct DeviceTraits<DeviceVendors::HIP> {
 
     hipMemAccessDesc ADesc = {};
     ADesc.location.type = hipMemLocationTypeDevice;
-    ADesc.location.id = DeviceId;
+    ADesc.location.id = DeviceID;
     ADesc.flags = hipMemAccessFlagsProtReadWrite;
 
     // Sets address
