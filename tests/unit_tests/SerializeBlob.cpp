@@ -11,7 +11,7 @@
 using namespace mneme;
 
 using MnemeRecorderDevice = MnemeRecorderHIP;
-using MnemeMemoryBlobDevice = MnemeMemoryBlobHIP;
+using MnemeMemoryBlobDevice = MnemeMemoryBlob<DeviceVendors::HIP>;
 using Vendor = DeviceTraits<DeviceVendors::HIP>;
 
 void initializeRandomBuffer(uint8_t *Buffer, size_t Size) {
@@ -52,7 +52,7 @@ int main(int argc, char **argv) {
   Stream << Blob;
 
   auto Buff = const_cast<const char *>(Buffer.data());
-  auto entry = MnemeMemoryBlobDevice::fromBuffer<MnemeMemoryBlobDevice>(Buff);
+  auto entry = MnemeMemoryBlobDevice::fromBuffer(Buff);
   auto Addr = entry.first;
   auto SBlob = std::move(entry.second);
 

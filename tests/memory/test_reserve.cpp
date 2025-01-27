@@ -3,9 +3,18 @@
 #include "Utils.hpp"
 #include <hip/hip_runtime.h>
 #include <vector>
+
+#ifdef ENABLE_HIP
+#include "MnemeMemoryHIP.hpp"
+#include "MnemeRecordHIP.hpp"
+#endif
+
 using namespace mneme;
 
 using MemoryAllocationHandle_t = hipMemGenericAllocationHandle_t;
+using MnemeRecorderDevice = MnemeRecorderHIP;
+using MnemeMemoryBlobDevice = MnemeMemoryBlob<DeviceVendors::HIP>;
+using MnemeDeviceRT = DeviceTraits<DeviceVendors::HIP>;
 
 struct Blob {
   MemoryAllocationHandle_t MHandle;
@@ -28,11 +37,11 @@ int main(int argc, char *argv[]) {
     Blobs.emplace_back();
     auto &MBlob = Blobs.back();
     hipMemAllocationProp Prop = {};
-    auto MinPageSize = MnemeMemoryBlobHIP::getMinPageSize(DeviceID);
+    auto MinPageSize = MnemeDeviceRT::getMinPageSize(DeviceID);
     Prop.type = hipMemAllocationTypePinned;
     auto ActualSize = util::roundUp(Size, MinPageSize);
     MBlob.Addr =
-        MnemeMemoryBlobHIP::getVirtualAddress(ActualSize, Addr, MinPageSize);
+        MnemeDeviceRT::getVirtualAddress(ActualSize, Addr, MinPageSize);
     Prop.location.type = hipMemLocationTypeDevice;
     Prop.location.id = 0;
     hipErrCheck(hipMemCreate(&MBlob.MHandle, ActualSize, &Prop, 0));

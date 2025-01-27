@@ -11,7 +11,7 @@
 using namespace mneme;
 
 using MnemeRecorderDevice = MnemeRecorderHIP;
-using MnemeMemoryBlobDevice = MnemeMemoryBlobHIP;
+using MnemeMemoryBlobDevice = MnemeMemoryBlob<DeviceVendors::HIP>;
 using Vendor = DeviceTraits<DeviceVendors::HIP>;
 
 void initializeRandomBuffer(uint8_t *Buffer, size_t Size) {

@@ -16,7 +16,7 @@
 using namespace mneme;
 
 using MnemeRecorderDevice = MnemeRecorderHIP;
-using MnemeMemoryBlobDevice = MnemeMemoryBlobHIP;
+using MnemeMemoryBlobDevice = MnemeMemoryBlob<DeviceVendors::HIP>;
 using DeviceVendorTraits = DeviceTraits<DeviceVendors::HIP>;
 
 template <typename T> void initializeRandomBuffer(T *Buffer, size_t Size) {
@@ -80,7 +80,7 @@ int main(int argc, char **argv) {
   DeviceMemMap.try_emplace((void *)BlobData.first, std::move(Blob));
   std::filesystem::path SnapshotFN("./test.mneme");
 
-  MnemeSnapshot<MnemeMemoryBlobDevice, DeviceVendors::HIP>::takeMnemeSnapshot(
+  MnemeSnapshot<DeviceVendors::HIP>::takeMnemeSnapshot(
       GVars, DeviceMemMap, SnapshotFN, TestKernel, Args, 0);
 
   llvm::DenseMap<std::string, GlobalVarInfo> ReadGVars;
@@ -89,7 +89,7 @@ int main(int argc, char **argv) {
   std::shared_ptr<KernelInfo> RTestKernel =
       std::make_shared<KernelInfo>(nullptr, KernelName);
 
-  MnemeSnapshot<MnemeMemoryBlobDevice, DeviceVendors::HIP>::readMnemeSnapShot(
+  MnemeSnapshot<DeviceVendors::HIP>::readMnemeSnapShot(
       SnapshotFN, ReadGVars, ReadDeviceMemMap, RTestKernel);
 
   auto ValidateDeviceMem = [&]() {
