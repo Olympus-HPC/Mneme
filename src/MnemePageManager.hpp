@@ -43,6 +43,7 @@ protected:
   std::pair<uintptr_t, uint64_t> requestExactPage(uint64_t VASize, void *VA);
 
 public:
+  PageManager() = default;
   PageManager(uint64_t VASize, uint64_t PageSize, void *VA, int32_t DeviceID);
 
   std::pair<uintptr_t, uint64_t> allocateAddr(uint64_t VASize, void *VA);

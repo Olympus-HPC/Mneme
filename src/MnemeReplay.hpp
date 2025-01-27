@@ -1,7 +1,10 @@
 #include "DeviceTraits.hpp"
+#include "MnemeMemory.hpp"
+#include "MnemePageManager.hpp"
 #include "MnemeSnapshot.hpp"
 #include "MnemeSymbols.hpp"
 #include "Utils.hpp"
+#include <Logger.hpp>
 #include <algorithm>
 #include <llvm/Bitcode/BitcodeReader.h>
 #include <llvm/IR/LLVMContext.h>
@@ -13,7 +16,7 @@
 #include <proteus/Utils.h>
 
 namespace mneme {
-template <typename MemBlobT, DeviceVendors VendorTypes> class ReplayMemState {
+template <DeviceVendors VendorTypes> class ReplayMemState {
 public:
   using MnemeDeviceRT = DeviceTraits<VendorTypes>;
   using DeviceError_t = typename MnemeDeviceRT::DeviceError_t;
@@ -23,7 +26,7 @@ public:
   enum InstanceType { Prologue, Epilogue };
 
   std::shared_ptr<KernelInfo> KInfo;
-  llvm::DenseMap<void *, MemBlobT> DeviceMemoryState;
+  llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> DeviceMemoryState;
   llvm::DenseMap<std::string, GlobalVarInfo> GlobalVars;
   InstanceType IType;
   std::string SnapshotName;
@@ -82,17 +85,28 @@ public:
     else
       loadEpilogueMemory();
   }
+
+  void release() {
+    for (auto &[DevAddr, MemBlob] : DeviceMemoryState) {
+      MemBlob.release();
+    }
+    DeviceMemoryState.clear();
+  }
 };
 
-template <typename MemBlobT, DeviceVendors VendorTypes>
+template <DeviceVendors VendorTypes>
 class ReplayInstance : public mneme::KernelInstance {
-  using DeviceMemState = ReplayMemState<MemBlobT, VendorTypes>;
+  using MnemeDeviceRT = DeviceTraits<VendorTypes>;
+  using DeviceMemState = ReplayMemState<VendorTypes>;
   using DeviceModule_t = typename DeviceTraits<VendorTypes>::DeviceModule_t;
   std::string KernelName;
   std::string DemangledName;
+  void *VAddr;
+  uint64_t VASize;
   DeviceMemState PrologueState;
   DeviceMemState EpilogueState;
   llvm::SmallVector<std::string> ModuleFileNames;
+  PageManager PM;
 
 private:
   static dim3 getDim3(llvm::json::Object &Info, std::string key) {
@@ -131,6 +145,31 @@ public:
     KernelName = extractStringValue(JSONRoot, "KernelName");
     DemangledName = extractStringValue(JSONRoot, "DemangledName");
 
+    auto VAddrStr = extractStringValue(JSONRoot, "VAddr").str();
+    VAddr = util::hexStringToPointer<void *>(VAddrStr);
+
+    std::cout << "VAddr in json is " << VAddr << " " << VAddrStr << "\n";
+
+    auto VASizeOpt = JSONRoot->getInteger("VASize");
+    if (!VASizeOpt)
+      FATAL_ERROR("Cannot extract Virtual Address Size from JSON DB");
+    VASize = *VASizeOpt;
+    int DeviceID = 0;
+    auto MinPageSize = MnemeDeviceRT::getMinPageSize(DeviceID);
+
+    auto ActualSize = util::roundUp(VASize, MinPageSize);
+    if (VASize != ActualSize)
+      Logger::warn() << "Expected VASize and ActualSize to match\n";
+
+    void *VA = MnemeDeviceRT::getVirtualAddress(ActualSize, VAddr, MinPageSize);
+    if (VA != VAddr) {
+      FATAL_ERROR("Could not allocate Device Pages\n Record got : " +
+                  util::pointerToHexString(VAddr) +
+                  " and replay got : " + util::pointerToHexString(VA));
+    }
+
+    PM = PageManager(ActualSize, MinPageSize, VA, DeviceID);
+
     llvm::json::Array *RecordedModules = JSONRoot->getArray("Modules");
     for (auto Mod : *RecordedModules) {
       auto Module = Mod.getAsString();
@@ -156,6 +195,12 @@ public:
                                    DeviceMemState::InstanceType::Prologue);
     EpilogueState = DeviceMemState(KernelName, EpilogueFn,
                                    DeviceMemState::InstanceType::Epilogue);
+  }
+
+  ~ReplayInstance() {
+    PrologueState.release();
+    EpilogueState.release();
+    MnemeDeviceRT::freeVirtualAddress(PM.getVAStart(), PM.getTotalVASize());
   }
 
   llvm::ArrayRef<std::string> getModules() const { return ModuleFileNames; }
@@ -191,11 +236,14 @@ public:
           DeviceTraits<VendorTypes>::getGlobalAddrFromModule(VendorMod,
                                                              KV.first);
       if (KV.second.DevAddr != LoadedAddr) {
-        FATAL_ERROR(
-            "Global :" + KV.first +
-            " was loaded on different address between record and replay\n" +
-            "Record Address:" + util::pointerToHexString(KV.second.DevAddr) +
-            "\n" + "Replay Address:" + util::pointerToHexString(LoadedAddr));
+        Logger::warn()
+            << ("Global :" + KV.first +
+                " was loaded on different address between record and replay\n" +
+                "Record Address:" +
+                util::pointerToHexString(KV.second.DevAddr) + "\n" +
+                "Replay Address:" + util::pointerToHexString(LoadedAddr) +
+                "\n");
+        KV.second.DevAddr = LoadedAddr;
       }
 
       if (KV.second.VarSize != LoadedSize)
@@ -217,6 +265,8 @@ public:
   }
 
   void initializeDeviceMemory() { PrologueState.load(); }
+
+  void releaseMemory() { PrologueState.release(); }
 };
 
 } // namespace mneme

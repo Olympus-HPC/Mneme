@@ -40,8 +40,7 @@ int main(int argc, char *argv[]) {
   auto Arch = DeviceVendorTraits::GetDeviceArch();
   Logger::logs("mneme") << "Device Architecture is " << Arch << "\n";
 
-  ReplayInstance<MnemeMemoryBlob<Vendor>, Vendor> RInstance(MnemeJson,
-                                                            MnemeKernelHash);
+  ReplayInstance<Vendor> RInstance(MnemeJson, MnemeKernelHash);
   llvm::LLVMContext Ctx;
   auto Modules = RInstance.loadModules(Ctx);
   auto Mod = ProteusJIT::linkJitModule(Ctx, Modules);
@@ -73,4 +72,6 @@ int main(int argc, char *argv[]) {
 
   auto Func = DeviceVendorTraits::getKernelFunctionFromImage(
       VendorModule, RInstance.getKernelName());
+
+  RInstance.releaseMemory();
 }
