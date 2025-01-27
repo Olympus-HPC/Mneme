@@ -346,7 +346,7 @@ public:
   }
 
   ~MnemeRecorder() {
-    MnemeDeviceRT::freeVirtualAddress(VAStartAddr, VATotalSize);
+    MnemeDeviceRT::freeVirtualAddress(PM->getVAStart(), PM->getTotalVASize());
   }
 };
 } // namespace mneme

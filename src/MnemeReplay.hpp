@@ -31,8 +31,8 @@ public:
 private:
   void loadPrologueMemory() {
     for (auto &[DevAddr, MemBlob] : DeviceMemoryState) {
-      auto EC = DeviceTraits<VendorTypes>::DeviceErrorCheck(
-          MemBlob.allocate(DevAddr, MemBlob.getSize()));
+      auto EC = DeviceTraits<VendorTypes>::DeviceErrorCheck(MemBlob.allocate(
+          DevAddr, MemBlob.getActualSize(), MemBlob.getSize()));
       if (EC)
         FATAL_ERROR("Error raised during mapping prologue memeory:" +
                     EC.value());

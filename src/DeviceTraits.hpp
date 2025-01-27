@@ -180,6 +180,8 @@ template <> struct DeviceTraits<DeviceVendors::HIP> {
   }
 
   static void freeVirtualAddress(void *Addr, size_t Size) {
+    DBG(Logger::logs("mneme") << "Releasing Device Pages " << std::hex << Addr
+                              << std::dec << " with size " << Size << "\n";)
     auto EC = DeviceErrorCheck(hipMemAddressFree(Addr, Size));
     if (EC) {
       FATAL_ERROR("Could not release VA addresses " + EC.value());

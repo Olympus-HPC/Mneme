@@ -48,4 +48,7 @@ public:
   std::pair<uintptr_t, uint64_t> allocateAddr(uint64_t VASize, void *VA);
 
   void releaseAddr(uint64_t VASize, void *VA);
+
+  void *getVAStart() const { return reinterpret_cast<void *>(ReservedVA); }
+  uint64_t getTotalVASize() const { return TotalVASize; }
 };
