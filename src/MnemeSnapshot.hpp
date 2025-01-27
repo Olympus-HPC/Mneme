@@ -178,11 +178,16 @@ struct KernelInstance {
 
 class KernelInstancesCollection {
   std::shared_ptr<KernelInfo> KInfo;
+  void *VAddr;
+  uint64_t VASize;
   llvm::DenseMap<uint64_t, KernelInstance> Instances;
 
 public:
   llvm::json::Object toJSON() const {
     llvm::json::Object Collection;
+    Collection["VAddr"] =
+        util::pointerToHexString(reinterpret_cast<uint8_t *>(VAddr));
+    Collection["VASize"] = VASize;
     Collection["KernelName"] = KInfo->getName();
     Collection["DemangledName"] = llvm::demangle(KInfo->getName());
     Collection["Modules"] = llvm::json::Array(KInfo->ModuleFiles);
@@ -194,7 +199,9 @@ public:
     return Collection;
   }
 
-  KernelInstancesCollection(std::shared_ptr<KernelInfo> KInfo) : KInfo(KInfo) {}
+  KernelInstancesCollection(void *VAddr, uint64_t VASize,
+                            std::shared_ptr<KernelInfo> KInfo)
+      : VAddr(VAddr), VASize(VASize), KInfo(KInfo) {}
 
   llvm::stable_hash computeHash(dim3 &GridDim, dim3 &BlockDim,
                                 uint64_t SharedMem) {
@@ -294,13 +301,13 @@ public:
 
   template <DeviceVendors VendorTypes>
   auto takeSnapshot(
-      std::shared_ptr<KernelInfo> KInfo,
+      void *VAddr, uint64_t VASize, std::shared_ptr<KernelInfo> KInfo,
       llvm::SmallVector<GlobalVarInfo> &GlobalVars,
       llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &DeviceMemory,
       dim3 &GridDim, dim3 &BlockDim, void **Args, size_t SharedMem,
       typename DeviceTraits<VendorTypes>::DeviceStream_t Stream) {
-    auto IT = KernelRecords.try_emplace(KInfo->StaticHash,
-                                        KernelInstancesCollection(KInfo));
+    auto IT = KernelRecords.try_emplace(
+        KInfo->StaticHash, KernelInstancesCollection(VAddr, VASize, KInfo));
     return IT.first->second.takeSnapshot<VendorTypes>(
         MnemeDirectory, GlobalVars, DeviceMemory, GridDim, BlockDim, Args,
         SharedMem, Stream, KInfo->StaticHash);

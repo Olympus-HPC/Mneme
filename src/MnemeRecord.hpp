@@ -232,6 +232,17 @@ public:
       return origLaunchKernel(func, GridDim, BlockDim, Args, SharedMem, Stream);
     }
 
+    if (!PM) {
+      auto MinPageSize = MnemeDeviceRT::getMinPageSize(0);
+
+      auto ActualSize =
+          util::roundUp(MnemeDeviceRT::getFixedMemorySize(), MinPageSize);
+      void *VA =
+          MnemeDeviceRT::getVirtualAddress(ActualSize, nullptr, MinPageSize);
+
+      PM = std::make_unique<PageManager>(ActualSize, MinPageSize, VA, 0);
+    }
+
     std::call_once(ExtractFlag, [this]() {
       extractIR();
       getGlobalAddresses();
@@ -243,8 +254,9 @@ public:
       FATAL_ERROR("Accessing Kernel Without a Handle");
 
     auto RecordAction = DB.takeSnapshot<VendorTypes>(
-        KInfo, HandleToGlobalSymbol[Handle], AllocatedBlobs, GridDim, BlockDim,
-        Args, SharedMem, Stream);
+        PM->getVAStart(), PM->getTotalVASize(), KInfo,
+        HandleToGlobalSymbol[Handle], AllocatedBlobs, GridDim, BlockDim, Args,
+        SharedMem, Stream);
     DBG(Logger::logs("mneme")
             << "Launching Kernel " << std::hex << func << std::dec << " KName"
             << KInfo->Name << " GDimX: " << GridDim.x << " GDimY: " << GridDim.y
