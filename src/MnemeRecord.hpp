@@ -17,6 +17,7 @@
 #include <llvm/ADT/StringRef.h>
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/Module.h>
+#include <memory>
 #include <mutex>
 
 #include "DeviceTraits.hpp"
@@ -167,8 +168,23 @@ public:
   };
 
   DeviceError_t rtMalloc(void **ptr, size_t size) {
+    // TODO: Find a better way to find the current active device;
+    int DeviceID = 0;
+
+    if (!PM) {
+      auto MinPageSize = MnemeDeviceRT::getMinPageSize(DeviceID);
+
+      auto ActualSize =
+          util::roundUp(MnemeDeviceRT::getFixedMemorySize(), MinPageSize);
+      void *VA =
+          MnemeDeviceRT::getVirtualAddress(ActualSize, nullptr, MinPageSize);
+
+      PM = std::make_unique<PageManager>(ActualSize, MinPageSize, VA, DeviceID);
+    }
+
+    auto [Addr, ReservedSize] = PM->allocateAddr(size, nullptr);
     MnemeMemoryBlob<VendorTypes> MemBlob;
-    auto ret = MemBlob.allocate(0, size);
+    auto ret = MemBlob.allocate(Addr, ReservedSize, DeviceID);
     *ptr = MemBlob.ptr();
     AllocatedBlobs.insert({*ptr, std::move(MemBlob)});
     DBG(Logger::logs("mneme") << "Malloced Device Pointer " << *ptr

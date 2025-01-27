@@ -38,18 +38,12 @@ public:
       : ActualSize(ActualSize), BlobAddr(BlobAddr), Size(Size), DeviceID(0),
         HostData(nullptr), IsMapped(false) {}
 
-  hipError_t allocate(void *Addr, uintptr_t Size, int DeviceID = 0) {
+  hipError_t allocate(void *VA, uintptr_t Size, int DeviceID = 0) {
     this->Size = Size;
     this->DeviceID = DeviceID;
-    auto MinPageSize = MnemeDeviceRT::getMinPageSize(DeviceID);
-    this->ActualSize = util::roundUp(Size, MinPageSize);
-    void *VA = MnemeDeviceRT::getVirtualAddress(ActualSize, Addr, MinPageSize);
-    DBG(Logger::logs("mneme") << "Requested Addr: " << std::hex << Addr
-                              << std::dec << " Reserved Addr: " << VA << "\n");
-
     // We need to pass here "ActualSize". As device allocators depend on page
     // aligned allocations
-    MnemeDeviceRT::mmap(MemHandle, VA, ActualSize, DeviceID);
+    MnemeDeviceRT::mmap(MemHandle, VA, Size, DeviceID);
     this->BlobAddr = VA;
     this->IsMapped = true;
 

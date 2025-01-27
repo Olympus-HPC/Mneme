@@ -171,7 +171,10 @@ template <> struct DeviceTraits<DeviceVendors::HIP> {
                     uintptr_t Size) {
     hipErrCheck(hipMemUnmap(Addr, Size));
     hipErrCheck(hipMemRelease(MHandle));
-    hipErrCheck(hipMemAddressFree(Addr, Size));
+  }
+
+  static constexpr size_t getFixedMemorySize() {
+    return 16L * 1024L * 1024L * 1024L;
   }
 };
 #elif defined(ENABLE_CUDA)
