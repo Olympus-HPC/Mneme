@@ -69,8 +69,7 @@ public:
     return getPageSize(DeviceID, hipMemAllocationGranularityMinimum);
   }
 
-  static void *getVirtualAddress(uint64_t Size, uintptr_t VA,
-                                 uint64_t Alignment) {
+  static void *getVirtualAddress(uint64_t Size, void *VA, uint64_t Alignment) {
     hipDeviceptr_t devPtr = 0;
 
     hipErrCheck(hipMemAddressReserve(&devPtr, Size, Alignment,
@@ -80,11 +79,11 @@ public:
     return (void *)devPtr;
   }
 
-  void unmap(hipMemGenericAllocationHandle_t &MHandle, uintptr_t Addr,
+  void unmap(hipMemGenericAllocationHandle_t &MHandle, void *Addr,
              uintptr_t Size) {
-    hipErrCheck(hipMemUnmap((void *)Addr, Size));
+    hipErrCheck(hipMemUnmap(Addr, Size));
     hipErrCheck(hipMemRelease(MHandle));
-    hipErrCheck(hipMemAddressFree((void *)Addr, Size));
+    hipErrCheck(hipMemAddressFree(Addr, Size));
   }
 };
 

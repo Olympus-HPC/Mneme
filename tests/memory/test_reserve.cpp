@@ -31,8 +31,8 @@ int main(int argc, char *argv[]) {
     auto MinPageSize = MnemeMemoryBlobHIP::getMinPageSize(DeviceID);
     Prop.type = hipMemAllocationTypePinned;
     auto ActualSize = util::roundUp(Size, MinPageSize);
-    MBlob.Addr = MnemeMemoryBlobHIP::getVirtualAddress(
-        ActualSize, reinterpret_cast<uintptr_t>(Addr), MinPageSize);
+    MBlob.Addr =
+        MnemeMemoryBlobHIP::getVirtualAddress(ActualSize, Addr, MinPageSize);
     Prop.location.type = hipMemLocationTypeDevice;
     Prop.location.id = 0;
     hipErrCheck(hipMemCreate(&MBlob.MHandle, ActualSize, &Prop, 0));

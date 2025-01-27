@@ -42,8 +42,7 @@ int main(int argc, char **argv) {
   if (EC)
     FATAL_ERROR("Could not allocate device data");
 
-  MnemeMemoryBlobDevice Blob(128L, reinterpret_cast<uintptr_t>(DData), 128L,
-                             0L);
+  MnemeMemoryBlobDevice Blob(128L, DData, 128L, 0L);
   Blob.setHostData(std::unique_ptr<uint8_t[]>(new uint8_t[128]));
 
   llvm::SmallVector<char, 128> Buffer;

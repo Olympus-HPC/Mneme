@@ -33,20 +33,24 @@ private:
       auto EC = DeviceTraits<VendorTypes>::DeviceErrorCheck(
           MemBlob.allocate(DevAddr, MemBlob.getSize()));
       if (EC)
-        FATAL_ERROR("Error raised during mapping prologue memeory:" + EC.get());
+        FATAL_ERROR("Error raised during mapping prologue memeory:" +
+                    EC.value());
 
       if (DevAddr != reinterpret_cast<void *>(MemBlob.getBlobAddr()))
         FATAL_ERROR("Could not map Record Address " +
                     util::pointerToHexString(DevAddr) +
                     " instead ReplayInstance got " +
-                    util::pointerToHexString(MemBlob.BlobAddr) + "\n");
+                    util::pointerToHexString(
+                        static_cast<uint8_t *>(MemBlob.getBlobAddr())) +
+                    "\n");
 
       // Copy data to device
-      auto CEC = DeviceTraits<VendorTypes>::DeviceErrorCheck(
-          MemBlobT::DeviceCopy(DevAddr, MemBlob.HostAddr, MemBlob.Size,
-                               MemBlobT::MemcpyHostToDeviceKind()));
+      auto CEC =
+          DeviceTraits<VendorTypes>::DeviceErrorCheck(MemBlobT::DeviceCopy(
+              DevAddr, MemBlob.getHostData().get(), MemBlob.getSize(),
+              MemBlobT::MemcpyHostToDeviceKind()));
       if (CEC)
-        FATAL_ERROR("Could not copy Memory Blob to device EC: " + CEC.get() +
+        FATAL_ERROR("Could not copy Memory Blob to device EC: " + CEC.value() +
                     "\n");
     }
   }

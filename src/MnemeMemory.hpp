@@ -25,19 +25,19 @@ public:
 protected:
   uint64_t ActualSize;
   MemoryAllocationHandle_t MemHandle;
-  uintptr_t BlobAddr;
+  void *BlobAddr;
   uint64_t Size;
   uint64_t DeviceID;
   std::unique_ptr<uint8_t[]> HostData;
   bool IsMapped;
 
 public:
-  MnemeMemoryBlob(uint64_t ActualSize = 0, uintptr_t BlobAddr = 0,
+  MnemeMemoryBlob(uint64_t ActualSize = 0, void *BlobAddr = nullptr,
                   uint64_t Size = 0, uint64_t DeviceID = 0)
       : ActualSize(ActualSize), BlobAddr(BlobAddr), Size(Size), DeviceID(0),
         HostData(nullptr), IsMapped(false) {}
 
-  hipError_t allocate(uintptr_t Addr, uintptr_t Size, int DeviceID = 0) {
+  hipError_t allocate(void *Addr, uintptr_t Size, int DeviceID = 0) {
     this->Size = Size;
     this->DeviceID = DeviceID;
     auto MinPageSize = MemImplT::getMinPageSize(DeviceID);
@@ -50,7 +50,7 @@ public:
     // We need to pass here "ActualSize". As device allocators depend on page
     // aligned allocations
     static_cast<MemImplT &>(*this).mmap(MemHandle, VA, ActualSize, DeviceID);
-    this->BlobAddr = reinterpret_cast<uintptr_t>(VA);
+    this->BlobAddr = VA;
     this->IsMapped = true;
 
     HostData = std::unique_ptr<uint8_t[]>(new uint8_t[Size]);
@@ -129,7 +129,7 @@ public:
   operator<<(llvm::raw_ostream &OS,
              const MnemeMemoryBlob<MemImplT_, VendorTypes_> &Blob);
 
-  uintptr_t getBlobAddr() const { return BlobAddr; }
+  void *getBlobAddr() const { return BlobAddr; }
   uint64_t getActualSize() const { return ActualSize; }
   uint64_t getSize() const { return Size; }
   const std::unique_ptr<uint8_t[]> &getHostData() const { return HostData; }
