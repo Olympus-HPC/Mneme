@@ -22,15 +22,16 @@
 #include <sys/types.h>
 namespace mneme {
 
-template <typename MemBlobT, DeviceVendors VendorTypes> class MnemeSnapshot {
-  using DeviceError_t = typename DeviceTraits<VendorTypes>::DeviceError_t;
-  using DeviceStream_t = typename DeviceTraits<VendorTypes>::DeviceStream_t;
-  using KernelFunction_t = typename DeviceTraits<VendorTypes>::KernelFunction_t;
+template <DeviceVendors VendorTypes> class MnemeSnapshot {
+  using MnemeDeviceRT = DeviceTraits<VendorTypes>;
+  using DeviceError_t = typename MnemeDeviceRT::DeviceError_t;
+  using DeviceStream_t = typename MnemeDeviceRT::DeviceStream_t;
+  using KernelFunction_t = typename MnemeDeviceRT::KernelFunction_t;
 
 public:
   std::filesystem::path static takeMnemeSnapshot(
       llvm::SmallVector<GlobalVarInfo> &GlobalVars,
-      llvm::DenseMap<void *, MemBlobT> &DeviceMemory,
+      llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &DeviceMemory,
       std::filesystem::path &Filename, std::shared_ptr<KernelInfo> KInfo,
       void **Args, DeviceStream_t Stream) {
     DBG(Logger::logs("mneme") << "KInfo is " << KInfo.get() << "\n");
@@ -97,7 +98,7 @@ public:
   void static readMnemeSnapShot(
       std::string Filename,
       llvm::DenseMap<std::string, GlobalVarInfo> &GlobalVars,
-      llvm::DenseMap<void *, MemBlobT> &DeviceMemory,
+      llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &DeviceMemory,
       std::shared_ptr<KernelInfo> KInfo) {
     if (!std::filesystem::exists(Filename))
       FATAL_ERROR("Mneme Snapshot file does not exist");
@@ -130,7 +131,7 @@ public:
         << (uintptr_t)CurrentPtr - (uintptr_t)Start << "\n");
 
     for (auto M = 0; M < TotalMemBlobs; M++) {
-      DeviceMemory.insert(MemBlobT::template fromBuffer<MemBlobT>(CurrentPtr));
+      DeviceMemory.insert(MnemeMemoryBlob<VendorTypes>::fromBuffer(CurrentPtr));
     }
 
     // Get kernel arguments.
@@ -231,7 +232,7 @@ public:
                                     std::to_string(DynamicHash) + ".mneme"));
 
     Instances[DynamicHash].PrologueFn =
-        MnemeSnapshot<MemBlobT, VendorTypes>::takeMnemeSnapshot(
+        MnemeSnapshot<VendorTypes>::takeMnemeSnapshot(
             GlobalVars, DeviceMemory, Filename, KInfo, Args, Stream)
             .string();
 
@@ -249,7 +250,7 @@ public:
                               std::to_string(DynamicHash) + ".mneme"));
 
               Instances[DynamicHash].EpilogueFn =
-                  MnemeSnapshot<MemBlobT, VendorTypes>::takeMnemeSnapshot(
+                  MnemeSnapshot<VendorTypes>::takeMnemeSnapshot(
                       GlobalVars, DeviceMemory, Filename, KInfo, Args, Stream)
                       .string();
             };
@@ -286,16 +287,16 @@ public:
     }
   }
 
-  template <typename MemBlobT, DeviceVendors VendorTypes>
+  template <DeviceVendors VendorTypes>
   auto takeSnapshot(std::shared_ptr<KernelInfo> KInfo,
                     llvm::SmallVector<GlobalVarInfo> &GlobalVars,
-                    llvm::DenseMap<void *, MemBlobT> &DeviceMemory,
-                    dim3 &GridDim, dim3 &BlockDim, void **Args,
-                    size_t SharedMem,
+                    llvm::DenseMap < void *,
+                    MnemeMemoryBlob<VendorTypes> &DeviceMemory, dim3 &GridDim,
+                    dim3 &BlockDim, void **Args, size_t SharedMem,
                     typename DeviceTraits<VendorTypes>::DeviceStream_t Stream) {
     auto IT = KernelRecords.try_emplace(KInfo->StaticHash,
                                         KernelInstancesCollection(KInfo));
-    return IT.first->second.takeSnapshot<MemBlobT, VendorTypes>(
+    return IT.first->second.takeSnapshot<VendorTypes>(
         MnemeDirectory, GlobalVars, DeviceMemory, GridDim, BlockDim, Args,
         SharedMem, Stream, KInfo->StaticHash);
   }

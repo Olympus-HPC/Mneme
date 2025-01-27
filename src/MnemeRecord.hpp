@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Logger.hpp"
+#include "MnemeMemory.hpp"
 #include "MnemePageManager.hpp"
 #include "Utils.hpp"
 #include <assert.h>
@@ -166,7 +167,7 @@ public:
   };
 
   DeviceError_t rtMalloc(void **ptr, size_t size) {
-    auto MemBlob = MemBlobT();
+    MnemeMemoryBlob<VendorTypes> MemBlob;
     auto ret = MemBlob.allocate(0, size);
     *ptr = MemBlob.ptr();
     AllocatedBlobs.insert({*ptr, std::move(MemBlob)});
@@ -190,10 +191,6 @@ public:
   }
 
   DeviceError_t rtFree(void *ptr) {
-    if (VATotalSize == 0) {
-      auto MinPageSize = MemImplT::getMinPageSize(DeviceID);
-    }
-
     if (!AllocatedBlobs.contains(ptr))
       FATAL_ERROR("Free address that is not being allocated through Mneme\n");
     auto ret = AllocatedBlobs[ptr].release();
@@ -228,7 +225,7 @@ public:
     if (!HandleToGlobalSymbol.contains(Handle))
       FATAL_ERROR("Accessing Kernel Without a Handle");
 
-    auto RecordAction = DB.takeSnapshot<MemBlobT, VendorTypes>(
+    auto RecordAction = DB.takeSnapshot<VendorTypes>(
         KInfo, HandleToGlobalSymbol[Handle], AllocatedBlobs, GridDim, BlockDim,
         Args, SharedMem, Stream);
     DBG(Logger::logs("mneme")
