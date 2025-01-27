@@ -20,8 +20,7 @@
 
 namespace mneme {
 
-class MnemeRecorderHIP
-    : public MnemeRecorder<MnemeRecorderHIP, MnemeMemoryBlobHIP, HIP> {
+class MnemeRecorderHIP : public MnemeRecorder<MnemeRecorderHIP, HIP> {
 public:
   static auto *getRTLib() { return dlopen("libamdhip64.so", RTLD_NOW); }
   static constexpr const char *getLaunchKernelFnName() {
@@ -232,6 +231,6 @@ public:
 
 } // namespace mneme
 
-template llvm::raw_ostream &mneme::operator<<(
-    llvm::raw_ostream &,
-    const mneme::MnemeMemoryBlob<MnemeMemoryBlobHIP, DeviceVendors::HIP> &);
+template llvm::raw_ostream &
+mneme::operator<<(llvm::raw_ostream &,
+                  const mneme::MnemeMemoryBlob<DeviceVendors::HIP> &);

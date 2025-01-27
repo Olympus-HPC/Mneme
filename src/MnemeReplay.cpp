@@ -11,7 +11,6 @@ using namespace llvm;
 #include "MnemeMemoryHIP.hpp"
 #include "MnemeRecordHIP.hpp"
 using MnemeRecorderDevice = MnemeRecorderHIP;
-using MnemeMemoryBlobDevice = MnemeMemoryBlobHIP;
 using DeviceVendorTraits = DeviceTraits<DeviceVendors::HIP>;
 constexpr DeviceVendors Vendor = DeviceVendors::HIP;
 #endif
@@ -41,8 +40,8 @@ int main(int argc, char *argv[]) {
   auto Arch = DeviceVendorTraits::GetDeviceArch();
   Logger::logs("mneme") << "Device Architecture is " << Arch << "\n";
 
-  ReplayInstance<MnemeMemoryBlobDevice, Vendor> RInstance(MnemeJson,
-                                                          MnemeKernelHash);
+  ReplayInstance<MnemeMemoryBlob<Vendor>, Vendor> RInstance(MnemeJson,
+                                                            MnemeKernelHash);
   llvm::LLVMContext Ctx;
   auto Modules = RInstance.loadModules(Ctx);
   auto Mod = ProteusJIT::linkJitModule(Ctx, Modules);

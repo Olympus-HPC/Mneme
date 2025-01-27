@@ -207,16 +207,18 @@ public:
     return llvm::stable_hash_combine(GridHash, BlockHash, SharedMem);
   }
 
-  template <typename MemBlobT, DeviceVendors VendorTypes>
-  std::optional<std::function<void(
-      llvm::SmallVector<GlobalVarInfo> &, llvm::DenseMap<void *, MemBlobT> &,
-      void **, typename DeviceTraits<VendorTypes>::DeviceStream_t)>>
-  takeSnapshot(std::filesystem::path &MnemeDir,
-               llvm::SmallVector<GlobalVarInfo> &GlobalVars,
-               llvm::DenseMap<void *, MemBlobT> &DeviceMemory, dim3 &GridDim,
-               dim3 &BlockDim, void **Args, size_t SharedMem,
-               typename DeviceTraits<VendorTypes>::DeviceStream_t Stream,
-               uint64_t StaticHash) {
+  template <DeviceVendors VendorTypes>
+  std::optional<std::function<
+      void(llvm::SmallVector<GlobalVarInfo> &,
+           llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &, void **,
+           typename DeviceTraits<VendorTypes>::DeviceStream_t)>>
+  takeSnapshot(
+      std::filesystem::path &MnemeDir,
+      llvm::SmallVector<GlobalVarInfo> &GlobalVars,
+      llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &DeviceMemory,
+      dim3 &GridDim, dim3 &BlockDim, void **Args, size_t SharedMem,
+      typename DeviceTraits<VendorTypes>::DeviceStream_t Stream,
+      uint64_t StaticHash) {
     auto DynamicHash = computeHash(GridDim, BlockDim, SharedMem);
 
     if (Instances.contains(DynamicHash))
@@ -237,12 +239,15 @@ public:
             .string();
 
     std::function<void(llvm::SmallVector<GlobalVarInfo> &,
-                       llvm::DenseMap<void *, MemBlobT> &, void **,
+                       llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &,
+                       void **,
                        typename DeviceTraits<VendorTypes>::DeviceStream_t)>
         CaptureEpilogue =
             [this, DynamicHash, StaticHash, &MnemeDir](
                 llvm::SmallVector<GlobalVarInfo> &GlobalVars,
-                llvm::DenseMap<void *, MemBlobT> &DeviceMemory, void **Args,
+                llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>>
+                    &DeviceMemory,
+                void **Args,
                 typename DeviceTraits<VendorTypes>::DeviceStream_t Stream) {
               std::filesystem::path Filename(
                   MnemeDir / (std::string("DeviceState.epilogue.") +

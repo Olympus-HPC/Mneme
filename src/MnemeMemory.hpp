@@ -80,15 +80,15 @@ public:
     }
   }
 
-  template <typename MemoryDeviceImpl>
-  static std::pair<void *, MemoryDeviceImpl> fromBuffer(const char *&Buffer) {
+  static std::pair<void *, MnemeMemoryBlob<VendorTypes>>
+  fromBuffer(const char *&Buffer) {
     size_t ActualSize = util::extractScalar<size_t>(Buffer);
     size_t Size = util::extractScalar<size_t>(Buffer);
     void *DeviceAddr = util::extractScalar<void *>(Buffer);
     std::unique_ptr<uint8_t[]> HostData = std::make_unique<uint8_t[]>(Size);
     std::memcpy(HostData.get(), Buffer, Size);
     Buffer += Size;
-    auto Blob = MemoryDeviceImpl(ActualSize, 0, Size, 0);
+    auto Blob = MnemeMemoryBlob<VendorTypes>(ActualSize, 0, Size, 0);
     Blob.setHostData(std::move(HostData));
     DBG(Logger::logs("mneme")
         << "Read memory blob at address " << std::hex << DeviceAddr << std::dec

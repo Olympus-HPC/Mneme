@@ -130,8 +130,8 @@ template <> struct DeviceTraits<DeviceVendors::HIP> {
     return hipMemcpyHostToDevice;
   }
 
-  void mmap(hipMemGenericAllocationHandle_t &MHandle, void *Addr,
-            uintptr_t Size, int DeviceID) {
+  static void mmap(hipMemGenericAllocationHandle_t &MHandle, void *Addr,
+                   uintptr_t Size, int DeviceID) {
     hipMemAllocationProp Prop = {};
     Prop.type = hipMemAllocationTypePinned;
     Prop.location.type = hipMemLocationTypeDevice;
@@ -167,8 +167,8 @@ template <> struct DeviceTraits<DeviceVendors::HIP> {
     return (void *)devPtr;
   }
 
-  void unmap(hipMemGenericAllocationHandle_t &MHandle, void *Addr,
-             uintptr_t Size) {
+  static void unmap(hipMemGenericAllocationHandle_t &MHandle, void *Addr,
+                    uintptr_t Size) {
     hipErrCheck(hipMemUnmap(Addr, Size));
     hipErrCheck(hipMemRelease(MHandle));
     hipErrCheck(hipMemAddressFree(Addr, Size));

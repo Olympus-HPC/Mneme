@@ -15,9 +15,10 @@
 namespace mneme {
 template <typename MemBlobT, DeviceVendors VendorTypes> class ReplayMemState {
 public:
-  using DeviceError_t = typename DeviceTraits<VendorTypes>::DeviceError_t;
-  using DeviceStream_t = typename DeviceTraits<VendorTypes>::DeviceStream_t;
-  using KernelFunction_t = typename DeviceTraits<VendorTypes>::KernelFunction_t;
+  using MnemeDeviceRT = DeviceTraits<VendorTypes>;
+  using DeviceError_t = typename MnemeDeviceRT::DeviceError_t;
+  using DeviceStream_t = typename MnemeDeviceRT::DeviceStream_t;
+  using KernelFunction_t = typename MnemeDeviceRT::KernelFunction_t;
 
   enum InstanceType { Prologue, Epilogue };
 
@@ -45,10 +46,9 @@ private:
                     "\n");
 
       // Copy data to device
-      auto CEC =
-          DeviceTraits<VendorTypes>::DeviceErrorCheck(MemBlobT::DeviceCopy(
-              DevAddr, MemBlob.getHostData().get(), MemBlob.getSize(),
-              MemBlobT::MemcpyHostToDeviceKind()));
+      auto CEC = MnemeDeviceRT::DeviceErrorCheck(MnemeDeviceRT::DeviceCopy(
+          DevAddr, MemBlob.getHostData().get(), MemBlob.getSize(),
+          MnemeDeviceRT::MemcpyHostToDeviceKind()));
       if (CEC)
         FATAL_ERROR("Could not copy Memory Blob to device EC: " + CEC.value() +
                     "\n");
@@ -69,8 +69,8 @@ public:
                  InstanceType IType)
       : KInfo(std::make_shared<KernelInfo>(nullptr, KernelName)),
         SnapshotName(SnapshotName), IType(IType) {
-    MnemeSnapshot<MemBlobT, VendorTypes>::readMnemeSnapShot(
-        SnapshotName, GlobalVars, DeviceMemoryState, KInfo);
+    MnemeSnapshot<VendorTypes>::readMnemeSnapShot(SnapshotName, GlobalVars,
+                                                  DeviceMemoryState, KInfo);
     DBG(Logger::logs("mneme")
         << "Initialized Snapshot of kernel " << KInfo->getName() << "of state "
         << (IType == InstanceType::Prologue ? "Prologue" : "Epilogue") << "\n");
