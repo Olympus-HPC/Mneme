@@ -32,10 +32,22 @@ public:
   std::string SnapshotName;
 
 private:
+  void copyToDevice() {
+    for (auto &[DevAddr, MemBlob] : DeviceMemoryState) {
+      // Copy data to device
+      auto CEC = MnemeDeviceRT::DeviceErrorCheck(MnemeDeviceRT::DeviceCopy(
+          MemBlob.getBlobAddr(), MemBlob.getHostData().get(), MemBlob.getSize(),
+          MnemeDeviceRT::MemcpyHostToDeviceKind()));
+      if (CEC)
+        FATAL_ERROR("Could not copy Memory Blob to device EC: " + CEC.value() +
+                    "\n");
+    }
+  }
+
   void loadPrologueMemory() {
     for (auto &[DevAddr, MemBlob] : DeviceMemoryState) {
-      auto EC = DeviceTraits<VendorTypes>::DeviceErrorCheck(MemBlob.allocate(
-          DevAddr, MemBlob.getActualSize(), MemBlob.getSize()));
+      auto EC = DeviceTraits<VendorTypes>::DeviceErrorCheck(
+          MemBlob.map(DevAddr, MemBlob.getActualSize(), MemBlob.getSize()));
       if (EC)
         FATAL_ERROR("Error raised during mapping prologue memeory:" +
                     EC.value());
@@ -47,23 +59,20 @@ private:
                     util::pointerToHexString(
                         static_cast<uint8_t *>(MemBlob.getBlobAddr())) +
                     "\n");
-
-      // Copy data to device
-      auto CEC = MnemeDeviceRT::DeviceErrorCheck(MnemeDeviceRT::DeviceCopy(
-          DevAddr, MemBlob.getHostData().get(), MemBlob.getSize(),
-          MnemeDeviceRT::MemcpyHostToDeviceKind()));
-      if (CEC)
-        FATAL_ERROR("Could not copy Memory Blob to device EC: " + CEC.value() +
-                    "\n");
     }
+
+    copyToDevice();
   }
 
   void loadEpilogueMemory() {
-    // TODO: This is currently empty, and we will perform verification on host.
-    // if the host verification ends up being a bottleneck, we should copy to
-    // device but do not provide a map address. So, the data will be allocated
-    // into some random memory location (not the same as the prologue). Once we
-    // have this we can compare in GPU.
+    for (auto &[DevAddr, MemBlob] : DeviceMemoryState) {
+      auto EC = DeviceTraits<VendorTypes>::DeviceErrorCheck(
+          MemBlob.allocate(MemBlob.getSize()));
+      if (EC)
+        FATAL_ERROR("Error raised during mapping prologue memeory:" +
+                    EC.value());
+    }
+    copyToDevice();
   }
 
 public:
@@ -236,13 +245,13 @@ public:
           DeviceTraits<VendorTypes>::getGlobalAddrFromModule(VendorMod,
                                                              KV.first);
       if (KV.second.DevAddr != LoadedAddr) {
-        Logger::warn()
-            << ("Global :" + KV.first +
-                " was loaded on different address between record and replay\n" +
-                "Record Address:" +
-                util::pointerToHexString(KV.second.DevAddr) + "\n" +
-                "Replay Address:" + util::pointerToHexString(LoadedAddr) +
-                "\n");
+        Logger::warn() << ("Global :" + KV.first +
+                           " was loaded on different address between record "
+                           "and replay\n" +
+                           "Record Address:" +
+                           util::pointerToHexString(KV.second.DevAddr) + "\n" +
+                           "Replay Address:" +
+                           util::pointerToHexString(LoadedAddr) + "\n");
         KV.second.DevAddr = LoadedAddr;
       }
 
@@ -267,6 +276,8 @@ public:
   void initializeDeviceMemory() { PrologueState.load(); }
 
   void releaseMemory() { PrologueState.release(); }
+
+  void compareMemory() {}
 };
 
 } // namespace mneme

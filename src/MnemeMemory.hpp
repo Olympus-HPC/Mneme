@@ -38,8 +38,8 @@ public:
       : ActualSize(ActualSize), BlobAddr(BlobAddr), Size(Size), DeviceID(0),
         HostData(nullptr), IsMapped(false) {}
 
-  hipError_t allocate(void *VA, uint64_t ActualSize, uint64_t Size,
-                      int DeviceID = 0) {
+  hipError_t map(void *VA, uint64_t ActualSize, uint64_t Size,
+                 int DeviceID = 0) {
     this->Size = Size;
     this->DeviceID = DeviceID;
     // We need to pass here "ActualSize". As device allocators depend on page
@@ -56,11 +56,21 @@ public:
     return hipSuccess;
   };
 
+  hipError_t allocate(size_t Size) {
+    auto ret = MnemeDeviceRT::DeviceAlloc(&(this->BlobAddr), Size);
+    this->ActualSize = Size;
+    this->Size = Size;
+    this->IsMapped = false;
+    return ret;
+  }
+
   hipError_t release() {
     if (!BlobAddr)
       return hipSuccess;
     if (IsMapped)
       MnemeDeviceRT::unmap(MemHandle, BlobAddr, ActualSize);
+    else
+      MnemeDeviceRT::DeviceFree(BlobAddr);
     BlobAddr = 0;
     return hipSuccess;
   }

@@ -184,8 +184,8 @@ public:
 
     auto [Addr, ReservedSize] = PM->allocateAddr(size, nullptr);
     MnemeMemoryBlob<VendorTypes> MemBlob;
-    auto ret = MemBlob.allocate(reinterpret_cast<void *>(Addr), ReservedSize,
-                                size, DeviceID);
+    auto ret = MemBlob.map(reinterpret_cast<void *>(Addr), ReservedSize, size,
+                           DeviceID);
     *ptr = MemBlob.ptr();
     AllocatedBlobs.insert({*ptr, std::move(MemBlob)});
     DBG(Logger::logs("mneme") << "Malloced Device Pointer " << *ptr
