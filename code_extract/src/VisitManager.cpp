@@ -17,13 +17,13 @@ namespace helper {
 
 class LambdaCallback : public clang::ast_matchers::MatchFinder::MatchCallback {
 public:
-  clang::LambdaExpr const *lambdaExpr;
+  clang::LambdaExpr const *lambdaExpr = nullptr;
 
   virtual void
   run(const clang::ast_matchers::MatchFinder::MatchResult &Result) final {
     if (auto lmbdExpr =
             Result.Nodes.getNodeAs<clang::LambdaExpr>("lambdaExpr")) {
-      assert(lambdaExpr && "Should only match one lambda expression.");
+      assert(lambdaExpr == nullptr && "Should only match one lambda expression.");
       lambdaExpr = lmbdExpr;
     }
   }
