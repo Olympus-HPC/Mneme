@@ -5,7 +5,11 @@ if (ENABLE_HIP)
 endif()
 
 add_library(mnemerecord SHARED ${RecordLibSRC})
-add_executable(mnemereplay MnemeReplay.cpp MnemePageManager.cpp)
+add_executable(mnemereplay MnemeReplay.cpp MnemePageManager.cpp MnemeDeviceCode.cpp)
+
+if (ENABLE_HIP)
+  set_source_files_properties(MnemeDeviceCode.cpp PROPERTIES LANGUAGE HIP)
+endif()
 
 #add_executable(replay replay.cpp memory.cpp jit.cpp common.cpp)
 

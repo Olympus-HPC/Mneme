@@ -33,7 +33,7 @@ template <> struct DeviceTraits<DeviceVendors::HIP> {
     return hipStreamSynchronize(Stream);
   }
 
-  static hipError_t DeviceMemSet(void *DevPtr, int Value, size_t Bytes) {
+  static hipError_t DeviceMemset(void *DevPtr, int Value, size_t Bytes) {
     auto EC = hipMemset(DevPtr, Value, Bytes);
     return EC;
   }
@@ -135,6 +135,10 @@ template <> struct DeviceTraits<DeviceVendors::HIP> {
     return hipMemcpyHostToDevice;
   }
 
+  static constexpr hipMemcpyKind MemcpyDeviceToHostKind() {
+    return hipMemcpyDeviceToHost;
+  }
+
   static void mmap(hipMemGenericAllocationHandle_t &MHandle, void *Addr,
                    uintptr_t Size, int DeviceID) {
     hipMemAllocationProp Prop = {};
@@ -192,6 +196,9 @@ template <> struct DeviceTraits<DeviceVendors::HIP> {
       FATAL_ERROR("Could not release VA addresses " + EC.value());
     }
   }
+
+  static bool compareDeviceBlobs(const char *Blob1, const char *Blob2,
+                                 uint64_t NumBytes);
 };
 #elif defined(ENABLE_CUDA)
 template <> struct DeviceTraits<DeviceVendors::HIP> {

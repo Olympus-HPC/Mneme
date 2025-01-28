@@ -73,5 +73,7 @@ int main(int argc, char *argv[]) {
   auto Func = DeviceVendorTraits::getKernelFunctionFromImage(
       VendorModule, RInstance.getKernelName());
 
+  std::cout << "Verified:" << RInstance.isMemorySame() << "\n";
+
   RInstance.releaseMemory();
 }

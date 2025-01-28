@@ -103,8 +103,8 @@ public:
   }
 
   // Overload equality operator
-  bool operator==(const ReplayMemState &other) const {
-    auto OtherBlob = other.DeviceMemoryState;
+  bool operator==(const ReplayMemState<VendorTypes> &other) const {
+    auto &OtherBlob = other.DeviceMemoryState;
     for (auto &[DevAddr, MemBlob] : DeviceMemoryState) {
       auto it = OtherBlob.find(DevAddr);
       if (it == OtherBlob.end()) {
@@ -117,14 +117,18 @@ public:
                        << it->second.getSize() << "\n";
         return false;
       }
-    }
-  }
-}
 
+      if (!DeviceTraits<VendorTypes>::compareDeviceBlobs(
+              (const char *)it->second.getBlobAddr(),
+              (const char *)MemBlob.getBlobAddr(), MemBlob.getSize()))
+        return false;
+    }
+    return true;
+  }
   // Derive inequality operator
-  bool operator!=(const ReplayMemState &other) const {
-  return !(*this == other);
-}
+  bool operator!=(const ReplayMemState<VendorTypes> &other) const {
+    return !(*this == other);
+  }
 };
 
 template <DeviceVendors VendorTypes>
@@ -301,7 +305,7 @@ public:
 
   void releaseMemory() { PrologueState.release(); }
 
-  void compareMemory() {}
+  bool isMemorySame() { return PrologueState == EpilogueState; }
 };
 
 } // namespace mneme

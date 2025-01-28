@@ -57,7 +57,7 @@ public:
   };
 
   hipError_t allocate(size_t Size) {
-    auto ret = MnemeDeviceRT::DeviceAlloc(&(this->BlobAddr), Size);
+    auto ret = MnemeDeviceRT::DeviceMalloc(&(this->BlobAddr), Size);
     this->ActualSize = Size;
     this->Size = Size;
     this->IsMapped = false;
