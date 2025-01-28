@@ -33,6 +33,11 @@ template <> struct DeviceTraits<DeviceVendors::HIP> {
     return hipStreamSynchronize(Stream);
   }
 
+  static hipError_t DeviceMemSet(void *DevPtr, int Value, size_t Bytes) {
+    auto EC = hipMemset(DevPtr, Value, Bytes);
+    return EC;
+  }
+
   static hipError_t DeviceMalloc(void **ptr, size_t size) {
     return hipMalloc(ptr, size);
   }
