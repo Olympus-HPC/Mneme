@@ -40,16 +40,16 @@ public:
   VisitManager(ObjInfo &pf, CodeDB const &cdb) : db(cdb), primaryFn(pf) {}
 
   /// @brief Check if a named decl is visited or not.
-  /// @param name Name (fully qualified) of the decl to check.
-  bool isVisited(std::string const &name);
+  /// @param keyName Key name of the decl to check.
+  bool isVisited(std::string const &keyName);
 
-  /// @brief Gets the the visited objInfo by name.
-  ObjInfo const *getVisitedObj(std::string const &name);
+  /// @brief Gets the the visited objInfo by Key name.
+  ObjInfo const *getVisitedObj(std::string const &keyName);
 
   /// @brief Marks a named decl visited.
-  /// @param name Name (fully qualified) of the decl to mark.
+  /// @param name Key name of the decl to mark.
   /// @param objInfo Object info associated with decl to mark.
-  void markVisited(std::string name, ObjInfo const *objInfo);
+  void markVisited(std::string keyName, ObjInfo const *objInfo);
 
   /// @brief Adds a clang statement to visit queue.
   void addToVisit(clang::Stmt *stmt);

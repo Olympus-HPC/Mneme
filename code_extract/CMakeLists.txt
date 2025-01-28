@@ -15,7 +15,7 @@ include_directories(${LLVM_INCLUDE_DIRS})
 
 link_directories(${LLVM_LIBRARY_DIRS})
 
-set(SOURCE src/Visitor.cpp src/code_extract.cpp src/ToolManager.cpp src/VisitManager.cpp)
+set(SOURCE src/Visitor.cpp src/code_extract.cpp src/ToolManager.cpp src/VisitManager.cpp src/CodeDB.cpp)
 add_executable(${TOOL_NAME} ${SOURCE})
 
 target_include_directories(${TOOL_NAME} PRIVATE "${CMAKE_CURRENT_LIST_DIR}/include")

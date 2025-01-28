@@ -59,7 +59,7 @@ void VisitManager::registerDecl(clang::FunctionDecl const *decl) {
   // Do not emit inlined functions
   if (decl->isCXXClassMember() && decl->isInlined())
     return;
-  if (auto tmpDecl = decl->getDescribedFunctionTemplate())
+  if (auto tmpDecl = decl->getPrimaryTemplate())
     declRefs.push_back(tmpDecl);
   else
     declRefs.push_back(decl);
@@ -109,7 +109,7 @@ void VisitManager::fillParams(std::string const &prefix, T *begin, T *end) {
     std::string key = "p" + prefix + std::to_string(idx++);
     if constexpr (std::is_same_v<T, clang::LambdaCapture const>) {
       expr = paramIt->getCapturedVar();
-      // We nee to restore the captures with the same name, hence we do not
+      // We need to restore the captures with the same name, hence we do not
       // follow the p<position> naming convention.
       key = expr->getNameAsString();
     } else {
@@ -202,7 +202,7 @@ void VisitManager::emitStandaloneFile(std::string &output, bool emitRR,
   if (emitRRHooks) {
     // First add the prologue
     ss << "init_RR(";
-    ss << "\"" << clang::ASTNameGenerator(body->getASTContext()).getName(body)
+    ss << "\"" << primaryFn.getKeyName() // Function key names will always be their mangled names...
        << "\"";
     ss << ", argc, argv);\n";
   }
@@ -229,7 +229,7 @@ void VisitManager::emitStandaloneFile(std::string &output, bool emitRR,
     if (emitRRHooks)
       ss << "init_param(" << paramName << ", " << paramName << ");\n";
   }
-  // Then, without initializers...
+  // Then, with initializers...
   for (auto &param : params_expr) {
     std::string init;
     llvm::raw_string_ostream stream(init);
@@ -272,7 +272,7 @@ void VisitManager::pullPrimaryFnContext() {
   } else {
     registerInclude(extSource);
   }
-  markVisited(primaryFn.getName(), &primaryFn);
+  markVisited(primaryFn.getKeyName(), &primaryFn);
 
   while (!toVisitNodes.empty()) {
     auto stmt = toVisitNodes.front();

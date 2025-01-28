@@ -81,6 +81,19 @@ int func12(T lmb) {
     return lmb(10, 12);
 }
 
+template <typename T, typename U, typename V>
+int func12(T lmb, U a, V b) {
+    return lmb(a, b);
+}
+
+int func12(int param) {
+    return param;
+}
+
+float func12(float param) {
+    return param + 1.0;
+}
+
 int func13(int x) {
     auto glambda = [=](int a, int b) { return x + a < b; };
     return func12(glambda);
@@ -89,6 +102,7 @@ int func13(int x) {
 int main() {
     auto glambda = [](int a, int b) { return a < b; };
     func12(glambda);
+    func12(glambda, 1, 2);
     
     return 0;
 }

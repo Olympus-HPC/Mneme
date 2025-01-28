@@ -9,6 +9,7 @@
 #include <iostream>
 #include <memory>
 #include <regex>
+#include <string>
 #include <unordered_set>
 
 namespace ct = clang::tooling;
@@ -62,13 +63,41 @@ ToolManager::ToolManager(std::string const &dirPath, bool emitRR) : emitRR(emitR
 
 ObjInfo *ToolManager::findFnDeclByName(std::string const &fnName,
                                        std::string mangledName) {
-  auto obj = db->getObjInfoOrNull(fnName);
+  std::unordered_set<std::string> manglings;
+  db->getManglings(fnName, manglings);
+  ObjInfo *obj = nullptr;
 
-  if (!obj) {
+  if (manglings.empty()) {
     std::cerr << "Could not find function(s) named " << fnName
               << " within specified project!" << std::endl;
     exit(1);
   }
+
+  if (manglings.size() > 1 && mangledName.empty()) {
+    std::cerr
+        << "Extraction of function " << fnName
+        << " based only on its source name is ambiguous! Either the function "
+           "is a function template or is overloaded. "
+        << "Please specify the mangled name of the specific declaration you "
+           "wish to extract. Or present a non empty string to view the "
+           "list of reachable declarations with the same source name."
+        << std::endl;
+    exit(1);
+  } else if (manglings.size() == 1) {
+    obj = db->getObjInfoOrNull(*manglings.begin());
+  } else {
+    if (manglings.find(mangledName) == manglings.end()) {
+      std::cerr << "Could not find declaration for " << fnName
+                << " with mangled name " << mangledName << "!" << std::endl;
+      std::cerr << "\nSpecializations found for " << fnName << ":\n";
+      for (auto name : manglings)
+        std::cerr << name << std::endl;
+      exit(1);
+    } else {
+      obj = db->getObjInfoOrNull(mangledName);
+    }
+  }
+
   if (!obj->getDefiniton()) {
     std::cerr << "Could not find body for function(s) named " << fnName
               << " within specified project! Make sure it is not an externally "
@@ -77,55 +106,20 @@ ObjInfo *ToolManager::findFnDeclByName(std::string const &fnName,
     exit(1);
   }
 
-  auto fnDecl = static_cast<clang::FunctionDecl *>(obj->getDefiniton());
-  clang::ASTNameGenerator astNameGen(fnDecl->getASTContext());
-  if (auto tmpDecl = fnDecl->getDescribedFunctionTemplate()) {
-    if (mangledName.empty()) {
-      std::cerr << "Extraction of function template " << fnName
-                << " requested without specifying specialization to pull. "
-                << "Please specify the mangled name of the specialization you "
-                   "wish to extract. Or present a non empty string to view the "
-                   "list of reachable specializations."
-                << std::endl;
-      exit(1);
-    }
-    clang::Decl *specDecl = nullptr;
-    std::string candidates;
-    for (auto it = tmpDecl->spec_begin(); it != tmpDecl->spec_end(); it++) {
-      auto itName = astNameGen.getName(*it);
-      if (mangledName == itName) {
-        specDecl = *it;
-        obj->addSpecializationDecl(specDecl);
-        break;
-      }
-      candidates += "Mangled name: " + itName + "\n";
-    }
-    if (!specDecl) {
-      std::cerr << "Could not find specialization for " << fnName
-                << " with mangled name " << mangledName << "!" << std::endl;
-      if (candidates.empty()) {
-        std::cerr << "No candidates to report! Are you sure this function "
-                     "template is being instantiated in the project scope?"
-                  << std::endl;
-      } else {
-        std::cerr << "\nSpecializations found for " << fnName << ":\n"
-                  << candidates << "\n"
-                  << std::endl;
-      }
-      exit(1);
-    }
-  }
-
   return obj;
 }
 
-void ToolManager::getStandaloneFnContext(std::string const &fnName,
-                                         std::string const &mangledFnName) {
+void ToolManager::getStandaloneFnContext(std::string const &fnName, std::string const& outFileName,
+                                         std::string mangledFnName) {
   primaryFn = findFnDeclByName(fnName, mangledFnName);
   auto fnSrcFile = primaryFn->getRefFile();
   bool isCuda = fnSrcFile.substr(fnSrcFile.size() - 2, 2) == "cu";
 
-  std::string filename = std::regex_replace(fnName, std::regex("[^\\w]"), "_");
+  std::string filename;
+  if (!outFileName.empty()) 
+    filename = outFileName;
+  else 
+    filename = std::regex_replace(fnName, std::regex("[^\\w]"), "_");
   std::string objname = filename + ".o";
   filename += (isCuda ? ".cu" : ".cpp");
 
@@ -167,5 +161,16 @@ void ToolManager::getStandaloneFnContext(std::string const &fnName,
     std::cerr << "Compilation failed!" << std::endl;
   } else {
     std::cout << "Compilation successful!" << std::endl;
+  }
+}
+
+void ToolManager::getAllDeclarations(std::string const &fnName) {
+  std::unordered_set<std::string> manglings;
+  db->getManglings(fnName, manglings);
+
+  int cnt = 0;
+  for (auto mangledName : manglings) {
+    std::string filename = std::regex_replace(fnName, std::regex("[^\\w]"), "_");
+    getStandaloneFnContext(fnName, fnName + std::to_string(cnt++), mangledName);
   }
 }

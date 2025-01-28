@@ -1,11 +1,12 @@
 #include "Visitor.h"
+#include "CodeDB.h"
 
 #include "clang/AST/Decl.h"
 #include "clang/AST/Type.h"
 #include "clang/Basic/SourceLocation.h"
 #include "clang/Frontend/ASTUnit.h"
+#include "clang/AST/Mangle.h"
 
-#include <iostream>
 #include <type_traits>
 
 namespace helper {
@@ -33,8 +34,7 @@ bool checkPotentialInclude(clang::NamedDecl const *decl, VisitManager &vm,
 }
 
 template <typename T>
-void storeDecl(T *decl, clang::ASTUnit const &unit, CodeDB &cdb,
-               std::string name = "") {
+void storeDecl(T *decl, clang::ASTUnit const &unit, CodeDB &cdb) {
   std::string srcDeclFile =
       locToIncFile(decl->getLocation(), unit.getASTContext());
   constexpr bool isFunctionDecl = std::is_same_v<T, clang::FunctionDecl>;
@@ -45,39 +45,37 @@ void storeDecl(T *decl, clang::ASTUnit const &unit, CodeDB &cdb,
   if (isExternal && !isFunctionDecl)
     return;
 
-  // Make use of compile-time polymorphism
-  if (name.empty())
-    name = decl->getQualifiedNameAsString();
-  clang::Decl *defDecl = decl->getDefinition();
+  std::string keyName = CodeDB::getKeyName(decl);
+  T *defDecl = decl->getDefinition();
 
-  if (!cdb.isRegistered(name)) {
-    cdb.registerDecl(unit, name, decl, defDecl);
+  if (!cdb.isRegistered(keyName)) {
+    cdb.registerDecl(unit, decl, defDecl);
   } else {
     if (defDecl)
-      cdb.addDefinitionDecl(name, defDecl);
+      cdb.addDefinitionDecl(keyName, defDecl);
   }
 
   if (isExternal)
-    cdb.addExtSource(name, srcDeclFile);
+    cdb.addExtSource(keyName, srcDeclFile);
 }
 
 template <typename T>
 std::tuple<T const *, bool> visitAndRegister(clang::NamedDecl const *decl,
                                              VisitManager &vm,
                                              CodeDB const &cdb) {
-  std::string name = decl->getQualifiedNameAsString();
-  if (vm.isVisited(name))
-    return {static_cast<T const *>(vm.getVisitedObj(name)->getDefiniton()),
+  std::string keyName = CodeDB::getKeyName(decl);
+  if (vm.isVisited(keyName))
+    return {static_cast<T const *>(vm.getVisitedObj(keyName)->getDefiniton()),
             false};
 
-  if (!cdb.isRegistered(name))
+  if (!cdb.isRegistered(keyName))
     decl->dump();
-  assert(cdb.isRegistered(name) && "All decl to visit should be registered!");
-  auto objInfo = cdb.getObjInfoOrNull(name);
+  assert(cdb.isRegistered(keyName) && "All decl to visit should be registered!");
+  auto objInfo = cdb.getObjInfoOrNull(keyName);
 
   // Lookup definition from database
   auto defDecl = static_cast<T const *>(objInfo->getDefiniton());
-  vm.markVisited(name, objInfo);
+  vm.markVisited(keyName, objInfo);
   vm.registerDecl(defDecl);
 
   return {defDecl, true};
@@ -190,10 +188,10 @@ bool CodeExtractVisitor::VisitRecordDecl(clang::RecordDecl *decl) {
 /// FIXME: We do not need to cache these as typically defs are together with
 /// decls.
 bool CodeExtractVisitor::VisitTypedefNameDecl(clang::TypedefNameDecl *decl) {
-  auto name = decl->getQualifiedNameAsString();
-  if (codedb.isRegistered(name))
+  std::string keyName = CodeDB::getKeyName(decl);
+  if (codedb.isRegistered(keyName))
     return true;
-  codedb.registerDecl(unit, name, decl, decl);
+  codedb.registerDecl(unit, decl, decl);
   return true;
 }
 

@@ -21,18 +21,18 @@ class TestTool():
     def run_tool(self, *args):
         result = subprocess.run(
             [self.exec] + list(args),
-            stdout=subprocess.PIPE,
+            stdout=subprocess.DEVNULL,
             stderr=subprocess.PIPE,
             text=True                    
         )
         return result
 
-    def run_single_test_set(self, project, funcs, test_name):
+    def run_single_test_set(self, project, funcs, test_name, *args):
         fails = 0
         for func in tqdm(funcs):
-            result = self.run_tool(project, func)
+            result = self.run_tool(project, func, *args)
             msg = "\nTraceback for " + func + "\n" + result.stderr
-            if 'Compilation successful!' not in result.stdout:
+            if 'Compilation failed!' in result.stderr:
                 print_red(test_name, "failed with", func, "!")
                 print(msg)
                 fails += 1
@@ -61,8 +61,9 @@ class TestTool():
     def run_tests(self):
         # Simple - test simple function bodies 
         path_to_proj = self.project_dir / Path("tests/dummy_proj")
-        function_names = ['func'] + ['func' + str(i) for i in range(2, 10 + 1)]
+        function_names = ['func'] + ['func' + str(i) for i in range(2, 10 + 1)] + ['func13']
         self.run_single_test_set(path_to_proj, function_names, "Simple")
+        self.run_single_test_set(path_to_proj, ['func12'], "Simple - Overloads and Templates", "-emitAllDecls")
         
     def run(self):
         self.print_start()
