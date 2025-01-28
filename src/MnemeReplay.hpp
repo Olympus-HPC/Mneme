@@ -301,7 +301,10 @@ public:
     }
   }
 
-  void initializeDeviceMemory() { PrologueState.load(); }
+  void initializeDeviceMemory() {
+    PrologueState.load();
+    EpilogueState.load();
+  }
 
   void releaseMemory() { PrologueState.release(); }
 

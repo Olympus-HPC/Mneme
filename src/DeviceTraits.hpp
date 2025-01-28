@@ -49,6 +49,8 @@ template <> struct DeviceTraits<DeviceVendors::HIP> {
     return hipMemcpy(Dest, Src, SizeBytes, Kind);
   }
 
+  static hipError_t DeviceSynchronize() { return hipDeviceSynchronize(); }
+
   static std::string GetDeviceArch() {
     DeviceHandle_t Dev;
     DeviceContext_t Ctx;
