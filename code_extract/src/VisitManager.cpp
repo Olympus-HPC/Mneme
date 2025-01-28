@@ -23,7 +23,8 @@ public:
   run(const clang::ast_matchers::MatchFinder::MatchResult &Result) final {
     if (auto lmbdExpr =
             Result.Nodes.getNodeAs<clang::LambdaExpr>("lambdaExpr")) {
-      assert(lambdaExpr == nullptr && "Should only match one lambda expression.");
+      assert(lambdaExpr == nullptr &&
+             "Should only match one lambda expression.");
       lambdaExpr = lmbdExpr;
     }
   }
@@ -160,11 +161,12 @@ void VisitManager::registerParameterPrologue(ObjInfo *fnObj) {
   fillParams("", fnDecl->param_begin(), fnDecl->param_end());
 }
 
-void VisitManager::emitStandaloneFile(std::string &output,
+void VisitManager::emitStandaloneFile(std::string &output, bool emitRR,
                                       std::string const &configString) {
   auto body =
       static_cast<clang::FunctionDecl const *>(primaryFn.getDefiniton());
   bool cudaKernel = body->hasAttr<clang::CUDAGlobalAttr>();
+  bool emitRRHooks = cudaKernel && emitRR;
 
   llvm::raw_string_ostream ss(output);
 
@@ -176,7 +178,7 @@ void VisitManager::emitStandaloneFile(std::string &output,
       ss << "\"" << inc << "\"";
     ss << "\n\n";
   }
-  if (cudaKernel)
+  if (emitRRHooks)
     ss << "#include \"RRHooks.h\"\n\n";
 
   for (auto &tags : tagDecls) {
@@ -197,17 +199,20 @@ void VisitManager::emitStandaloneFile(std::string &output,
   // Building main
   ss << "int main(int argc, char *argv[]) {\n";
 
-  if (cudaKernel) {
+  if (emitRRHooks) {
     // First add the prologue
     ss << "init_RR(";
     ss << "\"" << clang::ASTNameGenerator(body->getASTContext()).getName(body)
        << "\"";
     ss << ", argc, argv);\n";
+  }
 
+  if (cudaKernel)
     // If we have a cuda kernel, we should add the config string...
     ss << "dim3 grid;\n"
        << "dim3 block;\n";
 
+  if (emitRRHooks) {
     // ...and load it from RR
     ss << "init_dims(\"Grid\", grid);\n"
        << "init_dims(\"Block\", block);\n";
@@ -221,7 +226,7 @@ void VisitManager::emitStandaloneFile(std::string &output,
     std::string typeString =
         paramVar->getType().getCanonicalType().getAsString();
     ss << helper::getParamDeclAsString(typeString, paramName);
-    if (cudaKernel)
+    if (emitRRHooks)
       ss << "init_param(" << paramName << ", " << paramName << ");\n";
   }
   // Then, without initializers...
@@ -247,7 +252,7 @@ void VisitManager::emitStandaloneFile(std::string &output,
     ss << ", " << "p" << paramCount;
   ss << ");\n";
 
-  if (cudaKernel)
+  if (emitRRHooks)
     ss << "verify_rr();\n";
 
   ss << "}\n";

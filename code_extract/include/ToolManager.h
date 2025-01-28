@@ -20,9 +20,10 @@ class ToolManager {
   ObjInfo *primaryFn;
   std::vector<std::unique_ptr<clang::ASTUnit>> asts;
   std::unique_ptr<CodeDB> db;
+  bool emitRR;
 
 public:
-  ToolManager(std::string const &projectDirPath);
+  ToolManager(std::string const &projectDirPath, bool emitRR);
 
   /// @brief Finds the function declaration by name.
   /// @param fnName Name of the function declaration to find.
@@ -39,5 +40,5 @@ public:
   /// @param mangledFnName If the function is a template function, also specify
   /// which function spec to pull.
   void getStandaloneFnContext(std::string const &fnName,
-                              std::string mangledFnName = "");
+                              std::string const &mangledFnName);
 };

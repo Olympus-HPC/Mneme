@@ -20,8 +20,8 @@ getCompilationFlags(std::vector<std::string> const &cli,
   std::string flags;
   bool prev = false;
   for (auto &command : cli) {
-    if (prev || (command[0] == '-' &&
-                 blacklistedFlags.find(command) == blacklistedFlags.end())) {
+    if ((prev || command[0] == '-') &&
+                 blacklistedFlags.find(command) == blacklistedFlags.end()) {
       flags += command + " ";
       prev = !prev;
     }
@@ -30,7 +30,7 @@ getCompilationFlags(std::vector<std::string> const &cli,
 }
 } // namespace helper
 
-ToolManager::ToolManager(std::string const &dirPath) {
+ToolManager::ToolManager(std::string const &dirPath, bool emitRR) : emitRR(emitRR) {
   // Setup our tool
   std::string errorMsg;
   compDb = ct::CompilationDatabase::autoDetectFromDirectory(dirPath, errorMsg);
@@ -120,7 +120,7 @@ ObjInfo *ToolManager::findFnDeclByName(std::string const &fnName,
 }
 
 void ToolManager::getStandaloneFnContext(std::string const &fnName,
-                                         std::string mangledFnName) {
+                                         std::string const &mangledFnName) {
   primaryFn = findFnDeclByName(fnName, mangledFnName);
   auto fnSrcFile = primaryFn->getRefFile();
   bool isCuda = fnSrcFile.substr(fnSrcFile.size() - 2, 2) == "cu";
@@ -133,7 +133,7 @@ void ToolManager::getStandaloneFnContext(std::string const &fnName,
 
   mv.pullPrimaryFnContext();
   std::string code;
-  mv.emitStandaloneFile(code);
+  mv.emitStandaloneFile(code, emitRR);
 
   // Compile pulled code
   // First dump everything to a file
@@ -155,9 +155,12 @@ void ToolManager::getStandaloneFnContext(std::string const &fnName,
   // Then compile
   // For now only get one compilation command
   auto cli = compDb->getCompileCommands(fnSrcFile)[0].CommandLine;
+  // Remove warning for use of uninitialized vars, eventually make this optional
+  std::string defaultOpts = "-Wno-uninitialized";
   command =
       cli[0] + " -o " + objname + " " + filename + " " +
       helper::getCompilationFlags(cli, {"-c", "-o", "--driver-mode=g++", "--"});
+  command += " " + defaultOpts;
   std::cout << "Compiling " << fnName << " with command:\n"
             << command << std::endl;
   if (system(command.c_str()) != 0) {

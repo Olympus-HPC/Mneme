@@ -93,7 +93,7 @@ public:
   /// @param output String to dump the full standalone code into.
   /// @param configString For CUDA global functions specifying grid, block and
   /// thread size.
-  void emitStandaloneFile(std::string &output,
+  void emitStandaloneFile(std::string &output, bool emitRR,
                           std::string const &configString = "");
 
   /// @brief Given a function declaration, pulls all dependencies necessary to
