@@ -45,15 +45,14 @@ int main(int argc, char *argv[]) {
   auto Modules = RInstance.loadModules(Ctx);
   auto Mod = ProteusJIT::linkJitModule(Ctx, Modules);
   auto ReplayKernelFunc = Mod->getFunction(RInstance.getKernelName());
-  internalizeModule(*Mod, [&ReplayKernelFunc](const GlobalValue &GV) {
-    // Do not internalize the kernel function.
-    if (&GV == ReplayKernelFunc)
-      return true;
+  // internalizeModule(*Mod, [&ReplayKernelFunc](const GlobalValue &GV) {
+  //   // Do not internalize the kernel function.
+  //   if (&GV == ReplayKernelFunc)
+  //     return true;
 
-    // Internalize everything else.
-    return false;
-  });
-
+  //  // Internalize everything else.
+  //  return false;
+  //});
   ProteusJIT::optimizeIR(*Mod, Arch);
   auto RecordedGrid = RInstance.getRecordedGrid();
   auto RecordedBlock = RInstance.getRecordedBlock();
@@ -72,6 +71,26 @@ int main(int argc, char *argv[]) {
 
   auto Func = DeviceVendorTraits::getKernelFunctionFromImage(
       VendorModule, RInstance.getKernelName());
+
+  DeviceVendorTraits::DeviceStream_t ReplayStream;
+  auto EC = DeviceVendorTraits::DeviceErrorCheck(
+      DeviceVendorTraits::DeviceStreamCreate(&ReplayStream));
+  if (EC)
+    FATAL_ERROR("Error when creating a stream for replay\n" + EC.value());
+
+  auto Args = RInstance.getArgs();
+  EC = DeviceVendorTraits::DeviceErrorCheck(
+      DeviceVendorTraits::launchKernelFunction(
+          Func, RecordedGrid, RecordedBlock, Args.get(),
+          RInstance.getSharedMemSize(), ReplayStream));
+  if (EC)
+    FATAL_ERROR("Error When Launching Kernel: " + EC.value());
+
+  EC = DeviceVendorTraits::DeviceErrorCheck(
+      DeviceVendorTraits::DeviceStreamSynchronize(ReplayStream));
+
+  if (EC)
+    FATAL_ERROR("Error When synchronizing with kernel stream: " + EC.value());
 
   std::cout << "Verified:" << RInstance.isMemorySame() << "\n";
 

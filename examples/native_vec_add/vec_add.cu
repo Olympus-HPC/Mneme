@@ -26,7 +26,7 @@ void vecAdd_test(T *in, T *out, size_t size) {
   auto stride = gridDim.x * blockDim.x;
 
   for (; tid < size; tid += stride) {
-    out[tid] += in[tid] + tid + some_value;
+    out[tid] += in[tid] + tid; // + some_value;
   }
 }
 
@@ -60,11 +60,13 @@ int main(int argc, const char *argv[]) {
   double *h_out = new double[numElements];
   device_rt_call(Memcpy)(h_in, in, sizeof(double)*numElements, device_rt_call(MemcpyDeviceToHost));
   device_rt_call(Memcpy)(h_out, out, sizeof(double)*numElements, device_rt_call(MemcpyDeviceToHost));
+  int ret = 0;
   for (int i = 0; i < numElements; i++){
     if (h_in[i] + i != h_out[i]){
       std::cout << "Values at " << i << " differ\n";
       std::cout << "Values " << h_in[i] << " " << h_out[i] << "differ\n";
-      return -1;
+      ret = -1;
+      break;
     }
   }
   
@@ -72,5 +74,5 @@ int main(int argc, const char *argv[]) {
   delete [] h_out;
   device_rt_call(Free)(in);
   device_rt_call(Free)(out);
-  return 0;
+  return ret;
 }

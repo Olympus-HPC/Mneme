@@ -187,7 +187,7 @@ template <> struct DeviceTraits<DeviceVendors::HIP> {
   }
 
   static constexpr size_t getFixedMemorySize() {
-    return 16L * 1024L * 1024L * 1024L;
+    return 64L * 1024L * 1024L * 1024L;
   }
 
   static void freeVirtualAddress(void *Addr, size_t Size) {
@@ -201,6 +201,10 @@ template <> struct DeviceTraits<DeviceVendors::HIP> {
 
   static bool compareDeviceBlobs(const char *Blob1, const char *Blob2,
                                  uint64_t NumBytes);
+
+  static hipError_t DeviceStreamCreate(hipStream_t *Stream) {
+    return hipStreamCreate(Stream);
+  }
 };
 #elif defined(ENABLE_CUDA)
 template <> struct DeviceTraits<DeviceVendors::HIP> {

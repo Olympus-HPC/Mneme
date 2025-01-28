@@ -6,6 +6,7 @@
 #include "Utils.hpp"
 #include <Logger.hpp>
 #include <algorithm>
+#include <cstdint>
 #include <llvm/Bitcode/BitcodeReader.h>
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/Module.h>
@@ -129,6 +130,16 @@ public:
   bool operator!=(const ReplayMemState<VendorTypes> &other) const {
     return !(*this == other);
   }
+
+  std::unique_ptr<void *> getArgs() const {
+    void **Args = new void *[KInfo->getNumArgs()];
+    auto ArgData = KInfo->getArgData();
+    for (int I = 0; I < KInfo->getNumArgs(); I++) {
+      Args[I] = ArgData[I].get();
+    }
+    std::unique_ptr<void *> ArgUniquePtr(Args);
+    return ArgUniquePtr;
+  }
 };
 
 template <DeviceVendors VendorTypes>
@@ -228,6 +239,13 @@ public:
     PrologueFn = extractStringValue(InstanceJSON, "Prologue");
     EpilogueFn = extractStringValue(InstanceJSON, "Epilogue");
 
+    auto ShmSize = InstanceJSON->getInteger("SharedMem");
+
+    if (!ShmSize)
+      FATAL_ERROR("Expected Shared Memory Size to be part of the JSON");
+
+    SharedMem = ShmSize.value();
+
     PrologueState = DeviceMemState(KernelName, PrologueFn,
                                    DeviceMemState::InstanceType::Prologue);
     EpilogueState = DeviceMemState(KernelName, EpilogueFn,
@@ -263,9 +281,6 @@ public:
     }
     return RecordedModules;
   }
-
-  dim3 getRecordedGrid() const { return GridDim; }
-  dim3 getRecordedBlock() const { return BlockDim; }
 
   void initializeGlobals(DeviceModule_t VendorMod) {
     for (auto &KV : PrologueState.GlobalVars) {
@@ -309,6 +324,13 @@ public:
   void releaseMemory() { PrologueState.release(); }
 
   bool isMemorySame() { return PrologueState == EpilogueState; }
+
+  std::unique_ptr<void *> getArgs() const { return PrologueState.getArgs(); }
+
+  uint64_t getSharedMemSize() { return SharedMem; }
+
+  dim3 getRecordedGrid() const { return GridDim; }
+  dim3 getRecordedBlock() const { return BlockDim; }
 };
 
 } // namespace mneme
