@@ -35,9 +35,13 @@ bool checkPotentialInclude(clang::NamedDecl const *decl, VisitManager &vm,
 
 template <typename T>
 void storeDecl(T *decl, clang::ASTUnit const &unit, CodeDB &cdb) {
-  std::string srcDeclFile =
-      locToIncFile(decl->getLocation(), unit.getASTContext());
   constexpr bool isFunctionDecl = std::is_same_v<T, clang::FunctionDecl>;
+  std::string srcDeclFile = locToIncFile(decl->getLocation(), unit.getASTContext());
+  if constexpr(isFunctionDecl) {
+    // If function template, look at template declaration loc and not instantiation loc.
+    if (auto tmpDecl = decl->getPrimaryTemplate())
+      srcDeclFile = locToIncFile(decl->getLocation(), unit.getASTContext());
+  }
   bool isExternal = isIncludeExternal(srcDeclFile, cdb);
   // If location is external but not a function decl, dont store it
   // We need to store external function decls as they may be requested for
@@ -103,12 +107,17 @@ bool isGlobalVar(clang::VarDecl const *decl) {
   return !decl->isStaticLocal() && decl->hasGlobalStorage();
 }
 
-clang::Type const *getUnderlyingCanonicalType(clang::QualType const &type) {
-  auto canonType = type.getTypePtr();
-  while (canonType->isPointerType() || canonType->isArrayType()) {
-    canonType = canonType->getPointeeOrArrayElementType();
-  }
-  return canonType;
+clang::QualType getUnderlyingType(clang::QualType const &type) {
+  clang::QualType qt;
+  if(auto pointerType = type->getAs<clang::PointerType>())
+    qt = pointerType->getPointeeType();
+  else if(type->isArrayType())
+    qt = llvm::cast<clang::ArrayType>(type)->getElementType();
+  else if(auto referenceType = type->getAs<clang::ReferenceType>())
+    qt = referenceType->getPointeeType();
+  else return type;
+  
+  return getUnderlyingType(qt);
 }
 
 // Use the fact that builtin functions are typically prepended with "__"
@@ -154,7 +163,7 @@ void handleTypedefs(clang::TypedefType const *typ, VisitManager &vm,
 }
 
 void handleVarDecl(clang::QualType qt, VisitManager &vm, CodeDB const &codedb) {
-  auto cannonType = getUnderlyingCanonicalType(qt);
+  auto cannonType = getUnderlyingType(qt);
   clang::RecordDecl const *decl = cannonType->getAsRecordDecl();
   if (!decl) {
     auto typedefType = cannonType->getAs<clang::TypedefType>();

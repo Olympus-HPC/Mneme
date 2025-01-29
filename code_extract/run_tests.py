@@ -61,7 +61,7 @@ class TestTool():
     def run_tests(self):
         # Simple - test simple function bodies 
         path_to_proj = self.project_dir / Path("tests/dummy_proj")
-        function_names = ['func'] + ['func' + str(i) for i in range(2, 10 + 1)] + ['func13']
+        function_names = ['func'] + ['func' + str(i) for i in range(2, 10 + 1)] + ['func13', 'func14']
         self.run_single_test_set(path_to_proj, function_names, "Simple")
         self.run_single_test_set(path_to_proj, ['func12'], "Simple - Overloads and Templates", "-emitAllDecls")
         

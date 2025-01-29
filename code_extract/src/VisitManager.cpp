@@ -1,7 +1,6 @@
 #include "VisitManager.h"
 #include "Visitor.h"
 
-#include <iostream>
 #include <string>
 #include <vector>
 
@@ -9,6 +8,7 @@
 #include "clang/AST/Decl.h"
 #include "clang/AST/DeclBase.h"
 #include "clang/AST/Mangle.h"
+#include "clang/AST/Type.h"
 #include "clang/ASTMatchers/ASTMatchFinder.h"
 #include "clang/ASTMatchers/ASTMatchers.h"
 #include "llvm/Support/raw_ostream.h"
@@ -41,6 +41,9 @@ std::string getParamDeclAsString(std::string const &typeString,
     decl += " = " + init;
   return decl + ";\n";
 }
+
+/// FIXME: Move into generic utils namespace
+extern clang::QualType getUnderlyingType(clang::QualType const &type);
 } // namespace helper
 
 void VisitManager::registerDecl(clang::NamedDecl const *decl) {
@@ -115,7 +118,7 @@ void VisitManager::fillParams(std::string const &prefix, T *begin, T *end) {
     } else {
       expr = *paramIt;
     }
-    auto type = expr->getType();
+    auto type = helper::getUnderlyingType(expr->getType());
     // If expression is lambda, save that...
     if (type->hasUnnamedOrLocalType()) {
       // Could possibly be lambda object,

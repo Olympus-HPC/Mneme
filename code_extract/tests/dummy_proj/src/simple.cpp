@@ -99,10 +99,17 @@ int func13(int x) {
     return func12(glambda);
 }
 
+template <typename T> 
+int func14(T&& lmb) {
+    return lmb(10, 12);
+}
+
 int main() {
     auto glambda = [](int a, int b) { return a < b; };
     func12(glambda);
     func12(glambda, 1, 2);
-    
+
+    func14(glambda);
+
     return 0;
 }
