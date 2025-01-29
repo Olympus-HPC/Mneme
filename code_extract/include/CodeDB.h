@@ -129,9 +129,11 @@ public:
       db.at(keyName)->addDefinitionDecl(defDecl);
   }
 
-  void addExtSource(std::string const &keyName,
+  void addExtSourceToSourceName(std::string const &sourceName,
                     std::string const &fileName) {
-    if (isRegistered(keyName))
+    std::unordered_set<std::string> mangle;
+    getManglings(sourceName, mangle);
+    for (auto keyName : mangle)
       db.at(keyName)->addExtSourceFile(fileName);
   }
 

@@ -39,8 +39,9 @@ void storeDecl(T *decl, clang::ASTUnit const &unit, CodeDB &cdb) {
   std::string srcDeclFile = locToIncFile(decl->getLocation(), unit.getASTContext());
   if constexpr(isFunctionDecl) {
     // If function template, look at template declaration loc and not instantiation loc.
-    if (auto tmpDecl = decl->getPrimaryTemplate())
-      srcDeclFile = locToIncFile(decl->getLocation(), unit.getASTContext());
+    if (auto tmpDecl = decl->getPrimaryTemplate()) {
+      srcDeclFile = locToIncFile(tmpDecl->getLocation(), unit.getASTContext());
+    }
   }
   bool isExternal = isIncludeExternal(srcDeclFile, cdb);
   // If location is external but not a function decl, dont store it
@@ -60,7 +61,7 @@ void storeDecl(T *decl, clang::ASTUnit const &unit, CodeDB &cdb) {
   }
 
   if (isExternal)
-    cdb.addExtSource(keyName, srcDeclFile);
+    cdb.addExtSourceToSourceName(decl->getQualifiedNameAsString(), srcDeclFile);
 }
 
 template <typename T>
