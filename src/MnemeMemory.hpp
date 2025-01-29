@@ -36,7 +36,7 @@ public:
   MnemeMemoryBlob(uint64_t ActualSize = 0, void *BlobAddr = nullptr,
                   uint64_t Size = 0, uint64_t DeviceID = 0)
       : ActualSize(ActualSize), BlobAddr(BlobAddr), Size(Size), DeviceID(0),
-        HostData(nullptr), IsMapped(false) {}
+        HostData(new uint8_t[Size]), IsMapped(false) {}
 
   hipError_t map(void *VA, uint64_t ActualSize, uint64_t Size,
                  int DeviceID = 0) {
@@ -48,11 +48,6 @@ public:
     this->BlobAddr = VA;
     this->IsMapped = true;
     this->ActualSize = ActualSize;
-
-    HostData = std::unique_ptr<uint8_t[]>(new uint8_t[Size]);
-    std::cout << "Allocated Device Address at "
-              << reinterpret_cast<void *>(HostData.get()) << "\n";
-
     return hipSuccess;
   };
 
@@ -91,11 +86,9 @@ public:
     size_t ActualSize = util::extractScalar<size_t>(Buffer);
     size_t Size = util::extractScalar<size_t>(Buffer);
     void *DeviceAddr = util::extractScalar<void *>(Buffer);
-    std::unique_ptr<uint8_t[]> HostData = std::make_unique<uint8_t[]>(Size);
-    std::memcpy(HostData.get(), Buffer, Size);
-    Buffer += Size;
     auto Blob = MnemeMemoryBlob<VendorTypes>(ActualSize, 0, Size, 0);
-    Blob.setHostData(std::move(HostData));
+    std::memcpy(Blob.getHostData().get(), Buffer, Size);
+    Buffer += Size;
     DBG(Logger::logs("mneme")
         << "Read memory blob at address " << std::hex << DeviceAddr << std::dec
         << " of size " << Size << " and ActualSize is " << ActualSize << "\n");

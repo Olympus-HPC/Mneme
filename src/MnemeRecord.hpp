@@ -183,7 +183,8 @@ public:
     }
 
     auto [Addr, ReservedSize] = PM->allocateAddr(size, nullptr);
-    MnemeMemoryBlob<VendorTypes> MemBlob;
+    MnemeMemoryBlob<VendorTypes> MemBlob(
+        ReservedSize, reinterpret_cast<void *>(Addr), size, DeviceID);
     auto ret = MemBlob.map(reinterpret_cast<void *>(Addr), ReservedSize, size,
                            DeviceID);
     *ptr = MemBlob.ptr();
