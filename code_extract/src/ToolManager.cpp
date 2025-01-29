@@ -19,19 +19,23 @@ std::string
 getCompilationFlags(std::vector<std::string> const &cli,
                     std::unordered_set<std::string> const &blacklistedFlags) {
   std::string flags;
-  bool prev = false;
+  bool canBeArg = true;
   for (auto &command : cli) {
-    if ((prev || command[0] == '-') &&
-                 blacklistedFlags.find(command) == blacklistedFlags.end()) {
+    bool isFlag = command[0] == '-';
+    if ((canBeArg || isFlag) &&
+        blacklistedFlags.find(command) == blacklistedFlags.end()) {
       flags += command + " ";
-      prev = !prev;
+      canBeArg = isFlag;
+    } else {
+      canBeArg = false;
     }
   }
   return flags;
 }
 } // namespace helper
 
-ToolManager::ToolManager(std::string const &dirPath, bool emitRR) : emitRR(emitRR) {
+ToolManager::ToolManager(std::string const &dirPath, bool emitRR)
+    : emitRR(emitRR) {
   // Setup our tool
   std::string errorMsg;
   compDb = ct::CompilationDatabase::autoDetectFromDirectory(dirPath, errorMsg);
@@ -109,16 +113,17 @@ ObjInfo *ToolManager::findFnDeclByName(std::string const &fnName,
   return obj;
 }
 
-void ToolManager::getStandaloneFnContext(std::string const &fnName, std::string const& outFileName,
+void ToolManager::getStandaloneFnContext(std::string const &fnName,
+                                         std::string const &outFileName,
                                          std::string mangledFnName) {
   primaryFn = findFnDeclByName(fnName, mangledFnName);
   auto fnSrcFile = primaryFn->getRefFile();
   bool isCuda = fnSrcFile.substr(fnSrcFile.size() - 2, 2) == "cu";
 
   std::string filename;
-  if (!outFileName.empty()) 
+  if (!outFileName.empty())
     filename = outFileName;
-  else 
+  else
     filename = std::regex_replace(fnName, std::regex("[^\\w]"), "_");
   std::string objname = filename + ".o";
   filename += (isCuda ? ".cu" : ".cpp");
@@ -152,9 +157,9 @@ void ToolManager::getStandaloneFnContext(std::string const &fnName, std::string 
   // Remove warning for use of uninitialized vars, eventually make this optional
   std::string defaultOpts = "-Wno-uninitialized";
   command =
-      cli[0] + " -o " + objname + " " + filename + " " +
       helper::getCompilationFlags(cli, {"-c", "-o", "--driver-mode=g++", "--"});
   command += " " + defaultOpts;
+  command += " -o " + objname + " " + filename;
   std::cout << "Compiling " << fnName << " with command:\n"
             << command << std::endl;
   if (system(command.c_str()) != 0) {
@@ -170,7 +175,8 @@ void ToolManager::getAllDeclarations(std::string const &fnName) {
 
   int cnt = 0;
   for (auto mangledName : manglings) {
-    std::string filename = std::regex_replace(fnName, std::regex("[^\\w]"), "_");
+    std::string filename =
+        std::regex_replace(fnName, std::regex("[^\\w]"), "_");
     getStandaloneFnContext(fnName, fnName + std::to_string(cnt++), mangledName);
   }
 }
