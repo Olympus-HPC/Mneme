@@ -75,16 +75,18 @@ void VisitManager::registerDecl(clang::FunctionDecl const *decl) {
 }
 
 bool VisitManager::registerInclude(std::string const &includePath) {
-  if (includePath == "" || includePath.find(".c") != std::string::npos)
+  // We will likely not pick up any source files here so no need to check.
+  if (includePath == "")
     return false;
 
   // Obviously there is no requirement for there to be an include folder in the
   // path but for now we assume there is for simplicity. We can also change this
   // to match against the last '/' instead.
+  std::string fileName = includePath.substr(includePath.rfind("/") + 1);
   std::string incFile;
-  if (includePath.find(".h") == std::string::npos) {
+  if (fileName.find(".") == std::string::npos) {
     // For potential forwarding headers, split at last '/'
-    incFile = includePath.substr(includePath.rfind("/") + 1);
+    incFile = fileName;
   } else
     incFile = includePath.substr(includePath.rfind("include") + 7 + 1);
 
