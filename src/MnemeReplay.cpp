@@ -1,4 +1,5 @@
 #include "MnemeJITProteus.hpp"
+#include "MnemeLogger.hpp"
 #include "MnemeReplay.hpp"
 #include <llvm/IR/GlobalVariable.h>
 #include <llvm/IR/LLVMContext.h>
@@ -43,11 +44,10 @@ int main(int argc, char *argv[]) {
 
   ProteusJIT::InitLLVM();
 
-  std::cout << "Kernel JSON File is " << MnemeJson
-            << " with Dynamic Hash value " << MnemeKernelHash << "\n";
-
+  LOG_INFO("using mneme db-file {}and dynamic instance {}", MnemeJson,
+           MnemeKernelHash);
   auto Arch = DeviceVendorTraits::GetDeviceArch();
-  Logger::logs("mneme") << "Device Architecture is " << Arch << "\n";
+  LOG_INFO("Detected system device Architecture is: {}", Arch);
 
   ReplayInstance<Vendor> RInstance(MnemeJson, MnemeKernelHash);
   llvm::LLVMContext Ctx;
@@ -65,7 +65,7 @@ int main(int argc, char *argv[]) {
     return false;
   });
 
-  std::cout << "Optimizing Kernel with OptLevel " << MnemeOptLevel << "\n";
+  LOG_INFO("Optimizing Kernel with OptLevel {}", MnemeOptLevel.getValue());
   ProteusJIT::optimizeIR(*Mod, Arch, MnemeOptLevel);
   auto RecordedGrid = RInstance.getRecordedGrid();
   auto RecordedBlock = RInstance.getRecordedBlock();

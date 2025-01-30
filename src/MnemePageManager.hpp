@@ -4,6 +4,9 @@
 #include <set>
 #include <sys/types.h>
 
+#include "MnemeLogger.hpp"
+#include "Utils.hpp"
+
 struct ContiguousAddrBlock {
   // Starting address of the free block
   uintptr_t PageAddr;
@@ -53,3 +56,31 @@ public:
   void *getVAStart() const { return reinterpret_cast<void *>(ReservedVA); }
   uint64_t getTotalVASize() const { return TotalVASize; }
 };
+
+template <typename MnemeDeviceRT>
+std::unique_ptr<PageManager> initializePageManager(void *ReqAddr = nullptr) {
+  const int MaxTries = 5;
+  int DeviceID = 0;
+  auto MinPageSize = MnemeDeviceRT::getMinPageSize(DeviceID);
+
+  auto ActualSize =
+      mneme::util::roundUp(MnemeDeviceRT::getFixedMemorySize(), MinPageSize);
+  void *VA = nullptr;
+  int Try = 0;
+  if (!ReqAddr)
+    ReqAddr = reinterpret_cast<void *>(MnemeDeviceRT::getSuggestedAddr());
+
+  while (VA != ReqAddr && Try < MaxTries) {
+    LOG_INFO("Trying {}/{} to Reserve Virtual Address {} space of size {}...",
+             Try, MaxTries, reinterpret_cast<void *>(ReqAddr), ActualSize);
+
+    if (VA)
+      MnemeDeviceRT::freeVirtualAddress(VA, ActualSize);
+
+    VA = MnemeDeviceRT::getVirtualAddress(
+        ActualSize, reinterpret_cast<void *>(ReqAddr), MinPageSize);
+    Try++;
+  }
+  LOG_INFO("... Reserved successfully Virtual Address {}", VA);
+  return std::make_unique<PageManager>(ActualSize, MinPageSize, VA, 0);
+}

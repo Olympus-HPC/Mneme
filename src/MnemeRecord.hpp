@@ -6,6 +6,7 @@
 #include "Utils.hpp"
 #include <assert.h>
 #include <cstddef>
+#include <cstdint>
 #include <dlfcn.h>
 
 #include "llvm/Support/raw_ostream.h"
@@ -147,26 +148,12 @@ public:
                          thread_limit, tid, bid, bDim, gDim, wSize);
   };
 
-  std::unique_ptr<PageManager> initializePageManager() {
-    int DeviceID = 0;
-    auto MinPageSize = MnemeDeviceRT::getMinPageSize(DeviceID);
-
-    auto ActualSize =
-        util::roundUp(MnemeDeviceRT::getFixedMemorySize(), MinPageSize);
-    LOG_INFO("Trying to Reserve Virtual Address space of size {}...",
-             ActualSize);
-    void *VA =
-        MnemeDeviceRT::getVirtualAddress(ActualSize, nullptr, MinPageSize);
-    LOG_INFO("... Reserved successfully Virtual Address {}", VA);
-    return std::make_unique<PageManager>(ActualSize, MinPageSize, VA, 0);
-  }
-
   DeviceError_t rtMalloc(void **ptr, size_t size) {
     // TODO: Find a better way to find the current active device;
     int DeviceID = 0;
 
     std::call_once(ExtractFlag, [this]() {
-      PM = initializePageManager();
+      PM = initializePageManager<MnemeDeviceRT>();
       extractIR();
       getGlobalAddresses();
     });
@@ -222,7 +209,7 @@ public:
     }
 
     std::call_once(ExtractFlag, [this]() {
-      PM = initializePageManager();
+      PM = initializePageManager<MnemeDeviceRT>();
       extractIR();
       getGlobalAddresses();
     });

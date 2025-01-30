@@ -1,4 +1,5 @@
 #include "DeviceTraits.hpp"
+#include "MnemeLogger.hpp"
 #include "MnemeMemory.hpp"
 #include "MnemePageManager.hpp"
 #include "MnemeSnapshot.hpp"
@@ -154,7 +155,7 @@ class ReplayInstance : public mneme::KernelInstance {
   DeviceMemState PrologueState;
   DeviceMemState EpilogueState;
   llvm::SmallVector<std::string> ModuleFileNames;
-  PageManager PM;
+  std::unique_ptr<PageManager> PM;
 
 private:
   static dim3 getDim3(llvm::json::Object &Info, std::string key) {
@@ -196,7 +197,7 @@ public:
     auto VAddrStr = extractStringValue(JSONRoot, "VAddr").str();
     VAddr = util::hexStringToPointer<void *>(VAddrStr);
 
-    std::cout << "VAddr in json is " << VAddr << " " << VAddrStr << "\n";
+    LOG_DEBUG("VAddr in json is {}", VAddr);
 
     auto VASizeOpt = JSONRoot->getInteger("VASize");
     if (!VASizeOpt)
@@ -207,7 +208,8 @@ public:
 
     auto ActualSize = util::roundUp(VASize, MinPageSize);
     if (VASize != ActualSize)
-      Logger::warn() << "Expected VASize and ActualSize to match\n";
+      LOG_WARN("Expected VASize ({}) and ActualSize ({}) to match\n", VASize,
+               ActualSize);
 
     void *VA = MnemeDeviceRT::getVirtualAddress(ActualSize, VAddr, MinPageSize);
     if (VA != VAddr) {
@@ -216,7 +218,7 @@ public:
                   " and replay got : " + util::pointerToHexString(VA));
     }
 
-    PM = PageManager(ActualSize, MinPageSize, VA, DeviceID);
+    PM = initializePageManager<MnemeDeviceRT>(VA);
 
     llvm::json::Array *RecordedModules = JSONRoot->getArray("Modules");
     for (auto Mod : *RecordedModules) {
@@ -288,13 +290,9 @@ public:
           DeviceTraits<VendorTypes>::getGlobalAddrFromModule(VendorMod,
                                                              KV.first);
       if (KV.second.DevAddr != LoadedAddr) {
-        Logger::warn() << ("Global :" + KV.first +
-                           " was loaded on different address between record "
-                           "and replay\n" +
-                           "Record Address:" +
-                           util::pointerToHexString(KV.second.DevAddr) + "\n" +
-                           "Replay Address:" +
-                           util::pointerToHexString(LoadedAddr) + "\n");
+        LOG_WARN("Global : {} was loaded on different addresses Record:{} vs "
+                 "Replay:{}",
+                 KV.first, KV.second.DevAddr, LoadedAddr);
         KV.second.DevAddr = LoadedAddr;
       }
 
@@ -311,8 +309,8 @@ public:
       if (EC)
         FATAL_ERROR("Copying Global :" + KV.first +
                     " from host to device raised error\nEC: " + EC.value());
-      DBG(Logger::logs("mneme")
-          << "Successfully loaded global variable " << KV.first << "\n");
+      LOG_DEBUG(Logger::logs("mneme")
+                << "Successfully loaded global variable " << KV.first << "\n");
     }
   }
 

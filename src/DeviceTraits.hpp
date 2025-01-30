@@ -196,6 +196,8 @@ template <> struct DeviceTraits<DeviceVendors::HIP> {
   static hipError_t DeviceStreamCreate(hipStream_t *Stream) {
     return hipStreamCreate(Stream);
   }
+
+  static constexpr uintptr_t getSuggestedAddr() { return 0x0000153d2be00000; }
 };
 #elif defined(ENABLE_CUDA)
 template <> struct DeviceTraits<DeviceVendors::HIP> {
