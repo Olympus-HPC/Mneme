@@ -30,6 +30,12 @@ public:
   }
 };
 
+clang::QualType stripRefs(clang::QualType type) {
+  if (auto refType = type->getAs<clang::ReferenceType>())
+    return refType->getPointeeType();
+  else return type;
+}
+
 std::string getParamDeclAsString(std::string const &typeString,
                                  std::string const &name,
                                  std::string const &init = "") {
@@ -226,8 +232,8 @@ void VisitManager::emitStandaloneFile(std::string &output, bool emitRR,
   for (auto &param : params_decl) {
     auto paramVar = param.second;
     auto paramName = param.first;
-    std::string typeString =
-        paramVar->getType().getCanonicalType().getAsString();
+    auto type = paramVar->getType().getCanonicalType();
+    std::string typeString = helper::stripRefs(type).getUnqualifiedType().getAsString();
     ss << helper::getParamDeclAsString(typeString, paramName);
     if (emitRRHooks)
       ss << "init_param(" << paramName << ", " << paramName << ");\n";

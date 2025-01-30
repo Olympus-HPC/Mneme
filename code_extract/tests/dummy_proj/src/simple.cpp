@@ -104,12 +104,21 @@ int func14(T&& lmb) {
     return lmb(10, 12);
 }
 
+template <typename T> 
+T func15(T&& lmb) {
+    return lmb;
+}
+
 int main() {
     auto glambda = [](int a, int b) { return a < b; };
     func12(glambda);
+    
     func12(glambda, 1, 2);
 
     func14(glambda);
+
+    int const f15 = 1;
+    func15(f15);
 
     return 0;
 }
