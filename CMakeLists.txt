@@ -33,8 +33,13 @@ option(ENABLE_CUDA "Enable CUDA" OFF)
 option(ENABLE_HIP "Enable CUDA" OFF)
 option(ENABLE_TESTS "Enable Testing" OFF)
 option(ENABLE_DEBUG "Enable Debug Output" OFF)
+option(ENABLE_LOGGER "Enable logging on mneme" ON)
 
 find_package(proteus REQUIRED)
+
+if (ENABLE_LOGGER)
+find_package(spdlog REQUIRED)
+endif()
 
 message(STATUS "Installation prefix is ${CMAKE_INSTALL_PREFIX}")
 

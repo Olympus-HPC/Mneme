@@ -1,17 +1,21 @@
 
 set(RecordLibSRC "")
+set(ReplaySRC MnemeReplay.cpp MnemePageManager.cpp MnemeDeviceCode.cpp)
 if (ENABLE_HIP)
   list(APPEND RecordLibSRC MnemeRecordPreloadHIP.cpp MnemePageManager.cpp)
 endif()
 
+if (ENABLE_LOGGER)
+  list(APPEND RecordLibSRC MnemeLogger.cpp)
+  list(APPEND ReplaySRC MnemeLogger.cpp)
+endif()
+
 add_library(mnemerecord SHARED ${RecordLibSRC})
-add_executable(mnemereplay MnemeReplay.cpp MnemePageManager.cpp MnemeDeviceCode.cpp)
+add_executable(mnemereplay ${ReplaySRC})
 
 if (ENABLE_HIP)
   set_source_files_properties(MnemeDeviceCode.cpp PROPERTIES LANGUAGE HIP)
 endif()
-
-#add_executable(replay replay.cpp memory.cpp jit.cpp common.cpp)
 
 set(libs ${LLVM_AVAILABLE_LIBS})
 
@@ -19,6 +23,12 @@ set(libs ${LLVM_AVAILABLE_LIBS})
 target_include_directories(mnemerecord SYSTEM PRIVATE ${LLVM_INCLUDE_DIRS} ${CMAKE_SOURCE_DIR}/common)
 target_include_directories(mnemereplay SYSTEM PRIVATE ${LLVM_INCLUDE_DIRS} ${CMAKE_SOURCE_DIR}/common)
 target_link_libraries(mnemereplay PRIVATE proteus)
+
+if (ENABLE_LOGGER)
+target_link_libraries(mnemereplay PRIVATE spdlog::spdlog_header_only)
+target_compile_definitions(mnemereplay PRIVATE MNEME_ENABLE_LOGGING)
+endif()
+
 if(ENABLE_HIP)
   target_link_libraries(mnemerecord PRIVATE hip::host)
   target_link_libraries(mnemereplay PRIVATE ${LLVM_AVAILABLE_LIBS})
@@ -29,6 +39,10 @@ endif()
 
 
 add_library(RR::MnemeRecord ALIAS mnemerecord)
+if (ENABLE_LOGGER)
+target_compile_definitions(mnemerecord PRIVATE MNEME_ENABLE_LOGGING)
+target_link_libraries(mnemerecord PRIVATE spdlog::spdlog_header_only)
+endif()
 
 #target_include_directories(replay PRIVATE ${LLVM_INCLUDE_DIRS})
 
