@@ -1,5 +1,6 @@
 #pragma once
 #include "Logger.hpp"
+#include "MnemeLogger.hpp"
 #include "Utils.hpp"
 #include <hip/hip_runtime.h>
 
@@ -147,9 +148,6 @@ template <> struct DeviceTraits<DeviceVendors::HIP> {
     Prop.type = hipMemAllocationTypePinned;
     Prop.location.type = hipMemLocationTypeDevice;
     Prop.location.id = DeviceID;
-    DBG(Logger::logs("mneme") << "Requesting address with Size " << Size
-                              << " on device " << DeviceID << "\n");
-
     hipErrCheck(hipMemCreate(&MHandle, Size, &Prop, 0));
     hipErrCheck(hipMemMap((void *)Addr, Size, 0, MHandle, 0));
 
@@ -158,9 +156,6 @@ template <> struct DeviceTraits<DeviceVendors::HIP> {
     ADesc.location.id = DeviceID;
     ADesc.flags = hipMemAccessFlagsProtReadWrite;
 
-    // Sets address
-    DBG(Logger::logs("mneme")
-        << "Setting Access 'RW' to " << Addr << " with size " << Size << "\n");
     hipErrCheck(hipMemSetAccess(Addr, Size, &ADesc, 1));
   }
 
@@ -173,15 +168,12 @@ template <> struct DeviceTraits<DeviceVendors::HIP> {
 
     hipErrCheck(hipMemAddressReserve(&devPtr, Size, Alignment,
                                      reinterpret_cast<hipDeviceptr_t>(VA), 0));
-    DBG(Logger::logs("mneme") << "Allocated VASize " << Size << " at Address "
-                              << std::hex << devPtr << std::dec << "\n");
     return (void *)devPtr;
   }
 
   static void unmap(hipMemGenericAllocationHandle_t &MHandle, void *Addr,
                     uintptr_t Size) {
-    DBG(Logger::logs("mneme") << "Releasing memory at addr" << std::hex << Addr
-                              << std::dec << " with size " << Size << "\n");
+    LOG_DEBUG("Unmapping Addr:{} SIZE:{}", Addr, Size);
     hipErrCheck(hipMemUnmap(Addr, Size));
     hipErrCheck(hipMemRelease(MHandle));
   }
@@ -191,8 +183,7 @@ template <> struct DeviceTraits<DeviceVendors::HIP> {
   }
 
   static void freeVirtualAddress(void *Addr, size_t Size) {
-    DBG(Logger::logs("mneme") << "Releasing Device Pages " << std::hex << Addr
-                              << std::dec << " with size " << Size << "\n";)
+    LOG_DEBUG("Releasing Device Virtual Address Pages:{} Size:{}", Addr, Size);
     auto EC = DeviceErrorCheck(hipMemAddressFree(Addr, Size));
     if (EC) {
       FATAL_ERROR("Could not release VA addresses " + EC.value());

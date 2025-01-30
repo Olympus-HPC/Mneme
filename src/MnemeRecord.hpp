@@ -19,8 +19,10 @@
 #include <llvm/IR/Module.h>
 #include <memory>
 #include <mutex>
+#include <thread>
 
 #include "DeviceTraits.hpp"
+#include "MnemeLogger.hpp"
 #include "MnemeSnapshot.hpp"
 #include "MnemeSymbols.hpp"
 #include "llvm/Bitcode/BitcodeWriter.h"
@@ -98,35 +100,19 @@ private:
     for (auto &[Handle, GVars] : HandleToGlobalSymbol) {
       for (auto &GVar : GVars) {
         static_cast<ImplT &>(*this).initializeGlobal(GVar);
-        DBG(Logger::logs("mneme")
-                << "GlobalVar: " << GVar.Name << " DevAddr: " << GVar.DevAddr
-                << " HostSymbolAddr " << GVar.HostSymbolAddr
-                << " Size: " << std::dec << GVar.VarSize << "\n";)
+        LOG_INFO("Getting Global Variable: {} stored at address {} mapped "
+                 "with host symbol addr {} of size {}",
+                 GVar.Name, GVar.DevAddr, GVar.HostSymbolAddr, GVar.VarSize);
       }
     }
   }
 
 public:
-  void registerFatBinEnd(void *ptr) {
-    DBG(Logger::logs("mneme") << "Registering FatBinaryEnd at address "
-                              << std::hex << ptr << std::dec << "\n");
-    origRegisterFatBinaryEnd(ptr);
-  }
+  void registerFatBinEnd(void *ptr) { origRegisterFatBinaryEnd(ptr); }
 
   void **registerFatBin(FatBinaryWrapper_t *fatbin) {
     void **Handle = origRegisterFatBinary(fatbin);
-    DBG(Logger::logs("mneme")
-        << "Registering FatBinary at address " << std::hex << fatbin << std::dec
-        << " Return Ptr is: " << std::hex << Handle << std::dec << "\n");
     HandleToBin.insert({Handle, fatbin});
-    for (auto &[H, B] : HandleToBin) {
-      DBG(Logger::logs("mneme")
-              << "Handle : " << std::hex << H << std::dec << " mapped to "
-              << std::hex << B << std::dec << "\n";)
-    }
-    Logger::logs("mneme") << "Add of this is " << std::hex << this << std::dec
-                          << "\n";
-
     HandleToGlobalSymbol.insert({Handle, {}});
 
     return Handle;
@@ -135,10 +121,9 @@ public:
   void registerVar(void **fatBinHandle, char *hostVar, char *deviceAddress,
                    const char *deviceName, int ext, size_t size, int constant,
                    int global) {
-    DBG(Logger::logs("mneme")
-        << "Registering variable from handle " << std::hex << fatBinHandle
-        << std::dec << " " << hostVar << "In address" << deviceName << " "
-        << ext << " " << size << " " << constant << " " << global << "\n");
+    LOG_INFO("Register Global Variable: {} SIZE:{}, CONSTANT:{} GLOBAL:{} ",
+             deviceName, size, constant, global);
+
     origRegisterDeviceVar(fatBinHandle, hostVar, deviceAddress, deviceName, ext,
                           size, constant, global);
     if (!constant)
@@ -150,13 +135,8 @@ public:
   void registerFunc(void **fatBinHandle, const char *hostFun, char *deviceFun,
                     const char *deviceName, int thread_limit, uint3 *tid,
                     uint3 *bid, dim3 *bDim, dim3 *gDim, int *wSize) {
-    DBG(Logger::logs("mneme")
-        << "Registering Function from handle " << std::hex << fatBinHandle
-        << std::dec << " HostFun:" << hostFun << " deviceFun:" << deviceFun
-        << " deviceName:" << deviceName << " thread_limit:" << thread_limit
-        << "\n");
-    Logger::logs("mneme") << "Add of this is " << std::hex << this << std::dec
-                          << "\n";
+    LOG_INFO("Register Function : {} with a thread_limit off {} ", deviceName,
+             thread_limit);
     if (!HandleToBin.contains(fatBinHandle))
       FATAL_ERROR("Handle container does not contain fatbin handle");
     std::shared_ptr<KernelInfo> KI =
@@ -167,20 +147,29 @@ public:
                          thread_limit, tid, bid, bDim, gDim, wSize);
   };
 
+  std::unique_ptr<PageManager> initializePageManager() {
+    int DeviceID = 0;
+    auto MinPageSize = MnemeDeviceRT::getMinPageSize(DeviceID);
+
+    auto ActualSize =
+        util::roundUp(MnemeDeviceRT::getFixedMemorySize(), MinPageSize);
+    LOG_INFO("Trying to Reserve Virtual Address space of size {}...",
+             ActualSize);
+    void *VA =
+        MnemeDeviceRT::getVirtualAddress(ActualSize, nullptr, MinPageSize);
+    LOG_INFO("... Reserved successfully Virtual Address {}", VA);
+    return std::make_unique<PageManager>(ActualSize, MinPageSize, VA, 0);
+  }
+
   DeviceError_t rtMalloc(void **ptr, size_t size) {
     // TODO: Find a better way to find the current active device;
     int DeviceID = 0;
 
-    if (!PM) {
-      auto MinPageSize = MnemeDeviceRT::getMinPageSize(DeviceID);
-
-      auto ActualSize =
-          util::roundUp(MnemeDeviceRT::getFixedMemorySize(), MinPageSize);
-      void *VA =
-          MnemeDeviceRT::getVirtualAddress(ActualSize, nullptr, MinPageSize);
-
-      PM = std::make_unique<PageManager>(ActualSize, MinPageSize, VA, DeviceID);
-    }
+    std::call_once(ExtractFlag, [this]() {
+      PM = initializePageManager();
+      extractIR();
+      getGlobalAddresses();
+    });
 
     auto [Addr, ReservedSize] = PM->allocateAddr(size, nullptr);
     MnemeMemoryBlob<VendorTypes> MemBlob(
@@ -189,22 +178,21 @@ public:
                            DeviceID);
     *ptr = MemBlob.ptr();
     AllocatedBlobs.insert({*ptr, std::move(MemBlob)});
-    DBG(Logger::logs("mneme") << "Malloced Device Pointer " << *ptr
-                              << " with size: " << size << "\n");
+    LOG_DEBUG("Intercepted Device Malloc PTR:{} SIZE:{} ACTUALSIZE:{}", *ptr,
+              size, ReservedSize);
     return ret;
   };
 
   DeviceError_t rtManagedMalloc(void **ptr, size_t size, unsigned int flags) {
     auto ret = origMallocManaged(ptr, size, flags);
-    DBG(Logger::logs("mneme") << "Malloced Managed Pointer " << *ptr
-                              << " with size: " << size << "\n");
+    LOG_DEBUG("Intercepted Managed Malloc PTR:{} SIZE:{}", *ptr, size);
+    LOG_WARN("Will not be able to replay Kernels acessing:{}", *ptr);
     return ret;
   };
 
   DeviceError_t rtHostMalloc(void **ptr, size_t size, unsigned int flags) {
     auto ret = origMallocPinned(ptr, size, flags);
-    DBG(Logger::logs("mneme") << "Malloced Pinned Pointer " << *ptr
-                              << " with size: " << size << "\n");
+    LOG_DEBUG("Intercepted Pinned|Host Malloc PTR:{} SIZE:{}", *ptr, size);
     return ret;
   }
 
@@ -212,16 +200,16 @@ public:
     if (!AllocatedBlobs.contains(ptr))
       FATAL_ERROR("Free address that is not being allocated through Mneme\n");
     auto ret = AllocatedBlobs[ptr].release();
+    LOG_DEBUG("Intercepted device Free PTR:{} SIZE:{} ACTUALSIZE:{}", ptr,
+              AllocatedBlobs[ptr].getSize(),
+              AllocatedBlobs[ptr].getActualSize());
     AllocatedBlobs.erase(ptr);
-    DBG(Logger::logs("mneme")
-        << "Free Address " << std::hex << ptr << std::dec << "\n");
     return ret;
   };
 
   DeviceError_t rtHostFree(void *ptr) {
     auto ret = origFreeHost(ptr);
-    DBG(Logger::logs("mneme")
-        << "Free pinned address: " << std::hex << ptr << std::dec << "\n");
+    LOG_DEBUG("Free pinned address:{}", ptr);
     return ret;
   }
 
@@ -229,22 +217,12 @@ public:
                                void **Args, size_t SharedMem,
                                DeviceStream_t Stream) {
     if (!KernelInfoMap.contains(func)) {
-      Logger::warn() << "Kernel not included in Map, skippping ...\n";
+      LOG_WARN("Skipping kernel cause not tracked in map");
       return origLaunchKernel(func, GridDim, BlockDim, Args, SharedMem, Stream);
     }
 
-    if (!PM) {
-      auto MinPageSize = MnemeDeviceRT::getMinPageSize(0);
-
-      auto ActualSize =
-          util::roundUp(MnemeDeviceRT::getFixedMemorySize(), MinPageSize);
-      void *VA =
-          MnemeDeviceRT::getVirtualAddress(ActualSize, nullptr, MinPageSize);
-
-      PM = std::make_unique<PageManager>(ActualSize, MinPageSize, VA, 0);
-    }
-
     std::call_once(ExtractFlag, [this]() {
+      PM = initializePageManager();
       extractIR();
       getGlobalAddresses();
     });
@@ -258,16 +236,25 @@ public:
         PM->getVAStart(), PM->getTotalVASize(), KInfo,
         HandleToGlobalSymbol[Handle], AllocatedBlobs, GridDim, BlockDim, Args,
         SharedMem, Stream);
-    DBG(Logger::logs("mneme")
-            << "Launching Kernel " << std::hex << func << std::dec << " KName"
-            << KInfo->Name << " GDimX: " << GridDim.x << " GDimY: " << GridDim.y
-            << " GDimZ: " << GridDim.z << " BDimX: " << BlockDim.x
-            << " BDimY: " << BlockDim.y << " BDimZ: " << BlockDim.z << "\n";);
+    if (RecordAction)
+      LOG_INFO("Successfully Recorded Prologue of Kernel {} NAME:{} GRID:({}, "
+               "{}, {}) "
+               "BLOCK:({}, {}, "
+               "{}) SHM_SIZE:{}",
+               func, KInfo->Name, GridDim.x, GridDim.y, GridDim.z, BlockDim.x,
+               BlockDim.y, BlockDim.z, SharedMem);
     auto ret =
         origLaunchKernel(func, GridDim, BlockDim, Args, SharedMem, Stream);
-    if (RecordAction)
+    if (RecordAction) {
       (*RecordAction)(HandleToGlobalSymbol[Handle], AllocatedBlobs, Args,
                       Stream);
+      LOG_INFO("Successfully Recorded Epilogue of Kernel {} NAME:{} GRID:({}, "
+               "{}, {}) "
+               "BLOCK:({}, {}, "
+               "{}) SHM_SIZE:{}",
+               func, KInfo->Name, GridDim.x, GridDim.y, GridDim.z, BlockDim.x,
+               BlockDim.y, BlockDim.z, SharedMem);
+    }
     return ret;
   }
 
@@ -295,7 +282,8 @@ public:
       FATAL_ERROR("Cannot write module ir file");
 
     OutBC << StrBuffer;
-    DBG(std::cout << "Registered Record replay descr\n");
+    LOG_DEBUG("Stored Module with StaticHash:{} to file {}", StableHash,
+              std::filesystem::canonical(Filename).string());
     OutBC.close();
     return std::make_pair(StableHash,
                           std::filesystem::canonical(Filename).string());

@@ -1,6 +1,7 @@
 #pragma once
 #include "DeviceTraits.hpp"
 #include "Logger.hpp"
+#include "MnemeLogger.hpp"
 #include "MnemeMemory.hpp"
 #include "MnemeSymbols.hpp"
 #include "Utils.hpp"
@@ -34,7 +35,7 @@ public:
       llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &DeviceMemory,
       std::filesystem::path &Filename, std::shared_ptr<KernelInfo> KInfo,
       void **Args, DeviceStream_t Stream) {
-    DBG(Logger::logs("mneme") << "KInfo is " << KInfo.get() << "\n");
+    LOG_DEBUG("Storing mneme snapshot: {}", Filename.string());
     llvm::stable_hash KHash = llvm::stable_hash_combine_string(KInfo->Name);
     std::error_code EC;
     // Syncrhonize cause we need to get a consistent GPU state.
@@ -46,9 +47,8 @@ public:
     llvm::raw_fd_ostream OutBC(Filename.string(), EC);
     // First write Global Variables.
     size_t TotalGlobals = GlobalVars.size();
-    DBG(Logger::logs("mneme")
-        << "Writting " << TotalGlobals << " globals at location "
-        << OutBC.tell() << "\n");
+    LOG_DEBUG("Number of Globals in snapshot:{} stored at position:{}",
+              TotalGlobals, OutBC.tell());
 
     OutBC << llvm::StringRef(reinterpret_cast<const char *>(&TotalGlobals),
                              sizeof(size_t));
@@ -64,9 +64,9 @@ public:
     }
 
     size_t TotalBlobs = DeviceMemory.size();
-    DBG(Logger::logs("mneme")
-        << "Writting " << TotalBlobs << " memory blobs at location "
-        << OutBC.tell() << "\n");
+    LOG_DEBUG("Number of Memory Blobs in snapshot:{} stored at position:{}",
+              TotalBlobs, OutBC.tell());
+
     OutBC << llvm::StringRef(reinterpret_cast<const char *>(&TotalBlobs),
                              sizeof(size_t));
 
@@ -75,19 +75,16 @@ public:
       OutBC << Blob;
     // Lastly write the arguments
     size_t NumArgs = KInfo->KernelArgSizes.size();
+    LOG_DEBUG("Number of Kernel Arguments in snapshot:{} stored at position:{}",
+              NumArgs, OutBC.tell());
+
     OutBC << llvm::StringRef(reinterpret_cast<const char *>(&NumArgs),
                              sizeof(NumArgs));
 
-    DBG(Logger::logs("mneme")
-        << "Writting " << NumArgs << " Arguments at location " << OutBC.tell()
-        << "\n");
     for (int I = 0; I < NumArgs; I++) {
       OutBC << llvm::StringRef(
           reinterpret_cast<const char *>(&KInfo->KernelArgSizes[I]),
           sizeof(size_t));
-      DBG(Logger::logs("mneme")
-              << "Argument " << I << " is of Size " << KInfo->KernelArgSizes[I]
-              << " at location " << OutBC.tell() << "\n";)
       OutBC << llvm::StringRef(reinterpret_cast<const char *>(Args[I]),
                                KInfo->KernelArgSizes[I]);
     }
@@ -228,8 +225,15 @@ public:
       uint64_t StaticHash) {
     auto DynamicHash = computeHash(GridDim, BlockDim, SharedMem);
 
-    if (Instances.contains(DynamicHash))
+    if (Instances.contains(DynamicHash)) {
+      LOG_DEBUG(
+          "Kernel {} with DynamicHash {} is already recorded, skipping ...",
+          KInfo->getName(), DynamicHash);
       return std::nullopt;
+    }
+
+    LOG_DEBUG("First Instance of Kernel {} with DynamicHash {}, recording ...",
+              KInfo->getName(), DynamicHash);
 
     DBG(Logger ::logs("mneme") << "Capturing prologue for Kernel with hash: "
                                << std::hex << this << std::dec << "\n");

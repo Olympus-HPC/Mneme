@@ -3,6 +3,7 @@
 #include <hip/hip_runtime.h>
 
 #include "DeviceTraits.hpp"
+#include "MnemeLogger.hpp"
 #include "MnemeMemoryHIP.hpp"
 #include "MnemeRecord.hpp"
 #include "Utils.hpp"
@@ -60,8 +61,7 @@ public:
 
       // Find the colon (:) to isolate the base architecture
       auto DevArch = std::string(arch_name.substr(0, arch_name.find(':')));
-      DBG(Logger::logs("mneme")
-          << "Device Architecture is " << DevArch << "\n");
+      LOG_DEBUG("Detected Device Architecture is {}", DevArch);
       return DevArch;
     }()};
 
@@ -69,7 +69,7 @@ public:
   }
 
   void extractIR() {
-    DBG(Logger::logs("mneme") << "Extracting IR \n");
+    LOG_INFO("Extracting IR from images");
     constexpr char OFFLOAD_BUNDLER_MAGIC_STR[] = "__CLANG_OFFLOAD_BUNDLE__";
     size_t Pos = 0;
 
@@ -148,13 +148,12 @@ public:
         auto SectionName = DeviceElf->getSectionName(Section);
         if (SectionName.takeError())
           FATAL_ERROR("Error reading section name");
-        DBG(Logger::logs("proteus")
-            << "SectionName " << SectionName.get().str() << "\n");
 
         if (!SectionName->starts_with(".jit.bitcode"))
           continue;
 
         auto M = extractModuleFromSection(Section, *SectionName);
+        LOG_DEBUG("Processing section with name {}", SectionName.get().str());
 
         if (SectionName->equals(".jit.bitcode.lto")) {
           LLVMModules.clear();

@@ -11,6 +11,7 @@
 
 #include "DeviceTraits.hpp"
 #include "Logger.hpp"
+#include "MnemeLogger.hpp"
 #include "Utils.hpp"
 
 namespace mneme {
@@ -62,10 +63,13 @@ public:
   hipError_t release() {
     if (!BlobAddr)
       return hipSuccess;
-    if (IsMapped)
-      MnemeDeviceRT::unmap(MemHandle, BlobAddr, ActualSize);
-    else
-      MnemeDeviceRT::DeviceFree(BlobAddr);
+
+    if (!IsMapped) {
+      auto ret = MnemeDeviceRT::DeviceFree(BlobAddr);
+      BlobAddr = 0;
+      return ret;
+    }
+    MnemeDeviceRT::unmap(MemHandle, BlobAddr, ActualSize);
     BlobAddr = 0;
     return hipSuccess;
   }
@@ -145,12 +149,11 @@ llvm::raw_ostream &operator<<(llvm::raw_ostream &OS,
   OS << llvm::StringRef(reinterpret_cast<const char *>(&Blob.BlobAddr),
                         sizeof(Blob.BlobAddr));
 
-  DBG(Logger::logs("mneme")
-      << "Serializing a memory blob of size " << Blob.Size
-      << " of  device address " << std::hex << (void *)Blob.BlobAddr << std::dec
-      << " and host address '" << std::hex
-      << reinterpret_cast<void *>(Blob.getHostData().get()) << std::dec << "'"
-      << std::endl);
+  LOG_DEBUG("Serializing MemoryBlob, DevAddr:{} MirroredHostAddr:{} Size:{} "
+            "ActualSize:{}",
+            (void *)Blob.BlobAddr,
+            reinterpret_cast<void *>(Blob.getHostData().get()), Blob.getSize(),
+            Blob.getActualSize());
   auto EC = DeviceTraits<VendorTypes>::DeviceErrorCheck(
       DeviceTraits<VendorTypes>::DeviceCopy(
           static_cast<void *>(Blob.getHostData().get()),

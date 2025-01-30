@@ -77,7 +77,7 @@ inline void initialize() {
     logger = spdlog::stdout_color_mt("console_logger");
   }
   logger->set_level(getLogLevelFromEnv());
-  logger->set_pattern("[%Y-%m-%d %H:%M:%S] [%^%l%$] %v");
+  logger->set_pattern("[MNEME] [%^%l%$] %v");
 }
 } // namespace MnemeLogger
 } // namespace mneme

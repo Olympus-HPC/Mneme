@@ -1,5 +1,6 @@
 #pragma once
 #include "Logger.hpp"
+#include "MnemeLogger.hpp"
 #include "Utils.hpp"
 #include <cstdint>
 #include <cstring>
@@ -103,10 +104,8 @@ struct GlobalVarInfo {
     GlobalVarInfo GV(Name, nullptr, VarSize, DevAddr);
     std::memcpy(GV.HostAddr.get(), Buffer, VarSize);
     Buffer += VarSize;
-    DBG(Logger::logs("mneme")
-        << "Loaded from buffer variable " << Name << " of Size " << VarSize
-        << " That was stored at address " << std::hex << DevAddr << std::dec
-        << "\n");
+    LOG_DEBUG("Loaded from buffer Global, Name:{}, VarSize:{}, RecoredAddr:{}",
+              Name, VarSize, DevAddr);
     return std::move(GV);
   }
 
