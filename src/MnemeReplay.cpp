@@ -1,5 +1,6 @@
 #include "MnemeJITProteus.hpp"
 #include "MnemeReplay.hpp"
+#include <llvm/IR/GlobalVariable.h>
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/Support/CommandLine.h>
 
@@ -21,12 +22,20 @@ static cl::OptionCategory MnemeCategory("Mneme Tool Options",
 static cl::opt<std::string> MnemeJson(
     "mneme-replay-json",
     cl::desc("The json file containing metadata for the recorded kernels"),
-    cl::Required);
+    cl::Required, cl::cat(MnemeCategory));
 
 static cl::opt<std::string>
     MnemeKernelHash("mneme-replay-hash",
                     cl::desc("The Kernel Hash of the Recorded kernels"),
-                    cl::Required);
+                    cl::Required, cl::cat(MnemeCategory));
+
+static cl::opt<int>
+    MnemeOptLevel("opt-level",
+                  cl::desc("The optimization level to use when optimizing IR"),
+                  cl::init(3), cl::cat(MnemeCategory));
+static cl::alias MnemeShortOptLevel(
+    "O", cl::desc("The optimization level to use when optimizing IR"),
+    cl::aliasopt(MnemeOptLevel), cl::cat(MnemeCategory));
 
 int main(int argc, char *argv[]) {
   cl::HideUnrelatedOptions(MnemeCategory);
@@ -45,15 +54,19 @@ int main(int argc, char *argv[]) {
   auto Modules = RInstance.loadModules(Ctx);
   auto Mod = ProteusJIT::linkJitModule(Ctx, Modules);
   auto ReplayKernelFunc = Mod->getFunction(RInstance.getKernelName());
-  // internalizeModule(*Mod, [&ReplayKernelFunc](const GlobalValue &GV) {
-  //   // Do not internalize the kernel function.
-  //   if (&GV == ReplayKernelFunc)
-  //     return true;
+  internalizeModule(*Mod, [&ReplayKernelFunc](const GlobalValue &GV) {
+    if (isa<GlobalVariable>(GV))
+      return true;
+    // Do not internalize the kernel function.
+    if (&GV == ReplayKernelFunc)
+      return true;
 
-  //  // Internalize everything else.
-  //  return false;
-  //});
-  ProteusJIT::optimizeIR(*Mod, Arch);
+    // Internalize everything else.
+    return false;
+  });
+
+  std::cout << "Optimizing Kernel with OptLevel " << MnemeOptLevel << "\n";
+  ProteusJIT::optimizeIR(*Mod, Arch, MnemeOptLevel);
   auto RecordedGrid = RInstance.getRecordedGrid();
   auto RecordedBlock = RInstance.getRecordedBlock();
   ProteusJIT::setLaunchBoundsForKernel(

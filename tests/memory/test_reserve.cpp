@@ -16,18 +16,6 @@ using MnemeRecorderDevice = MnemeRecorderHIP;
 using MnemeMemoryBlobDevice = MnemeMemoryBlob<DeviceVendors::HIP>;
 using MnemeDeviceRT = DeviceTraits<DeviceVendors::HIP>;
 
-struct Blob {
-  MemoryAllocationHandle_t MHandle;
-  void *Addr;
-  size_t Size;
-  Blob() {};
-  void release() {
-    hipErrCheck(hipMemUnmap((void *)Addr, Size));
-    hipErrCheck(hipMemRelease(MHandle));
-    hipErrCheck(hipMemAddressFree((void *)Addr, Size));
-  }
-};
-
 int main(int argc, char *argv[]) {
   size_t Size = std::atoi(argv[1]);
   std::vector<Blob> Blobs;

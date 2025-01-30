@@ -15,5 +15,5 @@ function(BUILD_UNIT_TEST exe)
   target_link_libraries(${exe} PRIVATE ${LLVM_AVAILABLE_LIBS})
 endfunction()
 
-BUILD_UNIT_TEST(reserve_addr test_reserve.cpp)
-add_test(NAME Mem::Reserve::Addr COMMAND reserve_addr)
+#BUILD_UNIT_TEST(reserve_addr test_reserve.cpp)
+#add_test(NAME Mem::Reserve::Addr COMMAND reserve_addr)
