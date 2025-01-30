@@ -100,7 +100,7 @@ public:
     if (!std::filesystem::exists(Filename))
       FATAL_ERROR("Mneme Snapshot file does not exist");
 
-    DBG(Logger::logs("mneme") << "Reading file " << Filename << "\n");
+    LOG_DEBUG("Opening Snapshot file {}", Filename);
 
     std::error_code EC;
     llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> bufferOrErr =
@@ -113,19 +113,17 @@ public:
     auto *Start = Buffer->getBufferStart();
     auto *CurrentPtr = Start;
     size_t TotalGlobals = util::extractScalar<size_t>(CurrentPtr);
-    DBG(Logger::logs("mneme")
-        << "Snapshot contains " << TotalGlobals
-        << " global variables at location "
-        << (uintptr_t)CurrentPtr - (uintptr_t)Start << "\n");
+    LOG_DEBUG("Snapshot contains {} Globals at location {}", TotalGlobals,
+              (uintptr_t)CurrentPtr - (uintptr_t)Start);
     for (auto I = 0; I < TotalGlobals; I++) {
       auto GV = GlobalVarInfo::fromBuffer(CurrentPtr);
       GlobalVars.insert({GV.Name, std::move(GV)});
     }
 
     auto TotalMemBlobs = util::extractScalar<size_t>(CurrentPtr);
-    DBG(Logger::logs("mneme")
-        << "Snapshot contains " << TotalMemBlobs << " Memory Blobs at location "
-        << (uintptr_t)CurrentPtr - (uintptr_t)Start << "\n");
+
+    LOG_DEBUG("Snapshot contains {} Memory Blobs starting at location {}",
+              TotalMemBlobs, (uintptr_t)CurrentPtr - (uintptr_t)Start);
 
     for (auto M = 0; M < TotalMemBlobs; M++) {
       DeviceMemory.insert(MnemeMemoryBlob<VendorTypes>::fromBuffer(CurrentPtr));
@@ -133,10 +131,8 @@ public:
 
     // Get kernel arguments.
     auto TotalArguments = util::extractScalar<size_t>(CurrentPtr);
-    DBG(Logger::logs("mneme")
-        << "Snapshot contains " << TotalArguments << " Arguments at location "
-        << (uintptr_t)CurrentPtr - (uintptr_t)Start << "\n");
-
+    LOG_DEBUG("Snapshot contains {} total arguments starting at location {}",
+              TotalArguments, (uintptr_t)CurrentPtr - (uintptr_t)Start);
     KInfo->KernelArgSizes.resize(TotalArguments);
     KInfo->ArgData.resize(TotalArguments);
     for (auto A = 0; A < TotalArguments; A++) {

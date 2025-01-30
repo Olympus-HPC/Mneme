@@ -85,9 +85,9 @@ public:
         SnapshotName(SnapshotName), IType(IType) {
     MnemeSnapshot<VendorTypes>::readMnemeSnapShot(SnapshotName, GlobalVars,
                                                   DeviceMemoryState, KInfo);
-    DBG(Logger::logs("mneme")
-        << "Initialized Snapshot of kernel " << KInfo->getName() << "of state "
-        << (IType == InstanceType::Prologue ? "Prologue" : "Epilogue") << "\n");
+    LOG_DEBUG("Initialized Snapshot for kernel {} of state {}",
+              KInfo->getName(),
+              (IType == InstanceType::Prologue ? "Prologue" : "Epilogue"));
   }
 
   void load() {
@@ -110,13 +110,12 @@ public:
     for (auto &[DevAddr, MemBlob] : DeviceMemoryState) {
       auto it = OtherBlob.find(DevAddr);
       if (it == OtherBlob.end()) {
-        Logger::warn() << "Cannot find " << std::hex << DevAddr << std::dec
-                       << " in other\n";
+        LOG_WARN("Cannot find {} in comparators", DevAddr);
         return false;
       }
       if (MemBlob.getSize() != it->second.getSize()) {
-        Logger::warn() << "Sizes differ " << MemBlob.getSize() << " vs "
-                       << it->second.getSize() << "\n";
+        LOG_WARN("Sizes Differ {} vs {}", MemBlob.getSize(),
+                 it->second.getSize());
         return false;
       }
 
@@ -211,14 +210,12 @@ public:
       LOG_WARN("Expected VASize ({}) and ActualSize ({}) to match\n", VASize,
                ActualSize);
 
-    void *VA = MnemeDeviceRT::getVirtualAddress(ActualSize, VAddr, MinPageSize);
-    if (VA != VAddr) {
+    PM = initializePageManager<MnemeDeviceRT>(VAddr);
+    if (PM->getVAStart() != VAddr) {
       FATAL_ERROR("Could not allocate Device Pages\n Record got : " +
-                  util::pointerToHexString(VAddr) +
-                  " and replay got : " + util::pointerToHexString(VA));
+                  util::pointerToHexString(VAddr) + " and replay got : " +
+                  util::pointerToHexString(PM->getVAStart()));
     }
-
-    PM = initializePageManager<MnemeDeviceRT>(VA);
 
     llvm::json::Array *RecordedModules = JSONRoot->getArray("Modules");
     for (auto Mod : *RecordedModules) {
@@ -257,7 +254,7 @@ public:
   ~ReplayInstance() {
     PrologueState.release();
     EpilogueState.release();
-    MnemeDeviceRT::freeVirtualAddress(PM.getVAStart(), PM.getTotalVASize());
+    MnemeDeviceRT::freeVirtualAddress(PM->getVAStart(), PM->getTotalVASize());
   }
 
   llvm::ArrayRef<std::string> getModules() const { return ModuleFileNames; }
@@ -309,8 +306,7 @@ public:
       if (EC)
         FATAL_ERROR("Copying Global :" + KV.first +
                     " from host to device raised error\nEC: " + EC.value());
-      LOG_DEBUG(Logger::logs("mneme")
-                << "Successfully loaded global variable " << KV.first << "\n");
+      LOG_INFO("Successfully loaded global variable: {}", KV.first);
     }
   }
 
