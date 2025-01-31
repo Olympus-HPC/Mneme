@@ -1,5 +1,6 @@
 // clang-format off
 // RUN: LD_PRELOAD=MNEME_PRELOAD_LIB MNEME_LOG_LEVEL=debug MNEME_PAGE_SIZE=%PG ./kernel | FileCheck %s --check-prefixes=CHECK
+// RUN: %RR
 // clang-format on
 
 #include <climits>
