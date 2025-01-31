@@ -64,6 +64,7 @@ class TestTool():
         function_names = ['func'] + ['func' + str(i) for i in range(2, 10 + 1)] + ['func13', 'func14']
         self.run_single_test_set(path_to_proj, function_names, "Simple")
         self.run_single_test_set(path_to_proj, ['func12', 'func15', 'func16'], "Simple - Overloads and Templates", "-emitAllDecls")
+        self.run_single_test_set(path_to_proj, ['std::cos'], "Simple - External Functions", "-emitAllDecls", "-pullExternal")
         
     def run(self):
         self.print_start()

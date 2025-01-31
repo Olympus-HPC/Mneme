@@ -23,7 +23,7 @@ class ToolManager {
   bool emitRR;
 
 public:
-  ToolManager(std::string const &projectDirPath, bool emitRR);
+  ToolManager(std::string const &projectDirPath, bool emitRR, bool includeExternals);
 
   /// @brief Finds the function declaration by name.
   /// @param fnName Name of the function declaration to find.

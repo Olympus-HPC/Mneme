@@ -34,7 +34,8 @@ getCompilationFlags(std::vector<std::string> const &cli,
 }
 } // namespace helper
 
-ToolManager::ToolManager(std::string const &dirPath, bool emitRR)
+ToolManager::ToolManager(std::string const &dirPath, bool emitRR,
+                         bool includeExternals)
     : emitRR(emitRR) {
   // Setup our tool
   std::string errorMsg;
@@ -56,7 +57,7 @@ ToolManager::ToolManager(std::string const &dirPath, bool emitRR)
 
   // Build code database
   tool->buildASTs(asts);
-  db.reset(new CodeDB(std::filesystem::canonical(dirPath)));
+  db.reset(new CodeDB(std::filesystem::canonical(dirPath), includeExternals));
   // Build code database
   for (auto &ast : asts) {
     CodeExtractVisitor vis(*db.get(), *ast, dirPath);
@@ -74,6 +75,9 @@ ObjInfo *ToolManager::findFnDeclByName(std::string const &fnName,
   if (manglings.empty()) {
     std::cerr << "Could not find function(s) named " << fnName
               << " within specified project!" << std::endl;
+    if (!db->includeExternals)
+      std::cerr << "If this is an external function call, please use the "
+                   "--pullExternal flag!";
     exit(1);
   }
 

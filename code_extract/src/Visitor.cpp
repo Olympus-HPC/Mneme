@@ -2,6 +2,7 @@
 #include "CodeDB.h"
 
 #include "clang/AST/Decl.h"
+#include "clang/AST/DeclBase.h"
 #include "clang/AST/Type.h"
 #include "clang/Basic/SourceLocation.h"
 #include "clang/Frontend/ASTUnit.h"
@@ -47,7 +48,7 @@ void storeDecl(T *decl, clang::ASTUnit const &unit, CodeDB &cdb) {
   // If location is external but not a function decl, dont store it
   // We need to store external function decls as they may be requested for
   // extraction.
-  if (isExternal && !isFunctionDecl)
+  if (isExternal && !(cdb.includeExternals && isFunctionDecl))
     return;
 
   std::string keyName = CodeDB::getKeyName(decl);

@@ -81,8 +81,10 @@ class CodeDB {
 
 public:
   std::string const projPath;
+  bool const includeExternals;
 
-  CodeDB(std::string const &projDir) : projPath(projDir) {}
+  CodeDB(std::string const &projDir, bool includeExternals)
+      : projPath(projDir), includeExternals(includeExternals) {}
 
   static std::string getKeyName(clang::NamedDecl const *decl);
 
@@ -130,7 +132,7 @@ public:
   }
 
   void addExtSourceToSourceName(std::string const &sourceName,
-                    std::string const &fileName) {
+                                std::string const &fileName) {
     std::unordered_set<std::string> mangle;
     getManglings(sourceName, mangle);
     for (auto keyName : mangle)
