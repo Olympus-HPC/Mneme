@@ -93,9 +93,8 @@ public:
     auto Blob = MnemeMemoryBlob<VendorTypes>(ActualSize, 0, Size, 0);
     std::memcpy(Blob.getHostData().get(), Buffer, Size);
     Buffer += Size;
-    DBG(Logger::logs("mneme")
-        << "Read memory blob at address " << std::hex << DeviceAddr << std::dec
-        << " of size " << Size << " and ActualSize is " << ActualSize << "\n");
+    LOG_DEBUG("Read memory blob at address {} SIZE: {} ActualSize:{}",
+              DeviceAddr, Size, ActualSize);
     return std::make_pair(DeviceAddr, std::move(Blob));
   }
 

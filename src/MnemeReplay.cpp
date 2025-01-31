@@ -44,7 +44,7 @@ int main(int argc, char *argv[]) {
 
   ProteusJIT::InitLLVM();
 
-  LOG_INFO("using mneme db-file {}and dynamic instance {}", MnemeJson,
+  LOG_INFO("using mneme db-file {} and dynamic instance {}", MnemeJson,
            MnemeKernelHash);
   auto Arch = DeviceVendorTraits::GetDeviceArch();
   LOG_INFO("Detected system device Architecture is: {}", Arch);
@@ -105,7 +105,12 @@ int main(int argc, char *argv[]) {
   if (EC)
     FATAL_ERROR("Error When synchronizing with kernel stream: " + EC.value());
 
-  std::cout << "Verified:" << RInstance.isMemorySame() << "\n";
+  auto verify = RInstance.isMemorySame();
+  if (verify)
+    std::cout << "Results Match" << "\n";
+  else
+    std::cout << "Results DO NOT Match" << "\n";
 
   RInstance.releaseMemory();
+  return !verify;
 }

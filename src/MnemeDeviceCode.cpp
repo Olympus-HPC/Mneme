@@ -64,8 +64,7 @@ bool DeviceTraits<DeviceVendors::HIP>::compareDeviceBlobs(const char *Blob1,
   if (EC)
     FATAL_ERROR("Error in comparing blobs " + EC.value());
 
-  DBG(Logger::logs("mneme") << "Totalbytes: " << NumBytes << " and "
-                            << HNumEqualBytes << " are equal\n");
+  LOG_DEBUG("Compared {} bytes and {} are the same", NumBytes, HNumEqualBytes);
 
   return HNumEqualBytes == NumBytes;
 }

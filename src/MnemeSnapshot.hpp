@@ -231,8 +231,6 @@ public:
     LOG_DEBUG("First Instance of Kernel {} with DynamicHash {}, recording ...",
               KInfo->getName(), DynamicHash);
 
-    DBG(Logger ::logs("mneme") << "Capturing prologue for Kernel with hash: "
-                               << std::hex << this << std::dec << "\n");
     Instances.insert(
         {DynamicHash, KernelInstance(GridDim, BlockDim, SharedMem)});
     std::filesystem::path Filename(MnemeDir /
