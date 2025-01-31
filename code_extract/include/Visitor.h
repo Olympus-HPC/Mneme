@@ -2,6 +2,7 @@
 
 #include "CodeDB.h"
 #include "VisitManager.h"
+#include "clang/AST/Decl.h"
 #include "clang/AST/RecursiveASTVisitor.h"
 #include "clang/Frontend/ASTUnit.h"
 
@@ -39,4 +40,5 @@ public:
   bool VisitCXXConstructExpr(clang::CXXConstructExpr *expr);
   // Custom Defined
   void VisitParams(clang::FunctionDecl const *defDecl);
+  void VisitTemplateParams(clang::FunctionDecl const* defDecl);
 };

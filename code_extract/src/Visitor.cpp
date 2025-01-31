@@ -288,3 +288,12 @@ void MatchVisitor::VisitParams(clang::FunctionDecl const *defDecl) {
   for (auto param_it : defDecl->parameters())
     helper::handleVarDecl(param_it->getType(), vm, codedb);
 }
+
+void MatchVisitor::VisitTemplateParams(clang::FunctionDecl const* defDecl) {
+  auto tmpSpec = defDecl->getTemplateSpecializationInfo();
+  if (tmpSpec) {
+    auto tmpArgs = tmpSpec->TemplateArguments->asArray();
+    for(auto arg : tmpArgs)
+      helper::handleVarDecl(arg.getAsType(), vm, codedb);
+  }
+}

@@ -100,13 +100,18 @@ int func13(int x) {
 }
 
 template <typename T> 
-int func14(T&& lmb) {
-    return lmb(10, 12);
+T func14(T&& lmb) {
+    return lmb;
 }
 
-template <typename T> 
-T func15(T&& lmb) {
-    return lmb;
+template <typename T, typename  U> 
+U func15(T&& in) {
+    return (U)in;
+}
+
+template <typename T, typename  U> 
+T func16(T in) {
+    return in;
 }
 
 int main() {
@@ -115,10 +120,12 @@ int main() {
     
     func12(glambda, 1, 2);
 
-    func14(glambda);
-
     int const f15 = 1;
-    func15(f15);
+    func14(f15);
+
+    func15<float, int>(2.1);
+    
+    func16<A, B>(A());
 
     return 0;
 }

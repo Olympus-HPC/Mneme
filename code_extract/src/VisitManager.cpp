@@ -2,6 +2,7 @@
 #include "Visitor.h"
 
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "clang/AST/Attrs.inc"
@@ -33,7 +34,8 @@ public:
 clang::QualType stripRefs(clang::QualType type) {
   if (auto refType = type->getAs<clang::ReferenceType>())
     return refType->getPointeeType();
-  else return type;
+  else
+    return type;
 }
 
 std::string getParamDeclAsString(std::string const &typeString,
@@ -213,7 +215,8 @@ void VisitManager::emitStandaloneFile(std::string &output, bool emitRR,
   if (emitRRHooks) {
     // First add the prologue
     ss << "init_RR(";
-    ss << "\"" << primaryFn.getKeyName() // Function key names will always be their mangled names...
+    ss << "\"" << primaryFn.getKeyName() // Function key names will always be
+                                         // their mangled names...
        << "\"";
     ss << ", argc, argv);\n";
   }
@@ -231,11 +234,15 @@ void VisitManager::emitStandaloneFile(std::string &output, bool emitRR,
 
   // Build parameter decl prologue
   // First emit all params without any initializers.
+  std::unordered_map<std::string, std::string> fwdTypes;
   for (auto &param : params_decl) {
     auto paramVar = param.second;
     auto paramName = param.first;
     auto type = paramVar->getType().getCanonicalType();
-    std::string typeString = helper::stripRefs(type).getUnqualifiedType().getAsString();
+    std::string typeString =
+        helper::stripRefs(type).getUnqualifiedType().getAsString();
+    if (type->isRValueReferenceType())
+      fwdTypes[paramName] = typeString;
     ss << helper::getParamDeclAsString(typeString, paramName);
     if (emitRRHooks)
       ss << "init_param(" << paramName << ", " << paramName << ");\n";
@@ -251,22 +258,44 @@ void VisitManager::emitStandaloneFile(std::string &output, bool emitRR,
 
   // Build function call
   ss << body->getQualifiedNameAsString();
+  if (auto tmpSpec = body->getTemplateSpecializationInfo()) {
+    auto tmpArgs = tmpSpec->TemplateArguments->asArray();
+    ss << "< ";
+    for(auto arg : tmpArgs) {
+      auto argType = arg.getAsType();
+      if (argType->hasUnnamedOrLocalType())
+        break;
+      ss << argType.getAsString() << ","; 
+    }
+    ss.str().back() = '>';
+  }
+
   if (cudaKernel)
     ss << "<<<grid, block>>>";
 
   auto numParams = body->getNumParams();
   int paramCount = 0;
-  ss << "(";
-  if (paramCount < numParams)
-    ss << "p" << paramCount;
-  for (paramCount++; paramCount < numParams; paramCount++)
-    ss << ", " << "p" << paramCount;
-  ss << ");\n";
+  ss << "( ";
+  for (auto param : body->parameters()) {
+    std::string paramName = "p" + std::to_string(paramCount);
+    auto fwdParam = fwdTypes.find(paramName);
+    if (fwdParam != fwdTypes.end()) {
+      ss << "std::forward<" << fwdParam->second << ">(" << paramName << ")";
+    } else
+      ss << paramName;
+    ss << ",";
+    paramCount++;
+  }
+  ss.str().back() = ')';
+  ss << ";\n";
 
   if (emitRRHooks)
     ss << "verify_rr();\n";
 
   ss << "}\n";
+
+  // include the right header for std::forward
+  if (!fwdTypes.empty()) output = "#include <utility>\n" + output;
 }
 
 void VisitManager::pullPrimaryFnContext() {
@@ -275,6 +304,8 @@ void VisitManager::pullPrimaryFnContext() {
   MatchVisitor mv(*this, db);
   mv.VisitParams(primaryDecl);
   registerParameterPrologue(&primaryFn);
+
+  mv.VisitTemplateParams(primaryDecl);
 
   auto extSource = primaryFn.getExtSourceFile();
   if (extSource.empty()) {
