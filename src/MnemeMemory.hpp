@@ -10,7 +10,6 @@
 #include <utility>
 
 #include "DeviceTraits.hpp"
-#include "Logger.hpp"
 #include "MnemeLogger.hpp"
 #include "Utils.hpp"
 

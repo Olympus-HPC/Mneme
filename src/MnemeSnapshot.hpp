@@ -1,6 +1,5 @@
 #pragma once
 #include "DeviceTraits.hpp"
-#include "Logger.hpp"
 #include "MnemeLogger.hpp"
 #include "MnemeMemory.hpp"
 #include "MnemeSymbols.hpp"

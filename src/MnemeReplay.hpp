@@ -5,7 +5,6 @@
 #include "MnemeSnapshot.hpp"
 #include "MnemeSymbols.hpp"
 #include "Utils.hpp"
-#include <Logger.hpp>
 #include <algorithm>
 #include <cstdint>
 #include <llvm/Bitcode/BitcodeReader.h>

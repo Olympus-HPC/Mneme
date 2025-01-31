@@ -1,6 +1,5 @@
 #pragma once
 
-#include "Logger.hpp"
 #include "MnemeMemory.hpp"
 #include "MnemePageManager.hpp"
 #include "Utils.hpp"

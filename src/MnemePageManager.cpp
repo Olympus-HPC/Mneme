@@ -1,4 +1,3 @@
-#include "Logger.hpp"
 #include "MnemePageManager.hpp"
 #include "Utils.hpp"
 #include <cstdint>
@@ -102,9 +101,6 @@ PageManager::findInclusivePage(uintptr_t Addr, size_t Size) {
 
 std::pair<uintptr_t, uint64_t> PageManager::requestExactPage(uint64_t VASize,
                                                              void *VA) {
-  // We need to always reserve at least a single page
-  DBG(Logger::logs("mneme")
-      << "Requesting exact page at address:" << VA << "\n");
   uint64_t ReqSize = util::roundUp(VASize, PageSize);
   auto FreeNode = findInclusivePage((uintptr_t)VA, ReqSize);
   if (FreeNode == FreeVARanges.end())
@@ -112,10 +108,6 @@ std::pair<uintptr_t, uint64_t> PageManager::requestExactPage(uint64_t VASize,
 
   auto Ptr = FreeNode->PageAddr;
   auto NodePageSize = FreeNode->Size;
-
-  DBG(Logger::logs("mneme")
-          << "Returned start: " << std::hex << Ptr << " End: " << std::hex
-          << Ptr + NodePageSize << std::dec << "\n";)
 
   FreeVARanges.erase(FreeNode);
 
