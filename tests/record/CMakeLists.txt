@@ -25,6 +25,7 @@ function(CREATE_GPU_TEST exe check_source)
   )
 
   add_test(NAME ${exe} COMMAND ${LIT} -vv ${check_source})
+  set_tests_properties(${exe} PROPERTIES LABELS "MnemeRecord")
 endfunction()
 
 
@@ -37,6 +38,8 @@ config.test_format = lit.formats.ShTest(True)
 config.suffixes = ['.cpp']
 config.test_source_root = '${CMAKE_CURRENT_SOURCE_DIR}'
 config.test_exec_root = '${CMAKE_CURRENT_BINARY_DIR}'
+MNEME_PRELOAD_LIB='${CMAKE_BINARY_DIR}/src/libmnemerecord.so'
+config.substitutions.append(('MNEME_PRELOAD_LIB', MNEME_PRELOAD_LIB))
 "
 )
 

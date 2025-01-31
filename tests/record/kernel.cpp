@@ -1,4 +1,7 @@
-// RUN: ./kernel | FileCheck %s --check-prefixes=CHECK
+// clang-format off
+// RUN: LD_PRELOAD=MNEME_PRELOAD_LIB ./kernel | FileCheck %s --check-prefixes=CHECK
+// clang-format on
+
 #include <climits>
 #include <cstdio>
 
