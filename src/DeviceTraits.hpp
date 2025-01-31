@@ -2,6 +2,7 @@
 #include "MnemeLogger.hpp"
 #include "Utils.hpp"
 #include <hip/hip_runtime.h>
+#include <optional>
 
 namespace mneme {
 enum DeviceVendors { HIP, CUDA };
