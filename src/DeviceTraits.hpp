@@ -178,8 +178,14 @@ template <> struct DeviceTraits<DeviceVendors::HIP> {
     hipErrCheck(hipMemRelease(MHandle));
   }
 
-  static constexpr size_t getFixedMemorySize() {
-    return 64L * 1024L * 1024L * 1024L;
+  static size_t getFixedMemorySize() {
+    static uint64_t PageSize{[&]() {
+      const char *env_p = std::getenv("MNEME_PAGE_SIZE");
+      if (!env_p)
+        return static_cast<uint64_t>(64L * 1024L * 1024L * 1024L);
+      return static_cast<uint64_t>(std::atol(env_p) * 1024L * 1024L * 1024L);
+    }()};
+    return PageSize;
   }
 
   static void freeVirtualAddress(void *Addr, size_t Size) {

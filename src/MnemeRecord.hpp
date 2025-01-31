@@ -259,7 +259,7 @@ public:
         llvm::StringRef(StrBuffer.data(), StrBuffer.size()));
 
     std::string Filename(
-        std::filesystem::path(llvm::Twine(RecordReplayDir + "RecordedIR_" +
+        std::filesystem::path(llvm::Twine(RecordReplayDir + "/RecordedIR_" +
                                           std::to_string(TotalModules) + ".bc")
                                   .str())
             .string());
