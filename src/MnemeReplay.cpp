@@ -37,6 +37,10 @@ static cl::opt<int>
 static cl::alias MnemeShortOptLevel(
     "O", cl::desc("The optimization level to use when optimizing IR"),
     cl::aliasopt(MnemeOptLevel), cl::cat(MnemeCategory));
+static cl::opt<int>
+    MnemeRepeats("repeats",
+                 cl::desc("The number of repeat executions for every kernel"),
+                 cl::init(3), cl::cat(MnemeCategory));
 
 int main(int argc, char *argv[]) {
   cl::HideUnrelatedOptions(MnemeCategory);
@@ -85,27 +89,31 @@ int main(int argc, char *argv[]) {
   auto Func = DeviceVendorTraits::getKernelFunctionFromImage(
       VendorModule, RInstance.getKernelName());
 
-  DeviceVendorTraits::DeviceStream_t ReplayStream;
-  auto EC = DeviceVendorTraits::DeviceErrorCheck(
-      DeviceVendorTraits::DeviceStreamCreate(&ReplayStream));
-  if (EC)
-    FATAL_ERROR("Error when creating a stream for replay\n" + EC.value());
+  bool verify = true;
+  for (int i = 0; i < MnemeRepeats; i++) {
+    DeviceVendorTraits::DeviceStream_t ReplayStream;
+    auto EC = DeviceVendorTraits::DeviceErrorCheck(
+        DeviceVendorTraits::DeviceStreamCreate(&ReplayStream));
+    if (EC)
+      FATAL_ERROR("Error when creating a stream for replay\n" + EC.value());
 
-  auto Args = RInstance.getArgs();
-  EC = DeviceVendorTraits::DeviceErrorCheck(
-      DeviceVendorTraits::launchKernelFunction(
-          Func, RecordedGrid, RecordedBlock, Args.get(),
-          RInstance.getSharedMemSize(), ReplayStream));
-  if (EC)
-    FATAL_ERROR("Error When Launching Kernel: " + EC.value());
+    auto Args = RInstance.getArgs();
+    EC = DeviceVendorTraits::DeviceErrorCheck(
+        DeviceVendorTraits::launchKernelFunction(
+            Func, RecordedGrid, RecordedBlock, Args.get(),
+            RInstance.getSharedMemSize(), ReplayStream));
+    if (EC)
+      FATAL_ERROR("Error When Launching Kernel: " + EC.value());
 
-  EC = DeviceVendorTraits::DeviceErrorCheck(
-      DeviceVendorTraits::DeviceStreamSynchronize(ReplayStream));
+    EC = DeviceVendorTraits::DeviceErrorCheck(
+        DeviceVendorTraits::DeviceStreamSynchronize(ReplayStream));
 
-  if (EC)
-    FATAL_ERROR("Error When synchronizing with kernel stream: " + EC.value());
+    if (EC)
+      FATAL_ERROR("Error When synchronizing with kernel stream: " + EC.value());
 
-  auto verify = RInstance.isMemorySame();
+    verify &= RInstance.isMemorySame();
+    RInstance.reset();
+  }
   if (verify)
     std::cout << "Results Match" << "\n";
   else

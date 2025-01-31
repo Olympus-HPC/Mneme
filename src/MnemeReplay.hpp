@@ -96,6 +96,8 @@ public:
       loadEpilogueMemory();
   }
 
+  void reset() { copyToDevice(); }
+
   void release() {
     for (auto &[DevAddr, MemBlob] : DeviceMemoryState) {
       MemBlob.release();
@@ -315,6 +317,8 @@ public:
   }
 
   void releaseMemory() { PrologueState.release(); }
+
+  void reset() { PrologueState.reset(); }
 
   bool isMemorySame() { return PrologueState == EpilogueState; }
 
