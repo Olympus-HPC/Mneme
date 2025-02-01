@@ -1,8 +1,8 @@
 // clang-format off
-// RUN: rm -rf *.json Recorded*.bv DEviceState*.mneme
+// RUN: rm -rf *.json Recorded*.bc DeviceState*.mneme
 // RUN: LD_PRELOAD=MNEME_PRELOAD_LIB MNEME_LOG_LEVEL=debug MNEME_PAGE_SIZE=%PG ./kernel | FileCheck %s --check-prefixes=CHECK
 // RUN: %RR | FileCheck %s --check-prefix=CHECK-RR
-// RUN: rm -rf *.json Recorded*.bv DEviceState*.mneme
+// RUN: rm -rf *.json Recorded*.bc DeviceState*.mneme
 // clang-format on
 
 #include <climits>

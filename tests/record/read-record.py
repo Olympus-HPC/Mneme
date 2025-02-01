@@ -33,4 +33,4 @@ for fn in glob.glob("./*.json"):
             sys.exit(-1)
 
 
-sys.exit(-1)
+sys.exit(0)
