@@ -199,6 +199,7 @@ public:
 
       auto &CurrKernels = HandleToKernels[Handle];
       for (auto &KI : CurrKernels) {
+        LOG_DEBUG("Searching for kernel with name {}", KI->getName());
         auto Iter = KernelNameToFunction.find(KI->getName());
         if (Iter == KernelNameToFunction.end())
           FATAL_ERROR("KernelName not in Module");

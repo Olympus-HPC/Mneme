@@ -24,26 +24,26 @@ function(CREATE_GPU_TEST exe check_source)
       -fpass-plugin=$<TARGET_FILE:RRPass>
   )
 
-  add_test(NAME ${exe} COMMAND ${LIT} -a -vv -D PG=1 -D RR=${RECORD_READ_JSON} ${check_source})
+add_test(NAME ${exe} COMMAND ${LIT} -a -vv -D ext='' -D PG=1 -D RR=${RECORD_READ_JSON} ${check_source})
   set_tests_properties(${exe} PROPERTIES LABELS "MnemeRecord::Link")
 endfunction()
 
 function(CREATE_RDC_GPU_TEST exe check_source)
-  add_executable(${exe} ${check_source} ${ARGN})
+  add_executable(${exe}.rdc ${check_source} ${ARGN})
   if (ENABLE_HIP)
     set_source_files_properties(${check_source} ${ARGN} PROPERTIES LANGUAGE HIP) 
-    target_compile_definitions(${exe} PRIVATE ENABLE_HIP)
-    target_link_libraries(${exe} PRIVATE hip::host)
+    target_compile_definitions(${exe}.rdc PRIVATE ENABLE_HIP)
+    target_link_libraries(${exe}.rdc PRIVATE hip::host)
   elseif(ENABLE_CUDA)
-    target_compile_definitions(${exe} PRIVATE ENABLE_CUDA)
+    target_compile_definitions(${exe}.rdc PRIVATE ENABLE_CUDA)
   endif()
-  target_include_directories(${exe} PRIVATE ${CMAKE_SOURCE_DIR}/src/)
+  target_include_directories(${exe}.rdc PRIVATE ${CMAKE_SOURCE_DIR}/src/)
 
   set_source_files_properties(${check_source} ${ARGN} PROPERTIES
     OBJECT_DEPENDS ${PROJECT_SOURCE_DIR}/pass/RRPass.cpp
     )
-  add_dependencies(${exe} RRPass)
-  add_dependencies(${exe} mnemerecord)
+  add_dependencies(${exe}.rdc RRPass)
+  add_dependencies(${exe}.rdc mnemerecord)
 
   if(PROTEUS_ENABLE_HIP)
     # This is unsupported see: https://gitlab.kitware.com/cmake/cmake/-/issues/23210
@@ -51,14 +51,14 @@ function(CREATE_RDC_GPU_TEST exe check_source)
 
     # Add -fgpu-rdc, --hip-link options for compilation and linking to enable RDC.
     target_compile_options(
-        ${exe}
+        ${exe}.rdc
         PUBLIC
         -fgpu-rdc
         -fpass-plugin=$<TARGET_FILE:RRPass>
     )
 
     target_link_options(
-        ${exe}
+        ${exe}.rdc
         PUBLIC
         -fgpu-rdc
         --hip-link
@@ -66,8 +66,8 @@ function(CREATE_RDC_GPU_TEST exe check_source)
     )
   endif()
 
-  add_test(NAME ${exe} COMMAND ${LIT} -a -vv -D PG=1 -D RR=${RECORD_READ_JSON} ${check_source})
-  set_tests_properties(${exe} PROPERTIES LABELS "MnemeRecord::RDC")
+  add_test(NAME ${exe}.rdc COMMAND ${LIT} -a -vv -D ext=.rdc -D PG=1 -D RR=${RECORD_READ_JSON} ${check_source})
+  set_tests_properties(${exe}.rdc PROPERTIES LABELS "MnemeRecord::RDC")
 endfunction()
 
 
@@ -90,11 +90,17 @@ config.test_exec_root = '${CMAKE_CURRENT_BINARY_DIR}'
 MNEME_PRELOAD_LIB='${CMAKE_BINARY_DIR}/src/libmnemerecord.so'
 PAGE_SIZE = lit_config.params['PG']
 RR = lit_config.params['RR']
+EXT = lit_config.params['ext']
 config.substitutions.append(('MNEME_PRELOAD_LIB', MNEME_PRELOAD_LIB))
 config.substitutions.append(('%PG', PAGE_SIZE))
 config.substitutions.append(('%RR', RR))
+config.substitutions.append(('%ext', EXT))
 "
 )
 
 CREATE_GPU_TEST(kernel kernel.cpp)
-CREATE_RDC_GPU_TEST(kernel.rdc kernel.cpp)
+CREATE_RDC_GPU_TEST(kernel kernel.cpp)
+
+CREATE_GPU_TEST(test_1D test_1D.cpp)
+CREATE_RDC_GPU_TEST(test_1D test_1D.cpp)
+
