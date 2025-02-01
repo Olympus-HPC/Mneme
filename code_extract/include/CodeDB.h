@@ -15,14 +15,9 @@ class ASTUnit;
 
 /// @brief Stores uniquely identifying information for AST nodes of interest.
 class ObjInfo {
-  clang::ASTUnit const &unit;
   std::string const keyName;
   clang::Decl *decl;
   clang::Decl *def = nullptr;
-  // Track the spec decl as we need to know the correct instantiation to be able
-  // to infer param types and lambda uses.
-  clang::Decl *specDecl = nullptr;
-  bool defInSameTU = false;
   // If this decl is external to the project, store its source file's name for
   // include'ing later.
   std::string extSourceFile = "";
@@ -30,26 +25,15 @@ class ObjInfo {
   clang::Decl *getDef() const { return def ? def : decl; }
 
 public:
-  ObjInfo(clang::ASTUnit const &astUnit, std::string keyName,
-          clang::Decl *mainDecl, clang::Decl *defDecl = nullptr)
-      : unit(astUnit), keyName(keyName), decl(mainDecl), def(defDecl),
-        defInSameTU(defDecl) {}
+  ObjInfo(std::string keyName, clang::Decl *mainDecl,
+          clang::Decl *defDecl = nullptr)
+      : keyName(keyName), decl(mainDecl), def(defDecl) {}
   void addDefinitionDecl(clang::Decl *defDecl) { def = defDecl; }
-  void addSpecializationDecl(clang::Decl *decl) { specDecl = decl; }
 
   clang::Decl *getDefiniton() { return getDef(); }
   clang::Decl const *getDefiniton() const { return getDef(); }
 
-  clang::Decl *getSpecialization() { return specDecl; }
-
-  bool isDefInSameTU() const { return defInSameTU; }
-
   std::string getKeyName() const { return keyName; }
-
-  /// Get filename from which this specific decl is referenced.
-  clang::StringRef getRefFile() const {
-    return unit.getOriginalSourceFileName();
-  }
 
   void addExtSourceFile(std::string file) { extSourceFile = file; }
 
@@ -135,6 +119,7 @@ public:
                                 std::string const &fileName) {
     std::unordered_set<std::string> mangle;
     getManglings(sourceName, mangle);
+    /// FIXME: We should not add the same external source to overloads...
     for (auto keyName : mangle)
       db.at(keyName)->addExtSourceFile(fileName);
   }

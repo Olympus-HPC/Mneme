@@ -160,12 +160,7 @@ void VisitManager::fillParams(std::string const &prefix, T *begin, T *end) {
 }
 
 void VisitManager::registerParameterPrologue(ObjInfo *fnObj) {
-  auto specDecl = fnObj->getSpecialization();
-  clang::FunctionDecl *fnDecl = nullptr;
-  if (specDecl)
-    fnDecl = specDecl->getAsFunction();
-  else
-    fnDecl = fnObj->getDefiniton()->getAsFunction();
+  clang::FunctionDecl *fnDecl = fnObj->getDefiniton()->getAsFunction();
 
   auto numParams = fnDecl->getNumParams();
   if (!numParams)
@@ -178,7 +173,7 @@ void VisitManager::emitStandaloneFile(std::string &output, bool emitRR,
                                       std::string const &configString) {
   auto body =
       static_cast<clang::FunctionDecl const *>(primaryFn.getDefiniton());
-  bool cudaKernel = body->hasAttr<clang::CUDAGlobalAttr>();
+  bool cudaKernel = body->getASTContext().getLangOpts().CUDA;
   bool emitRRHooks = cudaKernel && emitRR;
 
   llvm::raw_string_ostream ss(output);

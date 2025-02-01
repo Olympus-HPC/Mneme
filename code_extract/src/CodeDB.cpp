@@ -18,7 +18,7 @@ void CodeDB::registerDeclImpl(clang::ASTUnit const &unit, std::string keyName,
                               clang::NamedDecl *defDecl) {
   assert(!keyName.empty() && "KeyName should not be empty!");
   db.try_emplace(keyName,
-                 std::make_unique<ObjInfo>(unit, keyName, decl, defDecl));
+                 std::make_unique<ObjInfo>(keyName, decl, defDecl));
   auto plainName = decl->getQualifiedNameAsString();
   manglings[plainName].insert(keyName);
 }

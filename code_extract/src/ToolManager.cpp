@@ -121,8 +121,9 @@ void ToolManager::getStandaloneFnContext(std::string const &fnName,
                                          std::string const &outFileName,
                                          std::string mangledFnName) {
   primaryFn = findFnDeclByName(fnName, mangledFnName);
-  auto fnSrcFile = primaryFn->getRefFile();
-  bool isCuda = fnSrcFile.substr(fnSrcFile.size() - 2, 2) == "cu";
+  auto& ctx = primaryFn->getDefiniton()->getASTContext();
+  auto fnSrcFile = ctx.getSourceManager().getFilename(primaryFn->getDefiniton()->getLocation());
+  bool isCuda = ctx.getLangOpts().CUDA;
 
   std::string filename;
   if (!outFileName.empty())
