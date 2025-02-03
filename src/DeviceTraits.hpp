@@ -212,6 +212,10 @@ template <> struct DeviceTraits<DeviceVendors::HIP> {
     return hipLaunchKernel(function_address, numBlocks, dimBlocks, args,
                            sharedMemBytes, stream);
   }
+
+  static hipError_t deviceGetSymbolAddress(void **devPtr, const void *symbol) {
+    return hipGetSymbolAddress(devPtr, symbol);
+  }
 };
 #elif defined(ENABLE_CUDA)
 template <> struct DeviceTraits<DeviceVendors::HIP> {
