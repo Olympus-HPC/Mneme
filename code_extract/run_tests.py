@@ -61,9 +61,9 @@ class TestTool():
     def run_tests(self):
         # Simple - test simple function bodies 
         path_to_proj = self.project_dir / Path("tests/dummy_proj")
-        function_names = ['func'] + ['func' + str(i) for i in range(2, 10 + 1)] + ['func13', 'func14', 'func17']
+        function_names = ['func'] + ['func' + str(i) for i in range(2, 11 + 1)]
         self.run_single_test_set(path_to_proj, function_names, "Simple")
-        self.run_single_test_set(path_to_proj, ['func12', 'func15', 'func16', 'func18'], "Simple - Overloads and Templates", "-emitAllDecls")
+        self.run_single_test_set(path_to_proj, ['func' + str(i) for i in range(12, 19 + 1)], "Simple - Overloads and Templates", "-emitAllDecls")
         self.run_single_test_set(path_to_proj, ['std::cos'], "Simple - External Functions", "-emitAllDecls", "-pullExternal")
         
     def run(self):

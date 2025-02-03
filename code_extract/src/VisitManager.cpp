@@ -8,10 +8,12 @@
 #include "clang/AST/Attrs.inc"
 #include "clang/AST/Decl.h"
 #include "clang/AST/DeclBase.h"
+#include "clang/AST/DeclCXX.h"
 #include "clang/AST/Mangle.h"
 #include "clang/AST/Type.h"
 #include "clang/ASTMatchers/ASTMatchFinder.h"
 #include "clang/ASTMatchers/ASTMatchers.h"
+#include "clang/Basic/LLVM.h"
 #include "llvm/Support/raw_ostream.h"
 
 namespace helper {
@@ -48,6 +50,26 @@ std::string getParamDeclAsString(std::string const &typeString,
   if (!init.empty())
     decl += " = " + init;
   return decl + ";\n";
+}
+
+void buildCallExpr(clang::ArrayRef<clang::ParmVarDecl *> const &parameters,
+                   llvm::raw_string_ostream &ss,
+                   std::string paramPrefix = "p") {
+  int paramCount = 0;
+  ss << "( ";
+  for (auto param : parameters) {
+    std::string paramName = paramPrefix + std::to_string(paramCount);
+    auto type = param->getType();
+    if (type->isRValueReferenceType()) {
+      auto strippedType =
+          helper::stripRefs(type).getUnqualifiedType().getAsString();
+      ss << "std::forward<" << strippedType << ">(" << paramName << ")";
+    } else
+      ss << paramName;
+    ss << ",";
+    paramCount++;
+  }
+  ss.str().back() = ')';
 }
 
 /// FIXME: Move into generic utils namespace
@@ -129,12 +151,11 @@ void VisitManager::fillParams(std::string const &prefix, T *begin, T *end) {
       expr = *paramIt;
     }
     auto type = helper::getUnderlyingType(expr->getType());
+    auto recordDecl = type->getAsCXXRecordDecl();
     // If expression is lambda, save that...
-    if (type->hasUnnamedOrLocalType()) {
+    if (recordDecl && type->hasUnnamedOrLocalType()) {
       // Could possibly be lambda object,
       // find underlying expression.
-      auto recordDecl = type->getAsCXXRecordDecl();
-
       using namespace clang::ast_matchers;
       StatementMatcher lmbdExpr =
           lambdaExpr(hasType(asString(type.getAsString()))).bind("lambdaExpr");
@@ -147,11 +168,33 @@ void VisitManager::fillParams(std::string const &prefix, T *begin, T *end) {
       assert(lmbExpr && "Could not find lambda expression!");
 
       addToVisit(lmbExpr->getBody());
-      params_expr.push_back({key, lmbExpr});
+      std::string lmbBody;
+      llvm::raw_string_ostream stream(lmbBody);
+      lmbExpr->printPretty(stream, nullptr, recordDecl->getLangOpts());
+      params_expr.push_back({key, lmbBody});
 
       fillParams(key, lmbExpr->capture_begin(), lmbExpr->capture_end());
+    } else if (recordDecl) {
+      clang::CXXConstructorDecl *ctor = nullptr;
+      for (auto constructor : recordDecl->ctors()) {
+        if (constructor->isDeleted() || constructor->isCopyOrMoveConstructor())
+          continue;
+        ctor = constructor;
+      }
+      if (!ctor || !ctor->getNumParams()) {
+        params_decl.push_back({key, expr});
+        continue;
+      }
+
+      std::string ctorCall;
+      llvm::raw_string_ostream stream(ctorCall);
+      stream << recordDecl->getQualifiedNameAsString();
+      helper::buildCallExpr(ctor->parameters(), stream, key + "_");
+      params_expr.push_back({key, ctorCall});
+
+      fillParams(key.substr(1) + "_", ctor->param_begin(), ctor->param_end());
     } else {
-      expr->getNameAsString();
+
       params_decl.push_back({key, expr});
     }
     /// FIXME: We can do more here, like also handling function pointers like we
@@ -173,7 +216,7 @@ void VisitManager::emitStandaloneFile(std::string &output, bool emitRR,
                                       std::string const &configString) {
   auto body =
       static_cast<clang::FunctionDecl const *>(primaryFn.getDefiniton());
-  bool cudaKernel = body->getASTContext().getLangOpts().CUDA;
+  bool cudaKernel = body->hasAttr<clang::CUDAGlobalAttr>();
   bool emitRRHooks = cudaKernel && emitRR;
 
   llvm::raw_string_ostream ss(output);
@@ -229,25 +272,21 @@ void VisitManager::emitStandaloneFile(std::string &output, bool emitRR,
 
   // Build parameter decl prologue
   // First emit all params without any initializers.
-  std::unordered_map<std::string, std::string> fwdTypes;
+  bool hasFwdTypes = false;
   for (auto &param : params_decl) {
     auto paramVar = param.second;
     auto paramName = param.first;
     auto type = paramVar->getType().getCanonicalType();
     std::string typeString =
         helper::stripRefs(type).getUnqualifiedType().getAsString();
-    if (type->isRValueReferenceType())
-      fwdTypes[paramName] = typeString;
+    hasFwdTypes = hasFwdTypes || type->isRValueReferenceType();
     ss << helper::getParamDeclAsString(typeString, paramName);
     if (emitRRHooks)
       ss << "init_param(" << paramName << ", " << paramName << ");\n";
   }
   // Then, with initializers...
   for (auto &param : params_expr) {
-    std::string init;
-    llvm::raw_string_ostream stream(init);
-    param.second->printPretty(stream, nullptr, body->getLangOpts());
-    ss << helper::getParamDeclAsString("auto", param.first, init);
+    ss << helper::getParamDeclAsString("auto", param.first, param.second);
     // No call for init_param for params with recorded init.
   }
 
@@ -266,6 +305,8 @@ void VisitManager::emitStandaloneFile(std::string &output, bool emitRR,
     auto tmpArgs = tmpSpec->TemplateArguments->asArray();
     ss << "< ";
     for (auto arg : tmpArgs) {
+      if (arg.getKind() != clang::TemplateArgument::ArgKind::Type)
+        continue;
       auto argType = arg.getAsType();
       if (argType->hasUnnamedOrLocalType())
         break;
@@ -277,20 +318,7 @@ void VisitManager::emitStandaloneFile(std::string &output, bool emitRR,
   if (cudaKernel)
     ss << "<<<grid, block>>>";
 
-  auto numParams = body->getNumParams();
-  int paramCount = 0;
-  ss << "( ";
-  for (auto param : body->parameters()) {
-    std::string paramName = "p" + std::to_string(paramCount);
-    auto fwdParam = fwdTypes.find(paramName);
-    if (fwdParam != fwdTypes.end()) {
-      ss << "std::forward<" << fwdParam->second << ">(" << paramName << ")";
-    } else
-      ss << paramName;
-    ss << ",";
-    paramCount++;
-  }
-  ss.str().back() = ')';
+  helper::buildCallExpr(body->parameters(), ss);
   ss << ";\n";
 
   if (emitRRHooks)
@@ -299,7 +327,7 @@ void VisitManager::emitStandaloneFile(std::string &output, bool emitRR,
   ss << "}\n";
 
   // include the right header for std::forward
-  if (!fwdTypes.empty())
+  if (hasFwdTypes)
     output = "#include <utility>\n" + output;
 }
 

@@ -28,7 +28,7 @@ class VisitManager {
   std::vector<clang::NamedDecl const *> tagDecls;
   std::unordered_map<std::string, ObjInfo const *> visitedNodes;
   std::unordered_set<std::string> includes;
-  std::vector<std::pair<std::string, clang::Expr const *>> params_expr;
+  std::vector<std::pair<std::string, std::string>> params_expr;
   std::vector<std::pair<std::string, clang::ValueDecl const *>> params_decl;
 
   /// @brief Fills params from the given vals into the params map with string id as

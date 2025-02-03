@@ -4,6 +4,7 @@
 #include "clang/AST/Decl.h"
 #include "clang/AST/DeclBase.h"
 #include "clang/AST/Mangle.h"
+#include "clang/AST/TemplateBase.h"
 #include "clang/AST/Type.h"
 #include "clang/Basic/SourceLocation.h"
 #include "clang/Frontend/ASTUnit.h"
@@ -13,8 +14,11 @@
 namespace helper {
 std::string locToIncFile(clang::SourceLocation sloc,
                          clang::ASTContext const &ctx) {
-  auto declFile = sloc.printToString(ctx.getSourceManager());
-  return declFile.substr(0, declFile.find_first_of(':'));
+  auto &mgr = ctx.getSourceManager();
+  auto Entry = mgr.getFileEntryForID(mgr.getFileID(sloc));
+  if (!Entry)
+    return "";
+  return Entry->tryGetRealPathName().str();
 }
 
 bool isIncludeExternal(std::string const &incFile, CodeDB const &codedb) {
@@ -28,7 +32,7 @@ bool isIncludeExternal(std::string const &incFile, CodeDB const &codedb) {
 bool checkPotentialInclude(clang::NamedDecl const *decl, VisitManager &vm,
                            CodeDB const &codedb) {
   auto incFile = locToIncFile(decl->getLocation(), decl->getASTContext());
-  if (isIncludeExternal(incFile, codedb))
+  if (!incFile.empty() && isIncludeExternal(incFile, codedb))
     return vm.registerInclude(incFile);
   else
     return false;
@@ -308,7 +312,9 @@ void MatchVisitor::VisitTemplateParams(clang::FunctionDecl const *defDecl) {
   auto tmpSpec = defDecl->getTemplateSpecializationInfo();
   if (tmpSpec) {
     auto tmpArgs = tmpSpec->TemplateArguments->asArray();
-    for (auto arg : tmpArgs)
-      helper::handleVarDecl(arg.getAsType(), vm, codedb);
+    for (auto arg : tmpArgs) {
+      if (arg.getKind() == clang::TemplateArgument::ArgKind::Type)
+        helper::handleVarDecl(arg.getAsType(), vm, codedb);
+    }
   }
 }

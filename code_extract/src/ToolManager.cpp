@@ -129,7 +129,8 @@ void ToolManager::getStandaloneFnContext(std::string const &fnName,
   if (!outFileName.empty())
     filename = outFileName;
   else
-    filename = std::regex_replace(fnName, std::regex("[^\\w]"), "_");
+    filename = fnName;
+  filename = std::regex_replace(filename, std::regex("[^\\w]"), "_");
   std::string objname = filename + ".o";
   filename += (isCuda ? ".cu" : ".cpp");
 

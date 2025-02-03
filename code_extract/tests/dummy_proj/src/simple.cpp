@@ -12,6 +12,16 @@ class B {
     int fb1() { return b1; }
 };
 
+struct C {
+    int item;
+    C() = delete;
+    C(int in){ item = in; }
+};
+
+struct D {
+    int item;
+};
+
 int func(int a, int b) {
     int c = a + b;
     return c * c;
@@ -114,12 +124,17 @@ T func16(T in) {
     return in;
 }
 
+template <typename T> 
+T func17(T in) {
+    return in;
+}
+
 class funcClass {
     int x;
     public:
-    int func17() { return x; }
-    int func18(int in) { return in*x; }
-    float func18(float in) { return in*x; }
+    int func18() { return x; }
+    int func19(int in) { return in*x; }
+    float func19(float in) { return in*x; }
 };
 
 int main() {
@@ -135,8 +150,8 @@ int main() {
     
     func16<A, B>(A());
 
-    funcClass c;
-    c.func17();
+    func17(C(1));
+    func17(D());
 
     return 0;
 }
