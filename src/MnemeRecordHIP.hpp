@@ -11,6 +11,7 @@
 #include <dlfcn.h>
 #include <hip/hip_runtime.h>
 #include <llvm/ADT/ArrayRef.h>
+#include <llvm/ADT/StableHashing.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Bitcode/BitcodeWriter.h>
 #include <llvm/IRReader/IRReader.h>

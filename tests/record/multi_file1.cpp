@@ -18,6 +18,9 @@ using MnemeDeviceRT = DeviceTraits<DeviceVendors::HIP>;
 // CHECK-RR:DemangledName: kernel()
 // CHECK-RR:NumModules: 1
 // CHECK-RR:NumInstances: 1
+// CHECK-RR:DemangledName: kernel()
+// CHECK-RR:NumModules: 1
+// CHECK-RR:NumInstances: 1
 __global__ static void kernel() { printf("File1-Kernel\n"); }
 
 int foo();

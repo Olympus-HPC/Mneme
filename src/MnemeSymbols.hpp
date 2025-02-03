@@ -20,9 +20,11 @@ struct KernelInfo {
   llvm::SmallVector<std::string> ModuleFiles;
   llvm::SmallVector<std::unique_ptr<uint8_t[]>> ArgData;
   KernelInfo(void **Handle, char *Name)
-      : Handle(Handle), Name(Name), StaticHash(0) {};
+      : Handle(Handle), Name(Name),
+        StaticHash(llvm::stable_hash_combine_string(Name)) {};
   KernelInfo(void **Handle, std::string &Name)
-      : Handle(Handle), Name(Name), StaticHash(0) {};
+      : Handle(Handle), Name(Name),
+        StaticHash(llvm::stable_hash_combine_string(Name)) {};
 
   KernelInfo() : Name(nullptr) {};
 
