@@ -112,6 +112,7 @@ public:
 
   void **registerFatBin(FatBinaryWrapper_t *fatbin) {
     void **Handle = origRegisterFatBinary(fatbin);
+    LOG_DEBUG("Register Fatbin Returned handle {}", (void *)Handle);
     HandleToBin.insert({Handle, fatbin});
     HandleToGlobalSymbol.insert({Handle, {}});
 
@@ -258,11 +259,11 @@ public:
     uint64_t StableHash = llvm::stable_hash_combine_string(
         llvm::StringRef(StrBuffer.data(), StrBuffer.size()));
 
-    std::string Filename(
-        std::filesystem::path(llvm::Twine(RecordReplayDir + "/RecordedIR_" +
-                                          std::to_string(TotalModules) + ".bc")
-                                  .str())
-            .string());
+    std::string Filename(std::filesystem::path(
+                             llvm::Twine(RecordReplayDir + "/RecordedIR_" +
+                                         std::to_string(TotalModules++) + ".bc")
+                                 .str())
+                             .string());
     llvm::raw_fd_ostream OutBC(Filename, EC);
     if (EC)
       FATAL_ERROR("Cannot write module ir file");

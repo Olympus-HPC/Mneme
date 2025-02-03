@@ -18,13 +18,13 @@ public:
 
 extern "C" {
 void __hipRegisterFatBinaryEnd(void *ptr) {
-  LOG_DEBUG("Entering mneme to initialize fatbinary");
+  LOG_DEBUG("Entering mneme to finalize fatbinary");
   auto &mneme = MnemeRecorderHIPPreload::instance();
   mneme.registerFatBinEnd(ptr);
 }
 
 void **__hipRegisterFatBinary(void *fatbin) {
-  LOG_DEBUG("Entering mneme to finalize fatbinary");
+  LOG_DEBUG("Entering mneme to register fatbinary {}", fatbin);
   auto &mneme = MnemeRecorderHIPPreload::instance();
   return mneme.registerFatBin(static_cast<FatBinaryWrapper_t *>(fatbin));
 }

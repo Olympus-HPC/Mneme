@@ -192,7 +192,8 @@ private:
     appendToUsed(M, {GV});
     GV->setSection(".jit.bitcode" + (IsLTO ? ".lto" : getUniqueModuleId(&M)));
     DEBUG(Logger::logs("proteus-pass")
-          << "Emit jit bitcode GV " << GVName << "\n");
+          << "Emit jit bitcode GV " << GVName
+          << " at section : " << GV->getSection().str() << "\n");
   }
 };
 

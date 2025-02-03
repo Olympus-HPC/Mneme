@@ -71,9 +71,11 @@ public:
   void extractIR() {
     LOG_INFO("Extracting IR from images");
     constexpr char OFFLOAD_BUNDLER_MAGIC_STR[] = "__CLANG_OFFLOAD_BUNDLE__";
-    size_t Pos = 0;
 
     for (auto &[Handle, FatbinWrapper] : HandleToBin) {
+      size_t Pos = 0;
+      LOG_DEBUG("Processing Handle and FatbinWrapper {} {}", (void *)Handle,
+                (void *)FatbinWrapper);
       const char *Binary = FatbinWrapper->Binary;
       llvm::StringRef Magic(Binary, sizeof(OFFLOAD_BUNDLER_MAGIC_STR) - 1);
       if (!Magic.equals(OFFLOAD_BUNDLER_MAGIC_STR))
@@ -85,6 +87,11 @@ public:
       };
 
       uint64_t NumberOfBundles = Read8ByteIntLE(Binary, Pos);
+      if (NumberOfBundles == 0) {
+        LOG_CRITICAL("Number of Bundles is 0");
+        continue;
+      }
+      LOG_DEBUG("Processing number of bundles: {}", NumberOfBundles);
       Pos += 8;
 
       llvm::StringRef DeviceBinary;
@@ -101,11 +108,11 @@ public:
         llvm::StringRef Triple(Binary + Pos, TripleSize);
         Pos += TripleSize;
 
+        LOG_DEBUG("Processing bundle {}", Triple.str());
         if (!Triple.contains("amdgcn") || !Triple.contains(getArch()))
           continue;
 
         DeviceBinary = llvm::StringRef(Binary + Offset, Size);
-        break;
       }
 
       auto DeviceElf = llvm::object::ELF64LEFile::create(DeviceBinary);
