@@ -204,6 +204,14 @@ template <> struct DeviceTraits<DeviceVendors::HIP> {
   }
 
   static constexpr uintptr_t getSuggestedAddr() { return 0x0000153d2be00000; }
+
+  static hipError_t deviceLaunchKernel(const void *function_address,
+                                       dim3 numBlocks, dim3 dimBlocks,
+                                       void **args, size_t sharedMemBytes,
+                                       hipStream_t stream) {
+    return hipLaunchKernel(function_address, numBlocks, dimBlocks, args,
+                           sharedMemBytes, stream);
+  }
 };
 #elif defined(ENABLE_CUDA)
 template <> struct DeviceTraits<DeviceVendors::HIP> {

@@ -113,5 +113,8 @@ CREATE_RDC_GPU_TEST(test_block_grid_3d test_block_grid_3d.cpp)
 CREATE_GPU_TEST(test_multi_file multi_file1.cpp multi_file2.cpp)
 CREATE_RDC_GPU_TEST(test_multi_file multi_file1.cpp multi_file2.cpp)
 
+CREATE_GPU_TEST(test_multi_file_launcher multi_file1_kernel_launcher.cpp multi_file2_kernel_launcher.cpp)
+CREATE_RDC_GPU_TEST(test_multi_file_launcher multi_file1_kernel_launcher.cpp multi_file2_kernel_launcher.cpp)
+
 
 
