@@ -45,7 +45,7 @@ function(CREATE_RDC_GPU_TEST exe check_source)
   add_dependencies(${exe}.rdc RRPass)
   add_dependencies(${exe}.rdc mnemerecord)
 
-  if(PROTEUS_ENABLE_HIP)
+  if(ENABLE_HIP)
     # This is unsupported see: https://gitlab.kitware.com/cmake/cmake/-/issues/23210
     # set_target_properties(${exe}.rdc PROPERTIES HIP_SEPARABLE_COMPILATION on)
 
@@ -101,6 +101,13 @@ config.substitutions.append(('%ext', EXT))
 CREATE_GPU_TEST(kernel kernel.cpp)
 CREATE_RDC_GPU_TEST(kernel kernel.cpp)
 
-CREATE_GPU_TEST(test_1D test_1D.cpp)
-CREATE_RDC_GPU_TEST(test_1D test_1D.cpp)
+CREATE_GPU_TEST(test_block_grid_1d test_block_grid_1d.cpp)
+CREATE_RDC_GPU_TEST(test_block_grid_1d test_block_grid_1d.cpp)
+
+CREATE_GPU_TEST(test_block_grid_2d test_block_grid_2d.cpp)
+CREATE_RDC_GPU_TEST(test_block_grid_2d test_block_grid_2d.cpp)
+
+CREATE_GPU_TEST(test_block_grid_3d test_block_grid_3d.cpp)
+CREATE_RDC_GPU_TEST(test_block_grid_3d test_block_grid_3d.cpp)
+
 
