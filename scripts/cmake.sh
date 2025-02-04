@@ -19,6 +19,7 @@ build_proteus() {
   mkdir build-proteus
   pushd build-proteus
   cmake .. \
+  -DBUILD_SHARED=On \
   -DLLVM_INSTALL_DIR=${LLVM_INSTALL_DIR} \
   -DCMAKE_C_COMPILER=${LLVM_INSTALL_DIR}/bin/clang \
   -DCMAKE_CXX_COMPILER=${LLVM_INSTALL_DIR}/bin/clang++ \
@@ -102,6 +103,6 @@ cmake .. \
 -DCMAKE_EXPORT_COMPILE_COMMANDS=on ../
 fi
 
-make
+make -j 10
 
 popd
