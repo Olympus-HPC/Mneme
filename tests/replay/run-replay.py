@@ -41,8 +41,10 @@ for fn in glob.glob("./*.json"):
             fn,
         ]
 
-
-        sp.run(cmd, stdout=sys.stdout, stderr=sys.stderr)
+        print(" ".join(cmd))
+        res = sp.run(cmd, stdout=sys.stdout, stderr=sys.stderr)
+        if res.returncode != 0:
+            sys.exit(res)
 
 
 sys.exit(0)

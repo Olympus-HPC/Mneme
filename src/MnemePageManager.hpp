@@ -58,13 +58,14 @@ public:
 };
 
 template <typename MnemeDeviceRT>
-std::unique_ptr<PageManager> initializePageManager(void *ReqAddr = nullptr) {
+std::unique_ptr<PageManager> initializePageManager(void *ReqAddr = nullptr,
+                                                   uint64_t ActualSize = -1) {
   const int MaxTries = 5;
   int DeviceID = 0;
   auto MinPageSize = MnemeDeviceRT::getMinPageSize(DeviceID);
-
-  auto ActualSize =
-      mneme::util::roundUp(MnemeDeviceRT::getFixedMemorySize(), MinPageSize);
+  if (ActualSize == -1)
+    ActualSize =
+        mneme::util::roundUp(MnemeDeviceRT::getFixedMemorySize(), MinPageSize);
   void *VA = nullptr;
   int Try = 0;
   if (!ReqAddr)

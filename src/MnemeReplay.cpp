@@ -71,6 +71,7 @@ int main(int argc, char *argv[]) {
 
   LOG_INFO("Optimizing Kernel with OptLevel {}", MnemeOptLevel.getValue());
   ProteusJIT::optimizeIR(*Mod, Arch, MnemeOptLevel);
+
   auto RecordedGrid = RInstance.getRecordedGrid();
   auto RecordedBlock = RInstance.getRecordedBlock();
   ProteusJIT::setLaunchBoundsForKernel(
@@ -78,6 +79,7 @@ int main(int argc, char *argv[]) {
       RecordedBlock.x * RecordedBlock.y * RecordedBlock.z);
   ProteusJIT::runCleanupPassPipeline(*Mod);
   SmallPtrSet<void *, 8> GlobalLinkedBinaries;
+  Mod->print(llvm::outs(), nullptr);
   auto DeviceObject =
       ProteusJIT::codegenObject(*Mod, Arch, GlobalLinkedBinaries);
   auto VendorModule = DeviceVendorTraits::getDeviceModuleFromImage(

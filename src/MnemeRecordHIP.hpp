@@ -166,6 +166,7 @@ public:
         if (SectionName->equals(".jit.bitcode.lto")) {
           LLVMModules.clear();
           LLVMModules.push_back(std::move(M));
+          LOG_DEBUG("Found LTO module");
           break;
         } else {
           LLVMModules.push_back(std::move(M));

@@ -211,7 +211,7 @@ public:
       LOG_WARN("Expected VASize ({}) and ActualSize ({}) to match\n", VASize,
                ActualSize);
 
-    PM = initializePageManager<MnemeDeviceRT>(VAddr);
+    PM = initializePageManager<MnemeDeviceRT>(VAddr, ActualSize);
     if (PM->getVAStart() != VAddr) {
       FATAL_ERROR("Could not allocate Device Pages\n Record got : " +
                   util::pointerToHexString(VAddr) + " and replay got : " +
