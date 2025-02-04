@@ -3,10 +3,10 @@
 
 #include "clang/AST/Decl.h"
 #include "clang/AST/DeclBase.h"
+#include "clang/AST/Mangle.h"
 #include "clang/AST/Type.h"
 #include "clang/Basic/SourceLocation.h"
 #include "clang/Frontend/ASTUnit.h"
-#include "clang/AST/Mangle.h"
 
 #include <type_traits>
 
@@ -37,9 +37,11 @@ bool checkPotentialInclude(clang::NamedDecl const *decl, VisitManager &vm,
 template <typename T>
 void storeDecl(T *decl, clang::ASTUnit const &unit, CodeDB &cdb) {
   constexpr bool isFunctionDecl = std::is_same_v<T, clang::FunctionDecl>;
-  std::string srcDeclFile = locToIncFile(decl->getLocation(), unit.getASTContext());
-  if constexpr(isFunctionDecl) {
-    // If function template, look at template declaration loc and not instantiation loc.
+  std::string srcDeclFile =
+      locToIncFile(decl->getLocation(), unit.getASTContext());
+  if constexpr (isFunctionDecl) {
+    // If function template, look at template declaration loc and not
+    // instantiation loc.
     if (auto tmpDecl = decl->getPrimaryTemplate()) {
       srcDeclFile = locToIncFile(tmpDecl->getLocation(), unit.getASTContext());
     }
@@ -76,7 +78,8 @@ std::tuple<T const *, bool> visitAndRegister(clang::NamedDecl const *decl,
 
   if (!cdb.isRegistered(keyName))
     decl->dump();
-  assert(cdb.isRegistered(keyName) && "All decl to visit should be registered!");
+  assert(cdb.isRegistered(keyName) &&
+         "All decl to visit should be registered!");
   auto objInfo = cdb.getObjInfoOrNull(keyName);
 
   // Lookup definition from database
@@ -111,14 +114,15 @@ bool isGlobalVar(clang::VarDecl const *decl) {
 
 clang::QualType getUnderlyingType(clang::QualType const &type) {
   clang::QualType qt;
-  if(auto pointerType = type->getAs<clang::PointerType>())
+  if (auto pointerType = type->getAs<clang::PointerType>())
     qt = pointerType->getPointeeType();
-  else if(type->isArrayType())
+  else if (type->isArrayType())
     qt = llvm::cast<clang::ArrayType>(type)->getElementType();
-  else if(auto referenceType = type->getAs<clang::ReferenceType>())
+  else if (auto referenceType = type->getAs<clang::ReferenceType>())
     qt = referenceType->getPointeeType();
-  else return type;
-  
+  else
+    return type;
+
   return getUnderlyingType(qt);
 }
 
@@ -263,6 +267,7 @@ bool MatchVisitor::VisitCallExpr(clang::CallExpr *callExpr) {
     return true;
 
   clang::CXXRecordDecl *parentDecl = nullptr;
+  /// FIXME: Make more generic to handle other record types.
   if (decl->isCXXClassMember()) {
     parentDecl = static_cast<clang::CXXMethodDecl *>(decl)->getParent();
     // If parent decl is implicit, do not visit as callexpr maybe lambda
@@ -277,7 +282,9 @@ bool MatchVisitor::VisitCallExpr(clang::CallExpr *callExpr) {
   vm.addToVisit(defDecl->getBody());
 
   // Handle function param var decls
-  VisitParams(defDecl);
+  // Also, dont visit the parent decl here, we either have visited it or will
+  // eventually...
+  VisitParams(defDecl, false);
 
   if (parentDecl && decl->isStatic())
     helper::handleRecordDecl(parentDecl, vm, codedb);
@@ -285,16 +292,23 @@ bool MatchVisitor::VisitCallExpr(clang::CallExpr *callExpr) {
   return true;
 }
 
-void MatchVisitor::VisitParams(clang::FunctionDecl const *defDecl) {
+void MatchVisitor::VisitParams(clang::FunctionDecl const *defDecl,
+                               bool isRecordMember) {
+  // If function is a record member, visit its record.
+  if (isRecordMember)
+    helper::handleRecordDecl(
+        static_cast<clang::CXXMethodDecl const *>(defDecl)->getParent(), vm,
+        codedb);
+
   for (auto param_it : defDecl->parameters())
     helper::handleVarDecl(param_it->getType(), vm, codedb);
 }
 
-void MatchVisitor::VisitTemplateParams(clang::FunctionDecl const* defDecl) {
+void MatchVisitor::VisitTemplateParams(clang::FunctionDecl const *defDecl) {
   auto tmpSpec = defDecl->getTemplateSpecializationInfo();
   if (tmpSpec) {
     auto tmpArgs = tmpSpec->TemplateArguments->asArray();
-    for(auto arg : tmpArgs)
+    for (auto arg : tmpArgs)
       helper::handleVarDecl(arg.getAsType(), vm, codedb);
   }
 }

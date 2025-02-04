@@ -252,15 +252,24 @@ void VisitManager::emitStandaloneFile(std::string &output, bool emitRR,
   }
 
   // Build function call
+  auto parent = body->getParent();
+  auto isMemberFn = parent ? parent->isRecord() : false;
+  if (isMemberFn) {
+    // We can also get class name from qualified string...
+    ss << static_cast<clang::CXXRecordDecl const *>(parent)
+              ->getQualifiedNameAsString()
+       << "* caller;\n";
+    ss << "caller->";
+  }
   ss << body->getQualifiedNameAsString();
   if (auto tmpSpec = body->getTemplateSpecializationInfo()) {
     auto tmpArgs = tmpSpec->TemplateArguments->asArray();
     ss << "< ";
-    for(auto arg : tmpArgs) {
+    for (auto arg : tmpArgs) {
       auto argType = arg.getAsType();
       if (argType->hasUnnamedOrLocalType())
         break;
-      ss << argType.getAsString() << ","; 
+      ss << argType.getAsString() << ",";
     }
     ss.str().back() = '>';
   }
@@ -290,16 +299,19 @@ void VisitManager::emitStandaloneFile(std::string &output, bool emitRR,
   ss << "}\n";
 
   // include the right header for std::forward
-  if (!fwdTypes.empty()) output = "#include <utility>\n" + output;
+  if (!fwdTypes.empty())
+    output = "#include <utility>\n" + output;
 }
 
 void VisitManager::pullPrimaryFnContext() {
   auto primaryDecl = primaryFn.getDefiniton()->getAsFunction();
+  auto parent = primaryDecl->getParent();
+  auto isMemberFn = parent ? parent->isRecord() : false;
 
   MatchVisitor mv(*this, db);
-  mv.VisitParams(primaryDecl);
-  registerParameterPrologue(&primaryFn);
 
+  mv.VisitParams(primaryDecl, isMemberFn);
+  registerParameterPrologue(&primaryFn);
   mv.VisitTemplateParams(primaryDecl);
 
   auto extSource = primaryFn.getExtSourceFile();

@@ -114,6 +114,14 @@ T func16(T in) {
     return in;
 }
 
+class funcClass {
+    int x;
+    public:
+    int func17() { return x; }
+    int func18(int in) { return in*x; }
+    float func18(float in) { return in*x; }
+};
+
 int main() {
     auto glambda = [](int a, int b) { return a < b; };
     func12(glambda);
@@ -126,6 +134,9 @@ int main() {
     func15<float, int>(2.1);
     
     func16<A, B>(A());
+
+    funcClass c;
+    c.func17();
 
     return 0;
 }
