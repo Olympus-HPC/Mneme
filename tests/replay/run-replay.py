@@ -1,4 +1,5 @@
 import json
+import subprocess as sp
 import glob
 import sys
 from pathlib import Path
@@ -31,6 +32,17 @@ for fn in glob.glob("./*.json"):
         if not Path(instance["Epilogue"]).exists():
             print("Expected epilogue file to exist")
             sys.exit(-1)
+
+        cmd = [
+            "@MNEME_BIN_FILE@",
+            "--mneme-replay-hash",
+            str(k),
+            "--mneme-replay-json",
+            fn,
+        ]
+
+
+        sp.run(cmd, stdout=sys.stdout, stderr=sys.stderr)
 
 
 sys.exit(0)

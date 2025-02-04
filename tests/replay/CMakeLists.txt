@@ -17,6 +17,7 @@ function(CREATE_GPU_TEST exe check_source)
     )
   add_dependencies(${exe} RRPass)
   add_dependencies(${exe} mnemerecord)
+  add_dependencies(${exe} mnemereplay)
 
   target_compile_options(
       ${exe}
@@ -44,6 +45,7 @@ function(CREATE_RDC_GPU_TEST exe check_source)
     )
   add_dependencies(${exe}.rdc RRPass)
   add_dependencies(${exe}.rdc mnemerecord)
+  add_dependencies(${exe} mnemereplay)
 
   if(ENABLE_HIP)
     # This is unsupported see: https://gitlab.kitware.com/cmake/cmake/-/issues/23210
@@ -74,7 +76,8 @@ endfunction()
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 set(RECORD_READ_JSON "${Python3_EXECUTABLE} ${CMAKE_CURRENT_BINARY_DIR}/run-replay.py")
 
-configure_file(${CMAKE_CURRENT_SOURCE_DIR}/run-replay.py ${CMAKE_CURRENT_BINARY_DIR}/run-replay.py COPYONLY)
+set(MNEME_BIN_FILE ${CMAKE_BINARY_DIR}/src/mnemereplay)
+configure_file(${CMAKE_CURRENT_SOURCE_DIR}/run-replay.py ${CMAKE_CURRENT_BINARY_DIR}/run-replay.py @ONLY)
 
 
 
