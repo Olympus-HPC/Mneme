@@ -54,8 +54,8 @@ public:
     for (auto &GV : GlobalVars) {
       auto DEC = DeviceTraits<VendorTypes>::DeviceErrorCheck(
           DeviceTraits<VendorTypes>::DeviceCopy(
-              GV.DevAddr, GV.HostAddr.get(), GV.VarSize,
-              DeviceTraits<VendorTypes>::MemcpyHostToDeviceKind()));
+              GV.HostAddr.get(), GV.DevAddr, GV.VarSize,
+              DeviceTraits<VendorTypes>::MemcpyDeviceToHostKind()));
       if (DEC)
         FATAL_ERROR(
             "Copying from device to host for global variables failed\n");

@@ -1,6 +1,6 @@
 // clang-format off
 // RUN: rm -rf *.json Recorded*.bc DeviceState*.mneme
-// RUN: LD_PRELOAD=MNEME_PRELOAD_LIB MNEME_LOG_LEVEL=debug MNEME_PAGE_SIZE=%PG ./kernel%ext | FileCheck %s --check-prefixes=CHECK
+// RUN: LD_PRELOAD=MNEME_PRELOAD_LIB MNEME_LOG_LEVEL=debug MNEME_PAGE_SIZE=%PG ./test_rr_global%ext | FileCheck %s --check-prefixes=CHECK
 // RUN: %RR | FileCheck %s --check-prefix=CHECK-RR
 // RUN: rm -rf *.json Recorded*.bc DeviceState*.mneme
 // clang-format on
@@ -18,6 +18,12 @@ using MnemeDeviceRT = DeviceTraits<DeviceVendors::HIP>;
 #endif
 
 __device__ double value = 0.0;
+
+// CHECK-RR: DemangledName: test_global()
+// CHECK-RR: NumModules: 1
+// CHECK-RR: NumInstances: 1
+// CHECK-RR: BlockDims:(1, 1, 1)
+// CHECK-RR: GridDims:(1, 1, 1)
 
 __global__ void test_global() { value = 1.0; }
 
@@ -49,6 +55,8 @@ int main(int argc, const char *argv[]) {
     std::cout << "Expected the value to be 1.0 but is " << hValue << "\n";
     return -1;
   }
-  std::cout << "Value is " << hValue << "\n";
+  std::cout << "Value is " << (int)hValue << "\n";
   return 0;
 }
+
+// CHECK: Value is 1

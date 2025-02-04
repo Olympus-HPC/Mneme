@@ -72,7 +72,7 @@ endfunction()
 
 
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
-set(RECORD_READ_JSON "${Python3_EXECUTABLE} ${CMAKE_CURRENT_BINARY_DIR}/read-record.py")
+set(RECORD_READ_JSON "${Python3_EXECUTABLE} ${CMAKE_CURRENT_BINARY_DIR}/run-replay.py")
 
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/run-replay.py ${CMAKE_CURRENT_BINARY_DIR}/run-replay.py COPYONLY)
 
