@@ -17,12 +17,13 @@ if (ENABLE_HIP)
   set_source_files_properties(MnemeDeviceCode.cpp PROPERTIES LANGUAGE HIP)
 endif()
 
-set(libs ${LLVM_AVAILABLE_LIBS})
-
 
 target_include_directories(mnemerecord SYSTEM PRIVATE ${LLVM_INCLUDE_DIRS} ${CMAKE_SOURCE_DIR}/common)
 target_include_directories(mnemereplay SYSTEM PRIVATE ${LLVM_INCLUDE_DIRS} ${CMAKE_SOURCE_DIR}/common)
 target_link_libraries(mnemereplay PRIVATE proteus)
+get_target_property(LIBRARY_PATH proteus IMPORTED_LOCATION)
+get_filename_component(LIBRARY_DIR ${LIBRARY_PATH} DIRECTORY)
+message(STATUS "Library directory: ${LIBRARY_DIR}")
 
 if (ENABLE_LOGGER)
 target_link_libraries(mnemereplay PRIVATE spdlog::spdlog_header_only)
@@ -31,11 +32,17 @@ endif()
 
 if(ENABLE_HIP)
   target_link_libraries(mnemerecord PRIVATE hip::host)
-  target_link_libraries(mnemereplay PRIVATE ${LLVM_AVAILABLE_LIBS})
-
   target_link_libraries(mnemerecord PRIVATE ${LLVM_AVAILABLE_LIBS})
+  target_link_directories(mnemerecord PRIVATE ${LLVM_LIBRARY_DIR})
+  set_target_properties(mnemerecord PROPERTIES INSTALL_RPATH_USE_LINK_PATH TRUE)
+
   target_link_libraries(mnemereplay PRIVATE hip::host)
+  target_link_libraries(mnemereplay PRIVATE ${LLVM_AVAILABLE_LIBS})
+  target_link_directories(mnemereplay PRIVATE ${LLVM_LIBRARY_DIR})
+  set_target_properties(mnemereplay PROPERTIES INSTALL_RPATH_USE_LINK_PATH TRUE)
 endif()
+message(STATUS "LLVM LIBS: ${LLVM_AVAILABLE_LIBS}")
+message(STATUS "LLVM DIRECTORY: ${LLVM_LIBRARY_DIR}")
 
 
 add_library(RR::MnemeRecord ALIAS mnemerecord)
