@@ -24,6 +24,7 @@ __device__ double value = 0.0;
 // CHECK-RR: NumInstances: 1
 // CHECK-RR: BlockDims:(1, 1, 1)
 // CHECK-RR: GridDims:(1, 1, 1)
+// CHECK-RR: Results Match
 
 __global__ void test_global() { value = 1.0; }
 

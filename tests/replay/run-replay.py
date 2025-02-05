@@ -39,10 +39,14 @@ for fn in glob.glob("./*.json"):
             str(k),
             "--mneme-replay-json",
             fn,
+            "--repeats",
+            "1",
         ]
 
         print(" ".join(cmd))
-        res = sp.run(cmd, stdout=sys.stdout, stderr=sys.stderr)
+        res = sp.run(cmd, capture_output=True)
+        print(res.stdout)
+        print(res.stderr)
         if res.returncode != 0:
             sys.exit(res.returncode)
 

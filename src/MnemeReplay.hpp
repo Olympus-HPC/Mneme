@@ -45,6 +45,17 @@ private:
     }
   }
 
+  void copyGlobals() {
+    for (auto &[GVName, GVI] : GlobalVars) {
+      auto CEC = MnemeDeviceRT::DeviceErrorCheck(MnemeDeviceRT::DeviceCopy(
+          GVI.DevAddr, GVI.HostAddr.get(), GVI.VarSize,
+          MnemeDeviceRT::MemcpyHostToDeviceKind()));
+      if (CEC)
+        FATAL_ERROR("Could not copy global " + GVI.Name +
+                    " to device EC: " + CEC.value() + "\n");
+    }
+  }
+
   void loadPrologueMemory() {
     for (auto &[DevAddr, MemBlob] : DeviceMemoryState) {
       auto EC = DeviceTraits<VendorTypes>::DeviceErrorCheck(
@@ -63,6 +74,7 @@ private:
     }
 
     copyToDevice();
+    copyGlobals();
   }
 
   void loadEpilogueMemory() {
@@ -96,7 +108,10 @@ public:
       loadEpilogueMemory();
   }
 
-  void reset() { copyToDevice(); }
+  void reset() {
+    copyToDevice();
+    copyGlobals();
+  }
 
   void release() {
     for (auto &[DevAddr, MemBlob] : DeviceMemoryState) {
@@ -125,6 +140,24 @@ public:
               (const char *)MemBlob.getBlobAddr(), MemBlob.getSize()))
         return false;
     }
+
+    for (auto &[GVName, GVI] : GlobalVars) {
+      auto it = other.GlobalVars.find(GVName);
+      if (it == other.GlobalVars.end()) {
+        LOG_WARN("comparing with global var {} that exists only on one of the "
+                 "comparators",
+                 GVName);
+        return false;
+      }
+
+      std::unique_ptr<uint8_t[]> hostData(new uint8_t[GVI.VarSize]);
+      if (IType == InstanceType::Prologue) {
+        FATAL_ERROR("Pending implementation");
+        // "this" has the most recent-data on the GPU side
+        // and I should not overide the data from the snapshot
+      }
+    }
+
     return true;
   }
   // Derive inequality operator
