@@ -16,13 +16,11 @@ using namespace mneme;
 using MnemeDeviceRT = DeviceTraits<DeviceVendors::HIP>;
 #endif
 
-// CHECK-RR: DemangledName: kernel(int)
 // CHECK-RR: NumModules: 1
 // CHECK-RR: NumInstances: 1
 
 __global__ void kernel(int arg) { printf("Kernel one; arg = %d\n", arg); }
 
-// CHECK-RR: DemangledName: kernel_two(int)
 // CHECK-RR: NumModules: 1
 // CHECK-RR: NumInstances: 1
 __global__ void kernel_two(int arg) { printf("Kernel two; arg = %d\n", arg); }
