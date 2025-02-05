@@ -104,3 +104,6 @@ config.substitutions.append(('%ext', EXT))
 CREATE_GPU_TEST(test_rr_global test_global.cpp)
 CREATE_RDC_GPU_TEST(test_rr_global test_global.cpp)
 
+CREATE_GPU_TEST(test_rr_device_mem test_device_mem.cpp)
+CREATE_RDC_GPU_TEST(test_rr_device_mem test_device_mem.cpp)
+
