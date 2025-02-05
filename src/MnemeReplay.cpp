@@ -57,6 +57,8 @@ int main(int argc, char *argv[]) {
   llvm::LLVMContext Ctx;
   auto Modules = RInstance.loadModules(Ctx);
   auto Mod = ProteusJIT::linkJitModule(Ctx, Modules);
+  ProteusJIT::pruneIR(*Mod);
+  pruneMnemeGlobals(*Mod);
   auto ReplayKernelFunc = Mod->getFunction(RInstance.getKernelName());
   internalizeModule(*Mod, [&ReplayKernelFunc](const GlobalValue &GV) {
     if (isa<GlobalVariable>(GV))
