@@ -34,19 +34,24 @@ static cl::opt<int>
     MnemeOptLevel("opt-level",
                   cl::desc("The optimization level to use when optimizing IR"),
                   cl::init(3), cl::cat(MnemeCategory));
+
 static cl::alias MnemeShortOptLevel(
     "O", cl::desc("The optimization level to use when optimizing IR"),
     cl::aliasopt(MnemeOptLevel), cl::cat(MnemeCategory));
+
 static cl::opt<int>
     MnemeRepeats("repeats",
                  cl::desc("The number of repeat executions for every kernel"),
                  cl::init(3), cl::cat(MnemeCategory));
 
 int main(int argc, char *argv[]) {
+  ProteusJIT::InitLLVM();
   cl::HideUnrelatedOptions(MnemeCategory);
   cl::ParseCommandLineOptions(argc, argv, "GPU Replay Tool\n");
-
-  ProteusJIT::InitLLVM();
+  // NOTE: There is a weird interaction of proteus with LLVM and the CLI option
+  // manager is initialized (at least) twice. This has as a side effect to reset
+  // variables to their default vvalues.
+  int _MnemeRepeats = MnemeRepeats;
 
   LOG_INFO("using mneme db-file {} and dynamic instance {}", MnemeJson,
            MnemeKernelHash);
@@ -81,20 +86,23 @@ int main(int argc, char *argv[]) {
       RecordedBlock.x * RecordedBlock.y * RecordedBlock.z);
   ProteusJIT::runCleanupPassPipeline(*Mod);
   SmallPtrSet<void *, 8> GlobalLinkedBinaries;
-  Mod->print(llvm::outs(), nullptr);
+
   auto DeviceObject =
       ProteusJIT::codegenObject(*Mod, Arch, GlobalLinkedBinaries);
   auto VendorModule = DeviceVendorTraits::getDeviceModuleFromImage(
       DeviceObject->getBufferStart());
 
   RInstance.initializeDeviceMemory();
+  LOG_DEBUG("Initialized Device Memory");
   RInstance.initializeGlobals(VendorModule);
+  LOG_DEBUG("Initialized Device Globals");
 
   auto Func = DeviceVendorTraits::getKernelFunctionFromImage(
       VendorModule, RInstance.getKernelName());
 
   bool verify = true;
-  for (int i = 0; i < MnemeRepeats; i++) {
+  for (int i = 0; i < _MnemeRepeats; i++) {
+    LOG_DEBUG("Run {}/{}", i + 1, _MnemeRepeats);
     DeviceVendorTraits::DeviceStream_t ReplayStream;
     auto EC = DeviceVendorTraits::DeviceErrorCheck(
         DeviceVendorTraits::DeviceStreamCreate(&ReplayStream));

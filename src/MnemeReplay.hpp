@@ -47,6 +47,8 @@ private:
 
   void copyGlobals() {
     for (auto &[GVName, GVI] : GlobalVars) {
+      LOG_DEBUG("Copying data of variable {} to device addr {} and of size {}",
+                GVName, GVI.DevAddr, GVI.VarSize);
       auto CEC = MnemeDeviceRT::DeviceErrorCheck(MnemeDeviceRT::DeviceCopy(
           GVI.DevAddr, GVI.HostAddr.get(), GVI.VarSize,
           MnemeDeviceRT::MemcpyHostToDeviceKind()));
@@ -74,7 +76,6 @@ private:
     }
 
     copyToDevice();
-    copyGlobals();
   }
 
   void loadEpilogueMemory() {
@@ -150,12 +151,32 @@ public:
         return false;
       }
 
+      const GlobalVarInfo &OtherGV = it->second;
+
       std::unique_ptr<uint8_t[]> hostData(new uint8_t[GVI.VarSize]);
+      uint8_t *comparator;
       if (IType == InstanceType::Prologue) {
-        FATAL_ERROR("Pending implementation");
-        // "this" has the most recent-data on the GPU side
-        // and I should not overide the data from the snapshot
+        auto CEC = MnemeDeviceRT::DeviceErrorCheck(
+            MnemeDeviceRT::DeviceCopy(hostData.get(), GVI.DevAddr, GVI.VarSize,
+                                      MnemeDeviceRT::MemcpyDeviceToHostKind()));
+        if (CEC)
+          FATAL_ERROR(
+              "Could not copy Memory Blob to device EC: " + CEC.value() + "\n");
+        comparator = OtherGV.HostAddr.get();
+      } else if (other.IType == InstanceType::Prologue) {
+        auto CEC = MnemeDeviceRT::DeviceErrorCheck(MnemeDeviceRT::DeviceCopy(
+            OtherGV.HostAddr.get(), OtherGV.DevAddr, OtherGV.VarSize,
+            MnemeDeviceRT::MemcpyDeviceToHostKind()));
+        if (CEC)
+          FATAL_ERROR(
+              "Could not copy Memory Blob to device EC: " + CEC.value() + "\n");
+        comparator = GVI.HostAddr.get();
+      } else {
+        FATAL_ERROR("Either this or other need to be of Prologue type");
       }
+
+      if (memcmp(comparator, hostData.get(), GVI.VarSize) != 0)
+        return false;
     }
 
     return true;
