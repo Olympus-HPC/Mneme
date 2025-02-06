@@ -1,6 +1,6 @@
 #pragma once
 
-#ifdef MNEME_ENABLE_LOGGING
+#ifdef MNEME_ENABLE_LOGGER
 
 #include "spdlog/spdlog.h"
 #include <cstdlib> // getenv

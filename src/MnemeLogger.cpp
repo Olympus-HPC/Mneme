@@ -1,6 +1,6 @@
 #include "mneme/MnemeLogger.hpp"
 
-#ifdef MNEME_ENABLE_LOGGING
+#ifdef MNEME_ENABLE_LOGGER
 namespace mneme {
 namespace MnemeLogger {
 struct LoggerInitializer {

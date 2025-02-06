@@ -33,11 +33,11 @@ option(MNEME_ENABLE_CUDA "Enable CUDA" OFF)
 option(MNEME_ENABLE_HIP "Enable CUDA" OFF)
 option(MNEME_ENABLE_TESTS "Enable Testing" OFF)
 option(MNEME_ENABLE_DEBUG "Enable Debug Output" OFF)
-option(ENABLE_LOGGER "Enable logging on mneme" ON)
+option(MNEME_ENABLE_LOGGER "Enable logging on mneme" ON)
 
 find_package(proteus REQUIRED)
 
-if (ENABLE_LOGGER)
+if (MNEME_ENABLE_LOGGER)
 find_package(spdlog REQUIRED)
 endif()
 
