@@ -1,5 +1,5 @@
-#include "MnemePageManager.hpp"
-#include "Utils.hpp"
+#include "mneme/MnemePageManager.hpp"
+#include "mneme/Utils.hpp"
 #include <cstdint>
 
 using namespace mneme;

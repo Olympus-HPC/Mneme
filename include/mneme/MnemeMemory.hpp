@@ -2,16 +2,14 @@
 
 #include <cstdint>
 #include <cstring>
-#include <hip/hip_runtime.h>
-#include <iostream>
 #include <llvm/ADT/StringRef.h>
 #include <memory>
 #include <sys/types.h>
 #include <utility>
 
-#include "DeviceTraits.hpp"
-#include "MnemeLogger.hpp"
-#include "Utils.hpp"
+#include "mneme/DeviceTraits.hpp"
+#include "mneme/MnemeLogger.hpp"
+#include "mneme/Utils.hpp"
 
 namespace mneme {
 template <DeviceVendors VendorTypes> class MnemeMemoryBlob {
@@ -38,8 +36,8 @@ public:
       : ActualSize(ActualSize), BlobAddr(BlobAddr), Size(Size), DeviceID(0),
         HostData(new uint8_t[Size]), IsMapped(false) {}
 
-  hipError_t map(void *VA, uint64_t ActualSize, uint64_t Size,
-                 int DeviceID = 0) {
+  DeviceError_t map(void *VA, uint64_t ActualSize, uint64_t Size,
+                    int DeviceID = 0) {
     this->Size = Size;
     this->DeviceID = DeviceID;
     // We need to pass here "ActualSize". As device allocators depend on page
@@ -48,10 +46,10 @@ public:
     this->BlobAddr = VA;
     this->IsMapped = true;
     this->ActualSize = ActualSize;
-    return hipSuccess;
+    return MnemeDeviceRT::DeviceSuccess;
   };
 
-  hipError_t allocate(size_t Size) {
+  DeviceError_t allocate(size_t Size) {
     auto ret = MnemeDeviceRT::DeviceMalloc(&(this->BlobAddr), Size);
     this->ActualSize = Size;
     this->Size = Size;
@@ -59,9 +57,9 @@ public:
     return ret;
   }
 
-  hipError_t release() {
+  DeviceError_t release() {
     if (!BlobAddr)
-      return hipSuccess;
+      return MnemeDeviceRT::DeviceSuccess;
 
     if (!IsMapped) {
       auto ret = MnemeDeviceRT::DeviceFree(BlobAddr);
@@ -70,7 +68,7 @@ public:
     }
     MnemeDeviceRT::unmap(MemHandle, BlobAddr, ActualSize);
     BlobAddr = 0;
-    return hipSuccess;
+    return MnemeDeviceRT::DeviceSuccess;
   }
 
   void setHostData(std::unique_ptr<uint8_t[]> HostData) {

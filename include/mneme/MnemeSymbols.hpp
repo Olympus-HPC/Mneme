@@ -1,6 +1,6 @@
 #pragma once
-#include "MnemeLogger.hpp"
-#include "Utils.hpp"
+#include "mneme/MnemeLogger.hpp"
+#include "mneme/Utils.hpp"
 #include <cstdint>
 #include <cstring>
 #include <llvm/ADT/ArrayRef.h>

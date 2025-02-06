@@ -10,7 +10,7 @@ function(CREATE_GPU_TEST exe check_source)
   elseif(ENABLE_CUDA)
     target_compile_definitions(${exe} PRIVATE ENABLE_CUDA)
   endif()
-  target_include_directories(${exe} PRIVATE ${CMAKE_SOURCE_DIR}/src/)
+  target_include_directories(${exe} PRIVATE ${CMAKE_SOURCE_DIR}/include/)
 
   set_source_files_properties(${check_source} ${ARGN} PROPERTIES
     OBJECT_DEPENDS ${PROJECT_SOURCE_DIR}/pass/RRPass.cpp
@@ -38,7 +38,7 @@ function(CREATE_RDC_GPU_TEST exe check_source)
   elseif(ENABLE_CUDA)
     target_compile_definitions(${exe}.rdc PRIVATE ENABLE_CUDA)
   endif()
-  target_include_directories(${exe}.rdc PRIVATE ${CMAKE_SOURCE_DIR}/src/)
+  target_include_directories(${exe}.rdc PRIVATE ${CMAKE_SOURCE_DIR}/include/)
 
   set_source_files_properties(${check_source} ${ARGN} PROPERTIES
     OBJECT_DEPENDS ${PROJECT_SOURCE_DIR}/pass/RRPass.cpp

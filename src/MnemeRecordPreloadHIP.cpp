@@ -1,5 +1,5 @@
-#include "MnemeLogger.hpp"
-#include "MnemeRecordHIP.hpp"
+#include "mneme/MnemeLogger.hpp"
+#include "mneme/MnemeRecordHIP.hpp"
 
 using namespace mneme;
 

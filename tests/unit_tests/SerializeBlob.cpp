@@ -1,11 +1,11 @@
-#include "DeviceTraits.hpp"
-#include "MnemeSymbols.hpp"
+#include "mneme/DeviceTraits.hpp"
+#include "mneme/MnemeSymbols.hpp"
 #include <cstdint>
 #include <random>
 
 #ifdef ENABLE_HIP
-#include "MnemeMemoryHIP.hpp"
-#include "MnemeRecordHIP.hpp"
+#include "mneme/MnemeMemoryHIP.hpp"
+#include "mneme/MnemeRecordHIP.hpp"
 #endif
 
 using namespace mneme;

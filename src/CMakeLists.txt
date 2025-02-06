@@ -18,8 +18,8 @@ if (ENABLE_HIP)
 endif()
 
 
-target_include_directories(mnemerecord SYSTEM PRIVATE ${LLVM_INCLUDE_DIRS} ${CMAKE_SOURCE_DIR}/common)
-target_include_directories(mnemereplay SYSTEM PRIVATE ${LLVM_INCLUDE_DIRS} ${CMAKE_SOURCE_DIR}/common)
+target_include_directories(mnemerecord SYSTEM PRIVATE ${LLVM_INCLUDE_DIRS} ${CMAKE_SOURCE_DIR}/include)
+target_include_directories(mnemereplay SYSTEM PRIVATE ${LLVM_INCLUDE_DIRS} ${CMAKE_SOURCE_DIR}/include)
 target_link_libraries(mnemereplay PRIVATE proteus)
 get_target_property(LIBRARY_PATH proteus IMPORTED_LOCATION)
 get_filename_component(LIBRARY_DIR ${LIBRARY_PATH} DIRECTORY)

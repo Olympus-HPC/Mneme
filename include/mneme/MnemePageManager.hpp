@@ -4,8 +4,8 @@
 #include <set>
 #include <sys/types.h>
 
-#include "MnemeLogger.hpp"
-#include "Utils.hpp"
+#include "mneme/MnemeLogger.hpp"
+#include "mneme/Utils.hpp"
 
 struct ContiguousAddrBlock {
   // Starting address of the free block

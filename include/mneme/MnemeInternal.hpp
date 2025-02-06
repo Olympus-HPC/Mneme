@@ -1,5 +1,5 @@
 #ifdef ENABLE_HIP
-#include "MnemeRecordHIP.hpp"
+#include "mneme/MnemeRecordHIP.hpp"
 using MnemeRecordImplT = mneme::MnemeRecorderHIP;
 #elif defined(ENABLE_CUDA)
 #error Implementation is pending

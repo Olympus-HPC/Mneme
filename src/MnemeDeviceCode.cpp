@@ -1,4 +1,4 @@
-#include "DeviceTraits.hpp"
+#include "mneme/DeviceTraits.hpp"
 #include <cstdint>
 
 using namespace mneme;

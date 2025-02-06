@@ -23,7 +23,6 @@
 //
 //
 //===----------------------------------------------------------------------===//
-
 #include "llvm/Analysis/CallGraph.h"
 #include "llvm/Bitcode/BitcodeWriter.h"
 #include "llvm/IR/DebugInfo.h"
@@ -42,6 +41,7 @@
 #include "llvm/Transforms/IPO/StripSymbols.h"
 #include "llvm/Transforms/Utils/Cloning.h"
 #include "llvm/Transforms/Utils/ModuleUtils.h"
+#include <filesystem>
 #include <llvm/ADT/SmallPtrSet.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/IR/CallingConv.h>
@@ -61,7 +61,6 @@
 #include <llvm/Support/MemoryBuffer.h>
 #include <llvm/Support/MemoryBufferRef.h>
 
-#include "../common/Logger.hpp"
 #include <iostream>
 #include <string>
 
@@ -96,7 +95,6 @@ constexpr char const *RegisterFatBinaryName = nullptr;
 #endif
 
 using namespace llvm;
-using namespace mneme;
 
 //-----------------------------------------------------------------------------
 // MnemeRegisterIRPass implementation
@@ -127,8 +125,6 @@ public:
 
   bool isDeviceCompilation(Module &M) {
     Triple TargetTriple(M.getTargetTriple());
-    DEBUG(Logger::logs("mneme-pass")
-          << "TargetTriple " << M.getTargetTriple() << "\n");
     if (TargetTriple.isNVPTX() || TargetTriple.isAMDGCN())
       return true;
 
@@ -191,9 +187,6 @@ private:
                            GlobalValue::ExternalLinkage, DeviceModule, GVName);
     appendToUsed(M, {GV});
     GV->setSection(".jit.bitcode" + (IsLTO ? ".lto" : getUniqueModuleId(&M)));
-    DEBUG(Logger::logs("proteus-pass")
-          << "Emit jit bitcode GV " << GVName
-          << " at section : " << GV->getSection().str() << "\n");
   }
 };
 

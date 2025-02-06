@@ -1,18 +1,17 @@
 #pragma once
-#include "DeviceTraits.hpp"
-#include "MnemeLogger.hpp"
-#include "MnemeMemory.hpp"
-#include "MnemeSymbols.hpp"
-#include "Utils.hpp"
-#include "llvm/Support/JSON.h"
-#include "llvm/Support/MemoryBuffer.h"
-#include "llvm/Support/raw_ostream.h"
+#include "mneme/DeviceTraits.hpp"
+#include "mneme/MnemeLogger.hpp"
+#include "mneme/MnemeMemory.hpp"
+#include "mneme/MnemeSymbols.hpp"
+#include "mneme/Utils.hpp"
 #include <cstdint>
 #include <filesystem>
 #include <functional>
 #include <hip/hip_runtime.h>
 #include <llvm/ADT/SmallVector.h>
-#include <memory>
+#include <llvm/Support/JSON.h>
+#include <llvm/Support/MemoryBuffer.h>
+#include <llvm/Support/raw_ostream.h>
 #include <optional>
 
 #include "llvm/Demangle/Demangle.h"

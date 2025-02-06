@@ -1,10 +1,10 @@
-#include "DeviceTraits.hpp"
+#include "mneme/DeviceTraits.hpp"
 #include <cstring>
 #include <llvm/ADT/DenseMap.h>
 
 #ifdef ENABLE_HIP
-#include "MnemeMemoryHIP.hpp"
-#include "MnemeRecordHIP.hpp"
+#include "mneme/MnemeMemoryHIP.hpp"
+#include "mneme/MnemeRecordHIP.hpp"
 #endif
 
 using namespace mneme;

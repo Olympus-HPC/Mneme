@@ -8,7 +8,7 @@
 //
 #include <cstdio>
 
-#include "DeviceTraits.hpp"
+#include "mneme/DeviceTraits.hpp"
 #include "launcher.hpp"
 using namespace mneme;
 

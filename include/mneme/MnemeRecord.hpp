@@ -15,17 +15,15 @@
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StableHashing.h>
 #include <llvm/ADT/StringRef.h>
+#include <llvm/Bitcode/BitcodeWriter.h>
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/Module.h>
-#include <memory>
 #include <mutex>
-#include <thread>
 
-#include "DeviceTraits.hpp"
-#include "MnemeLogger.hpp"
-#include "MnemeSnapshot.hpp"
-#include "MnemeSymbols.hpp"
-#include "llvm/Bitcode/BitcodeWriter.h"
+#include "mneme/DeviceTraits.hpp"
+#include "mneme/MnemeLogger.hpp"
+#include "mneme/MnemeSnapshot.hpp"
+#include "mneme/MnemeSymbols.hpp"
 
 namespace mneme {
 

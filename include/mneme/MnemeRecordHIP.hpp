@@ -2,11 +2,11 @@
 
 #include <hip/hip_runtime.h>
 
-#include "DeviceTraits.hpp"
-#include "MnemeLogger.hpp"
-#include "MnemeMemoryHIP.hpp"
-#include "MnemeRecord.hpp"
-#include "Utils.hpp"
+#include "mneme/DeviceTraits.hpp"
+#include "mneme/MnemeLogger.hpp"
+#include "mneme/MnemeMemoryHIP.hpp"
+#include "mneme/MnemeRecord.hpp"
+#include "mneme/Utils.hpp"
 
 #include <dlfcn.h>
 #include <hip/hip_runtime.h>

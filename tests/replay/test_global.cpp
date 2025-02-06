@@ -8,8 +8,8 @@
 #include <climits>
 #include <cstdio>
 
-#include "DeviceTraits.hpp"
-#include "Utils.hpp"
+#include "mneme/DeviceTraits.hpp"
+#include "mneme/Utils.hpp"
 using namespace mneme;
 
 #ifdef ENABLE_HIP

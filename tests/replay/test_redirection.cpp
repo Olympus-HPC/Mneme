@@ -2,8 +2,8 @@
 #include <cstdlib>
 #include <iostream>
 
-#include "device_types.hpp"
-#include "macro.hpp"
+#include "mneme/device_types.hpp"
+#include "mneme/macro.hpp"
 
 struct A {
   double vel, dt;

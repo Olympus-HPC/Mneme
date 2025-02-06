@@ -1,17 +1,18 @@
-#include "MnemeJITProteus.hpp"
-#include "MnemeLogger.hpp"
-#include "MnemeReplay.hpp"
 #include <llvm/IR/GlobalVariable.h>
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/Support/CommandLine.h>
 
+#include "mneme/DeviceTraits.hpp"
+#include "mneme/MnemeJITProteus.hpp"
+#include "mneme/MnemeLogger.hpp"
+#include "mneme/MnemeReplay.hpp"
+
 using namespace mneme;
 using namespace llvm;
 
-#include "DeviceTraits.hpp"
 #ifdef ENABLE_HIP
-#include "MnemeMemoryHIP.hpp"
-#include "MnemeRecordHIP.hpp"
+#include "mneme/MnemeMemoryHIP.hpp"
+#include "mneme/MnemeRecordHIP.hpp"
 using MnemeRecorderDevice = MnemeRecorderHIP;
 using DeviceVendorTraits = DeviceTraits<DeviceVendors::HIP>;
 constexpr DeviceVendors Vendor = DeviceVendors::HIP;

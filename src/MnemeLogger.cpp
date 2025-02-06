@@ -1,4 +1,4 @@
-#include "MnemeLogger.hpp"
+#include "mneme/MnemeLogger.hpp"
 
 #ifdef MNEME_ENABLE_LOGGING
 namespace mneme {
