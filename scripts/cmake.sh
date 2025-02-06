@@ -6,7 +6,7 @@ host=${host//[0-9]/}
 rm -rf build_${host}
 mkdir -p build-${host};
 build_dir=build-${host}
-installDir="$(pwd)/install"
+installDir="/dev/shm/install"
 
 
 build_proteus() {
@@ -104,5 +104,6 @@ cmake .. \
 fi
 
 make -j 10
+make -j 10 install
 
 popd

@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.18)
 
-project(RR
+project(mneme
   VERSION 0.1.0
   LANGUAGES C CXX)
 
@@ -36,6 +36,8 @@ option(MNEME_ENABLE_DEBUG "Enable Debug Output" OFF)
 option(MNEME_ENABLE_LOGGER "Enable logging on mneme" ON)
 
 find_package(proteus REQUIRED)
+get_target_property(proteus_link_dirs proteus INTERFACE_LINK_DIRECTORIES)
+message(STATUS "Proteus Link Directories: ${proteus_link_dirs}")
 
 if (MNEME_ENABLE_LOGGER)
 find_package(spdlog REQUIRED)
@@ -44,6 +46,7 @@ endif()
 message(STATUS "Installation prefix is ${CMAKE_INSTALL_PREFIX}")
 
 include(CMakePackageConfigHelpers)
+include(GNUInstallDirs)
 
 if(MNEME_ENABLE_CUDA)
 set(LLVM_VERSION "18.1.8" CACHE STRING "LLVM version")
@@ -74,3 +77,31 @@ if(MNEME_ENABLE_TESTS)
   enable_testing()
   add_subdirectory(tests)
 endif()
+
+# INSTALL
+
+configure_package_config_file(
+  "${PROJECT_SOURCE_DIR}/cmake/mnemeConfig.cmake.in"
+  "${CMAKE_CURRENT_BINARY_DIR}/mnemeConfig.cmake"
+  INSTALL_DESTINATION
+  "${CMAKE_INSTALL_LIBDIR}/cmake/mneme"
+)
+
+write_basic_package_version_file(
+  "${PROJECT_BINARY_DIR}/mnemeConfigVersion.cmake"
+  VERSION ${PROJECT_VERSION}
+  COMPATIBILITY AnyNewerVersion)
+
+
+# Install and export CMake package
+install(EXPORT mnemeTargets
+    FILE mnemeTargets.cmake
+    NAMESPACE Mneme::
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/mneme
+)
+
+install(FILES
+  "${PROJECT_BINARY_DIR}/mnemeConfigVersion.cmake"
+  "${PROJECT_BINARY_DIR}/mnemeConfig.cmake"
+  DESTINATION
+  ${CMAKE_INSTALL_LIBDIR}/cmake/mneme)
