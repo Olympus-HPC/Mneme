@@ -79,6 +79,7 @@ if(MNEME_ENABLE_TESTS)
 endif()
 
 # INSTALL
+message(STATUS "Installing ${PROJECT_NAME} of version ${PROJECT_VERSION}")
 
 configure_package_config_file(
   "${PROJECT_SOURCE_DIR}/cmake/mnemeConfig.cmake.in"
