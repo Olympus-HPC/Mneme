@@ -16,8 +16,8 @@ function(CREATE_GPU_TEST exe check_source)
     OBJECT_DEPENDS ${PROJECT_SOURCE_DIR}/pass/regdeviceir.cpp
     )
   add_dependencies(${exe} regdeviceir)
-  add_dependencies(${exe} mnemerecord)
-  add_dependencies(${exe} mnemereplay)
+  add_dependencies(${exe} record)
+  add_dependencies(${exe} replay)
 
   target_compile_options(
       ${exe}
@@ -44,8 +44,8 @@ function(CREATE_RDC_GPU_TEST exe check_source)
     OBJECT_DEPENDS ${PROJECT_SOURCE_DIR}/pass/regdeviceir.cpp
     )
   add_dependencies(${exe}.rdc regdeviceir)
-  add_dependencies(${exe}.rdc mnemerecord)
-  add_dependencies(${exe} mnemereplay)
+  add_dependencies(${exe}.rdc record)
+  add_dependencies(${exe} replay)
 
   if(MNEME_ENABLE_HIP)
     # This is unsupported see: https://gitlab.kitware.com/cmake/cmake/-/issues/23210
@@ -76,7 +76,7 @@ endfunction()
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 set(RECORD_READ_JSON "${Python3_EXECUTABLE} ${CMAKE_CURRENT_BINARY_DIR}/run-replay.py")
 
-set(MNEME_BIN_FILE ${CMAKE_BINARY_DIR}/src/mnemereplay)
+set(MNEME_BIN_FILE ${CMAKE_BINARY_DIR}/src/replay)
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/run-replay.py ${CMAKE_CURRENT_BINARY_DIR}/run-replay.py @ONLY)
 
 
@@ -90,7 +90,7 @@ config.test_format = lit.formats.ShTest(True)
 config.suffixes = ['.cpp']
 config.test_source_root = '${CMAKE_CURRENT_SOURCE_DIR}'
 config.test_exec_root = '${CMAKE_CURRENT_BINARY_DIR}'
-MNEME_PRELOAD_LIB='${CMAKE_BINARY_DIR}/src/libmnemerecord.so'
+MNEME_PRELOAD_LIB='${CMAKE_BINARY_DIR}/src/librecord.so'
 PAGE_SIZE = lit_config.params['PG']
 RR = lit_config.params['RR']
 EXT = lit_config.params['ext']
