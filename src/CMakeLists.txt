@@ -24,7 +24,9 @@ target_link_libraries(replay PRIVATE proteus)
 
 if (MNEME_ENABLE_LOGGER)
 target_link_libraries(replay PRIVATE spdlog::spdlog_header_only)
-target_compile_definitions(replay PRIVATE MNEME_ENABLE_LOGGING)
+target_link_libraries(record PRIVATE spdlog::spdlog_header_only)
+target_compile_definitions(replay PRIVATE MNEME_ENABLE_LOGGER)
+target_compile_definitions(record PRIVATE MNEME_ENABLE_LOGGER)
 endif()
 
 if(MNEME_ENABLE_HIP)
@@ -39,9 +41,4 @@ endif()
 
 get_target_property(PROTEUS_LIB proteus LOCATION)
 message(STATUS "Proteus library is expected at: ${PROTEUS_LIB}")
-
-if (MNEME_ENABLE_LOGGER)
-  target_compile_definitions(record PRIVATE MNEME_ENABLE_LOGGER)
-  target_link_libraries(record PRIVATE spdlog::spdlog_header_only)
-endif()
 
