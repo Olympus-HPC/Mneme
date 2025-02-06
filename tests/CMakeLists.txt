@@ -3,7 +3,7 @@
 #
 #
 #function(CREATE_GPU_TEST exe rdc check_source blockDims gridDims args)
-#  if(ENABLE_HIP)
+#  if(MNEME_ENABLE_HIP)
 #      SET(lang HIP)
 #  else()
 #      SET(lang CUDA)
@@ -18,19 +18,19 @@
 #  add_dependencies(${exe}.${lang} RRPass)
 #
 #    # Link CUDA libraries if necessary
-#  if(ENABLE_CUDA)
+#  if(MNEME_ENABLE_CUDA)
 #    target_link_libraries(${exe}.${lang} PUBLIC CUDA::cudart)
 #    target_link_libraries(${exe}.${lang} PUBLIC ${CUDA_LIBRARIES})
 #  endif()
 #  set_source_files_properties(${check_source} PROPERTIES OBJECT_DEPENDS ${CMAKE_SOURCE_DIR}/pass/RRPass.cpp)
 #  
-#  if (ENABLE_CUDA)
+#  if (MNEME_ENABLE_CUDA)
 #  target_compile_options(
 #     ${exe}.${lang}
 #     PUBLIC
 #     $<$<COMPILE_LANGUAGE:CUDA>:-fpass-plugin=$<TARGET_FILE:RRPass>>
 #   ) 
-# elseif(ENABLE_HIP)
+# elseif(MNEME_ENABLE_HIP)
 #  target_compile_options(
 #     ${exe}.${lang}
 #     PUBLIC
@@ -42,7 +42,7 @@
 #
 #   if("${rdc}" STREQUAL "On")
 #     set_target_properties(${exe}.${lang} PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
-#     if (ENABLE_HIP)
+#     if (MNEME_ENABLE_HIP)
 #       target_compile_options(${exe}.${lang} PRIVATE -fgpu-rdc)
 #       target_link_options(${exe}.${lang} PRIVATE -fgpu-rdc)
 #     endif()
@@ -56,7 +56,7 @@
 #   add_test(NAME ${exe}.${lang} COMMAND ${Python_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/replay_test_runner.py" "--exe" $<TARGET_FILE:${exe}.${lang}> "--record-lib" $<TARGET_FILE:record> "--replay-bin" $<TARGET_FILE:replay> "-gd" "${gridDims}" "-bd" "${blockDims}" "--args" "${cmd_args}")
 #endfunction()
 #
-#if (ENABLE_CUDA)
+#if (MNEME_ENABLE_CUDA)
 #message(STATUS "CUDA compiler ${CMAKE_CUDA_COMPILER_ID}")
 #
 #if(NOT ${CMAKE_CUDA_COMPILER_ID} STREQUAL "Clang")
@@ -76,7 +76,7 @@
 ## This test tests whether we can call/link with an kernel defined on a different translation unit 
 #CREATE_GPU_TEST(test_rdc_global "On" "test_rdc_global_kernel.cpp;test_rdc_global_main.cpp" "-1" "-1" "4096")
 #
-#if(ENABLE_HIP)
+#if(MNEME_ENABLE_HIP)
 #SET(lang HIP)
 #else()
 #SET(lang CUDA)

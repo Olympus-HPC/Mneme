@@ -1,9 +1,9 @@
-#ifdef ENABLE_HIP
+#ifdef MNEME_ENABLE_HIP
 #include <proteus/JitEngineDeviceHIP.hpp>
 using ProteusJIT = proteus::JitEngineDeviceHIP;
-#elif defined(ENABLE_CUDA)
+#elif defined(MNEME_ENABLE_CUDA)
 #else
-#error "Please define ENABLE_HIP or ENABLE_CUDA"
+#error "Please define MNEME_ENABLE_HIP or MNEME_ENABLE_CUDA"
 #endif
 
 namespace mneme {

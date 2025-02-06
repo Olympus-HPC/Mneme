@@ -4,7 +4,7 @@
 #include <hip/hip_runtime.h>
 #include <vector>
 
-#ifdef ENABLE_HIP
+#ifdef MNEME_ENABLE_HIP
 #include "MnemeMemoryHIP.hpp"
 #include "MnemeRecordHIP.hpp"
 #endif
@@ -45,7 +45,7 @@ int main(int argc, char *argv[]) {
     // Sets address
   }
   for (auto &B : Blobs) {
-    DBG(Logger::logs("mneme") << "Got Addr " << std::hex << B.Addr << std::dec
+    MNEME_DBG(Logger::logs("mneme") << "Got Addr " << std::hex << B.Addr << std::dec
                               << " with size " << B.Size << "\n");
     B.release();
   }

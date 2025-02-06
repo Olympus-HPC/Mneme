@@ -6,10 +6,10 @@
 #include <llvm/ADT/Twine.h>
 #include <string>
 
-#if ENABLE_DEBUG
-#define DBG(x) x;
+#if MNEME_ENABLE_DEBUG
+#define MNEME_DBG(x) x;
 #else
-#define DBG(x)
+#define MNEME_DBG(x)
 #endif
 
 #define FATAL_ERROR(x)                                                         \
@@ -33,7 +33,7 @@ template <> struct DenseMapInfo<std::string> {
 };
 } // namespace llvm
 
-#ifdef ENABLE_HIP
+#ifdef MNEME_ENABLE_HIP
 #include <hip/hip_runtime.h>
 
 #define hipErrCheck(CALL)                                                      \
@@ -56,7 +56,7 @@ template <> struct DenseMapInfo<std::string> {
     }                                                                          \
   }
 
-#elif defined(ENABLE_CUDA)
+#elif defined(MNEME_ENABLE_CUDA)
 #error pending implementation
 #endif
 

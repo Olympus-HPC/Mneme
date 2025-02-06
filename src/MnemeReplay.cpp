@@ -10,7 +10,7 @@
 using namespace mneme;
 using namespace llvm;
 
-#ifdef ENABLE_HIP
+#ifdef MNEME_ENABLE_HIP
 #include "mneme/MnemeMemoryHIP.hpp"
 #include "mneme/MnemeRecordHIP.hpp"
 using MnemeRecorderDevice = MnemeRecorderHIP;

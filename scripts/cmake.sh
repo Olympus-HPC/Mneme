@@ -97,9 +97,9 @@ cmake .. \
 -DCMAKE_CXX_COMPILER=amdclang++ \
 -DCMAKE_C_COMPILER=amdclang \
 -DLLVM_INSTALL_DIR=$(dirname $(dirname $(which amdclang)))/llvm/ \
--DENABLE_HIP=On \
--DENABLE_DEBUG=On \
--DENABLE_TESTS=On \
+-DMNEME_ENABLE_HIP=On \
+-DMNEME_ENABLE_DEBUG=On \
+-DMNEME_ENABLE_TESTS=On \
 -DCMAKE_EXPORT_COMPILE_COMMANDS=on ../
 fi
 

@@ -10,10 +10,10 @@ endif()
 
 llvm_map_components_to_libnames(llvm_libs all)
 
-if (ENABLE_CUDA)
-target_compile_definitions(RRPass PRIVATE -DENABLE_CUDA -DENABLE_DEBUG)
-elseif(ENABLE_HIP)
-  target_compile_definitions(RRPass PRIVATE -DENABLE_HIP -DENABLE_DEBUG)
+if (MNEME_ENABLE_CUDA)
+target_compile_definitions(RRPass PRIVATE -DMNEME_ENABLE_CUDA -DMNEME_ENABLE_DEBUG)
+elseif(MNEME_ENABLE_HIP)
+  target_compile_definitions(RRPass PRIVATE -DMNEME_ENABLE_HIP -DMNEME_ENABLE_DEBUG)
 endif()
 
 target_link_libraries(RRPass PRIVATE ${llvm_libs})

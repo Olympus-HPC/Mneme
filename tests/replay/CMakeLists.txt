@@ -3,12 +3,12 @@
 # (without checks) to compile for generating the executable.
 function(CREATE_GPU_TEST exe check_source)
   add_executable(${exe} ${check_source} ${ARGN})
-  if (ENABLE_HIP)
+  if (MNEME_ENABLE_HIP)
     set_source_files_properties(${check_source} ${ARGN} PROPERTIES LANGUAGE HIP) 
-    target_compile_definitions(${exe} PRIVATE ENABLE_HIP)
+    target_compile_definitions(${exe} PRIVATE MNEME_ENABLE_HIP)
     target_link_libraries(${exe} PRIVATE hip::host)
-  elseif(ENABLE_CUDA)
-    target_compile_definitions(${exe} PRIVATE ENABLE_CUDA)
+  elseif(MNEME_ENABLE_CUDA)
+    target_compile_definitions(${exe} PRIVATE MNEME_ENABLE_CUDA)
   endif()
   target_include_directories(${exe} PRIVATE ${CMAKE_SOURCE_DIR}/include/)
 
@@ -31,12 +31,12 @@ endfunction()
 
 function(CREATE_RDC_GPU_TEST exe check_source)
   add_executable(${exe}.rdc ${check_source} ${ARGN})
-  if (ENABLE_HIP)
+  if (MNEME_ENABLE_HIP)
     set_source_files_properties(${check_source} ${ARGN} PROPERTIES LANGUAGE HIP) 
-    target_compile_definitions(${exe}.rdc PRIVATE ENABLE_HIP)
+    target_compile_definitions(${exe}.rdc PRIVATE MNEME_ENABLE_HIP)
     target_link_libraries(${exe}.rdc PRIVATE hip::host)
-  elseif(ENABLE_CUDA)
-    target_compile_definitions(${exe}.rdc PRIVATE ENABLE_CUDA)
+  elseif(MNEME_ENABLE_CUDA)
+    target_compile_definitions(${exe}.rdc PRIVATE MNEME_ENABLE_CUDA)
   endif()
   target_include_directories(${exe}.rdc PRIVATE ${CMAKE_SOURCE_DIR}/include/)
 
@@ -47,7 +47,7 @@ function(CREATE_RDC_GPU_TEST exe check_source)
   add_dependencies(${exe}.rdc mnemerecord)
   add_dependencies(${exe} mnemereplay)
 
-  if(ENABLE_HIP)
+  if(MNEME_ENABLE_HIP)
     # This is unsupported see: https://gitlab.kitware.com/cmake/cmake/-/issues/23210
     # set_target_properties(${exe}.rdc PROPERTIES HIP_SEPARABLE_COMPILATION on)
 

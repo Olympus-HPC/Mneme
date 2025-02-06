@@ -12,7 +12,7 @@
 #include "launcher.hpp"
 using namespace mneme;
 
-#ifdef ENABLE_HIP
+#ifdef MNEME_ENABLE_HIP
 using MnemeDeviceRT = DeviceTraits<DeviceVendors::HIP>;
 #endif
 

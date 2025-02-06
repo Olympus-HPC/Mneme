@@ -1,7 +1,7 @@
 
 set(RecordLibSRC "")
 set(ReplaySRC MnemeReplay.cpp MnemePageManager.cpp MnemeDeviceCode.cpp)
-if (ENABLE_HIP)
+if (MNEME_ENABLE_HIP)
   list(APPEND RecordLibSRC MnemeRecordPreloadHIP.cpp MnemePageManager.cpp)
 endif()
 
@@ -13,7 +13,7 @@ endif()
 add_library(mnemerecord SHARED ${RecordLibSRC})
 add_executable(mnemereplay ${ReplaySRC})
 
-if (ENABLE_HIP)
+if (MNEME_ENABLE_HIP)
   set_source_files_properties(MnemeDeviceCode.cpp PROPERTIES LANGUAGE HIP)
 endif()
 
@@ -30,7 +30,7 @@ target_link_libraries(mnemereplay PRIVATE spdlog::spdlog_header_only)
 target_compile_definitions(mnemereplay PRIVATE MNEME_ENABLE_LOGGING)
 endif()
 
-if(ENABLE_HIP)
+if(MNEME_ENABLE_HIP)
   target_link_libraries(mnemerecord PRIVATE hip::host)
   target_link_libraries(mnemerecord PRIVATE ${LLVM_AVAILABLE_LIBS})
   target_link_directories(mnemerecord PRIVATE ${LLVM_LIBRARY_DIR})

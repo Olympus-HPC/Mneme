@@ -65,7 +65,7 @@
 #include <string>
 
 #define DEBUG_TYPE "jitpass"
-#ifdef ENABLE_DEBUG
+#ifdef MNEME_ENABLE_DEBUG
 #define DEBUG(x) x
 constexpr auto debug_build = true;
 #else
@@ -77,12 +77,12 @@ constexpr auto debug_build = false;
   report_fatal_error(llvm::Twine(std::string{} + __FILE__ + ":" +              \
                                  std::to_string(__LINE__) + " => " + x))
 
-#if ENABLE_HIP
+#if MNEME_ENABLE_HIP
 constexpr char const *RegisterFunctionName = "__hipRegisterFunction";
 constexpr char const *LaunchFunctionName = "hipLaunchKernel";
 constexpr char const *RegisterVarName = "__hipRegisterVar";
 constexpr char const *RegisterFatBinaryName = "__hipRegisterFatBinary";
-#elif ENABLE_CUDA
+#elif MNEME_ENABLE_CUDA
 constexpr char const *RegisterFunctionName = "__cudaRegisterFunction";
 constexpr char const *LaunchFunctionName = "cudaLaunchKernel";
 constexpr char const *RegisterVarName = "__cudaRegisterVar";

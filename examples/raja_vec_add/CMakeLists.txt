@@ -2,24 +2,24 @@ cmake_minimum_required(VERSION 3.8)
 
 project(raja-example  LANGUAGES C CXX)
 
-option(ENABLE_CUDA "Enable CUDA" OFF)
-option(ENABLE_HIP "Enable CUDA" OFF)
+option(MNEME_ENABLE_CUDA "Enable CUDA" OFF)
+option(MNEME_ENABLE_HIP "Enable CUDA" OFF)
 
 find_package(RAJA REQUIRED HINTS "${RAJA_Dir}")
 find_package(RR REQUIRED HINTS "${RR_Dir}")
 
-if(ENABLE_CUDA)
+if(MNEME_ENABLE_CUDA)
 find_package(CUDAToolkit REQUIRED)
 find_package(CUDA REQUIRED)
-add_definitions("-DENABLE_CUDA")
+add_definitions("-DMNEME_ENABLE_CUDA")
 set(DEVICE_LANGUAGE "CUDA")
-elseif(ENABLE_HIP)
+elseif(MNEME_ENABLE_HIP)
   enable_language(HIP)
   find_package(HIP REQUIRED)
-  add_definitions("-DENABLE_HIP")
+  add_definitions("-DMNEME_ENABLE_HIP")
 set(DEVICE_LANGUAGE "HIP")
 else()
-  message(FATAL_ERROR "Please define either '-DENABLE_HIP' or -DENABLE_CUDA")
+  message(FATAL_ERROR "Please define either '-DMNEME_ENABLE_HIP' or -DMNEME_ENABLE_CUDA")
 endif()
 
 
@@ -39,9 +39,9 @@ target_compile_options(
     ) 
 
 #set_source_files_properties(vec_add_raja.cu PROPERTIES COMPILE_FLAGS "--expt-extended-lambda")
-if (ENABLE_CUDA)
+if (MNEME_ENABLE_CUDA)
 target_link_libraries(vecAdd-raja PRIVATE RAJA CUDA::cudart)
-elseif(ENABLE_HIP)
+elseif(MNEME_ENABLE_HIP)
   target_include_directories(vecAdd-raja PRIVATE ${HIP_INCLUDE_DIRS})
 target_link_libraries(vecAdd-raja PRIVATE RAJA hip::host)
 endif()

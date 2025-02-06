@@ -9,7 +9,7 @@ enum DeviceVendors { HIP, CUDA };
 
 template <DeviceVendors Type> struct DeviceTraits;
 
-#if defined(ENABLE_HIP)
+#if defined(MNEME_ENABLE_HIP)
 template <> struct DeviceTraits<DeviceVendors::HIP> {
   using DeviceError_t = hipError_t;
   using DeviceStream_t = hipStream_t;
@@ -217,7 +217,7 @@ template <> struct DeviceTraits<DeviceVendors::HIP> {
     return hipGetSymbolAddress(devPtr, symbol);
   }
 };
-#elif defined(ENABLE_CUDA)
+#elif defined(MNEME_ENABLE_CUDA)
 template <> struct DeviceTraits<DeviceVendors::HIP> {
   using DeviceError_t = hipError_t;
   using DeviceStream_t = hipStream_t;
