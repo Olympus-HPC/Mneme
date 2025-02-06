@@ -6,10 +6,8 @@ The example uses Mneme as an external installation and assumes there is a valid 
 ```bash
 mkdir build/
 cd build/
-cmake -DCMAKE_CXX_COMPILER=amdclang++ -DCMAKE_C_COMPILER=amdclang -DRR_Dir=<path-to-record-replay> -DENABLE_HIP=On ../
+cmake -DCMAKE_C_COMPILER=amdclang  -DCMAKE_CXX_COMPILER=amdclang++ -Dmneme_DIR=<MNEME_INSTALL_PATH> ../
 ```
-
-for a NVIDIA one you only need to replace `-DENABLE_HIP` with `-DENABLE_CUDA=On`
 
 ## Running Vector addition 
 
