@@ -45,10 +45,3 @@ if (MNEME_ENABLE_LOGGER)
   target_link_libraries(record PRIVATE spdlog::spdlog_header_only)
 endif()
 
-install(
-  TARGETS record replay
-  EXPORT mnemeTargets
-  RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
-  LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}"
-  ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}"
-  )

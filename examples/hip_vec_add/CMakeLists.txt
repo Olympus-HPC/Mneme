@@ -8,6 +8,11 @@ find_package(mneme REQUIRED)
 add_definitions("-DMNEME_ENABLE_HIP")
 add_executable(vecAdd vec_add.cu)
 
+get_cmake_property(_targets TARGETS)
+message(STATUS "Available targets: ${_targets}")
+
+add_mneme(vecAdd)
+
 set_source_files_properties(vec_add.cu PROPERTIES LANGUAGE HIP)
 message(STATUS "Pass is ${RRPassPath}")
 

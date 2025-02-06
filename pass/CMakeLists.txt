@@ -1,5 +1,4 @@
 add_library(regdeviceir SHARED regdeviceir.cpp)
-add_library(RR::Pass ALIAS regdeviceir)
 
 target_include_directories(regdeviceir
   SYSTEM PRIVATE ${LLVM_INCLUDE_DIRS})
@@ -19,11 +18,18 @@ endif()
 target_link_libraries(regdeviceir PRIVATE ${llvm_libs})
 target_include_directories(regdeviceir PRIVATE "${PROJECT_SOURCE_DIR}/src")
 
-install(
-  TARGETS regdeviceir
-  EXPORT mnemeTargets
-  RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
-  LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}"
-  ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}"
-  )
+target_link_libraries(regdeviceir
+  "$<$<PLATFORM_ID:Darwin>:-undefined dynamic_lookup>")
+
+target_compile_options(
+ regdeviceir 
+  INTERFACE
+  -fpass-plugin=$<TARGET_FILE:Mneme::regdeviceir>
+)
+
+target_link_options(
+  regdeviceir 
+  INTERFACE
+  "SHELL:$<$<LINK_LANGUAGE:HIP>:-Xoffload-linker --load-pass-plugin=$<TARGET_FILE:Mneme::regdeviceir>>"
+)
 

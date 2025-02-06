@@ -94,6 +94,14 @@ write_basic_package_version_file(
   COMPATIBILITY AnyNewerVersion)
 
 
+install(
+  TARGETS record replay regdeviceir
+  EXPORT mnemeTargets
+  RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
+  LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}"
+  ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}"
+  )
+
 # Install and export CMake package
 install(EXPORT mnemeTargets
     FILE mnemeTargets.cmake
