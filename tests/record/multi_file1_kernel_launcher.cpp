@@ -22,8 +22,13 @@ using MnemeDeviceRT = DeviceTraits<DeviceVendors::HIP>;
 
 int foo();
 int main() {
-  launcher(kernel_body);
-  auto EC = MnemeDeviceRT::DeviceErrorCheck(MnemeDeviceRT::DeviceSynchronize());
+  auto EC = MnemeDeviceRT::DeviceErrorCheck(launcher(kernel_body));
+  if (EC) {
+    std::cout << "Error when calling kernel" << EC.value() << "\n";
+    return -1;
+  }
+
+  EC = MnemeDeviceRT::DeviceErrorCheck(MnemeDeviceRT::DeviceSynchronize());
   if (EC) {
     std::cout << "Error when calling kernel" << EC.value() << "\n";
     return -1;
