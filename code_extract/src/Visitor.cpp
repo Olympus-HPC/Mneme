@@ -239,7 +239,8 @@ bool MatchVisitor::VisitDeclRefExpr(clang::DeclRefExpr *declRef) {
       helper::isPotentialBuiltinByName(
           varDecl->getType().getUnqualifiedType().getAsString()) ||
       varDecl->hasAttr<clang::BuiltinAttr>();
-  if (!helper::isGlobalVar(varDecl) || isPotentialBuiltin)
+  if (!helper::isGlobalVar(varDecl) || isPotentialBuiltin ||
+      helper::checkPotentialInclude(varDecl, vm, codedb))
     return true;
 
   auto [defDecl, visitBody] =

@@ -103,6 +103,11 @@ bool VisitManager::registerInclude(std::string const &includePath) {
   if (includePath == "")
     return false;
 
+  // However, we might find other types of implementation files we need to ignore.
+  /// FIXME: Make a set of unacceptable file extensions...
+  if (includePath.find(".tcc") != std::string::npos)
+    return true;
+
   // Obviously there is no requirement for there to be an include folder in the
   // path but for now we assume there is for simplicity. We can also change this
   // to match against the last '/' instead.
@@ -116,7 +121,7 @@ bool VisitManager::registerInclude(std::string const &includePath) {
 
   // If the include start with _, they probably are from builtins so ignore.
   if (incFile[0] == '_')
-    return false;
+    return true;
 
   includes.insert(incFile);
   return true;
