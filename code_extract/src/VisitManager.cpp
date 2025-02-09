@@ -74,6 +74,9 @@ void buildCallExpr(clang::ArrayRef<clang::ParmVarDecl *> const &parameters,
 
 /// FIXME: Move into generic utils namespace
 extern clang::QualType getUnderlyingType(clang::QualType const &type);
+extern std::string locToIncFile(clang::SourceLocation sloc,
+                         clang::ASTContext const &ctx);
+extern bool isIncludeExternal(std::string const &incFile, CodeDB const &codedb);
 } // namespace helper
 
 void VisitManager::registerDecl(clang::NamedDecl const *decl) {
@@ -98,33 +101,9 @@ void VisitManager::registerDecl(clang::FunctionDecl const *decl) {
     declRefs.push_back(decl);
 }
 
-bool VisitManager::registerInclude(std::string const &includePath) {
-  // We will likely not pick up any source files here so no need to check.
-  if (includePath == "")
-    return false;
-
-  // However, we might find other types of implementation files we need to ignore.
-  /// FIXME: Make a set of unacceptable file extensions...
-  if (includePath.find(".tcc") != std::string::npos)
-    return true;
-
-  // Obviously there is no requirement for there to be an include folder in the
-  // path but for now we assume there is for simplicity. We can also change this
-  // to match against the last '/' instead.
-  std::string fileName = includePath.substr(includePath.rfind("/") + 1);
-  std::string incFile;
-  if (fileName.find(".") == std::string::npos) {
-    // For potential forwarding headers, split at last '/'
-    incFile = fileName;
-  } else
-    incFile = includePath.substr(includePath.rfind("include") + 7 + 1);
-
-  // If the include start with _, they probably are from builtins so ignore.
-  if (incFile[0] == '_')
-    return true;
-
-  includes.insert(incFile);
-  return true;
+void VisitManager::registerInclude(std::string const &includePath) {
+  auto id = db.includes.getIDFromFile(includePath);
+  db.includes.getIncludes(id, includes);
 }
 
 bool VisitManager::isVisited(std::string const &name) {
@@ -226,16 +205,18 @@ void VisitManager::emitStandaloneFile(std::string &output, bool emitRR,
 
   llvm::raw_string_ostream ss(output);
 
-  for (auto &inc : includes) {
+  for (auto &incID : includes) {
+    auto inc = db.includes.getFileFromID(incID);
     ss << "#include ";
     if (inc.find('.') == std::string::npos)
       ss << "<" << inc << ">";
     else
       ss << "\"" << inc << "\"";
-    ss << "\n\n";
+    ss << "\n";
   }
   if (emitRRHooks)
-    ss << "#include \"RRHooks.h\"\n\n";
+    ss << "#include \"RRHooks.h\"\n";
+  ss << "\n";
 
   for (auto &tags : tagDecls) {
     // Same with tags, add missing semicolon!
@@ -346,13 +327,13 @@ void VisitManager::pullPrimaryFnContext() {
   mv.VisitParams(primaryDecl, isMemberFn);
   registerParameterPrologue(&primaryFn);
   mv.VisitTemplateParams(primaryDecl);
+  
+  auto incFile = helper::locToIncFile(primaryDecl->getLocation(), primaryDecl->getASTContext());
+  registerInclude(incFile);
 
-  auto extSource = primaryFn.getExtSourceFile();
-  if (extSource.empty()) {
+  if (!helper::isIncludeExternal(incFile, db)) {
     addToVisit(primaryDecl->getBody());
     registerDecl(primaryDecl);
-  } else {
-    registerInclude(extSource);
   }
   markVisited(primaryFn.getKeyName(), &primaryFn);
 

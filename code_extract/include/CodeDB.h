@@ -1,4 +1,5 @@
 #pragma once
+#include "Utils/IncludeManager.h"
 #include "clang/Basic/LLVM.h"
 #include "clang/Frontend/ASTUnit.h"
 
@@ -34,10 +35,6 @@ public:
   clang::Decl const *getDefiniton() const { return getDef(); }
 
   std::string getKeyName() const { return keyName; }
-
-  void addExtSourceFile(std::string file) { extSourceFile = file; }
-
-  std::string getExtSourceFile() const { return extSourceFile; }
 };
 
 class CodeDB {
@@ -64,11 +61,12 @@ class CodeDB {
                         clang::NamedDecl *decl, clang::NamedDecl *defDecl);
 
 public:
+  IncludeManager const includes;
   std::string const projPath;
   bool const includeExternals;
 
-  CodeDB(std::string const &projDir, bool includeExternals)
-      : projPath(projDir), includeExternals(includeExternals) {}
+  CodeDB(std::string const &projDir, std::unordered_set<std::string> const& includePaths, bool includeExternals)
+      : includes(projDir, includePaths), projPath(projDir), includeExternals(includeExternals) {}
 
   static std::string getKeyName(clang::NamedDecl const *decl);
 
@@ -113,20 +111,5 @@ public:
   void addDefinitionDecl(std::string const &keyName, clang::Decl *defDecl) {
     if (isRegistered(keyName))
       db.at(keyName)->addDefinitionDecl(defDecl);
-  }
-
-  void addExtSourceToSourceName(std::string const &sourceName,
-                                std::string const &fileName) {
-    std::unordered_set<std::string> mangle;
-    getManglings(sourceName, mangle);
-    /// FIXME: We should not add the same external source to overloads...
-    for (auto keyName : mangle)
-      db.at(keyName)->addExtSourceFile(fileName);
-  }
-
-  std::string getExtSource(std::string const &keyName) const {
-    if (db.find(keyName) == db.end())
-      return "";
-    return db.at(keyName)->getExtSourceFile();
   }
 };

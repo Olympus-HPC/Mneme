@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <queue>
 #include <unordered_map>
 #include <unordered_set>
@@ -27,14 +28,14 @@ class VisitManager {
   std::vector<clang::NamedDecl const *> declRefs;
   std::vector<clang::NamedDecl const *> tagDecls;
   std::unordered_map<std::string, ObjInfo const *> visitedNodes;
-  std::unordered_set<std::string> includes;
+  std::unordered_set<std::size_t> includes;
   std::vector<std::pair<std::string, std::string>> params_expr;
   std::vector<std::pair<std::string, clang::ValueDecl const *>> params_decl;
 
-  /// @brief Fills params from the given vals into the params map with string id as
-  /// prefix + param_position.
+  /// @brief Fills params from the given vals into the params map with string id
+  /// as prefix + param_position.
   template <typename T>
-  void fillParams(std::string const &prefix, T* begin, T* end);
+  void fillParams(std::string const &prefix, T *begin, T *end);
 
 public:
   VisitManager(ObjInfo &pf, CodeDB const &cdb) : db(cdb), primaryFn(pf) {}
@@ -73,9 +74,9 @@ public:
   /// @param decl Decl of the typedef type.
   void registerDecl(clang::TypedefNameDecl const *decl);
 
-  /// @brief Cleans up and adds the the includePath to the files to include.
-  /// @return Returns wether the include file was registered or not.
-  bool registerInclude(std::string const &includePath);
+  /// @brief Adds the the includePath to the files to include. Note: the input
+  /// path must be project internal.
+  void registerInclude(std::string const &includePath);
 
   /// @brief Default instantiates all function parameters for the given
   /// functionDecl and returns a vector of decl strings for each param.

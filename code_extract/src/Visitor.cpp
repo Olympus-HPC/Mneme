@@ -22,20 +22,7 @@ std::string locToIncFile(clang::SourceLocation sloc,
 }
 
 bool isIncludeExternal(std::string const &incFile, CodeDB const &codedb) {
-  /// FIXME: For now we use a trick to figure out if the include is system-wide
-  /// or local. Typically local includes will show up as relative paths in the
-  /// code's source location. Eventually we should make this check more robust.
-  return incFile[0] == '/' &&
-         incFile.find(codedb.projPath) == std::string::npos;
-}
-
-bool checkPotentialInclude(clang::NamedDecl const *decl, VisitManager &vm,
-                           CodeDB const &codedb) {
-  auto incFile = locToIncFile(decl->getLocation(), decl->getASTContext());
-  if (!incFile.empty() && isIncludeExternal(incFile, codedb))
-    return vm.registerInclude(incFile);
-  else
-    return false;
+  return incFile.find(codedb.projPath) == std::string::npos;
 }
 
 template <typename T>
@@ -50,11 +37,10 @@ void storeDecl(T *decl, clang::ASTUnit const &unit, CodeDB &cdb) {
       srcDeclFile = locToIncFile(tmpDecl->getLocation(), unit.getASTContext());
     }
   }
-  bool isExternal = isIncludeExternal(srcDeclFile, cdb);
   // If location is external but not a function decl, dont store it
   // We need to store external function decls as they may be requested for
   // extraction.
-  if (isExternal && !(cdb.includeExternals && isFunctionDecl))
+  if (isIncludeExternal(srcDeclFile, cdb) && !(cdb.includeExternals && isFunctionDecl))
     return;
 
   std::string keyName = CodeDB::getKeyName(decl);
@@ -66,9 +52,6 @@ void storeDecl(T *decl, clang::ASTUnit const &unit, CodeDB &cdb) {
     if (defDecl)
       cdb.addDefinitionDecl(keyName, defDecl);
   }
-
-  if (isExternal)
-    cdb.addExtSourceToSourceName(decl->getQualifiedNameAsString(), srcDeclFile);
 }
 
 template <typename T>
@@ -80,6 +63,10 @@ std::tuple<T const *, bool> visitAndRegister(clang::NamedDecl const *decl,
     return {static_cast<T const *>(vm.getVisitedObj(keyName)->getDefiniton()),
             false};
 
+  auto incFile = locToIncFile(decl->getLocation(), decl->getASTContext());
+  if (isIncludeExternal(incFile, cdb))
+    return {static_cast<T const *>(decl), false};
+
   if (!cdb.isRegistered(keyName))
     decl->dump();
   assert(cdb.isRegistered(keyName) &&
@@ -90,6 +77,9 @@ std::tuple<T const *, bool> visitAndRegister(clang::NamedDecl const *decl,
   auto defDecl = static_cast<T const *>(objInfo->getDefiniton());
   vm.markVisited(keyName, objInfo);
   vm.registerDecl(defDecl);
+
+  // register source for includes
+  vm.registerInclude(incFile);
 
   return {defDecl, true};
 }
@@ -139,8 +129,7 @@ void handleRecordDecl(clang::RecordDecl const *recordDecl, VisitManager &vm,
                       CodeDB const &codedb) {
   // If externally defined (or built-in), do not include def as we will include
   // the file itself.
-  if (checkPotentialInclude(recordDecl, vm, codedb) ||
-      isPotentialBuiltinByName(recordDecl->getNameAsString()) ||
+  if (isPotentialBuiltinByName(recordDecl->getNameAsString()) ||
       recordDecl->isImplicit())
     return;
 
@@ -162,8 +151,7 @@ void handleTypedefs(clang::TypedefType const *typ, VisitManager &vm,
   auto typDecl = typ->getDecl();
   // If externally defined (or built-in), do not include def as we will
   // include the file itself.
-  if (checkPotentialInclude(typDecl, vm, codedb) ||
-      isPotentialBuiltinByName(typDecl->getNameAsString()))
+  if (isPotentialBuiltinByName(typDecl->getNameAsString()))
     return;
 
   handleTypedefs(typDecl->getUnderlyingType()->getAs<clang::TypedefType>(), vm,
@@ -204,11 +192,8 @@ bool CodeExtractVisitor::VisitRecordDecl(clang::RecordDecl *decl) {
   return true;
 }
 
-/// FIXME: We do not need to cache these as typically defs are together with
-/// decls.
 bool CodeExtractVisitor::VisitTypedefNameDecl(clang::TypedefNameDecl *decl) {
-  std::string keyName = CodeDB::getKeyName(decl);
-  if (codedb.isRegistered(keyName))
+  if (codedb.isRegistered(CodeDB::getKeyName(decl)))
     return true;
   codedb.registerDecl(unit, decl, decl);
   return true;
@@ -239,8 +224,7 @@ bool MatchVisitor::VisitDeclRefExpr(clang::DeclRefExpr *declRef) {
       helper::isPotentialBuiltinByName(
           varDecl->getType().getUnqualifiedType().getAsString()) ||
       varDecl->hasAttr<clang::BuiltinAttr>();
-  if (!helper::isGlobalVar(varDecl) || isPotentialBuiltin ||
-      helper::checkPotentialInclude(varDecl, vm, codedb))
+  if (!helper::isGlobalVar(varDecl) || isPotentialBuiltin)
     return true;
 
   auto [defDecl, visitBody] =
@@ -267,8 +251,7 @@ bool MatchVisitor::VisitDeclRefExpr(clang::DeclRefExpr *declRef) {
 
 bool MatchVisitor::VisitCallExpr(clang::CallExpr *callExpr) {
   auto decl = callExpr->getDirectCallee();
-  if (!decl || helper::checkPotentialInclude(decl, vm, codedb) ||
-      helper::isPotentialBuiltinByName(decl->getNameAsString()))
+  if (!decl || helper::isPotentialBuiltinByName(decl->getNameAsString()))
     return true;
 
   clang::CXXRecordDecl *parentDecl = nullptr;
@@ -313,7 +296,7 @@ void MatchVisitor::VisitTemplateParams(clang::FunctionDecl const *defDecl) {
   auto tmpSpec = defDecl->getTemplateSpecializationInfo();
   if (tmpSpec) {
     auto tmpArgs = tmpSpec->TemplateArguments->asArray();
-    for (auto arg : tmpArgs) {
+    for (auto& arg : tmpArgs) {
       if (arg.getKind() == clang::TemplateArgument::ArgKind::Type)
         helper::handleVarDecl(arg.getAsType(), vm, codedb);
     }

@@ -1,6 +1,7 @@
 #include "ToolManager.h"
 #include "CodeDB.h"
 #include "Visitor.h"
+#include "clang/Basic/FileEntry.h"
 
 #include <clang/AST/Mangle.h>
 #include <cstdlib>
@@ -8,9 +9,11 @@
 #include <fstream>
 #include <iostream>
 #include <memory>
+#include <ostream>
 #include <regex>
 #include <string>
 #include <unordered_set>
+#include <vector>
 
 namespace ct = clang::tooling;
 
@@ -51,13 +54,30 @@ ToolManager::ToolManager(std::string const &dirPath, bool emitRR,
               << std::endl;
     exit(1);
   }
+  auto canDirPath = std::filesystem::canonical(dirPath);
 
   auto sourceFiles = compDb->getAllFiles();
   tool = std::make_unique<ct::ClangTool>(*compDb, sourceFiles);
 
+  /// FIXME: eventually we should collect includes all over
+  auto command = compDb->getAllCompileCommands()[0].CommandLine;
+  std::unordered_set<std::string> includePaths;
+  for (auto const& flag : command) {
+    auto idx = flag.find("-I");
+    if (idx == std::string::npos)
+      continue;
+    auto filePath = flag.substr(idx + 2);
+    if (filePath.find(canDirPath) != std::string::npos) {
+      includePaths.insert(filePath);
+    }
+  }
+
   // Build code database
   tool->buildASTs(asts);
-  db.reset(new CodeDB(std::filesystem::canonical(dirPath), includeExternals));
+  db.reset(new CodeDB(
+      canDirPath,
+      includePaths,
+      includeExternals));
   // Build code database
   for (auto &ast : asts) {
     CodeExtractVisitor vis(*db.get(), *ast, dirPath);
@@ -121,8 +141,9 @@ void ToolManager::getStandaloneFnContext(std::string const &fnName,
                                          std::string const &outFileName,
                                          std::string mangledFnName) {
   primaryFn = findFnDeclByName(fnName, mangledFnName);
-  auto& ctx = primaryFn->getDefiniton()->getASTContext();
-  auto fnSrcFile = ctx.getSourceManager().getFilename(primaryFn->getDefiniton()->getLocation());
+  auto &ctx = primaryFn->getDefiniton()->getASTContext();
+  auto fnSrcFile = ctx.getSourceManager().getFilename(
+      primaryFn->getDefiniton()->getLocation());
   bool isCuda = ctx.getLangOpts().CUDA;
 
   std::string filename;
@@ -156,6 +177,11 @@ void ToolManager::getStandaloneFnContext(std::string const &fnName,
   std::string command = "clang-format -i " + filename;
   if (system(command.c_str()) != 0)
     std::cerr << "Formatting failed!" << std::endl;
+  
+  // Then remove unused includes
+  command = "clang-tidy --quiet --checks='-*,misc-include-cleaner' -fix " + filename + " > /dev/null";
+  if (system(command.c_str()) != 0)
+    std::cerr << "Removing unused headers failed!" << std::endl;
 
   // Then compile
   // For now only get one compilation command
