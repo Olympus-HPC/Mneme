@@ -52,6 +52,23 @@ std::string getParamDeclAsString(std::string const &typeString,
   return decl + ";\n";
 }
 
+void buildExplicitTempSpec(clang::FunctionDecl const *fn,
+                           llvm::raw_string_ostream &ss) {
+  if (auto tmpSpec = fn->getTemplateSpecializationInfo()) {
+    auto tmpArgs = tmpSpec->TemplateArguments->asArray();
+    ss << "< ";
+    for (auto arg : tmpArgs) {
+      if (arg.getKind() != clang::TemplateArgument::ArgKind::Type)
+        continue;
+      auto argType = arg.getAsType();
+      if (argType->hasUnnamedOrLocalType())
+        break;
+      ss << argType.getAsString() << ",";
+    }
+    ss.str().back() = '>';
+  }
+}
+
 void buildCallExpr(clang::ArrayRef<clang::ParmVarDecl *> const &parameters,
                    llvm::raw_string_ostream &ss,
                    std::string paramPrefix = "p") {
@@ -63,7 +80,11 @@ void buildCallExpr(clang::ArrayRef<clang::ParmVarDecl *> const &parameters,
     if (type->isRValueReferenceType()) {
       auto strippedType =
           helper::stripRefs(type).getUnqualifiedType().getAsString();
-      ss << "std::forward<" << strippedType << ">(" << paramName << ")";
+      if (type->hasUnnamedOrLocalType())
+        ss << "std::forward<decltype(" << paramName << ")>(" << paramName
+           << ")";
+      else
+        ss << "std::forward<" << strippedType << ">(" << paramName << ")";
     } else
       ss << paramName;
     ss << ",";
@@ -75,7 +96,7 @@ void buildCallExpr(clang::ArrayRef<clang::ParmVarDecl *> const &parameters,
 /// FIXME: Move into generic utils namespace
 extern clang::QualType getUnderlyingType(clang::QualType const &type);
 extern std::string locToIncFile(clang::SourceLocation sloc,
-                         clang::ASTContext const &ctx);
+                                clang::ASTContext const &ctx);
 extern bool isIncludeExternal(std::string const &incFile, CodeDB const &codedb);
 } // namespace helper
 
@@ -173,6 +194,7 @@ void VisitManager::fillParams(std::string const &prefix, T *begin, T *end) {
       std::string ctorCall;
       llvm::raw_string_ostream stream(ctorCall);
       stream << recordDecl->getQualifiedNameAsString();
+      helper::buildExplicitTempSpec(ctor, stream);
       helper::buildCallExpr(ctor->parameters(), stream, key + "_");
       params_expr.push_back({key, ctorCall});
 
@@ -207,6 +229,9 @@ void VisitManager::emitStandaloneFile(std::string &output, bool emitRR,
 
   for (auto &incID : includes) {
     auto inc = db.includes.getFileFromID(incID);
+    // For now we do not support hip
+    if (inc.find("hip_runtime") != std::string::npos)
+      continue;
     ss << "#include ";
     if (inc.find('.') == std::string::npos)
       ss << "<" << inc << ">";
@@ -287,19 +312,7 @@ void VisitManager::emitStandaloneFile(std::string &output, bool emitRR,
     ss << "caller->";
   }
   ss << body->getQualifiedNameAsString();
-  if (auto tmpSpec = body->getTemplateSpecializationInfo()) {
-    auto tmpArgs = tmpSpec->TemplateArguments->asArray();
-    ss << "< ";
-    for (auto arg : tmpArgs) {
-      if (arg.getKind() != clang::TemplateArgument::ArgKind::Type)
-        continue;
-      auto argType = arg.getAsType();
-      if (argType->hasUnnamedOrLocalType())
-        break;
-      ss << argType.getAsString() << ",";
-    }
-    ss.str().back() = '>';
-  }
+  helper::buildExplicitTempSpec(body, ss);
 
   if (cudaKernel)
     ss << "<<<grid, block>>>";
@@ -327,13 +340,17 @@ void VisitManager::pullPrimaryFnContext() {
   mv.VisitParams(primaryDecl, isMemberFn);
   registerParameterPrologue(&primaryFn);
   mv.VisitTemplateParams(primaryDecl);
-  
-  auto incFile = helper::locToIncFile(primaryDecl->getLocation(), primaryDecl->getASTContext());
-  registerInclude(incFile);
 
+  auto incFile = helper::locToIncFile(primaryDecl->getLocation(),
+                                      primaryDecl->getASTContext());
   if (!helper::isIncludeExternal(incFile, db)) {
     addToVisit(primaryDecl->getBody());
     registerDecl(primaryDecl);
+    registerInclude(incFile);
+  } else {
+    // if external, include all external includes
+    // This will be eventually cleaned up by clang-tidy
+    db.includes.getAllExternals(includes);
   }
   markVisited(primaryFn.getKeyName(), &primaryFn);
 

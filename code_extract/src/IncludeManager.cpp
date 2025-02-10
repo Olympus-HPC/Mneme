@@ -139,7 +139,6 @@ IncludeManager::getIDFromFile(std::string const &file) const {
     if (idx != std::string::npos)
       return path_to_id.at(file.substr(idx + path.size() + 1));
   }
-
   assert(false && "All included files should already be seen!");
   return -1;
 }
@@ -154,4 +153,10 @@ void IncludeManager::getIncludes(FileID id,
     assert(id_to_resolve[id] && "All headers to visit must be resolved!");
     outSet.insert(header.begin(), header.end());
   }
+}
+
+void IncludeManager::getAllExternals(std::unordered_set<FileID> &outSet) const {
+  for (std::size_t idx = 0; idx < id_to_isExternal.size(); idx++)
+    if (id_to_isExternal[idx])
+      outSet.insert(idx);
 }

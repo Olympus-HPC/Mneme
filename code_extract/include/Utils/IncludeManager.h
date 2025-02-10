@@ -39,4 +39,6 @@ public:
   FileID getIDFromFile(std::string const &file) const;
 
   void getIncludes(FileID id, std::unordered_set<FileID> &outSet) const;
+
+  void getAllExternals(std::unordered_set<FileID> &outSet) const;
 };
