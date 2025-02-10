@@ -22,7 +22,7 @@ class LambdaCallback : public clang::ast_matchers::MatchFinder::MatchCallback {
 public:
   clang::LambdaExpr const *lambdaExpr = nullptr;
 
-  virtual void
+  void
   run(const clang::ast_matchers::MatchFinder::MatchResult &Result) final {
     if (auto lmbdExpr =
             Result.Nodes.getNodeAs<clang::LambdaExpr>("lambdaExpr")) {
@@ -57,7 +57,7 @@ void buildExplicitTempSpec(clang::FunctionDecl const *fn,
   if (auto tmpSpec = fn->getTemplateSpecializationInfo()) {
     auto tmpArgs = tmpSpec->TemplateArguments->asArray();
     ss << "< ";
-    for (auto arg : tmpArgs) {
+    for (auto& arg : tmpArgs) {
       if (arg.getKind() != clang::TemplateArgument::ArgKind::Type)
         continue;
       auto argType = arg.getAsType();
@@ -71,7 +71,7 @@ void buildExplicitTempSpec(clang::FunctionDecl const *fn,
 
 void buildCallExpr(clang::ArrayRef<clang::ParmVarDecl *> const &parameters,
                    llvm::raw_string_ostream &ss,
-                   std::string paramPrefix = "p") {
+                   std::string const& paramPrefix = "p") {
   int paramCount = 0;
   ss << "( ";
   for (auto param : parameters) {
@@ -135,8 +135,8 @@ ObjInfo const *VisitManager::getVisitedObj(std::string const &name) {
   return visitedNodes.at(name);
 }
 
-void VisitManager::markVisited(std::string name, ObjInfo const *objInfo) {
-  visitedNodes.insert({name, objInfo});
+void VisitManager::markVisited(std::string const& name, ObjInfo const *objInfo) {
+  visitedNodes.try_emplace(name, objInfo);
 }
 
 void VisitManager::addToVisit(clang::Stmt *stmt) { toVisitNodes.push(stmt); }
@@ -176,7 +176,7 @@ void VisitManager::fillParams(std::string const &prefix, T *begin, T *end) {
       std::string lmbBody;
       llvm::raw_string_ostream stream(lmbBody);
       lmbExpr->printPretty(stream, nullptr, recordDecl->getLangOpts());
-      params_expr.push_back({key, lmbBody});
+      params_expr.emplace_back(key, lmbBody);
 
       fillParams(key, lmbExpr->capture_begin(), lmbExpr->capture_end());
     } else if (recordDecl) {
@@ -187,7 +187,7 @@ void VisitManager::fillParams(std::string const &prefix, T *begin, T *end) {
         ctor = constructor;
       }
       if (!ctor || !ctor->getNumParams()) {
-        params_decl.push_back({key, expr});
+        params_decl.emplace_back(key, expr);
         continue;
       }
 
@@ -196,12 +196,11 @@ void VisitManager::fillParams(std::string const &prefix, T *begin, T *end) {
       stream << recordDecl->getQualifiedNameAsString();
       helper::buildExplicitTempSpec(ctor, stream);
       helper::buildCallExpr(ctor->parameters(), stream, key + "_");
-      params_expr.push_back({key, ctorCall});
+      params_expr.emplace_back(key, ctorCall);
 
       fillParams(key.substr(1) + "_", ctor->param_begin(), ctor->param_end());
     } else {
-
-      params_decl.push_back({key, expr});
+      params_decl.emplace_back(key, expr);
     }
     /// FIXME: We can do more here, like also handling function pointers like we
     /// do lambdas...
@@ -211,8 +210,7 @@ void VisitManager::fillParams(std::string const &prefix, T *begin, T *end) {
 void VisitManager::registerParameterPrologue(ObjInfo *fnObj) {
   clang::FunctionDecl *fnDecl = fnObj->getDefiniton()->getAsFunction();
 
-  auto numParams = fnDecl->getNumParams();
-  if (!numParams)
+  if (!fnDecl->getNumParams())
     return;
 
   fillParams("", fnDecl->param_begin(), fnDecl->param_end());
@@ -303,8 +301,7 @@ void VisitManager::emitStandaloneFile(std::string &output, bool emitRR,
 
   // Build function call
   auto parent = body->getParent();
-  auto isMemberFn = parent ? parent->isRecord() : false;
-  if (isMemberFn) {
+  if (parent && parent->isRecord()) {
     // We can also get class name from qualified string...
     ss << static_cast<clang::CXXRecordDecl const *>(parent)
               ->getQualifiedNameAsString()

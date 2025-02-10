@@ -50,7 +50,7 @@ public:
   /// @brief Marks a named decl visited.
   /// @param name Key name of the decl to mark.
   /// @param objInfo Object info associated with decl to mark.
-  void markVisited(std::string keyName, ObjInfo const *objInfo);
+  void markVisited(std::string const& keyName, ObjInfo const *objInfo);
 
   /// @brief Adds a clang statement to visit queue.
   void addToVisit(clang::Stmt *stmt);
