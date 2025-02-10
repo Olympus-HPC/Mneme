@@ -137,6 +137,13 @@ class funcClass {
     float func19(float in) { return in*x; }
 };
 
+template <typename T>
+class TmpClass {
+    public: 
+    TmpClass(T in) {}
+};
+
+
 int main() {
     auto glambda = [](int a, int b) { return a < b; };
     func12(glambda);
@@ -152,6 +159,7 @@ int main() {
 
     func17(C(1));
     func17(D());
+    func17(TmpClass<int>(1));
 
     return 0;
 }

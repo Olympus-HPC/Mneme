@@ -22,8 +22,7 @@ class LambdaCallback : public clang::ast_matchers::MatchFinder::MatchCallback {
 public:
   clang::LambdaExpr const *lambdaExpr = nullptr;
 
-  void
-  run(const clang::ast_matchers::MatchFinder::MatchResult &Result) final {
+  void run(const clang::ast_matchers::MatchFinder::MatchResult &Result) final {
     if (auto lmbdExpr =
             Result.Nodes.getNodeAs<clang::LambdaExpr>("lambdaExpr")) {
       assert(lambdaExpr == nullptr &&
@@ -52,26 +51,37 @@ std::string getParamDeclAsString(std::string const &typeString,
   return decl + ";\n";
 }
 
+void buildExplicitTempSpec(
+    clang::ArrayRef<clang::TemplateArgument> const &tmpArgs,
+    llvm::raw_string_ostream &ss) {
+  ss << "< ";
+  for (auto &arg : tmpArgs) {
+    if (arg.getKind() != clang::TemplateArgument::ArgKind::Type)
+      break;
+    auto argType = arg.getAsType();
+    if (argType->hasUnnamedOrLocalType())
+      break;
+    ss << argType.getAsString() << ",";
+  }
+  ss.str().back() = '>';
+}
+
 void buildExplicitTempSpec(clang::FunctionDecl const *fn,
                            llvm::raw_string_ostream &ss) {
-  if (auto tmpSpec = fn->getTemplateSpecializationInfo()) {
-    auto tmpArgs = tmpSpec->TemplateArguments->asArray();
-    ss << "< ";
-    for (auto& arg : tmpArgs) {
-      if (arg.getKind() != clang::TemplateArgument::ArgKind::Type)
-        continue;
-      auto argType = arg.getAsType();
-      if (argType->hasUnnamedOrLocalType())
-        break;
-      ss << argType.getAsString() << ",";
-    }
-    ss.str().back() = '>';
-  }
+  if (auto tmpSpec = fn->getTemplateSpecializationInfo())
+    buildExplicitTempSpec(tmpSpec->TemplateArguments->asArray(), ss);
+}
+
+void buildExplicitTempSpec(clang::CXXRecordDecl const *decl,
+                           llvm::raw_string_ostream &ss) {
+  if (auto recordTmp =
+          llvm::dyn_cast<clang::ClassTemplateSpecializationDecl>(decl))
+    buildExplicitTempSpec(recordTmp->getTemplateArgs().asArray(), ss);
 }
 
 void buildCallExpr(clang::ArrayRef<clang::ParmVarDecl *> const &parameters,
                    llvm::raw_string_ostream &ss,
-                   std::string const& paramPrefix = "p") {
+                   std::string const &paramPrefix = "p") {
   int paramCount = 0;
   ss << "( ";
   for (auto param : parameters) {
@@ -104,8 +114,11 @@ void VisitManager::registerDecl(clang::NamedDecl const *decl) {
   declRefs.push_back(decl);
 }
 
-void VisitManager::registerDecl(clang::TagDecl const *decl) {
-  tagDecls.push_back(decl);
+void VisitManager::registerDecl(clang::CXXRecordDecl const *decl) {
+  if (auto classtmp = decl->getDescribedClassTemplate())
+    tagDecls.push_back(classtmp);
+  else
+    tagDecls.push_back(decl);
 }
 
 void VisitManager::registerDecl(clang::TypedefNameDecl const *decl) {
@@ -135,7 +148,8 @@ ObjInfo const *VisitManager::getVisitedObj(std::string const &name) {
   return visitedNodes.at(name);
 }
 
-void VisitManager::markVisited(std::string const& name, ObjInfo const *objInfo) {
+void VisitManager::markVisited(std::string const &name,
+                               ObjInfo const *objInfo) {
   visitedNodes.try_emplace(name, objInfo);
 }
 
@@ -194,6 +208,7 @@ void VisitManager::fillParams(std::string const &prefix, T *begin, T *end) {
       std::string ctorCall;
       llvm::raw_string_ostream stream(ctorCall);
       stream << recordDecl->getQualifiedNameAsString();
+      helper::buildExplicitTempSpec(recordDecl, stream);
       helper::buildExplicitTempSpec(ctor, stream);
       helper::buildCallExpr(ctor->parameters(), stream, key + "_");
       params_expr.emplace_back(key, ctorCall);

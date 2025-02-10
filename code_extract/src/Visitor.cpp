@@ -125,7 +125,7 @@ bool isPotentialBuiltinByName(std::string const &name) {
   return name.size() > 2 && '_' == name[0] && '_' == name[1];
 }
 
-void handleRecordDecl(clang::RecordDecl const *recordDecl, VisitManager &vm,
+void handleRecordDecl(clang::CXXRecordDecl const *recordDecl, VisitManager &vm,
                       CodeDB const &codedb) {
   // If externally defined (or built-in), do not include def as we will include
   // the file itself.
@@ -136,7 +136,7 @@ void handleRecordDecl(clang::RecordDecl const *recordDecl, VisitManager &vm,
   // We will typically not find RecordDecls within function bodies or init
   // expressions. Hence, we need to visit them when we encounter either their
   // var decl or static function call (unsupported as of yet).
-  helper::visitAndRegister<clang::RecordDecl>(recordDecl, vm, codedb);
+  helper::visitAndRegister<clang::CXXRecordDecl>(recordDecl, vm, codedb);
 
   // Also we do not want to visit anything else from here as we will visit the
   // function calls separately
@@ -162,7 +162,7 @@ void handleTypedefs(clang::TypedefType const *typ, VisitManager &vm,
 
 void handleVarDecl(clang::QualType qt, VisitManager &vm, CodeDB const &codedb) {
   auto cannonType = getUnderlyingType(qt);
-  clang::RecordDecl const *decl = cannonType->getAsRecordDecl();
+  clang::CXXRecordDecl const *decl = cannonType->getAsCXXRecordDecl();
   if (!decl) {
     auto typedefType = cannonType->getAs<clang::TypedefType>();
     // recursively visit underlying type(defs).

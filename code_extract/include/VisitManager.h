@@ -64,10 +64,10 @@ public:
   /// @param decl Function declaration.
   void registerDecl(clang::FunctionDecl const *decl);
 
-  /// @brief Adds the declaration of an enum/union/struct/class to be emitted
+  /// @brief Adds the declaration of an enum/struct/class to be emitted
   /// later.
-  /// @param decl Decl of the record/enum type.
-  void registerDecl(clang::TagDecl const *decl);
+  /// @param decl Decl of the record type.
+  void registerDecl(clang::CXXRecordDecl const *decl);
 
   /// @brief Adds the declaration of an typedefs to be emitted
   /// later.
