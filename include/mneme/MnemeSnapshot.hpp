@@ -13,6 +13,7 @@
 #include <llvm/Support/MemoryBuffer.h>
 #include <llvm/Support/raw_ostream.h>
 #include <optional>
+#include <regex>
 
 #include "llvm/Demangle/Demangle.h"
 #include <llvm/ADT/StableHashing.h>
@@ -268,11 +269,21 @@ public:
 
 class RecordDatabase {
   std::filesystem::path MnemeDirectory;
+  std::regex KernelWhiteList;
+  std::string RegexStr;
+  bool HasRegex;
   llvm::DenseMap<uint64_t, KernelInstancesCollection> KernelRecords;
 
 public:
-  RecordDatabase() {
+  RecordDatabase() : KernelWhiteList(""), HasRegex(false) {
     auto Dir = std::getenv("RR_DATA_DIR");
+    auto WhiteList = std::getenv("RR_KERNELS");
+    if (WhiteList) {
+      HasRegex = true;
+      RegexStr = std::string(WhiteList);
+      KernelWhiteList = std::string(WhiteList);
+    }
+
     MnemeDirectory =
         (Dir ? std::string(Dir) : std::filesystem::current_path().string());
 
@@ -295,13 +306,36 @@ public:
     }
   }
 
+  bool shouldRecord(const std::string &KernelName) const {
+    if (!HasRegex)
+      return true;
+
+    try {
+      return std::regex_search(KernelName, KernelWhiteList);
+    } catch (const std::regex_error &e) {
+      LOG_WARN("Invalid regex: {}, ... falling back and recording everything");
+    }
+    return true;
+  }
+
   template <DeviceVendors VendorTypes>
-  auto takeSnapshot(
+  std::optional<std::function<
+      void(llvm::SmallVector<GlobalVarInfo> &,
+           llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &, void **,
+           typename DeviceTraits<VendorTypes>::DeviceStream_t)>>
+  takeSnapshot(
       void *VAddr, uint64_t VASize, std::shared_ptr<KernelInfo> KInfo,
       llvm::SmallVector<GlobalVarInfo> &GlobalVars,
       llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &DeviceMemory,
       dim3 &GridDim, dim3 &BlockDim, void **Args, size_t SharedMem,
       typename DeviceTraits<VendorTypes>::DeviceStream_t Stream) {
+
+    if (!shouldRecord(KInfo->getName())) {
+      LOG_INFO("Skip record of Kernel {}, not matching regex",
+               KInfo->getName());
+      return std::nullopt;
+    }
+
     auto IT = KernelRecords.try_emplace(
         KInfo->StaticHash, KernelInstancesCollection(VAddr, VASize, KInfo));
     return IT.first->second.takeSnapshot<VendorTypes>(

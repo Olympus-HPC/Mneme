@@ -119,4 +119,6 @@ CREATE_RDC_GPU_TEST(test_multi_file_launcher multi_file1_kernel_launcher.cpp mul
 CREATE_GPU_TEST(indirect_launcher_tpl_multi_arg indirect_launcher_tpl_multi_arg.cpp)
 CREATE_RDC_GPU_TEST(indirect_launcher_tpl_multi_arg indirect_launcher_tpl_multi_arg.cpp)
 
+CREATE_GPU_TEST(multi_kernel_regex multi_kernel_regex.cpp)
+CREATE_RDC_GPU_TEST(multi_kernel_regex multi_kernel_regex.cpp)
 
