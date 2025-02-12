@@ -187,9 +187,15 @@ void VisitManager::fillParams(std::string const &prefix, T *begin, T *end) {
       assert(lmbExpr && "Could not find lambda expression!");
 
       addToVisit(lmbExpr->getBody());
-      std::string lmbBody;
+      std::string lmbBody, lmbAttrs;
       llvm::raw_string_ostream stream(lmbBody);
+      llvm::raw_string_ostream attrStream(lmbAttrs);
+
+      for (auto attr : lmbExpr->getCallOperator()->getAttrs())
+        attr->printPretty(attrStream, recordDecl->getLangOpts());
       lmbExpr->printPretty(stream, nullptr, recordDecl->getLangOpts());
+      if (!lmbAttrs.empty())
+        lmbBody.insert(lmbBody.find(']') + 1, lmbAttrs);
       params_expr.emplace_back(key, lmbBody);
 
       fillParams(key, lmbExpr->capture_begin(), lmbExpr->capture_end());
