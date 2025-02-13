@@ -1,9 +1,9 @@
 #include <cassert>
 #include <filesystem>
 #include <fstream>
-#include <iostream>
 #include <regex>
 #include <string>
+#include <tuple>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -23,9 +23,10 @@ IncludeManager::IncludeManager(
   resolve();
 }
 
-void IncludeManager::getIncludesFromFile(FileID id, bool isHeader) {
-  auto path = id_to_path[id];
-  std::ifstream file(path);
+void IncludeManager::getIncludesFromFile(FileID id, std::string const &fullPath,
+                                         bool isHeader) {
+  std::string currDir = fullPath.substr(0, fullPath.rfind('/'));
+  std::ifstream file(fullPath);
 
   std::string line;
   std::regex include_regex(R"(#include\s+["<](.*)[">])");
@@ -34,17 +35,20 @@ void IncludeManager::getIncludesFromFile(FileID id, bool isHeader) {
     std::smatch match;
     if (std::regex_match(line, match, include_regex)) {
       auto incFile = match[1].str();
-      FileID includeID;
-      if (isHeader) {
-        includeID = addFile(incFile, true);
-        header_includes[id].insert(includeID);
-      } else {
-        includeID = addFile(incFile, true, path.substr(0, path.rfind('/')));
-        source_includes[id].insert(includeID);
-      }
+      FileID includeID = addFile(incFile, true, currDir);
 
-      if (!id_to_isExternal[includeID])
-        getIncludesFromFile(includeID, true);
+      // If we have already gotten includes from this before, skip
+      if (includeID >= id_to_path.size())
+        continue;
+
+      if (isHeader)
+        header_includes[id].insert(includeID);
+      else
+        source_includes[id].insert(includeID);
+
+      auto [isExternal, path] = id_to_isExternal[includeID];
+      if (!isExternal)
+        getIncludesFromFile(includeID, path, true);
     }
   }
 }
@@ -57,7 +61,7 @@ void IncludeManager::resolve(FileID file,
   auto set = includes;
   includes.clear();
   for (auto id : set) {
-    if (id_to_isExternal[id])
+    if (id_to_isExternal[id].first)
       includes.insert(id);
     else {
       resolve(id, header_includes[id]);
@@ -81,7 +85,7 @@ void IncludeManager::processDirectory(std::string const &directory) {
       auto ext = file.extension().string();
       if (fileExt.find(ext) != fileExt.end()) {
         auto id = addFile(file);
-        getIncludesFromFile(id, false);
+        getIncludesFromFile(id, file, false);
       }
     }
   }
@@ -98,11 +102,13 @@ IncludeManager::FileID IncludeManager::addFile(std::string const &file,
     auto id = id_to_path.size() - 1;
     if (isHeader) {
       header_includes[id] = {};
-      id_to_isExternal.push_back(isIncludeExternal(file, baseSrc));
-      id_to_resolve.push_back(id_to_isExternal.back());
+      auto [isExternal, path] = isIncludeExternal(file, baseSrc);
+      id_to_isExternal.emplace_back(isExternal, path);
+      id_to_resolve.push_back(isExternal);
     } else {
       source_includes[id] = {};
-      id_to_isExternal.push_back(false);
+      // We will never use the full path rom this construct for src files
+      id_to_isExternal.emplace_back(false, "");
       id_to_resolve.push_back(false);
     }
 
@@ -111,14 +117,21 @@ IncludeManager::FileID IncludeManager::addFile(std::string const &file,
     return it->second;
 }
 
-bool IncludeManager::isIncludeExternal(std::string const &incFile,
-                                       std::string const &baseSrc) const {
+std::tuple<bool, std::string>
+IncludeManager::isIncludeExternal(std::string const &incFile,
+                                  std::string const &baseSrc) {
   for (auto const &path : include_paths) {
-    if (std::filesystem::exists(path + '/' + incFile))
-      return false;
+    auto currPath = path + '/' + incFile;
+    if (std::filesystem::exists(currPath))
+      return {false, currPath};
   }
 
-  return !std::filesystem::exists(baseSrc + '/' + incFile);
+  auto localPath = baseSrc + '/' + incFile;
+  if (std::filesystem::exists(localPath)) {
+    include_paths.push_back(baseSrc);
+    return {false, localPath};
+  } else
+    return {true, ""};
 }
 
 std::string IncludeManager::getFileFromID(FileID id) const {
@@ -139,6 +152,7 @@ IncludeManager::getIDFromFile(std::string const &file) const {
     if (idx != std::string::npos)
       return path_to_id.at(file.substr(idx + path.size() + 1));
   }
+
   assert(false && "All included files should already be seen!");
   return -1;
 }
@@ -157,6 +171,6 @@ void IncludeManager::getIncludes(FileID id,
 
 void IncludeManager::getAllExternals(std::unordered_set<FileID> &outSet) const {
   for (std::size_t idx = 0; idx < id_to_isExternal.size(); idx++)
-    if (id_to_isExternal[idx])
+    if (id_to_isExternal[idx].first)
       outSet.insert(idx);
 }

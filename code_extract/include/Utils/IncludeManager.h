@@ -11,14 +11,15 @@ class IncludeManager {
   std::unordered_map<FileID, std::unordered_set<FileID>> header_includes;
 
   std::vector<std::string> id_to_path;
-  std::vector<bool> id_to_isExternal;
+  std::vector<std::pair<bool, std::string>> id_to_isExternal;
   std::vector<bool> id_to_resolve;
   std::unordered_map<std::string, FileID> path_to_id;
 
   std::vector<std::string> include_paths;
   std::unordered_set<std::string> const fileExt = {".c", ".cu", ".cpp"};
 
-  void getIncludesFromFile(FileID id, bool isHeader);
+  void getIncludesFromFile(FileID id, std::string const &fullPath,
+                           bool isHeader = false);
 
   void resolve(FileID file, std::unordered_set<FileID> &includes);
 
@@ -26,13 +27,15 @@ class IncludeManager {
 
   void processDirectory(std::string const &directory);
 
-  FileID addFile(std::string const &file, bool isHeader = false, std::string const& baseSrc = "");
+  FileID addFile(std::string const &file, bool isHeader = false,
+                 std::string const &baseSrc = "");
+
+  std::tuple<bool, std::string> isIncludeExternal(std::string const &incFile,
+                                                  std::string const &baseSrc);
 
 public:
   IncludeManager(std::string const &directory,
                  std::unordered_set<std::string> const &includePaths);
-
-  bool isIncludeExternal(std::string const &incFile, std::string const& baseSrc) const;
 
   std::string getFileFromID(FileID id) const;
 

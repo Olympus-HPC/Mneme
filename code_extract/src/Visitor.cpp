@@ -125,6 +125,7 @@ bool isPotentialBuiltinByName(std::string const &name) {
   return name.size() > 2 && '_' == name[0] && '_' == name[1];
 }
 
+void handleVarDecl(clang::QualType qt, VisitManager &vm, CodeDB const &codedb);
 void handleRecordDecl(clang::CXXRecordDecl const *recordDecl, VisitManager &vm,
                       CodeDB const &codedb) {
   // If externally defined (or built-in), do not include def as we will include
@@ -133,11 +134,15 @@ void handleRecordDecl(clang::CXXRecordDecl const *recordDecl, VisitManager &vm,
       recordDecl->isImplicit())
     return;
 
+  // First visit all field types
+  for(auto field : recordDecl->fields())
+    handleVarDecl(field->getType(), vm, codedb);
+
   // We will typically not find RecordDecls within function bodies or init
   // expressions. Hence, we need to visit them when we encounter either their
   // var decl or static function call (unsupported as of yet).
   helper::visitAndRegister<clang::CXXRecordDecl>(recordDecl, vm, codedb);
-
+  
   // Also we do not want to visit anything else from here as we will visit the
   // function calls separately
 }
@@ -259,7 +264,8 @@ bool MatchVisitor::VisitCallExpr(clang::CallExpr *callExpr) {
   if (decl->isCXXClassMember()) {
     parentDecl = static_cast<clang::CXXMethodDecl *>(decl)->getParent();
     // If parent decl is implicit, do not visit as callexpr maybe lambda
-    if (parentDecl->isImplicit())
+    // Or if function is default, do not visit
+    if (parentDecl->isImplicit() || decl->isDefaulted())
       return true;
   }
 
