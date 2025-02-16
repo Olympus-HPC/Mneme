@@ -3,6 +3,7 @@ cmake_minimum_required(VERSION 3.8)
 project(hip-example  LANGUAGES C CXX)
 
 enable_language(HIP)
+set(CMAKE_BUILD_TYPE RelWithDebInfo)
 find_package(HIP REQUIRED)
 find_package(mneme REQUIRED)
 add_definitions("-DMNEME_ENABLE_HIP")

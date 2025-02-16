@@ -2,6 +2,7 @@
 
 #include <hip/hip_runtime.h>
 
+#include "MnemeLogger.hpp"
 #include "mneme/DeviceTraits.hpp"
 #include "mneme/MnemeLogger.hpp"
 #include "mneme/MnemeMemoryHIP.hpp"
@@ -240,6 +241,56 @@ public:
         return RRInfo;
       };
 
+      auto convertToDouble = [&, this](llvm::Function &F) {
+        llvm::SmallVector<std::function<double(void *)>> RRInfo;
+        for (auto &A : F.args()) {
+          llvm::Type *ArgType = A.getType();
+          if (ArgType->isIntegerTy(1)) {
+            RRInfo.emplace_back([](void *data) {
+              bool val = *(bool *)data;
+              return (double)val;
+            });
+          } else if (ArgType->isIntegerTy(8)) {
+            RRInfo.emplace_back([](void *data) {
+              int8_t val = *(int8_t *)data;
+              return (double)val;
+            });
+          } else if (ArgType->isIntegerTy(32)) {
+            RRInfo.emplace_back([](void *data) {
+              int32_t val = *(int32_t *)data;
+              return (double)val;
+            });
+          } else if (ArgType->isIntegerTy(64)) {
+            RRInfo.emplace_back([](void *data) {
+              int64_t val = *(int64_t *)data;
+              return (double)val;
+            });
+          } else if (ArgType->isFloatTy()) {
+            RRInfo.emplace_back([](void *data) {
+              float val = *(float *)data;
+              return (double)val;
+            });
+          } else if (ArgType->isDoubleTy()) {
+            RRInfo.emplace_back([](void *data) {
+              double val = *(double *)data;
+              return (double)val;
+            });
+          } else if (ArgType->isX86_FP80Ty() || ArgType->isPPC_FP128Ty() ||
+                     ArgType->isFP128Ty()) {
+            RRInfo.emplace_back([](void *data) {
+              double val = *(double *)data;
+              return (double)val;
+            });
+          } else {
+            RRInfo.emplace_back([](void *data) {
+              double val = *(double *)data;
+              return -1.0;
+            });
+          }
+        }
+        return RRInfo;
+      };
+
       auto &CurrKernels = HandleToKernels[Handle];
       for (auto &KI : CurrKernels) {
         LOG_DEBUG("Searching for kernel with name {}", KI->getName());
@@ -251,6 +302,7 @@ public:
         KI->setArgSizes(getFuncDescr(*KFunc));
         KI->setArgNames(getArgNames(*KFunc));
         KI->setSpecializations(canSpecialize(*KFunc));
+        KI->setToDoubleFunc(convertToDouble(*KFunc));
       }
 
       for (auto &Mod : LLVMModules) {
