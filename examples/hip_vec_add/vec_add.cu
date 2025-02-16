@@ -7,7 +7,7 @@
 __device__ int some_value = 1.0;
 
 template <typename T> __global__ 
-void vecAdd_test(T *in, T *out, size_t size) {
+void vecAdd_test(T *in, T *out, size_t size, int k) {
   auto tid = threadIdx.x + blockIdx.x * blockDim.x;
   if (tid >= size)
     return;
@@ -39,7 +39,7 @@ int main(int argc, const char *argv[]) {
 
     const int threads = 256;
     int num_blocks = (numElements + threads - 1) / threads;
-    vecAdd_test<<< num_blocks, threads>>>(in, out, numElements);
+    vecAdd_test<<< num_blocks, threads>>>(in, out, numElements, i % 2);
     hipDeviceSynchronize();
   }
 

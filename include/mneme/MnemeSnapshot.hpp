@@ -146,6 +146,8 @@ struct KernelInstance {
   std::string EpilogueFn;
   dim3 BlockDim;
   dim3 GridDim;
+  llvm::SmallVector<double> ArgValues;
+  int NumOccurrences;
   uint64_t SharedMem;
   static llvm::json::Object toJSON(const dim3 &Dim) {
     llvm::json::Object JSONDim;
@@ -161,10 +163,24 @@ struct KernelInstance {
     instance["BlockDims"] = KernelInstance::toJSON(BlockDim);
     instance["GridDims"] = KernelInstance::toJSON(GridDim);
     instance["SharedMem"] = SharedMem;
+    instance["Args"] = llvm::json::Array(ArgValues);
+    instance["Occurrences"] = NumOccurrences;
     return instance;
   }
-  KernelInstance(dim3 &GridDim, dim3 &BlockDim, uint64_t SharedMem)
-      : GridDim(GridDim), BlockDim(BlockDim), SharedMem(SharedMem) {}
+  KernelInstance(std::shared_ptr<KernelInfo> KInfo, dim3 &GridDim,
+                 dim3 &BlockDim, uint64_t SharedMem, void **Args)
+      : GridDim(GridDim), BlockDim(BlockDim), SharedMem(SharedMem),
+        NumOccurrences(0) {
+    auto CanSpecialize = KInfo->getArgSpecializations();
+    auto toDouble = KInfo->getToDoubleFunc();
+    for (int I = 0; I < KInfo->getNumArgs(); I++) {
+      if (CanSpecialize[I]) {
+        ArgValues.emplace_back(toDouble[I](Args[I]));
+      } else {
+        ArgValues.emplace_back(-1.0);
+      }
+    }
+  }
   KernelInstance() = default;
 };
 
@@ -183,6 +199,9 @@ public:
     Collection["KernelName"] = KInfo->getName();
     Collection["DemangledName"] = llvm::demangle(KInfo->getName());
     Collection["Modules"] = llvm::json::Array(KInfo->ModuleFiles);
+    Collection["ArgNames"] = llvm::json::Array(KInfo->getArgNames());
+    Collection["Specializations"] =
+        llvm::json::Array(KInfo->getArgSpecializations());
     llvm::json::Object JSONInstances;
     for (auto &[hash, KI] : Instances) {
       JSONInstances[std::to_string(hash)] = KI.toJSON();
@@ -196,14 +215,25 @@ public:
       : VAddr(VAddr), VASize(VASize), KInfo(KInfo) {}
 
   llvm::stable_hash computeHash(dim3 &GridDim, dim3 &BlockDim,
-                                uint64_t SharedMem) {
+                                uint64_t SharedMem, void **Args) {
     auto BlockHash = llvm::stable_hash_combine((llvm::stable_hash)BlockDim.x,
                                                (llvm::stable_hash)BlockDim.y,
                                                (llvm::stable_hash)BlockDim.z);
     auto GridHash = llvm::stable_hash_combine((llvm::stable_hash)GridDim.x,
                                               (llvm::stable_hash)GridDim.y,
                                               (llvm::stable_hash)GridDim.z);
-    return llvm::stable_hash_combine(GridHash, BlockHash, SharedMem);
+    auto DHash = llvm::stable_hash_combine(GridHash, BlockHash, SharedMem);
+
+    auto CanSpecialize = KInfo->getArgSpecializations();
+    auto ArgSizes = KInfo->getArgSizes();
+    for (int I = 0; I < KInfo->getNumArgs(); I++) {
+      if (CanSpecialize[I]) {
+        DHash = llvm::stable_hash_combine(
+            DHash, stable_hash_combine_string(
+                       llvm::StringRef((char *)Args[I], ArgSizes[I])));
+      }
+    }
+    return DHash;
   }
 
   template <DeviceVendors VendorTypes>
@@ -218,9 +248,10 @@ public:
       dim3 &GridDim, dim3 &BlockDim, void **Args, size_t SharedMem,
       typename DeviceTraits<VendorTypes>::DeviceStream_t Stream,
       uint64_t StaticHash) {
-    auto DynamicHash = computeHash(GridDim, BlockDim, SharedMem);
+    auto DynamicHash = computeHash(GridDim, BlockDim, SharedMem, Args);
 
     if (Instances.contains(DynamicHash)) {
+      Instances[DynamicHash].NumOccurrences++;
       LOG_DEBUG(
           "Kernel {} with DynamicHash {} is already recorded, skipping ...",
           KInfo->getName(), DynamicHash);
@@ -230,8 +261,8 @@ public:
     LOG_DEBUG("First Instance of Kernel {} with DynamicHash {}, recording ...",
               KInfo->getName(), DynamicHash);
 
-    Instances.insert(
-        {DynamicHash, KernelInstance(GridDim, BlockDim, SharedMem)});
+    Instances.insert({DynamicHash, KernelInstance(KInfo, GridDim, BlockDim,
+                                                  SharedMem, Args)});
     std::filesystem::path Filename(MnemeDir /
                                    (std::string("DeviceState.prologue.") +
                                     std::to_string(StaticHash) + "." +

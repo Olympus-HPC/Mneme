@@ -18,6 +18,7 @@ struct KernelInfo {
   uint64_t StaticHash;
   llvm::SmallVector<size_t> KernelArgSizes;
   llvm::SmallVector<std::string> KernelArgNames;
+  llvm::SmallVector<std::function<double(void *)>> ToDoubleFunc;
   llvm::SmallVector<bool> KernelSpecializations;
   llvm::SmallVector<std::string> ModuleFiles;
   llvm::SmallVector<std::unique_ptr<uint8_t[]>> ArgData;
@@ -54,6 +55,12 @@ public:
     Data += KernelArgSizes[Index];
   }
 
+  void setToDoubleFunc(
+      llvm::ArrayRef<std::function<double(void *)>> KernelArgNames) {
+    ToDoubleFunc =
+        llvm::SmallVector<std::function<double(void *)>>(KernelArgNames);
+  }
+
   void updateHash(uint64_t Hash) {
     StaticHash = llvm::stable_hash_combine(StaticHash, Hash);
   }
@@ -69,6 +76,10 @@ public:
 
   llvm::ArrayRef<std::unique_ptr<uint8_t[]>> getArgData() const {
     return ArgData;
+  }
+
+  llvm::ArrayRef<std::function<double(void *)>> getToDoubleFunc() const {
+    return ToDoubleFunc;
   }
 };
 
