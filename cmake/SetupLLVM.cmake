@@ -1,8 +1,5 @@
 # Add the location of LLVMConfig.cmake to CMake search paths (so that
 # find_package can locate it)
-list(APPEND CMAKE_PREFIX_PATH "${LLVM_INSTALL_DIR}/lib/cmake/llvm/")
-
-set(LLVM_TARGETS_TO_BUILD "all" CACHE STRING "Target architectures for LLVM")
 
 # NOTE: When having just $LLVM_VERSION is not working out
 find_package(LLVM REQUIRED CONFIG HINTS "${LLVM_INSTALL_DIR}/lib/cmake/llvm/")

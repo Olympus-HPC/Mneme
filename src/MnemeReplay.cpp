@@ -42,7 +42,7 @@ static cl::opt<char> MnemeMiddleOptLevel(
     cl::desc("The optimization level to use when optimizing IR"), cl::init('3'),
     cl::cat(MnemeCategory));
 
-static cl::opt<int> MnemeBackendOptLevel(
+static cl::opt<unsigned> MnemeBackendOptLevel(
     "backend-opt-level",
     cl::desc("The optimization level to use when optimizing IR"), cl::init(3),
     cl::cat(MnemeCategory));
@@ -61,9 +61,9 @@ static cl::opt<int>
                  cl::init(3), cl::cat(MnemeCategory));
 
 int main(int argc, char *argv[]) {
-  mneme::InitLLVM();
   cl::HideUnrelatedOptions(MnemeCategory);
   cl::ParseCommandLineOptions(argc, argv, "GPU Replay Tool\n");
+  mneme::InitLLVM(argc, argv);
   // NOTE: There is a weird interaction of proteus with LLVM and the CLI option
   // manager is initialized (at least) twice. This has as a side effect to reset
   // variables to their default vvalues.
@@ -88,7 +88,8 @@ int main(int argc, char *argv[]) {
 
   LOG_INFO("Optimizing Kernel with Middle-OptLevel {} and BackEnd-OptLevel {}",
            MnemeMiddleOptLevel.getValue(), MnemeBackendOptLevel.getValue());
-  proteus::optimizeIR(*Mod, Arch, MnemeMiddleOptLevel, MnemeBackendOptLevel);
+  proteus::optimizeIR(*Mod, Arch, MnemeMiddleOptLevel.getValue(),
+                      MnemeBackendOptLevel.getValue());
 
   auto RecordedGrid = RInstance.getRecordedGrid();
   auto RecordedBlock = RInstance.getRecordedBlock();

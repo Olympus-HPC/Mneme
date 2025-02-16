@@ -35,9 +35,9 @@ if(MNEME_ENABLE_HIP)
   set_target_properties(record PROPERTIES INSTALL_RPATH_USE_LINK_PATH TRUE)
 
   target_link_libraries(replay PRIVATE hip::host)
-
-  target_link_libraries(replay PRIVATE ${LLVM_AVAILABLE_LIBS})
   target_compile_options(replay PRIVATE -x hip)
+
+  #target_link_libraries(replay PRIVATE ${LLVM_AVAILABLE_LIBS})
   set_target_properties(replay PROPERTIES INSTALL_RPATH_USE_LINK_PATH TRUE)
 endif()
 

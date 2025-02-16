@@ -19,7 +19,7 @@ build_proteus() {
   mkdir build-proteus
   pushd build-proteus
   cmake .. \
-  -DBUILD_SHARED=On \
+  -DBUILD_SHARED=Off \
   -DLLVM_INSTALL_DIR=${LLVM_INSTALL_DIR} \
   -DCMAKE_C_COMPILER=${LLVM_INSTALL_DIR}/bin/clang \
   -DCMAKE_CXX_COMPILER=${LLVM_INSTALL_DIR}/bin/clang++ \

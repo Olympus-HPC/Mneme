@@ -1,6 +1,7 @@
 #include <proteus/CoreLLVM.hpp>
 #include <proteus/CoreLLVMDevice.hpp>
 
+#include <llvm/Support/InitLLVM.h>
 #ifdef MNEME_ENABLE_HIP
 #include <proteus/CoreLLVMHIP.hpp>
 #elif defined(MNEME_ENABLE_CUDA)
@@ -10,7 +11,9 @@
 
 namespace mneme {
 
-void InitLLVM() {
+void InitLLVM(int Argc, char *Argv[]) {
+  llvm::InitLLVM X(Argc, Argv);
+  proteus::InitNativeTarget();
 #ifdef MNEME_ENABLE_HIP
   proteus::InitAMDGPUTarget();
 #endif
