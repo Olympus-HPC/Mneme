@@ -17,6 +17,8 @@ struct KernelInfo {
   std::string Name;
   uint64_t StaticHash;
   llvm::SmallVector<size_t> KernelArgSizes;
+  llvm::SmallVector<std::string> KernelArgNames;
+  llvm::SmallVector<bool> KernelSpecializations;
   llvm::SmallVector<std::string> ModuleFiles;
   llvm::SmallVector<std::unique_ptr<uint8_t[]>> ArgData;
   KernelInfo(void **Handle, char *Name)
@@ -29,20 +31,16 @@ struct KernelInfo {
   KernelInfo() : Name(nullptr) {};
 
 public:
-  const std::string getName() const { return Name; }
   void setArgSizes(llvm::ArrayRef<size_t> ArgSizes) {
     KernelArgSizes = llvm::SmallVector<size_t>(ArgSizes);
   }
-  void **getHandle() const { return Handle; }
 
-  llvm::ArrayRef<size_t> getArgSizes() const { return KernelArgSizes; }
-
-  llvm::ArrayRef<std::unique_ptr<uint8_t[]>> getArgData() const {
-    return ArgData;
+  void setArgNames(llvm::ArrayRef<std::string> Names) {
+    KernelArgNames = llvm::SmallVector<std::string>(Names);
   }
 
-  void updateHash(uint64_t Hash) {
-    StaticHash = llvm::stable_hash_combine(StaticHash, Hash);
+  void setSpecializations(llvm::ArrayRef<bool> Specializations) {
+    KernelSpecializations = llvm::SmallVector<bool>(Specializations);
   }
 
   void setArgData(const char *&Data, int Index) {
@@ -56,7 +54,22 @@ public:
     Data += KernelArgSizes[Index];
   }
 
+  void updateHash(uint64_t Hash) {
+    StaticHash = llvm::stable_hash_combine(StaticHash, Hash);
+  }
+
   int64_t getNumArgs() const { return KernelArgSizes.size(); }
+  void **getHandle() const { return Handle; }
+  const std::string getName() const { return Name; }
+  llvm::ArrayRef<size_t> getArgSizes() const { return KernelArgSizes; }
+  llvm::ArrayRef<std::string> getArgNames() const { return KernelArgNames; }
+  llvm::ArrayRef<bool> getArgSpecializations() const {
+    return KernelSpecializations;
+  }
+
+  llvm::ArrayRef<std::unique_ptr<uint8_t[]>> getArgData() const {
+    return ArgData;
+  }
 };
 
 struct GlobalVarInfo {
