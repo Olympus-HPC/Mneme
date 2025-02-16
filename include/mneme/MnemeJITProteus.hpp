@@ -7,6 +7,13 @@ using ProteusJIT = proteus::JitEngineDeviceHIP;
 #endif
 
 namespace mneme {
+
+void InitLLVM() {
+#ifdef MNEME_ENABLE_HIP
+  proteus::InitAMDGPUTarget();
+#endif
+}
+
 void pruneMnemeGlobals(llvm::Module &M) {
   using namespace llvm;
   SmallVector<GlobalVariable *> GlobalsToErase;
