@@ -206,6 +206,40 @@ public:
         return RRInfo;
       };
 
+      auto getArgNames = [&, this](llvm::Function &F) {
+        llvm::SmallVector<std::string> RRInfo;
+        for (auto &A : F.args()) {
+          RRInfo.emplace_back(A.getName().str());
+        }
+        return RRInfo;
+      };
+
+      auto canSpecialize = [&, this](llvm::Function &F) {
+        llvm::SmallVector<bool> RRInfo;
+        for (auto &A : F.args()) {
+          llvm::Type *ArgType = A.getType();
+          if (ArgType->isIntegerTy(1)) {
+            RRInfo.emplace_back(true);
+          } else if (ArgType->isIntegerTy(8)) {
+            RRInfo.emplace_back(true);
+          } else if (ArgType->isIntegerTy(32)) {
+            RRInfo.emplace_back(true);
+          } else if (ArgType->isIntegerTy(64)) {
+            RRInfo.emplace_back(true);
+          } else if (ArgType->isFloatTy()) {
+            RRInfo.emplace_back(true);
+          } else if (ArgType->isDoubleTy()) {
+            RRInfo.emplace_back(true);
+          } else if (ArgType->isX86_FP80Ty() || ArgType->isPPC_FP128Ty() ||
+                     ArgType->isFP128Ty()) {
+            RRInfo.emplace_back(true);
+          } else {
+            RRInfo.emplace_back(false);
+          }
+        }
+        return RRInfo;
+      };
+
       auto &CurrKernels = HandleToKernels[Handle];
       for (auto &KI : CurrKernels) {
         LOG_DEBUG("Searching for kernel with name {}", KI->getName());
@@ -214,8 +248,9 @@ public:
           FATAL_ERROR("KernelName not in Module");
 
         llvm::Function *KFunc = Iter->second;
-        auto FuncArgs = getFuncDescr(*KFunc);
-        KI->setArgSizes(FuncArgs);
+        KI->setArgSizes(getFuncDescr(*KFunc));
+        KI->setArgNames(getArgNames(*KFunc));
+        KI->setSpecializations(canSpecialize(*KFunc));
       }
 
       for (auto &Mod : LLVMModules) {
