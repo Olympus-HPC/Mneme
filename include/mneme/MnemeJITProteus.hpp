@@ -1,6 +1,8 @@
+#include <proteus/CoreLLVM.hpp>
+#include <proteus/CoreLLVMDevice.hpp>
+
 #ifdef MNEME_ENABLE_HIP
-#include <proteus/JitEngineDeviceHIP.hpp>
-using ProteusJIT = proteus::JitEngineDeviceHIP;
+#include <proteus/CoreLLVMHIP.hpp>
 #elif defined(MNEME_ENABLE_CUDA)
 #else
 #error "Please define MNEME_ENABLE_HIP or MNEME_ENABLE_CUDA"
