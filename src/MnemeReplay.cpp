@@ -31,14 +31,23 @@ static cl::opt<std::string>
                     cl::desc("The Kernel Hash of the Recorded kernels"),
                     cl::Required, cl::cat(MnemeCategory));
 
-static cl::opt<int>
-    MnemeOptLevel("opt-level",
-                  cl::desc("The optimization level to use when optimizing IR"),
-                  cl::init(3), cl::cat(MnemeCategory));
+static cl::opt<char> MnemeMiddleOptLevel(
+    "middle-opt-level",
+    cl::desc("The optimization level to use when optimizing IR"), cl::init('3'),
+    cl::cat(MnemeCategory));
 
-static cl::alias MnemeShortOptLevel(
-    "O", cl::desc("The optimization level to use when optimizing IR"),
-    cl::aliasopt(MnemeOptLevel), cl::cat(MnemeCategory));
+static cl::opt<int> MnemeBackendOptLevel(
+    "backend-opt-level",
+    cl::desc("The optimization level to use when optimizing IR"), cl::init(3),
+    cl::cat(MnemeCategory));
+
+static cl::alias MnemeShortMiddleOptLevel(
+    "MO", cl::desc("The optimization level to use when optimizing IR"),
+    cl::aliasopt(MnemeMiddleOptLevel), cl::cat(MnemeCategory));
+
+static cl::alias MnemeShortBackEndOptLevel(
+    "BO", cl::desc("The optimization level to use when optimizing IR"),
+    cl::aliasopt(MnemeBackendOptLevel), cl::cat(MnemeCategory));
 
 static cl::opt<int>
     MnemeRepeats("repeats",
@@ -46,7 +55,7 @@ static cl::opt<int>
                  cl::init(3), cl::cat(MnemeCategory));
 
 int main(int argc, char *argv[]) {
-  ProteusJIT::InitLLVM();
+  mneme::InitLLVM();
   cl::HideUnrelatedOptions(MnemeCategory);
   cl::ParseCommandLineOptions(argc, argv, "GPU Replay Tool\n");
   // NOTE: There is a weird interaction of proteus with LLVM and the CLI option
@@ -62,34 +71,28 @@ int main(int argc, char *argv[]) {
   ReplayInstance<Vendor> RInstance(MnemeJson, MnemeKernelHash);
   llvm::LLVMContext Ctx;
   auto Modules = RInstance.loadModules(Ctx);
-  auto Mod = ProteusJIT::linkJitModule(Ctx, Modules);
-  ProteusJIT::pruneIR(*Mod);
+  auto Mod = proteus::linkModules(Ctx, Modules);
+  proteus::pruneIR(*Mod);
   pruneMnemeGlobals(*Mod);
   auto ReplayKernelFunc = Mod->getFunction(RInstance.getKernelName());
-  internalizeModule(*Mod, [&ReplayKernelFunc](const GlobalValue &GV) {
-    if (isa<GlobalVariable>(GV))
-      return true;
-    // Do not internalize the kernel function.
-    if (&GV == ReplayKernelFunc)
-      return true;
+  proteus::internalize(*Mod, ReplayKernelFunc->getName());
 
-    // Internalize everything else.
-    return false;
-  });
+  // TODO: Here I need to write the module. With a name FnName.StaticHash.bc
+  // Before optimization, to make sure we can train models in a "generic" way.
 
-  LOG_INFO("Optimizing Kernel with OptLevel {}", MnemeOptLevel.getValue());
-  ProteusJIT::optimizeIR(*Mod, Arch, MnemeOptLevel);
+  LOG_INFO("Optimizing Kernel with Middle-OptLevel {} and BackEnd-OptLevel {}",
+           MnemeMiddleOptLevel.getValue(), MnemeBackendOptLevel.getValue());
+  proteus::optimizeIR(*Mod, Arch, MnemeMiddleOptLevel, MnemeBackendOptLevel);
 
   auto RecordedGrid = RInstance.getRecordedGrid();
   auto RecordedBlock = RInstance.getRecordedBlock();
-  ProteusJIT::setLaunchBoundsForKernel(
+  proteus::setLaunchBoundsForKernel(
       *Mod, *ReplayKernelFunc, RecordedGrid.x * RecordedGrid.y * RecordedGrid.z,
       RecordedBlock.x * RecordedBlock.y * RecordedBlock.z);
-  ProteusJIT::runCleanupPassPipeline(*Mod);
+  proteus::runCleanupPassPipeline(*Mod);
   SmallPtrSet<void *, 8> GlobalLinkedBinaries;
 
-  auto DeviceObject =
-      ProteusJIT::codegenObject(*Mod, Arch, GlobalLinkedBinaries);
+  auto DeviceObject = proteus::codegenObject(*Mod, Arch, GlobalLinkedBinaries);
   auto VendorModule = DeviceVendorTraits::getDeviceModuleFromImage(
       DeviceObject->getBufferStart());
 
