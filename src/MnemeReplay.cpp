@@ -1,3 +1,9 @@
+#include <hip/hip_runtime.h>
+
+#ifdef ICMP_NE
+#undef ICMP_NE
+#endif
+
 #include <llvm/IR/GlobalVariable.h>
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/Support/CommandLine.h>
