@@ -81,7 +81,9 @@ int main(int argc, char *argv[]) {
   proteus::pruneIR(*Mod);
   pruneMnemeGlobals(*Mod);
   auto ReplayKernelFunc = Mod->getFunction(RInstance.getKernelName());
-  proteus::internalize(*Mod, ReplayKernelFunc->getName());
+  // TODO: Internalize is too aggresive as is now. We will need to either write
+  // our own, or wait for proteus to expose a more generic interface.
+  // proteus::internalize(*Mod, ReplayKernelFunc->getName());
 
   // TODO: Here I need to write the module. With a name FnName.StaticHash.bc
   // Before optimization, to make sure we can train models in a "generic" way.
