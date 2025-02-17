@@ -48,7 +48,7 @@ build_spdlog() {
 }
 
 if [[ ! -d "proteus" ]]; then
-  git clone  --branch refactor-interface git@github.com:Olympus-HPC/proteus.git
+  git clone  --branch refactor-interface-cmake-target git@github.com:Olympus-HPC/proteus.git
 fi
 
 if [[ ! -d "spdlog" ]]; then
