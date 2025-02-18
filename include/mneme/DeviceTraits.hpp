@@ -1,6 +1,7 @@
 #pragma once
 #include "mneme/MnemeLogger.hpp"
 #include "mneme/Utils.hpp"
+#include <hip/amd_detail/amd_hip_runtime.h>
 #include <hip/hip_runtime.h>
 #include <optional>
 
@@ -203,6 +204,10 @@ template <> struct DeviceTraits<DeviceVendors::HIP> {
     return hipStreamCreate(Stream);
   }
 
+  static hipError_t deviceStreamDestroy(hipStream_t Stream) {
+    return hipStreamDestroy(Stream);
+  }
+
   static constexpr uintptr_t getSuggestedAddr() { return 0x0000153d2be00000; }
 
   static hipError_t deviceLaunchKernel(const void *function_address,
@@ -215,6 +220,27 @@ template <> struct DeviceTraits<DeviceVendors::HIP> {
 
   static hipError_t deviceGetSymbolAddress(void **devPtr, const void *symbol) {
     return hipGetSymbolAddress(devPtr, symbol);
+  }
+
+  static hipError_t deviceEventCreate(hipEvent_t *event) {
+    return hipEventCreate(event);
+  }
+
+  static hipError_t deviceEventRecord(hipEvent_t event, hipStream_t stream) {
+    return hipEventRecord(event, stream);
+  }
+
+  static hipError_t deviceEventDestroy(hipEvent_t event) {
+    return hipEventDestroy(event);
+  }
+
+  static hipError_t deviceEventSynchronize(hipEvent_t event) {
+    return hipEventSynchronize(event);
+  }
+
+  static hipError_t deviceEventElapsedTime(float *ms, hipEvent_t start,
+                                           hipEvent_t stop) {
+    return hipEventElapsedTime(ms, start, stop);
   }
 };
 #elif defined(MNEME_ENABLE_CUDA)

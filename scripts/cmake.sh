@@ -79,8 +79,8 @@ cmake .. \
 -DENABLE_CUDA=On \
 -DCMAKE_EXPORT_COMPILE_COMMANDS=on ../
 elif [[ "$SYS_TYPE" == "toss_4_x86_64_ib_cray" ]]; then
-ml load rocm/6.2
 
+ml load rocm/6.2
 pushd proteus
 build_proteus "ON" "OFF" $installDir
 popd
