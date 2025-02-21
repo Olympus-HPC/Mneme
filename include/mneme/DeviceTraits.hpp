@@ -72,6 +72,7 @@ template <> struct DeviceTraits<DeviceVendors::HIP> {
       FATAL_ERROR("Could not get device properties\n EC:" + EC.value());
 
     std::string arch_name = device_prop.gcnArchName;
+    LOG_DEBUG("Architecture name is {}", arch_name);
 
     std::string HipArch = arch_name.substr(0, arch_name.find(':'));
 

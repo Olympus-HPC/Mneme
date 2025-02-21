@@ -14,6 +14,7 @@
 namespace mneme {
 struct KernelInfo {
   void **Handle;
+  const void *HostFun;
   std::string Name;
   uint64_t StaticHash;
   llvm::SmallVector<size_t> KernelArgSizes;
@@ -22,8 +23,8 @@ struct KernelInfo {
   llvm::SmallVector<bool> KernelSpecializations;
   llvm::SmallVector<std::string> ModuleFiles;
   llvm::SmallVector<std::unique_ptr<uint8_t[]>> ArgData;
-  KernelInfo(void **Handle, char *Name)
-      : Handle(Handle), Name(Name),
+  KernelInfo(void **Handle, const void *HostFun, char *Name)
+      : Handle(Handle), HostFun(HostFun), Name(Name),
         StaticHash(llvm::stable_hash_combine_string(Name)) {};
   KernelInfo(void **Handle, std::string &Name)
       : Handle(Handle), Name(Name),
@@ -68,6 +69,7 @@ public:
   int64_t getNumArgs() const { return KernelArgSizes.size(); }
   void **getHandle() const { return Handle; }
   const std::string getName() const { return Name; }
+  const void *getFunHandle() const { return HostFun; }
   llvm::ArrayRef<size_t> getArgSizes() const { return KernelArgSizes; }
   llvm::ArrayRef<std::string> getArgNames() const { return KernelArgNames; }
   llvm::ArrayRef<bool> getArgSpecializations() const {
