@@ -45,6 +45,7 @@ protected:
   llvm::DenseMap<void **, llvm::SmallVector<GlobalVarInfo>>
       HandleToGlobalSymbol;
   llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> AllocatedBlobs;
+  llvm::DenseSet<const void *> BlackList;
 
   std::unique_ptr<PageManager> PM;
   void *VAStartAddr;
@@ -138,8 +139,8 @@ public:
              thread_limit);
     if (!HandleToBin.contains(fatBinHandle))
       FATAL_ERROR("Handle container does not contain fatbin handle");
-    std::shared_ptr<KernelInfo> KI =
-        std::make_shared<KernelInfo>(fatBinHandle, deviceFun);
+    std::shared_ptr<KernelInfo> KI = std::make_shared<KernelInfo>(
+        fatBinHandle, (const void *)hostFun, deviceFun);
     KernelInfoMap.insert({(const void *)hostFun, KI});
     HandleToKernels[fatBinHandle].emplace_back(KI);
     origRegisterFunction(fatBinHandle, hostFun, deviceFun, deviceName,
@@ -177,13 +178,16 @@ public:
 
   DeviceError_t rtHostMalloc(void **ptr, size_t size, unsigned int flags) {
     auto ret = origMallocPinned(ptr, size, flags);
-    LOG_DEBUG("Intercepted Pinned|Host Malloc PTR:{} SIZE:{}", *ptr, size);
+    LOG_WARN("Intercepted Pinned|Host Malloc PTR:{} SIZE:{}", *ptr, size);
     return ret;
   }
 
   DeviceError_t rtFree(void *ptr) {
-    if (!AllocatedBlobs.contains(ptr))
+    if (!AllocatedBlobs.contains(ptr)) {
+      LOG_CRITICAL("Free address that is not being allocated through Mneme {}",
+                   ptr);
       FATAL_ERROR("Free address that is not being allocated through Mneme\n");
+    }
     auto ret = AllocatedBlobs[ptr].release();
     LOG_DEBUG("Intercepted device Free PTR:{} SIZE:{} ACTUALSIZE:{}", ptr,
               AllocatedBlobs[ptr].getSize(),
@@ -203,6 +207,11 @@ public:
                                DeviceStream_t Stream) {
     if (!KernelInfoMap.contains(func)) {
       LOG_WARN("Skipping kernel cause not tracked in map");
+      return origLaunchKernel(func, GridDim, BlockDim, Args, SharedMem, Stream);
+    }
+
+    if (BlackList.contains(func)) {
+      LOG_WARN("Skipping kernel cause kernel is blacklisted");
       return origLaunchKernel(func, GridDim, BlockDim, Args, SharedMem, Stream);
     }
 

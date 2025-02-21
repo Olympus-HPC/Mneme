@@ -61,6 +61,7 @@ public:
       // Get the full architecture name (e.g., gfx90a:sramecc+:xnack-)
       std::string arch_name = DeviceProperties.gcnArchName;
 
+      LOG_DEBUG("Detected architecture {}", arch_name);
       // Find the colon (:) to isolate the base architecture
       auto DevArch = std::string(arch_name.substr(0, arch_name.find(':')));
       LOG_DEBUG("Detected Device Architecture is {}", DevArch);
@@ -110,9 +111,9 @@ public:
         llvm::StringRef Triple(Binary + Pos, TripleSize);
         Pos += TripleSize;
 
-        LOG_DEBUG("Processing bundle {}", Triple.str());
         if (!Triple.contains("amdgcn") || !Triple.contains(getArch()))
           continue;
+        LOG_DEBUG("Processing bundle {}", Triple.str());
 
         DeviceBinary = llvm::StringRef(Binary + Offset, Size);
       }
@@ -295,8 +296,10 @@ public:
       for (auto &KI : CurrKernels) {
         LOG_DEBUG("Searching for kernel with name {}", KI->getName());
         auto Iter = KernelNameToFunction.find(KI->getName());
-        if (Iter == KernelNameToFunction.end())
-          FATAL_ERROR("KernelName not in Module");
+        if (Iter == KernelNameToFunction.end()) {
+          BlackList.insert(KI->getFunHandle());
+          continue;
+        }
 
         llvm::Function *KFunc = Iter->second;
         KI->setArgSizes(getFuncDescr(*KFunc));
