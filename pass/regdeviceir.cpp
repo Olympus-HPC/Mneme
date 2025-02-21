@@ -145,7 +145,7 @@ public:
     // ================
     // Host compilation
     // ================
-    dump(M, "host", IsLTO ? "lto-before-proteus" : "before-proteus");
+    dump(M, "host", IsLTO ? "lto-before-mneme" : "before-mneme");
 
     if (verifyModule(M, &errs()))
       FATAL_ERROR("Broken original module found, compilation aborted!");
@@ -257,10 +257,6 @@ llvm::PassPluginLibraryInfo getMnemePassPluginInfo() {
   return {LLVM_PLUGIN_API_VERSION, "MnemePass", LLVM_VERSION_STRING, Callback};
 }
 
-// TODO: use by proteus-jit-pass name.
-// This is the core interface for pass plugins. It guarantees that 'opt' will
-// be able to recognize ProteusJitPass when added to the pass pipeline on the
-// command line, i.e. via '-passes=proteus-jit-pass'
 extern "C" LLVM_ATTRIBUTE_WEAK ::llvm::PassPluginLibraryInfo
 llvmGetPassPluginInfo() {
   return getMnemePassPluginInfo();
@@ -273,9 +269,6 @@ llvmGetPassPluginInfo() {
 // actual value doesn't matter.
 char LegacyMnemePass::ID = 0;
 
-// This is the core interface for pass plugins. It guarantees that 'opt' will
-// recognize LegacyProteusJitPass when added to the pass pipeline on the command
-// line, i.e.  via '--legacy-jit-pass'
 static RegisterPass<LegacyMnemePass>
     X("legacy-mneme-pass", "Mneme Pass",
       false, // This pass doesn't modify the CFG => false
