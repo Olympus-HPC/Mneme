@@ -14,8 +14,7 @@
 
 namespace mneme {
 
-namespace MnemeLogger {
-inline std::shared_ptr<spdlog::logger> logger;
+namespace {
 
 inline std::string getLogFileName() {
   char hostname[HOST_NAME_MAX];
@@ -68,26 +67,38 @@ inline std::string getLogDirectory() {
   return (dir != nullptr) ? std::string(dir) : "";
 }
 
-inline void initialize() {
-  std::string logDir = getLogDirectory();
-  if (!logDir.empty()) {
-    std::string logFile = logDir + "/" + getLogFileName();
-    logger = spdlog::basic_logger_mt("file_logger", logFile);
-    logger->set_pattern("[mneme] [%^%l%$] %v");
-  } else {
-    logger = spdlog::stdout_color_mt("console_logger");
-    logger->set_pattern("[\033[34mmneme\033[0m] [%^%l%$] %v");
+} // namespace
+
+struct MnemeLogger {
+private:
+  std::shared_ptr<spdlog::logger> _logger;
+  MnemeLogger() {
+    std::string logDir = getLogDirectory();
+    if (!logDir.empty()) {
+      std::string logFile = logDir + "/" + getLogFileName();
+      _logger = spdlog::basic_logger_mt("file_logger", logFile);
+      _logger->set_pattern("[mneme] [%^%l%$] %v");
+    } else {
+      _logger = spdlog::stdout_color_mt("console_logger");
+      _logger->set_pattern("[\033[34mmneme\033[0m] [%^%l%$] %v");
+    }
+    _logger->set_level(getLogLevelFromEnv());
   }
-  logger->set_level(getLogLevelFromEnv());
-}
-} // namespace MnemeLogger
+
+public:
+  static spdlog::logger &getLogger() {
+    static MnemeLogger logger;
+    return *logger._logger;
+  }
+};
+
 } // namespace mneme
 
 // Logging macros
-#define LOG_DEBUG(...) mneme::MnemeLogger::logger->debug(__VA_ARGS__)
-#define LOG_INFO(...) mneme::MnemeLogger::logger->info(__VA_ARGS__)
-#define LOG_WARN(...) mneme::MnemeLogger::logger->warn(__VA_ARGS__)
-#define LOG_CRITICAL(...) mneme::MnemeLogger::logger->critical(__VA_ARGS__)
+#define LOG_DEBUG(...) mneme::MnemeLogger::getLogger().debug(__VA_ARGS__)
+#define LOG_INFO(...) mneme::MnemeLogger::getLogger().info(__VA_ARGS__)
+#define LOG_WARN(...) mneme::MnemeLogger::getLogger().warn(__VA_ARGS__)
+#define LOG_CRITICAL(...) mneme::MnemeLogger::getLogger().critical(__VA_ARGS__)
 
 #else // Logging disabled
 

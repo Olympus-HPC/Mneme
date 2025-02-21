@@ -5,11 +5,6 @@ if (MNEME_ENABLE_HIP)
   list(APPEND RecordLibSRC MnemeRecordPreloadHIP.cpp MnemePageManager.cpp)
 endif()
 
-if (MNEME_ENABLE_LOGGER)
-  list(APPEND RecordLibSRC MnemeLogger.cpp)
-  list(APPEND ReplaySRC MnemeLogger.cpp)
-endif()
-
 add_library(record SHARED ${RecordLibSRC})
 add_executable(replay ${ReplaySRC})
 
