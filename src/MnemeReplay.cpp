@@ -95,11 +95,8 @@ int main(int argc, char *argv[]) {
   llvm::LLVMContext Ctx;
   auto Modules = RInstance.loadModules(Ctx);
   auto Mod = proteus::linkModules(Ctx, Modules);
-  writeIRToFile(*Mod, "linked.ll");
   proteus::pruneIR(*Mod, false);
-  writeIRToFile(*Mod, "pruned.ll");
   pruneMnemeGlobals(*Mod);
-  writeIRToFile(*Mod, "prunedMneme.ll");
   auto ReplayKernelFunc = Mod->getFunction(RInstance.getKernelName());
   // TODO: Internalize is too aggresive as is now. We will need to either write
   // our own, or wait for proteus to expose a more generic interface.
@@ -112,8 +109,6 @@ int main(int argc, char *argv[]) {
            MnemeMiddleOptLevel.getValue(), MnemeBackendOptLevel.getValue());
   proteus::optimizeIR(*Mod, Arch, MnemeMiddleOptLevel.getValue(),
                       MnemeBackendOptLevel.getValue());
-
-  writeIRToFile(*Mod, "test.ll");
 
   auto RecordedGrid = RInstance.getRecordedGrid();
   auto RecordedBlock = RInstance.getRecordedBlock();
