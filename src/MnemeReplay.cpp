@@ -80,7 +80,7 @@ void writeIRToFile(const llvm::Module &M, const std::string &Filename) {
 int main(int argc, char *argv[]) {
   cl::HideUnrelatedOptions(MnemeCategory);
   cl::ParseCommandLineOptions(argc, argv, "GPU Replay Tool\n");
-  mneme::InitLLVM(argc, argv);
+  proteus::InitLLVMTargets Init;
   // NOTE: There is a weird interaction of proteus with LLVM and the CLI option
   // manager is initialized (at least) twice. This has as a side effect to reset
   // variables to their default vvalues.

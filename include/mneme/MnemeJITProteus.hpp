@@ -11,14 +11,6 @@
 
 namespace mneme {
 
-void InitLLVM(int Argc, char *Argv[]) {
-  llvm::InitLLVM X(Argc, Argv);
-  proteus::InitNativeTarget();
-#ifdef MNEME_ENABLE_HIP
-  proteus::InitAMDGPUTarget();
-#endif
-}
-
 void pruneMnemeGlobals(llvm::Module &M) {
   using namespace llvm;
   SmallVector<GlobalVariable *> GlobalsToErase;

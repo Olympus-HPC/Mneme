@@ -48,7 +48,7 @@ build_spdlog() {
 }
 
 if [[ ! -d "proteus" ]]; then
-  git clone  --branch opt-ext git@github.com:Olympus-HPC/proteus.git
+  git clone git@github.com:Olympus-HPC/proteus.git
 fi
 
 if [[ ! -d "spdlog" ]]; then
