@@ -3,7 +3,7 @@
 // RUN: LD_PRELOAD=MNEME_PRELOAD_LIB MNEME_LOG_LEVEL=debug MNEME_PAGE_SIZE=%PG ./multi_kernel_regex%ext | FileCheck %s --check-prefixes=CHECK
 // RUN: %RR | FileCheck %s --check-prefix=CHECK-RR-NOREGEX
 // RUN: rm -rf *.json Recorded*.bc DeviceState*.mneme
-// RUN: RR_KERNELS="_two" LD_PRELOAD=MNEME_PRELOAD_LIB MNEME_LOG_LEVEL=debug MNEME_PAGE_SIZE=%PG ./multi_kernel_regex%ext | FileCheck %s --check-prefixes=CHECK
+// RUN: MNEME_RR_KERNELS="_two" LD_PRELOAD=MNEME_PRELOAD_LIB MNEME_LOG_LEVEL=debug MNEME_PAGE_SIZE=%PG ./multi_kernel_regex%ext | FileCheck %s --check-prefixes=CHECK
 // RUN: %RR | FileCheck %s --check-prefix=CHECK-RR-WITH-REGEX
 // RUN: rm -rf *.json Recorded*.bc DeviceState*.mneme
 // clang-format on

@@ -1,4 +1,4 @@
-import sys
+Rmport sys
 import os
 import json
 import subprocess as sp
@@ -39,10 +39,9 @@ def replay(replay_bin, json_path:str, BlockDimx:int, GridDimx:int):
 def execute_record(preload_lib:str, temp_dir: str, record_file:str, cmd:str):
     new_env = os.environ.copy()
     new_env["LD_PRELOAD"] = preload_lib
-    new_env["RR_FILE"] = record_file 
     new_env["MNEME_DATA_DIR"] = temp_dir
     print("Going to run the following command:")
-    print(f"LD_PRELOAD={preload_lib} RR_DATA_DIR={temp_dir} RR_FILE={record_file} {cmd}")
+    print(f"LD_PRELOAD={preload_lib} MNEME_DATA_DIR={temp_dir} {cmd}")
     try:
         result = sp.run(
             cmd,
