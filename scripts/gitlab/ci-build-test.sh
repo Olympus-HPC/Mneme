@@ -11,8 +11,10 @@ installDir="/dev/shm/install"
 
 build_proteus() {
   echo "Building PROTEUS"
-  git clone git@github.com:Olympus-HPC/proteus.git
-  pushd proteus
+  git clone --depth 1 git@github.com:Olympus-HPC/proteus.git
+  pushd proteus 
+  git fetch --depth 1 origin 30f766dbbff8599479739450eee3fdb9bdd3c118
+  git checkout 30f766dbbff8599479739450eee3fdb9bdd3c118
   PROTEUS_ENABLE_HIP=$1
   PROTEUS_ENABLE_CUDA=$2
   PROTEUS_INSTALL_DIR=$3
@@ -32,16 +34,16 @@ build_proteus() {
   make -j 10
   make install -j 10
   popd
+  popd
 }
 
 build_spdlog() {
   echo "Building SPDLOG"
-  git clone https://github.com/gabime/spdlog.git
+  git clone --depth 1 --branch v1.15.0  --single-branch https://github.com/gabime/spdlog.git
   pushd spdlog
-  git checkout tags/v1.15.0 -b release/v1.15.0
   SPDLOG_INSTALL_DIR=$1
   mkdir build-spdlog
-  cd build-spdlog
+  pushd build-spdlog
   cmake \
   -DCMAKE_C_COMPILER=${LLVM_INSTALL_DIR}/bin/clang \
   -DCMAKE_CXX_COMPILER=${LLVM_INSTALL_DIR}/bin/clang++ \
@@ -50,6 +52,7 @@ build_spdlog() {
 
   make -j 10
   make install -j 10
+  popd
   popd
 }
 
@@ -78,13 +81,15 @@ cmake .. \
 elif [[ "$SYS_TYPE" == "toss_4_x86_64_ib_cray" ]]; then
 ml load rocm/${MNEME_CI_ROCM_VERSION}
 export LLVM_INSTALL_DIR=${ROCM_PATH}/llvm
-echo "LLVM INSTALL DIR is {LLVM_INSTALL_DIR}"
+echo "LLVM INSTALL DIR is ${LLVM_INSTALL_DIR}"
 
 build_proteus "ON" "OFF" $installDir
+echo "After proteus Current directory is $(pwd)"
 build_spdlog $installDir
-
+echo "After spdlog Current directory is $(pwd)"
+mneme_src=$(pwd)
 pushd $build_dir 
-cmake .. \
+cmake \
 -DCMAKE_BUILD_TYPE=Relwithdebinfo \
 -Dproteus_DIR=$installDir \
 -DCMAKE_INSTALL_PREFIX=$installDir \
@@ -94,12 +99,13 @@ cmake .. \
 -DMNEME_ENABLE_HIP=On \
 -DMNEME_ENABLE_DEBUG=${MNEME_CI_ENABLE_DEBUG} \
 -DMNEME_ENABLE_TESTS=On \
--DCMAKE_EXPORT_COMPILE_COMMANDS=on ../
+-DCMAKE_EXPORT_COMPILE_COMMANDS=on ${mneme_src}
 fi
+
 
 make -j 10
 echo "### TESTING ###"
-make test
+ctest --output-on-failure
 echo "### TESTING  ###"
 
 make -j 10 install
