@@ -307,8 +307,8 @@ class RecordDatabase {
 
 public:
   RecordDatabase() : KernelWhiteList(""), HasRegex(false) {
-    auto Dir = std::getenv("RR_DATA_DIR");
-    auto WhiteList = std::getenv("RR_KERNELS");
+    auto Dir = std::getenv("MNEME_DATA_DIR");
+    auto WhiteList = std::getenv("MNEME_RR_KERNELS");
     if (WhiteList) {
       HasRegex = true;
       RegexStr = std::string(WhiteList);
