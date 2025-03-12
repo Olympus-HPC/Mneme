@@ -6,7 +6,7 @@ option(ENABLE_CUDA "Enable CUDA" OFF)
 option(ENABLE_HIP "Enable CUDA" OFF)
 
 find_package(RAJA REQUIRED HINTS "${RAJA_Dir}")
-find_package(RR REQUIRED HINTS "${RR_Dir}")
+find_package(mneme REQUIRED)
 
 if(ENABLE_CUDA)
 find_package(CUDAToolkit REQUIRED)
@@ -24,19 +24,11 @@ endif()
 
 
 add_executable(vecAdd-raja vec_add_raja.cu)
+add_mneme(vecAdd-raja)
 
 # Get the full path of the LLVM pass plugin (MyLLVMPass)
-get_target_property(RRPassPath RR::RRPass LOCATION)
-message(STATUS "Record Replay Pass path: ${RRPassPath}")
-message(STATUS "DEVICE LANGUAGE is: ${DEVICE_LANGUAGE}")
-
 set_source_files_properties(vec_add_raja.cu PROPERTIES LANGUAGE ${DEVICE_LANGUAGE})
 
-target_compile_options(
- vecAdd-raja 
-      PUBLIC
-      $<$<COMPILE_LANGUAGE:${DEVICE_LANGUAGE}>:-fpass-plugin=${RRPassPath}>
-    ) 
 
 #set_source_files_properties(vec_add_raja.cu PROPERTIES COMPILE_FLAGS "--expt-extended-lambda")
 if (ENABLE_CUDA)
