@@ -1,0 +1,29 @@
+site_name: mneme
+
+nav:
+  - Home: index.md
+  - User's guide: 
+      - Installation: user/install.md
+      - Integration: user/integration.md
+      - Runtime Configuration: user/config.md
+      - User Usage: user/usage.md
+      - Resources : user/resources.md
+  - Developer's manual: 
+    - Concepts: dev/concepts.md
+    - Creating a PR: dev/pr.md
+    - API Reference: dev/api.md
+repo_url: https://github.com/Olympus-HPC/mneme
+theme: 
+  name: material 
+  features:
+    - toc.integrate
+  palette:
+    scheme: default
+    primary: light blue
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+extra_css:
+  - stylesheets/extra.css
+copyright: Copyright &copy; 2024 - 2025 Lawrence Livermore National Security, LLC and mneme project contributors.
