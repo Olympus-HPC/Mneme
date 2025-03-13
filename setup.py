@@ -49,6 +49,14 @@ class CMakeBuild(build_ext):
         self.has_nvidia = "On" if has_nvidia_gpu() else "Off"
         self.has_amd = "On" if has_amd_gpu() else "Off"
         self.llvm_dir = os.getenv("LLVM_INSTALL_DIR", None)
+        if self.has_amd == "On":
+            self.cxx = f"{self.llvm_dir}/bin/amdclang++"
+            self.cc = f"{self.llvm_dir}/bin/amdclang"
+            self.llvm_dir = f"{self.llvm_dir}/llvm/"
+        else:
+            self.cxx = f"{self.llvm_dir}/bin/clang++"
+            self.cc = f"{self.llvm_dir}/bin/clang"
+            self.llvm_dir = f"{self.llvm_dir}/"
 
         if not self.llvm_dir:
             raise RuntimeError(
@@ -93,20 +101,17 @@ class CMakeBuild(build_ext):
 
         cmake_options = [
             "-DBUILD_SHARED=Off",
+            f"-DCMAKE_INSTALL_PREFIX={self.install_dir}",
             f"-DLLVM_INSTALL_DIR={self.llvm_dir}",
             f"-DPROTEUS_ENABLE_CUDA={self.has_nvidia}",
             f"-DPROTEUS_ENABLE_HIP={self.has_amd}",
-            f"-DCMAKE_C_COMPILER={self.llvm_dir}/bin/clang",
-            f"-DCMAKE_CXX_COMPILER={self.llvm_dir}/bin/clang++",
+            f"-DCMAKE_C_COMPILER={self.cc}",
+            f"-DCMAKE_CXX_COMPILER={self.cxx}",
+            "..",
         ]
 
-        # Enable tests if --with-tests was passed
-        if WITH_TESTS:
-            cmake_options.append("-DPROTEUS_BUILD_TESTS=ON")
-
         run_command(
-            ["cmake", f"-DCMAKE_INSTALL_PREFIX={self.install_dir}", ".."]
-            + cmake_options,
+            ["cmake"] + cmake_options,
             cwd=build_dir,
         )
         run_command(["make", "-j4"], cwd=build_dir)
@@ -136,8 +141,8 @@ class CMakeBuild(build_ext):
             [
                 "cmake",
                 f"-DCMAKE_INSTALL_PREFIX={self.install_dir}",
-                f"-DCMAKE_C_COMPILER={self.llvm_dir}/bin/clang",
-                f"-DCMAKE_CXX_COMPILER={self.llvm_dir}/bin/clang++",
+                f"-DCMAKE_C_COMPILER={self.cc}",
+                f"-DCMAKE_CXX_COMPILER={self.cxx}",
                 "..",
             ],
             cwd=build_dir,
@@ -153,10 +158,11 @@ class CMakeBuild(build_ext):
 
         cmake_options = [
             f"-DCMAKE_INSTALL_PREFIX={self.install_dir}",
-            f"-DCMAKE_C_COMPILER={self.llvm_dir}/bin/clang",
-            f"-DCMAKE_CXX_COMPILER={self.llvm_dir}/bin/clang++",
+            f"-DCMAKE_C_COMPILER={self.cc}",
+            f"-DCMAKE_CXX_COMPILER={self.cxx}",
             f"-DLLVM_INSTALL_DIR={self.llvm_dir}",
             f"-DMNEME_ENABLE_HIP={self.has_amd}",
+            "-DMNEME_ENABLE_TESTS=On",
             f"-Dproteus_DIR={self.install_dir}",
             f"-Dspdlog_DIR={self.install_dir}",
         ]
