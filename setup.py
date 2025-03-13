@@ -1,6 +1,9 @@
 import os
 import subprocess
 import sys
+import glob
+import shutil
+from setuptools import find_packages
 from setuptools import setup, Extension
 from setuptools.command.build_ext import build_ext
 
@@ -174,7 +177,18 @@ class CMakeBuild(build_ext):
 
         run_command(["cmake", ".."] + cmake_options, cwd=build_dir)
         run_command(["make", "-j4"], cwd=build_dir)
-        run_command(["make", "install"], cwd=build_dir)
+        built_module = glob.glob(os.path.join(build_dir, "python", "coreJIT.*.so"))
+        if not built_module:
+            raise RuntimeError(
+                "Error: coreJIT shared library not found in build output!"
+            )
+
+        built_module = built_module[0]  # Get the first match
+        python_package_dir = os.path.join(self.build_lib, "mneme", "proteus")
+        sys.stderr.write(f"Writting package to {python_package_dir}")
+        os.makedirs(python_package_dir, exist_ok=True)
+
+        shutil.copy(built_module, python_package_dir)
 
 
 # Define the Python Extension
@@ -198,14 +212,16 @@ ext_modules = [
 
 # Setup Configuration
 setup(
-    name="mneme-python",
+    name="mneme",
     version="0.1.0",
     author="Konstantinos Parasyris",
     author_email="your_email@example.com",
     description="Python bindings for Mneme replay tool",
     long_description=open("README.md").read(),
     long_description_content_type="text/markdown",
-    ext_modules=ext_modules,
+    ext_modules=[],
+    packages=find_packages(where="python"),
+    package_dir={"": "python"},
     cmdclass={"build_ext": CMakeBuild},
     install_requires=[
         "pybind11",
