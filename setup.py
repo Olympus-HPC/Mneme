@@ -6,6 +6,7 @@ import shutil
 from setuptools import find_packages
 from setuptools import setup, Extension
 from setuptools.command.build_ext import build_ext
+from setuptools.command.build_py import build_py
 
 
 # Helper function to run shell commands
@@ -191,44 +192,33 @@ class CMakeBuild(build_ext):
         shutil.copy(built_module, python_package_dir)
 
 
-# Define the Python Extension
-ext_modules = [
-    Extension(
-        "mneme_python",
-        sources=["src/mneme_bindings.cpp"],
-        include_dirs=[
-            "third_party/proteus/install/include",
-            "third_party/spdlog/install/include",
-        ],
-        libraries=["proteus", "spdlog"],
-        library_dirs=[
-            "third_party/proteus/install/lib",
-            "third_party/spdlog/install/lib",
-        ],
-        extra_compile_args=["-std=c++17"],
-        language="c++",
-    )
-]
+class CustomBuildPy(build_py):
+    """Ensure CMake runs before packaging Python code"""
+
+    def run(self):
+        self.run_command("build_ext")
+        super().run()
+
 
 # Setup Configuration
 setup(
     name="mneme",
     version="0.1.0",
     author="Konstantinos Parasyris",
-    author_email="your_email@example.com",
+    author_email="parasyris1@llnl.gov",
     description="Python bindings for Mneme replay tool",
     long_description=open("README.md").read(),
     long_description_content_type="text/markdown",
     ext_modules=[],
     packages=find_packages(where="python"),
     package_dir={"": "python"},
-    cmdclass={"build_ext": CMakeBuild},
+    cmdclass={"build_ext": CMakeBuild, "build_py": CustomBuildPy},
     install_requires=[
         "pybind11",
     ],
     classifiers=[
         "Programming Language :: Python :: 3",
-        "License :: OSI Approved :: MIT License",
+        "License :: OSI Approved :: Apache License",
         "Operating System :: OS Independent",
     ],
     python_requires=">=3.6",
