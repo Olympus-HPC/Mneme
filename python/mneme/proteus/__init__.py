@@ -1,4 +1,5 @@
-import proteus  # Import the C++ bindings
+import mneme.proteus.coreJIT
 
 # Automatically initialize LLVM when this module is imported
-proteus._init_llvm()
+mneme.proteus.coreJIT._init_llvm()
+
