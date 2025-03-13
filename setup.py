@@ -163,6 +163,7 @@ class CMakeBuild(build_ext):
             f"-DLLVM_INSTALL_DIR={self.llvm_dir}",
             f"-DMNEME_ENABLE_HIP={self.has_amd}",
             "-DMNEME_ENABLE_TESTS=On",
+            "-DMNEME_ENABLE_PYTHON=On",
             f"-Dproteus_DIR={self.install_dir}",
             f"-Dspdlog_DIR={self.install_dir}",
         ]
