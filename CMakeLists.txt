@@ -34,6 +34,7 @@ option(MNEME_ENABLE_HIP "Enable CUDA" OFF)
 option(MNEME_ENABLE_TESTS "Enable Testing" OFF)
 option(MNEME_ENABLE_DEBUG "Enable Debug Output" OFF)
 option(MNEME_ENABLE_LOGGER "Enable logging on mneme" ON)
+option(MNEME_ENABLE_PYTHON "Enable the python module" OFF)
 
 find_package(proteus REQUIRED)
 get_target_property(proteus_link_dirs proteus INTERFACE_LINK_DIRECTORIES)

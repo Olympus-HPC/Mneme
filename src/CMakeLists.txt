@@ -36,4 +36,6 @@ if(MNEME_ENABLE_HIP)
   set_target_properties(replay PROPERTIES INSTALL_RPATH_USE_LINK_PATH TRUE)
 endif()
 
-
+if(MNEME_ENABLE_PYTHON)
+  add_subdirectory(python)
+endif()
