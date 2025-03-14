@@ -1,10 +1,10 @@
 from ctypes import c_uint
 
-from llvm4ml.binding import ffi
+from . import ffi
 
 
 def initialize():
-    ffi.lib.LLVMPY_Initialize();
+    ffi.lib.LLVMPY_Initialize()
 
 
 # =============================================================================
@@ -17,7 +17,7 @@ def _version_info():
     v = []
     x = ffi.lib.LLVMPY_GetVersionInfo()
     while x:
-        v.append(x & 0xff)
+        v.append(x & 0xFF)
         x >>= 8
     return tuple(reversed(v))
 

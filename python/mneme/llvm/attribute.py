@@ -1,14 +1,25 @@
-from ctypes import (POINTER, byref, cast, c_char_p, c_double, c_int, c_size_t,
-                    c_uint, c_uint64, c_bool, c_void_p)
+from ctypes import (
+    POINTER,
+    byref,
+    cast,
+    c_char_p,
+    c_double,
+    c_int,
+    c_size_t,
+    c_uint,
+    c_uint64,
+    c_bool,
+    c_void_p,
+)
 import enum
 import warnings
 
-from llvm4ml.binding import ffi
-from llvm4ml.binding.common import _decode_string, _encode_string
-from llvm4ml.binding.typeref import TypeRef
+from . import ffi
+from .common import _decode_string, _encode_string
+from .typeref import TypeRef
+
 
 class AttributeRef(ffi.ObjectRef):
-
     @property
     def kind(self):
         return ffi.lib.LLVMPY_GetEnumAttributeKind(self)
@@ -39,10 +50,10 @@ class AttributeRef(ffi.ObjectRef):
             it = ffi.lib.LLVMPY_FunctionAttributesIter(value)
             itr = _AttributeListIterator(it)
         elif value.is_instruction:
-            if value.opcode == 'call':
+            if value.opcode == "call":
                 it = ffi.lib.LLVMPY_CallInstAttributesIter(value)
                 itr = _AttributeListIterator(it)
-            elif value.opcode == 'invoke':
+            elif value.opcode == "invoke":
                 it = ffi.lib.LLVMPY_InvokeInstAttributesIter(value)
                 itr = _AttributeListIterator(it)
         elif value.is_global:
@@ -53,8 +64,8 @@ class AttributeRef(ffi.ObjectRef):
             itr = _AttributeSetIterator(it)
         return itr
 
-class _AttributeIterator(ffi.ObjectRef):
 
+class _AttributeIterator(ffi.ObjectRef):
     def __next__(self):
         vp = self._next()
         if vp:
@@ -69,7 +80,6 @@ class _AttributeIterator(ffi.ObjectRef):
 
 
 class _AttributeListIterator(_AttributeIterator):
-
     def _dispose(self):
         self._capi.LLVMPY_DisposeAttributeListIter(self)
 
@@ -78,12 +88,12 @@ class _AttributeListIterator(_AttributeIterator):
 
 
 class _AttributeSetIterator(_AttributeIterator):
-
     def _dispose(self):
         self._capi.LLVMPY_DisposeAttributeSetIter(self)
 
     def _next(self):
         return AttributeRef(ffi.lib.LLVMPY_AttributeSetIterNext(self))
+
 
 ffi.lib.LLVMPY_GetEnumAttributeKindForName.argtypes = [c_char_p, c_size_t]
 ffi.lib.LLVMPY_GetEnumAttributeKindForName.restype = c_uint
@@ -106,8 +116,7 @@ ffi.lib.LLVMPY_GlobalAttributesIter.restype = ffi.LLVMAttributeSetIterator
 ffi.lib.LLVMPY_ArgumentAttributesIter.argtypes = [ffi.LLVMValueRef]
 ffi.lib.LLVMPY_ArgumentAttributesIter.restype = ffi.LLVMAttributeSetIterator
 
-ffi.lib.LLVMPY_DisposeAttributeListIter.argtypes = [
-    ffi.LLVMAttributeListIterator]
+ffi.lib.LLVMPY_DisposeAttributeListIter.argtypes = [ffi.LLVMAttributeListIterator]
 
 ffi.lib.LLVMPY_DisposeAttributeSetIter.argtypes = [ffi.LLVMAttributeSetIterator]
 
@@ -133,4 +142,3 @@ ffi.lib.LLVMPY_AttributeIsString.restype = c_bool
 
 ffi.lib.LLVMPY_GetAttributeAsString.argtypes = [ffi.LLVMAttributeRef]
 ffi.lib.LLVMPY_GetAttributeAsString.restype = c_void_p
-

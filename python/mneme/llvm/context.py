@@ -1,4 +1,4 @@
-from llvm4ml.binding import ffi
+from . import ffi
 
 
 def create_context():

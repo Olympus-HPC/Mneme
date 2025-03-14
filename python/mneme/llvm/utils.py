@@ -10,11 +10,13 @@ def get_library_name():
     """
     Return the name of the llvm4ml shared library file.
     """
+    current_file_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    print("Root file path is ", current_file_path)
     if os.name == "posix":
         if sys.platform == "darwin":
-            return "libllvm4ml.dylib"
+            return os.path.abspath(current_file_path + "/libmneme.dylib")
         else:
-            return "libllvm4ml.so"
+            print(os.getcwd())
+            return os.path.abspath(current_file_path + "/libmneme.so")
     else:
-        assert os.name == "nt"
-        return "llvm4ml.dll"
+        return os.path.abspath(current_file_path + "/libmneme.dll")

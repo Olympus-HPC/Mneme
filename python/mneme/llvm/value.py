@@ -15,10 +15,10 @@ from ctypes import (
 )
 import enum
 
-from llvm4ml.binding import ffi
-from llvm4ml.binding.common import _decode_string, _encode_string
-from llvm4ml.binding.typeref import TypeRef
-from llvm4ml.binding.attribute import AttributeRef
+from . import ffi
+from .common import _decode_string, _encode_string
+from .typeref import TypeRef
+from .attribute import AttributeRef
 
 
 class Linkage(enum.IntEnum):
@@ -200,7 +200,9 @@ class ValueRef(ffi.ObjectRef):
             ValueKind.function,
         ):
             return Linkage(ffi.lib.LLVMPY_GetLinkage(self))
-        raise TypeError(f"expected global value, got {self}." f"ValueKind is {self.value_kind.name}")
+        raise TypeError(
+            f"expected global value, got {self}." f"ValueKind is {self.value_kind.name}"
+        )
 
     @linkage.setter
     def linkage(self, value):
@@ -239,7 +241,9 @@ class ValueRef(ffi.ObjectRef):
         if not self.is_function:
             raise ValueError("expected function value, got %s" % (self._kind,))
         attrname = str(attr)
-        attrval = ffi.lib.LLVMPY_GetEnumAttributeKindForName(_encode_string(attrname), len(attrname))
+        attrval = ffi.lib.LLVMPY_GetEnumAttributeKindForName(
+            _encode_string(attrname), len(attrname)
+        )
         if attrval == 0:
             raise ValueError("no such attribute {!r}".format(attrname))
         ffi.lib.LLVMPY_AddFunctionAttr(self, attrval)
@@ -248,7 +252,9 @@ class ValueRef(ffi.ObjectRef):
         if not self.is_function:
             raise ValueError("expected function value, got %s" % (self._kind,))
 
-        ffi.lib.LLVMPY_AddFunctionKeyValueAttr(self, _encode_string(key), len(key), _encode_string(value), len(value))
+        ffi.lib.LLVMPY_AddFunctionKeyValueAttr(
+            self, _encode_string(key), len(key), _encode_string(value), len(value)
+        )
 
     @property
     def type(self):
@@ -264,7 +270,9 @@ class ValueRef(ffi.ObjectRef):
         The memory type accessed by this instruction LLVM type.
         """
         if not self.is_memory_instruction:
-            raise ValueError("Argument is not  amemory instruciton {!r}".format(str(self)))
+            raise ValueError(
+                "Argument is not  amemory instruciton {!r}".format(str(self))
+            )
 
         return TypeRef(ffi.lib.LLVMPY_TypeOfMemory(self), self.module)
 
@@ -286,7 +294,9 @@ class ValueRef(ffi.ObjectRef):
             raise ValueError("expected global value, got %s" % (self._kind))
         if not self.has_initializer:
             return None
-        return ValueRef(ffi.lib.LLVMPY_GetInitializer(self), "initializer", self._parents)
+        return ValueRef(
+            ffi.lib.LLVMPY_GetInitializer(self), "initializer", self._parents
+        )
 
     @property
     def is_declaration(self):
@@ -295,7 +305,9 @@ class ValueRef(ffi.ObjectRef):
         module.
         """
         if not (self.is_global or self.is_function):
-            raise ValueError("expected global or function value, got %s" % (self._kind,))
+            raise ValueError(
+                "expected global or function value, got %s" % (self._kind,)
+            )
         return ffi.lib.LLVMPY_IsDeclaration(self)
 
     @property
@@ -407,7 +419,9 @@ class ValueRef(ffi.ObjectRef):
             "insertvalue",
             "extractvalue",
         ):
-            raise ValueError("expected insert/extractvalue value, got %s" % (self._kind,))
+            raise ValueError(
+                "expected insert/extractvalue value, got %s" % (self._kind,)
+            )
         it = ffi.lib.LLVMPY_IndicesIter(self)
         parents = self._parents.copy()
         parents.update(instruction=self)
@@ -446,7 +460,10 @@ class ValueRef(ffi.ObjectRef):
             accuracy_loss = c_bool(False)
             value = ffi.lib.LLVMPY_GetConstantFPValue(self, byref(accuracy_loss))
             if accuracy_loss.value and not round_fp:
-                raise ValueError("Accuracy loss encountered in conversion of constant " f"value {str(self)}")
+                raise ValueError(
+                    "Accuracy loss encountered in conversion of constant "
+                    f"value {str(self)}"
+                )
 
             return value
         elif self.value_kind == ValueKind.constant_expr:
@@ -492,7 +509,9 @@ class ValueRef(ffi.ObjectRef):
         """
         if self.value_kind != ValueKind.constant_expr:
             raise ValueError("expected constant expr, got %s" % (self.value_kind))
-        return ValueRef(ffi.lib.LLVMPY_ConstantExprAsInstruction(self), "instruction", self._parents)
+        return ValueRef(
+            ffi.lib.LLVMPY_ConstantExprAsInstruction(self), "instruction", self._parents
+        )
 
 
 class _ValueIterator(ffi.ObjectRef):
@@ -505,7 +524,9 @@ class _ValueIterator(ffi.ObjectRef):
         # Keep parent objects (module, function, etc) alive
         self._parents = parents
         if self.kind is None:
-            raise NotImplementedError("%s must specify kind attribute" % (type(self).__name__,))
+            raise NotImplementedError(
+                "%s must specify kind attribute" % (type(self).__name__,)
+            )
 
     def __next__(self):
         vp = self._next()

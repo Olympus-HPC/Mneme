@@ -1,9 +1,17 @@
-from ctypes import c_char_p, byref, POINTER, c_bool, create_string_buffer, c_size_t, string_at
+from ctypes import (
+    c_char_p,
+    byref,
+    POINTER,
+    c_bool,
+    create_string_buffer,
+    c_size_t,
+    string_at,
+)
 
-from llvm4ml.binding import ffi
-from llvm4ml.binding.common import _decode_string, _encode_string
-from llvm4ml.binding.value import ValueRef, TypeRef
-from llvm4ml.binding.context import get_global_context
+from . import ffi
+from .common import _decode_string, _encode_string
+from .value import ValueRef, TypeRef
+from .context import get_global_context
 
 
 def parse_assembly(llvmir, context=None):
@@ -31,7 +39,9 @@ def parse_bitcode(bitcode, context=None):
     buf = c_char_p(bitcode)
     bufsize = len(bitcode)
     with ffi.OutputString() as errmsg:
-        mod = ModuleRef(ffi.lib.LLVMPY_ParseBitcode(context, buf, bufsize, errmsg), context)
+        mod = ModuleRef(
+            ffi.lib.LLVMPY_ParseBitcode(context, buf, bufsize, errmsg), context
+        )
         if errmsg:
             mod.close()
             raise RuntimeError("LLVM bitcode parsing error\n{0}".format(errmsg))
@@ -290,16 +300,29 @@ class _TypesIterator(_Iterator):
 # =============================================================================
 # Set function FFI
 
-ffi.lib.LLVMPY_ParseAssembly.argtypes = [ffi.LLVMContextRef, c_char_p, POINTER(c_char_p)]
+ffi.lib.LLVMPY_ParseAssembly.argtypes = [
+    ffi.LLVMContextRef,
+    c_char_p,
+    POINTER(c_char_p),
+]
 ffi.lib.LLVMPY_ParseAssembly.restype = ffi.LLVMModuleRef
 
-ffi.lib.LLVMPY_ParseBitcode.argtypes = [ffi.LLVMContextRef, c_char_p, c_size_t, POINTER(c_char_p)]
+ffi.lib.LLVMPY_ParseBitcode.argtypes = [
+    ffi.LLVMContextRef,
+    c_char_p,
+    c_size_t,
+    POINTER(c_char_p),
+]
 ffi.lib.LLVMPY_ParseBitcode.restype = ffi.LLVMModuleRef
 
 ffi.lib.LLVMPY_DisposeModule.argtypes = [ffi.LLVMModuleRef]
 
 ffi.lib.LLVMPY_PrintModuleToString.argtypes = [ffi.LLVMModuleRef, POINTER(c_char_p)]
-ffi.lib.LLVMPY_WriteBitcodeToString.argtypes = [ffi.LLVMModuleRef, POINTER(c_char_p), POINTER(c_size_t)]
+ffi.lib.LLVMPY_WriteBitcodeToString.argtypes = [
+    ffi.LLVMModuleRef,
+    POINTER(c_char_p),
+    POINTER(c_size_t),
+]
 
 ffi.lib.LLVMPY_GetNamedFunction.argtypes = [ffi.LLVMModuleRef, c_char_p]
 ffi.lib.LLVMPY_GetNamedFunction.restype = ffi.LLVMValueRef

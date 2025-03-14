@@ -3,8 +3,8 @@ import ctypes
 import threading
 import importlib.resources as _impres
 
-from llvm4ml.binding.common import _decode_string, _is_shutting_down
-from llvm4ml.utils import get_library_name
+from .common import _decode_string, _is_shutting_down
+from .utils import get_library_name
 
 
 def _make_opaque_ref(name):
@@ -76,7 +76,7 @@ class _LLVMLock:
 
 
 class _lib_wrapper(object):
-    """Wrap libllvm4ml with a lock such that only one thread may access it at
+    """Wrap libmneme with a lock such that only one thread may access it at
     a time.
 
     This class duck-types a CDLL.
