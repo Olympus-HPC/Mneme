@@ -79,9 +79,6 @@ if(MNEME_ENABLE_TESTS)
   add_subdirectory(tests)
 endif()
 
-if (MNEME_ENABLE_AUTOTUNE)
-endif()
-
 # INSTALL
 message(STATUS "Installing ${PROJECT_NAME} of version ${PROJECT_VERSION}")
 
