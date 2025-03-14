@@ -20,4 +20,9 @@ print("After")
 for i, func in enumerate(Mod.functions):
     print(i, func.name)
 
+jit.internalize(Mod, "foo")
 jit.optimize(Mod, "gfx90a", "3", 1)
+
+print("After optimization")
+for i, func in enumerate(Mod.functions):
+    print(i, func.name)

@@ -9,6 +9,7 @@ extern "C" {
 void ProteusPY_pruneIR(LLVMModuleRef Mod) { pruneIR(*llvm::unwrap(Mod)); }
 
 void ProteusPY_internalize(LLVMModuleRef Mod, const char *KernelSym) {
+  std::cout << "Internalizing kernel " << KernelSym << "\n";
   auto *M = llvm::unwrap(Mod);
   internalize(*M, KernelSym);
 }

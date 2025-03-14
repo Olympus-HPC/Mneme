@@ -21,6 +21,7 @@ from ctypes import (
 
 ffi.lib.ProteusPY_pruneIR.argtypes = [ffi.LLVMModuleRef]
 ffi.lib.ProteusPY_optimize.argtypes = [ffi.LLVMModuleRef, c_char_p, c_char, c_uint]
+ffi.lib.ProteusPY_internalize.argtypes = [ffi.LLVMModuleRef, c_char_p]
 
 
 def pruneIR(mod: ModuleRef):
@@ -51,3 +52,10 @@ def optimize(mod: ModuleRef, device_arch: str, opt_level: str, codegen_opt_level
         opt_level.encode("utf-8")[0],
         int(codegen_opt_level),
     )
+
+
+def internalize(mod: ModuleRef, kernel_name: str):
+    if not isinstance(mod, ModuleRef):
+        raise TypeError(f"Expecting type of ModuleRef instead got {type(mod)}")
+
+    ffi.lib.ProteusPY_internalize(mod, _encode_string(kernel_name))
