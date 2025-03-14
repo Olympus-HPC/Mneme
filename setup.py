@@ -174,19 +174,20 @@ class CMakeBuild(build_ext):
         run_command(["make", "-j4"], cwd=build_dir)
         run_command(["make", "-j4", "install"], cwd=build_dir)
 
+        built_module = glob.glob(
+            os.path.join(build_dir, "src", "python", "libmneme*.so")
+        )
+        if not built_module:
+            raise RuntimeError(
+                "Error: coreJIT shared library not found in build output!"
+            )
 
-#        built_module = glob.glob(os.path.join(build_dir, "python", "coreJIT.*.so"))
-#        if not built_module:
-#            raise RuntimeError(
-#                "Error: coreJIT shared library not found in build output!"
-#            )
-#
-#        built_module = built_module[0]  # Get the first match
-#        python_package_dir = os.path.join(self.build_lib, "mneme", "proteus")
-#        sys.stderr.write(f"Writting package to {python_package_dir}")
-#        os.makedirs(python_package_dir, exist_ok=True)
-#
-#        shutil.copy(built_module, python_package_dir)
+        built_module = built_module[0]  # Get the first match
+        python_package_dir = os.path.join(self.build_lib, "mneme")
+        sys.stderr.write(f"Writting package to {python_package_dir}")
+        os.makedirs(python_package_dir, exist_ok=True)
+
+        shutil.copy(built_module, python_package_dir)
 
 
 class CustomBuildPy(build_py):
@@ -210,9 +211,6 @@ setup(
     packages=find_packages(where="python"),
     package_dir={"": "python"},
     cmdclass={"build_ext": CMakeBuild, "build_py": CustomBuildPy},
-    install_requires=[
-        "pybind11",
-    ],
     classifiers=[
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: Apache License",
