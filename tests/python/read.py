@@ -19,3 +19,5 @@ jit.pruneIR(Mod)
 print("After")
 for i, func in enumerate(Mod.functions):
     print(i, func.name)
+
+jit.optimize(Mod, "gfx90a", "3", 1)
