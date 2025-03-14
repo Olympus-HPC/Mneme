@@ -98,11 +98,14 @@ class CMakeBuild(build_ext):
         os.makedirs(build_dir, exist_ok=True)
 
         cmake_options = [
+            "-DCMAKE_BUILD_TYPE=Relwithdebinfo",
             "-DBUILD_SHARED=Off",
+            "-DCMAKE_BUILD_TYPE=Relwithdebinfo",
             f"-DCMAKE_INSTALL_PREFIX={self.install_dir}",
             f"-DLLVM_INSTALL_DIR={self.llvm_dir}",
             f"-DPROTEUS_ENABLE_CUDA={self.has_nvidia}",
             f"-DPROTEUS_ENABLE_HIP={self.has_amd}",
+            "-DENABLE_TESTS=Off",
             f"-DCMAKE_C_COMPILER={self.cc}",
             f"-DCMAKE_CXX_COMPILER={self.cxx}",
             "..",
@@ -155,6 +158,7 @@ class CMakeBuild(build_ext):
         os.makedirs(build_dir, exist_ok=True)
 
         cmake_options = [
+            "-DCMAKE_BUILD_TYPE=Relwithdebinfo",
             f"-DCMAKE_INSTALL_PREFIX={self.install_dir}",
             f"-DCMAKE_C_COMPILER={self.cc}",
             f"-DCMAKE_CXX_COMPILER={self.cxx}",
@@ -165,10 +169,6 @@ class CMakeBuild(build_ext):
             f"-Dproteus_DIR={self.install_dir}",
             f"-Dspdlog_DIR={self.install_dir}",
         ]
-
-        # Enable Mneme's tests if --with-tests was passed
-        if WITH_TESTS:
-            cmake_options.append("-DMNEME_BUILD_TESTS=ON")
 
         run_command(["cmake", ".."] + cmake_options, cwd=build_dir)
         run_command(["make", "-j4"], cwd=build_dir)
