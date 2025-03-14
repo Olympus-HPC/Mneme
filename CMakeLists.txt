@@ -34,6 +34,7 @@ option(MNEME_ENABLE_HIP "Enable CUDA" OFF)
 option(MNEME_ENABLE_TESTS "Enable Testing" OFF)
 option(MNEME_ENABLE_DEBUG "Enable Debug Output" OFF)
 option(MNEME_ENABLE_LOGGER "Enable logging on mneme" ON)
+option(MNEME_ENABLE_AUTOTUNE "Enable autotuning and generate python" OFF)
 
 find_package(proteus REQUIRED)
 get_target_property(proteus_link_dirs proteus INTERFACE_LINK_DIRECTORIES)
@@ -76,6 +77,9 @@ add_subdirectory(src)
 if(MNEME_ENABLE_TESTS)
   enable_testing()
   add_subdirectory(tests)
+endif()
+
+if (MNEME_ENABLE_AUTOTUNE)
 endif()
 
 # INSTALL

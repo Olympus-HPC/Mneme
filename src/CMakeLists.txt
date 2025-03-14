@@ -37,3 +37,6 @@ if(MNEME_ENABLE_HIP)
 endif()
 
 
+if (MNEME_ENABLE_AUTOTUNE)
+  add_subdirectory(python)
+endif()
