@@ -2,6 +2,7 @@ import typing
 from ..llvm.module import ModuleRef
 from ..llvm import ffi as ffi
 from ..llvm.common import _decode_string, _encode_string
+from ..llvm.buffer import MemBufferRef
 from ctypes import (
     POINTER,
     byref,
@@ -22,6 +23,8 @@ from ctypes import (
 ffi.lib.ProteusPY_pruneIR.argtypes = [ffi.LLVMModuleRef]
 ffi.lib.ProteusPY_optimize.argtypes = [ffi.LLVMModuleRef, c_char_p, c_char, c_uint]
 ffi.lib.ProteusPY_internalize.argtypes = [ffi.LLVMModuleRef, c_char_p]
+ffi.lib.ProteusPY_codeGenObject.argtypes = [ffi.LLVMModuleRef, c_char_p]
+ffi.lib.ProteusPY_codeGenObject.restype = ffi.LLVMMemBufferRef
 
 
 def pruneIR(mod: ModuleRef):
@@ -59,3 +62,12 @@ def internalize(mod: ModuleRef, kernel_name: str):
         raise TypeError(f"Expecting type of ModuleRef instead got {type(mod)}")
 
     ffi.lib.ProteusPY_internalize(mod, _encode_string(kernel_name))
+
+
+def codegen_object(mod: ModuleRef, device_arch):
+    if not isinstance(mod, ModuleRef):
+        raise TypeError(f"Expecting type of ModuleRef instead got {type(mod)}")
+    result = MemBufferRef(
+        ffi.lib.ProteusPY_codeGenObject(mod, _encode_string(device_arch))
+    )
+    return result

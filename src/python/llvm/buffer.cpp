@@ -5,7 +5,7 @@
 
 extern "C" {
 API_EXPORT(void)
-LLVMPY_DisposeTypesIter(LLVMMemoryBufferRef Buffer) {
+LLVMPY_DisposeMemBuffer(LLVMMemoryBufferRef Buffer) {
   llvm::MemoryBuffer *buff = llvm::unwrap(Buffer);
   delete buff;
 }

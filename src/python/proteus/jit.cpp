@@ -13,7 +13,6 @@ API_EXPORT(void) ProteusPY_pruneIR(LLVMModuleRef Mod) {
 
 API_EXPORT(void)
 ProteusPY_internalize(LLVMModuleRef Mod, const char *KernelSym) {
-  std::cout << "Internalizing kernel " << KernelSym << "\n";
   auto *M = llvm::unwrap(Mod);
   internalize(*M, KernelSym);
 }
@@ -21,8 +20,6 @@ ProteusPY_internalize(LLVMModuleRef Mod, const char *KernelSym) {
 API_EXPORT(void)
 ProteusPY_optimize(LLVMModuleRef Mod, const char *DeviceArch,
                    const char OptLevel, unsigned CodegenOptLevel) {
-  std::cout << "Received DeviceArch of " << DeviceArch << " OptLevel "
-            << OptLevel << " CodegenOptLevel: " << CodegenOptLevel << "\n";
   auto *M = llvm::unwrap(Mod);
   optimizeIR(*M, DeviceArch, OptLevel, CodegenOptLevel);
 }
