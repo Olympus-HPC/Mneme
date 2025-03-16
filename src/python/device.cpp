@@ -8,9 +8,6 @@ using namespace mneme;
 using namespace llvm;
 
 #ifdef MNEME_ENABLE_HIP
-#include "mneme/MnemeMemoryHIP.hpp"
-#include "mneme/MnemeRecordHIP.hpp"
-using MnemeRecorderDevice = MnemeRecorderHIP;
 using DeviceVendorTraits = DeviceTraits<DeviceVendors::HIP>;
 constexpr DeviceVendors Vendor = DeviceVendors::HIP;
 #endif
