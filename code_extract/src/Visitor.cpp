@@ -227,6 +227,10 @@ bool MatchVisitor::VisitDeclRefExpr(clang::DeclRefExpr *declRef) {
   if (!visitBody)
     return true;
 
+  // If this vardecl is locally but extern'd we don't visit its init.
+  if (defDecl->isLocalExternDecl())
+    return true;
+
   assert(
       defDecl->hasDefinition() &&
       "We should have seen this variable's decl before unless it is external!");
