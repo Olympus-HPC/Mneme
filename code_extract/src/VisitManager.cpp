@@ -12,6 +12,7 @@
 #include "clang/AST/DeclTemplate.h"
 #include "clang/AST/Mangle.h"
 #include "clang/AST/PrettyPrinter.h"
+#include "clang/AST/TemplateBase.h"
 #include "clang/AST/Type.h"
 #include "clang/ASTMatchers/ASTMatchFinder.h"
 #include "clang/ASTMatchers/ASTMatchers.h"
@@ -58,12 +59,23 @@ void buildExplicitTempSpec(
     llvm::raw_string_ostream &ss) {
   ss << "< ";
   for (auto &arg : tmpArgs) {
-    if (arg.getKind() != clang::TemplateArgument::ArgKind::Type)
+    bool stop = false;
+    switch (arg.getKind()) {
+    case clang::TemplateArgument::ArgKind::Integral: {
+      ss << arg.getAsIntegral() << ",";
       break;
-    auto argType = arg.getAsType();
-    if (argType->hasUnnamedOrLocalType())
+    }
+    case clang::TemplateArgument::ArgKind::Type: {
+      auto argType = arg.getAsType();
+      stop = argType->hasUnnamedOrLocalType();
+      if (stop)
+        break;
+      ss << argType.getAsString() << ",";
       break;
-    ss << argType.getAsString() << ",";
+    }
+    }
+    if (stop)
+      break;
   }
   ss.str().back() = '>';
 }
@@ -133,6 +145,27 @@ void print(llvm::raw_ostream &ss, clang::Decl const *decl) {
   }
 
   ss << outString;
+}
+
+void makeCUDACompatible(std::string &code) {
+  // Cuda C/C++ does not allow pragma parameters in parenthesis so we need to
+  // remove and redo those lines
+  size_t pos = 0;
+  while (pos != std::string::npos) {
+    auto from = code.find("#pragma", pos);
+    if (from == std::string::npos) break;
+    auto to = code.find("\n", from);
+    auto pragma = code.substr(from, to - from);
+
+    std::replace(pragma.begin(), pragma.end(), ',', ' ');
+    std::replace(pragma.begin(), pragma.end(), '(', ' ');
+    std::replace(pragma.begin(), pragma.end(), ')', ' ');
+
+    if (auto enPos = pragma.find("enable")) pragma.replace(enPos, 6, " ");
+    
+    code = code.replace(from, to - from, pragma);
+    pos = to + 1;
+  }
 }
 
 /// FIXME: Move into generic utils namespace
@@ -387,6 +420,10 @@ void VisitManager::emitStandaloneFile(std::string &output, bool emitRR,
   // include the right header for std::forward
   if (hasFwdTypes)
     output = "#include <utility>\n" + output;
+
+  /// FIXME: Expensive string function, need to avoid this somehow!!
+  if (cudaKernel)
+    helper::makeCUDACompatible(output);
 }
 
 void VisitManager::pullPrimaryFnContext() {
