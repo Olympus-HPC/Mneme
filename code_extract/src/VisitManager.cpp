@@ -279,12 +279,18 @@ void VisitManager::fillParams(std::string const &prefix, T *begin, T *end) {
       fillParams(key, lmbExpr->capture_begin(), lmbExpr->capture_end());
     } else if (recordDecl) {
       clang::CXXConstructorDecl *ctor = nullptr;
+      bool hasNonDeletedDefault = false;
       for (auto constructor : recordDecl->ctors()) {
         if (constructor->isDeleted() || constructor->isCopyOrMoveConstructor())
           continue;
         ctor = constructor;
+        if (constructor->isDefaultConstructor()) {
+          hasNonDeletedDefault = true;
+          break;
+        }
       }
-      if (!ctor || !ctor->getNumParams()) {
+
+      if (!ctor || !ctor->getNumParams() || hasNonDeletedDefault) {
         params_decl.emplace_back(key, expr);
         continue;
       }
