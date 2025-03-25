@@ -40,7 +40,8 @@ void storeDecl(T *decl, clang::ASTUnit const &unit, CodeDB &cdb) {
   // If location is external but not a function decl, dont store it
   // We need to store external function decls as they may be requested for
   // extraction.
-  if (isIncludeExternal(srcDeclFile, cdb) && !(cdb.includeExternals && isFunctionDecl))
+  if (isIncludeExternal(srcDeclFile, cdb) &&
+      !(cdb.includeExternals && isFunctionDecl))
     return;
 
   std::string keyName = CodeDB::getKeyName(decl);
@@ -59,6 +60,7 @@ std::tuple<T const *, bool> visitAndRegister(clang::NamedDecl const *decl,
                                              VisitManager &vm,
                                              CodeDB const &cdb) {
   std::string keyName = CodeDB::getKeyName(decl);
+
   if (vm.isVisited(keyName))
     return {static_cast<T const *>(vm.getVisitedObj(keyName)->getDefiniton()),
             false};
@@ -135,47 +137,35 @@ void handleRecordDecl(clang::CXXRecordDecl const *recordDecl, VisitManager &vm,
     return;
 
   // First visit all field types
-  for(auto field : recordDecl->fields())
+  for (auto field : recordDecl->fields())
     handleVarDecl(field->getType(), vm, codedb);
 
   // We will typically not find RecordDecls within function bodies or init
   // expressions. Hence, we need to visit them when we encounter either their
   // var decl or static function call (unsupported as of yet).
   helper::visitAndRegister<clang::CXXRecordDecl>(recordDecl, vm, codedb);
-  
+
   // Also we do not want to visit anything else from here as we will visit the
   // function calls separately
 }
 
-// A little bit of code duplication for clarity.
-void handleTypedefs(clang::TypedefType const *typ, VisitManager &vm,
-                    CodeDB const &codedb) {
-  if (!typ)
-    return;
-
-  auto typDecl = typ->getDecl();
-  // If externally defined (or built-in), do not include def as we will
-  // include the file itself.
-  if (isPotentialBuiltinByName(typDecl->getNameAsString()))
-    return;
-
-  handleTypedefs(typDecl->getUnderlyingType()->getAs<clang::TypedefType>(), vm,
-                 codedb);
-
-  visitAndRegister<clang::TypedefNameDecl>(typDecl, vm, codedb);
-}
-
 void handleVarDecl(clang::QualType qt, VisitManager &vm, CodeDB const &codedb) {
+  if (!qt.getTypePtrOrNull())
+    return;
+
   auto cannonType = getUnderlyingType(qt);
-  clang::CXXRecordDecl const *decl = cannonType->getAsCXXRecordDecl();
-  if (!decl) {
-    auto typedefType = cannonType->getAs<clang::TypedefType>();
+  if (auto typedefType = cannonType->getAs<clang::TypedefType>()) {
     // recursively visit underlying type(defs).
-    // We should hopefully
-    // create a handle typedef function that does not revisit typedef chains
-    // again if visited before.
-    handleTypedefs(typedefType, vm, codedb);
-  } else
+    // We should hopefully create a handle typedef function that does not
+    // revisit typedef chains again if visited before.
+    auto typDecl = typedefType->getDecl();
+
+    if (isPotentialBuiltinByName(typDecl->getNameAsString()))
+      return;
+
+    handleVarDecl(typDecl->getUnderlyingType(), vm, codedb);
+    visitAndRegister<clang::TypedefNameDecl>(typDecl, vm, codedb);
+  } else if (auto decl = cannonType->getAsCXXRecordDecl())
     handleRecordDecl(decl, vm, codedb);
 }
 } // namespace helper
@@ -302,7 +292,7 @@ void MatchVisitor::VisitTemplateParams(clang::FunctionDecl const *defDecl) {
   auto tmpSpec = defDecl->getTemplateSpecializationInfo();
   if (tmpSpec) {
     auto tmpArgs = tmpSpec->TemplateArguments->asArray();
-    for (auto& arg : tmpArgs) {
+    for (auto &arg : tmpArgs) {
       if (arg.getKind() == clang::TemplateArgument::ArgKind::Type)
         helper::handleVarDecl(arg.getAsType(), vm, codedb);
     }

@@ -9,7 +9,9 @@
 #include "clang/AST/Decl.h"
 #include "clang/AST/DeclBase.h"
 #include "clang/AST/DeclCXX.h"
+#include "clang/AST/DeclTemplate.h"
 #include "clang/AST/Mangle.h"
+#include "clang/AST/PrettyPrinter.h"
 #include "clang/AST/Type.h"
 #include "clang/ASTMatchers/ASTMatchFinder.h"
 #include "clang/ASTMatchers/ASTMatchers.h"
@@ -103,6 +105,36 @@ void buildCallExpr(clang::ArrayRef<clang::ParmVarDecl *> const &parameters,
   ss.str().back() = ')';
 }
 
+// Clang's print forcibly does not print attributes for function
+// templates, we need to override this behaviour and manually print them
+// ourselves.
+void print(llvm::raw_ostream &ss, clang::Decl const *decl) {
+  clang::PrintingPolicy pp(decl->getLangOpts());
+  std::string outString;
+  llvm::raw_string_ostream out(outString);
+
+  decl->print(out, pp);
+  auto fnDecl = decl->getAsFunction();
+  if (decl->getKind() == clang::Decl::Kind::Var)
+    out << ";";
+  else if (fnDecl && fnDecl->getDescribedFunctionTemplate() ||
+           fnDecl->isFunctionTemplateSpecialization()) {
+    std::string attrs;
+    llvm::raw_string_ostream attrsStream(attrs);
+    auto &Attrs = fnDecl->getAttrs();
+    for (auto *A : Attrs) {
+      if (A->isInherited() || A->isImplicit())
+        continue;
+      A->printPretty(attrsStream, pp);
+      attrsStream << ' ';
+    }
+    auto fnName = fnDecl->getName();
+    outString.insert(outString.find(fnName), attrs);
+  }
+
+  ss << outString;
+}
+
 /// FIXME: Move into generic utils namespace
 extern clang::QualType getUnderlyingType(clang::QualType const &type);
 extern std::string locToIncFile(clang::SourceLocation sloc,
@@ -115,6 +147,11 @@ void VisitManager::registerDecl(clang::NamedDecl const *decl) {
 }
 
 void VisitManager::registerDecl(clang::CXXRecordDecl const *decl) {
+  // We should not emit record decls that are part of typedefs as they will be
+  // emitted alongside the typedef.
+  if (decl->getTypedefNameForAnonDecl())
+    return;
+
   if (auto classtmp = decl->getDescribedClassTemplate())
     tagDecls.push_back(classtmp);
   else
@@ -122,7 +159,7 @@ void VisitManager::registerDecl(clang::CXXRecordDecl const *decl) {
 }
 
 void VisitManager::registerDecl(clang::TypedefNameDecl const *decl) {
-  tagDecls.push_back(decl);
+  typedefDecls.push_back(decl);
 }
 
 void VisitManager::registerDecl(clang::FunctionDecl const *decl) {
@@ -263,17 +300,21 @@ void VisitManager::emitStandaloneFile(std::string &output, bool emitRR,
   ss << "\n";
 
   for (auto &tags : tagDecls) {
-    // Same with tags, add missing semicolon!
     tags->print(ss);
+    ss << ";\n\n";
+  }
+
+  clang::PrintingPolicy tagPolicy(body->getLangOpts());
+  tagPolicy.IncludeTagDefinition = true;
+  for (auto &tags : typedefDecls) {
+    tags->print(ss, tagPolicy);
     ss << ";\n\n";
   }
 
   // Emit all declrefs (functions calls + global refs)
   for (auto ref_it = declRefs.rbegin(); ref_it != declRefs.rend(); ref_it++) {
     auto decl = *ref_it;
-    decl->print(ss);
-    if (decl->getKind() == clang::Decl::Kind::Var)
-      ss << ";";
+    helper::print(ss, decl);
     ss << "\n\n";
   }
 

@@ -1,14 +1,19 @@
 #include "CodeDB.h"
 
 #include "clang/AST/Decl.h"
+#include "clang/AST/DeclBase.h"
 #include "clang/AST/DeclTemplate.h"
 #include "clang/AST/Mangle.h"
 
 #include <cassert>
 
 std::string CodeDB::getKeyName(clang::NamedDecl const *decl) {
-  if (llvm::dyn_cast<clang::TypeDecl>(decl))
-    return decl->getQualifiedNameAsString();
+  if (llvm::dyn_cast<clang::TypeDecl>(decl)) {
+    std::string prefix; 
+    if (decl->getKind() == clang::Decl::Kind::Typedef)
+      prefix = "typedef ";
+    return prefix + decl->getQualifiedNameAsString();
+  }
   else
     return clang::ASTNameGenerator(decl->getASTContext()).getName(decl);
 }

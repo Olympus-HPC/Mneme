@@ -27,6 +27,7 @@ class VisitManager {
   std::queue<clang::Stmt *> toVisitNodes;
   std::vector<clang::NamedDecl const *> declRefs;
   std::vector<clang::NamedDecl const *> tagDecls;
+  std::vector<clang::NamedDecl const *> typedefDecls;
   std::unordered_map<std::string, ObjInfo const *> visitedNodes;
   std::unordered_set<std::size_t> includes;
   std::vector<std::pair<std::string, std::string>> params_expr;
