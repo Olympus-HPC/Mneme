@@ -45,9 +45,15 @@ clang::QualType stripRefs(clang::QualType type) {
 std::string getParamDeclAsString(std::string const &typeString,
                                  std::string const &name,
                                  std::string const &init = "") {
-  auto prefixEnd = std::min(typeString.find_last_of(')'), typeString.size());
-  std::string prefix = typeString.substr(0, prefixEnd);
-  std::string suffix = typeString.substr(prefixEnd);
+  auto inString = typeString;
+  // Clang ends up printing the C-style bool so we need to replace that.
+  size_t boolPos = inString.find("_Bool");
+  if (boolPos != std::string::npos)
+    inString = inString.replace(boolPos, 5, "bool");
+
+  auto prefixEnd = std::min(inString.find_last_of(')'), inString.size());
+  std::string prefix = inString.substr(0, prefixEnd);
+  std::string suffix = inString.substr(prefixEnd);
   std::string decl = prefix + " " + name + suffix;
   if (!init.empty())
     decl += " = " + init;
@@ -153,7 +159,8 @@ void makeCUDACompatible(std::string &code) {
   size_t pos = 0;
   while (pos != std::string::npos) {
     auto from = code.find("#pragma", pos);
-    if (from == std::string::npos) break;
+    if (from == std::string::npos)
+      break;
     auto to = code.find("\n", from);
     auto pragma = code.substr(from, to - from);
 
@@ -161,8 +168,9 @@ void makeCUDACompatible(std::string &code) {
     std::replace(pragma.begin(), pragma.end(), '(', ' ');
     std::replace(pragma.begin(), pragma.end(), ')', ' ');
 
-    if (auto enPos = pragma.find("enable")) pragma.replace(enPos, 6, " ");
-    
+    if (auto enPos = pragma.find("enable"))
+      pragma.replace(enPos, 6, " ");
+
     code = code.replace(from, to - from, pragma);
     pos = to + 1;
   }
