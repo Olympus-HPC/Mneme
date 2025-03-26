@@ -26,6 +26,7 @@ class VisitManager {
   ObjInfo &primaryFn;
   std::queue<clang::Stmt *> toVisitNodes;
   std::vector<clang::NamedDecl const *> declRefs;
+  std::vector<clang::NamedDecl const *> fwdDecls;
   std::vector<clang::NamedDecl const *> tagDecls;
   std::vector<clang::NamedDecl const *> typedefDecls;
   std::unordered_map<std::string, ObjInfo const *> visitedNodes;
@@ -51,13 +52,12 @@ public:
   /// @brief Marks a named decl visited.
   /// @param name Key name of the decl to mark.
   /// @param objInfo Object info associated with decl to mark.
-  void markVisited(std::string const& keyName, ObjInfo const *objInfo);
+  void markVisited(std::string const &keyName, ObjInfo const *objInfo);
 
   /// @brief Adds a clang statement to visit queue.
   void addToVisit(clang::Stmt *stmt);
 
-  /// @brief Adds a global variable declaration to be emitted to code later.
-  /// @param decl Global variable declaration.
+  /// @brief Adds a declaration to be emitted to code later.
   void registerDecl(clang::NamedDecl const *decl);
 
   /// @brief Adds a function declaration to be emitted later. DO NOT call this

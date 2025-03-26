@@ -16,25 +16,21 @@ class ASTUnit;
 
 /// @brief Stores uniquely identifying information for AST nodes of interest.
 class ObjInfo {
-  std::string const keyName;
   clang::Decl *decl;
   clang::Decl *def = nullptr;
-  // If this decl is external to the project, store its source file's name for
-  // include'ing later.
-  std::string extSourceFile = "";
 
   clang::Decl *getDef() const { return def ? def : decl; }
 
 public:
+  std::string const keyName;
+
   ObjInfo(std::string keyName, clang::Decl *mainDecl,
           clang::Decl *defDecl = nullptr)
-      : keyName(keyName), decl(mainDecl), def(defDecl) {}
+      : decl(mainDecl), def(defDecl), keyName(keyName) {}
   void addDefinitionDecl(clang::Decl *defDecl) { def = defDecl; }
 
   clang::Decl *getDefiniton() { return getDef(); }
   clang::Decl const *getDefiniton() const { return getDef(); }
-
-  std::string getKeyName() const { return keyName; }
 };
 
 class CodeDB {
@@ -65,8 +61,11 @@ public:
   std::string const projPath;
   bool const includeExternals;
 
-  CodeDB(std::string const &projDir, std::unordered_set<std::string> const& includePaths, bool includeExternals)
-      : includes(projDir, includePaths), projPath(projDir), includeExternals(includeExternals) {}
+  CodeDB(std::string const &projDir,
+         std::unordered_set<std::string> const &includePaths,
+         bool includeExternals)
+      : includes(projDir, includePaths), projPath(projDir),
+        includeExternals(includeExternals) {}
 
   static std::string getKeyName(clang::NamedDecl const *decl);
 

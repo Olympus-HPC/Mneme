@@ -126,8 +126,9 @@ void buildCallExpr(clang::ArrayRef<clang::ParmVarDecl *> const &parameters,
 // Clang's print forcibly does not print attributes for function
 // templates, we need to override this behaviour and manually print them
 // ourselves.
-void print(llvm::raw_ostream &ss, clang::Decl const *decl) {
+void print(llvm::raw_ostream &ss, clang::Decl const *decl, bool terse = false) {
   clang::PrintingPolicy pp(decl->getLangOpts());
+  pp.TerseOutput = terse;
   std::string outString;
   llvm::raw_string_ostream out(outString);
 
@@ -205,12 +206,21 @@ void VisitManager::registerDecl(clang::TypedefNameDecl const *decl) {
 
 void VisitManager::registerDecl(clang::FunctionDecl const *decl) {
   // Do not emit inlined functions
-  if (decl->isCXXClassMember() && decl->isInlined())
+  bool isClassMember = decl->isCXXClassMember();
+  if (isClassMember && decl->isInlined())
     return;
+
+  clang::NamedDecl const *declToPush = decl;
   if (auto tmpDecl = decl->getPrimaryTemplate())
     declRefs.push_back(tmpDecl);
-  else
+  else {
+    // If we see a declaration only, most likely it has weird circular
+    // dependencies so we always fwd declare them.
+    auto hasOnlyOneRedecl = (++decl->redecls_begin()) == decl->redecls_end();
+    if (!isClassMember && !hasOnlyOneRedecl)
+      fwdDecls.push_back(decl);
     declRefs.push_back(decl);
+  }
 }
 
 void VisitManager::registerInclude(std::string const &includePath) {
@@ -358,6 +368,14 @@ void VisitManager::emitStandaloneFile(std::string &output, bool emitRR,
     ss << ";\n\n";
   }
 
+  // Emit all forward decls
+  for (auto &decl : fwdDecls) {
+    helper::print(ss, decl, true);
+    // Since these are just fwd decls, add a semicolon
+    ss << ";\n\n";
+  }
+  ss << '\n';
+
   // Emit all declrefs (functions calls + global refs)
   for (auto ref_it = declRefs.rbegin(); ref_it != declRefs.rend(); ref_it++) {
     auto decl = *ref_it;
@@ -371,8 +389,8 @@ void VisitManager::emitStandaloneFile(std::string &output, bool emitRR,
   if (emitRRHooks) {
     // First add the prologue
     ss << "init_RR(";
-    ss << "\"" << primaryFn.getKeyName() // Function key names will always be
-                                         // their mangled names...
+    ss << "\"" << primaryFn.keyName // Function key names will always be
+                                    // their mangled names...
        << "\"";
     ss << ", argc, argv);\n";
   }
@@ -462,7 +480,7 @@ void VisitManager::pullPrimaryFnContext() {
     // This will be eventually cleaned up by clang-tidy
     db.includes.getAllExternals(includes);
   }
-  markVisited(primaryFn.getKeyName(), &primaryFn);
+  markVisited(primaryFn.keyName, &primaryFn);
 
   while (!toVisitNodes.empty()) {
     auto stmt = toVisitNodes.front();
