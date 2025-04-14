@@ -1,5 +1,6 @@
-import typing
+import typing import List
 from ..llvm.module import ModuleRef
+from ..llvm.context import get_global_context
 from ..llvm import ffi as ffi
 from ..llvm.common import _decode_string, _encode_string
 from ..llvm.buffer import MemBufferRef
@@ -25,13 +26,8 @@ ffi.lib.ProteusPY_optimize.argtypes = [ffi.LLVMModuleRef, c_char_p, c_char, c_ui
 ffi.lib.ProteusPY_internalize.argtypes = [ffi.LLVMModuleRef, c_char_p]
 ffi.lib.ProteusPY_codeGenObject.argtypes = [ffi.LLVMModuleRef, c_char_p]
 ffi.lib.ProteusPY_codeGenObject.restype = ffi.LLVMMemBufferRef
-fii.lib.ProteusPY_LinkModules.argtypes = [POINTER(c_void_p), c_int]
-
-
-def linkModules(modules: List[ModuleRef]):
-    ArrayType = c_void_p * len(modules)
-    Modules = ArrayType(modules)
-    return ffi.lib.ProteusPY_LinkModules(Modules, len(modules))
+fii.lib.ProteusPY_LinkModules.argtypes = [POINTER(c_void_p), c_int, ffi.LLVMContextRef]
+fii.lib.ProteusPY_LinkModules.restype = ffi.LLVMModuleRef
 
 
 def pruneIR(mod: ModuleRef):
@@ -78,3 +74,10 @@ def codegen_object(mod: ModuleRef, device_arch):
         ffi.lib.ProteusPY_codeGenObject(mod, _encode_string(device_arch))
     )
     return result
+
+
+def linkModules(modules: List[ModuleRef]):
+    ArrayType = c_void_p * len(modules)
+    Modules = ArrayType(modules)
+    return ffi.lib.ProteusPY_LinkModules(Modules, len(modules), llvm.context.get_global_context())
+
