@@ -7,7 +7,7 @@ file(GLOB PROTEUS_SRC "proteus/*.cpp")
 file(GLOB MNEME_SRC "./*.cpp")
 
 
-add_library(mneme SHARED ${LLVM_SRC} ${PROTEUS_SRC} ${MNEME_SRC})
+add_library(mneme SHARED ${LLVM_SRC} ${PROTEUS_SRC} ${MNEME_SRC} ${MnemeCoreSrcDir}/MnemePageManager.cpp)
 target_include_directories(mneme SYSTEM PRIVATE ${LLVM_INCLUDE_DIRS} ${CMAKE_SOURCE_DIR}/include)
 target_link_libraries(mneme PRIVATE proteusCore)
 

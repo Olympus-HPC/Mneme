@@ -1,4 +1,5 @@
 
+set(MnemeCoreSrcDir ${CMAKE_CURRENT_SOURCE_DIR})
 set(RecordLibSRC "")
 set(ReplaySRC MnemeReplay.cpp MnemePageManager.cpp MnemeDeviceCode.cpp)
 if (MNEME_ENABLE_HIP)
