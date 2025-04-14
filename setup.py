@@ -210,6 +210,11 @@ setup(
     ext_modules=[],
     packages=find_packages(where="python"),
     package_dir={"": "python"},
+    entry_points={
+        'console_scripts': [
+            'mneme= mneme.cli:main',
+        ],
+    },
     cmdclass={"build_ext": CMakeBuild, "build_py": CustomBuildPy},
     classifiers=[
         "Programming Language :: Python :: 3",
