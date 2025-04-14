@@ -1,6 +1,9 @@
 #include "../llvm/core.h"
 #include "llvm-c/Core.h"
+#include "llvm/IR/Module.h"
 #include <iostream>
+#include <llvm-c/Types.h>
+#include <llvm/IR/Module.h>
 #include <proteus/CoreLLVM.hpp>
 #include <proteus/CoreLLVMDevice.hpp>
 
@@ -34,5 +37,22 @@ ProteusPY_codeGenObject(LLVMModuleRef Mod, const char *DeviceArch) {
     return nullptr;
   auto *ptr = DeviceObject.release();
   return wrap(ptr);
+}
+
+API_EXPORT(LLVMModuleRef)
+ProteusPY_linkIRFiles(void **Modules, int size, LLVMContextRef context) {
+  SmallVector<std::unique_ptr<llvm::Module>> LLVMMods;
+  for (int i = 0; i < size; i++) {
+    LLVMMods.push_back(std::unique_ptr<llvm::Module>((Module *)(Modules[i])));
+  }
+
+  auto Mod = proteus::linkModules(*unwrap(context), LLVMMods);
+
+  // Python is the owner, so we can just release here
+  for (auto &M : LLVMMods) {
+    auto *ptr = M.release();
+  }
+
+  return wrap(Mod.release());
 }
 }
