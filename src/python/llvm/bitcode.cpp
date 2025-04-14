@@ -1,4 +1,6 @@
 #include "llvm-c/BitReader.h"
+#include <iostream>
+#include <llvm/IR/Module.h>
 
 #include "core.h"
 
@@ -14,6 +16,7 @@ LLVMPY_ParseBitcode(LLVMContextRef context, const char *bitcode,
 
   LLVMParseBitcodeInContext(context, mem, &ref, outmsg);
   LLVMDisposeMemoryBuffer(mem);
+  std::cout << "Reading module file at address " << llvm::unwrap(ref) << "\n";
   return ref;
 }
 

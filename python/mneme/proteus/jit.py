@@ -1,4 +1,4 @@
-import typing import List
+from typing import List
 from ..llvm.module import ModuleRef
 from ..llvm.context import get_global_context
 from ..llvm import ffi as ffi
@@ -26,8 +26,8 @@ ffi.lib.ProteusPY_optimize.argtypes = [ffi.LLVMModuleRef, c_char_p, c_char, c_ui
 ffi.lib.ProteusPY_internalize.argtypes = [ffi.LLVMModuleRef, c_char_p]
 ffi.lib.ProteusPY_codeGenObject.argtypes = [ffi.LLVMModuleRef, c_char_p]
 ffi.lib.ProteusPY_codeGenObject.restype = ffi.LLVMMemBufferRef
-fii.lib.ProteusPY_LinkModules.argtypes = [POINTER(c_void_p), c_int, ffi.LLVMContextRef]
-fii.lib.ProteusPY_LinkModules.restype = ffi.LLVMModuleRef
+ffi.lib.ProteusPY_linkModules.argtypes = [POINTER(c_void_p), c_int, ffi.LLVMContextRef]
+ffi.lib.ProteusPY_linkModules.restype = ffi.LLVMModuleRef
 
 
 def pruneIR(mod: ModuleRef):
@@ -76,8 +76,13 @@ def codegen_object(mod: ModuleRef, device_arch):
     return result
 
 
-def linkModules(modules: List[ModuleRef]):
+def link_llvm_modules(modules: List[ModuleRef]):
     ArrayType = c_void_p * len(modules)
-    Modules = ArrayType(modules)
-    return ffi.lib.ProteusPY_LinkModules(Modules, len(modules), llvm.context.get_global_context())
-
+    raw_ptrs = [cast(m._as_parameter_, c_void_p) for m in modules]
+    Modules = ArrayType(*raw_ptrs)
+    Mod = ModuleRef(
+        ffi.lib.ProteusPY_linkModules(Modules, len(modules), get_global_context()),
+        get_global_context(),
+    )
+    print("Got Mod")
+    return Mod

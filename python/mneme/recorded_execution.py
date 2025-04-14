@@ -4,6 +4,7 @@ from enum import Enum
 from typing import Dict, List
 from .device import dim3
 from .llvm import module
+from .proteus import jit
 from ctypes import c_int, c_bool, c_void_p, c_uint64
 
 
@@ -69,6 +70,7 @@ class RecordedExecution:
         self.va_addr = va_addr
         self.va_size = va_size
         self.kernel_instances = kernel_instances
+        self._link_mod = None
 
     def __str__(self):
         return f"KernelName: {self.kernel_name} NumArgs: {len(self.arg_names)}, VASize: {self.va_size}, VAddr: {self.va_addr}"
@@ -101,14 +103,17 @@ class RecordedExecution:
         return self.kernel_instances.values()
 
     def link_llvm_modules(self):
-        modules = []
+        if self._link_mod is not None:
+            return self._link_mod
+
+        self._modules = []
         for ll in self.llvm_files:
             with open(ll, "rb") as fd:
                 bitcode = fd.read()
-            modules.append(module.parse_bitcode(bitcode))
-
-        ArrayType = c_void_p * len(modules)
-        Modules = ArrayType(modules)
+            self._modules.append(module.parse_bitcode(bitcode))
+        self._link_mod = jit.link_llvm_modules(self._modules)
+        print(self._link_mod._ptr)
+        return self._link_mod
 
     @classmethod
     def from_json(cls, fn: str):

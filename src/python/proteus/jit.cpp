@@ -40,7 +40,7 @@ ProteusPY_codeGenObject(LLVMModuleRef Mod, const char *DeviceArch) {
 }
 
 API_EXPORT(LLVMModuleRef)
-ProteusPY_linkIRFiles(void **Modules, int size, LLVMContextRef context) {
+ProteusPY_linkModules(void **Modules, int size, LLVMContextRef context) {
   SmallVector<std::unique_ptr<llvm::Module>> LLVMMods;
   for (int i = 0; i < size; i++) {
     LLVMMods.push_back(std::unique_ptr<llvm::Module>((Module *)(Modules[i])));
@@ -53,6 +53,7 @@ ProteusPY_linkIRFiles(void **Modules, int size, LLVMContextRef context) {
     auto *ptr = M.release();
   }
 
-  return wrap(Mod.release());
+  auto mod = Mod.release();
+  return wrap(mod);
 }
 }

@@ -4,7 +4,7 @@ from mneme.device import get_device_arch
 
 
 def main():
-    print(get_device_arch())
+    # print(get_device_arch())
     parser = argparse.ArgumentParser(description="Mneme auto-tuning tool")
     parser.add_argument(
         "--input",
@@ -16,4 +16,5 @@ def main():
     records = RecordedExecution.from_json(args.input)
     for k, v in records.items():
         print(k, v)
-    print(records)
+
+    records.link_llvm_modules()
