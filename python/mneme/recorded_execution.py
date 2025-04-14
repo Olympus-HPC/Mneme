@@ -1,7 +1,7 @@
 from pathlib import Path
 import json
 from enum import Enum
-from typing import List
+from typing import Dict, List
 
 
 class SnapshotType(Enum):
@@ -14,6 +14,9 @@ class Dim3:
         self.x = x
         self.y = y
         self.z = z
+
+    def __str__(self):
+        return f"Dim3({self.x}, {self.y}, {self.z})"
 
 
 class SnapshotFile:
@@ -51,6 +54,9 @@ class RecordedExecution:
         def __hash__(self):
             return self.dhash
 
+        def __str__(self):
+            return f"Grid:{self.grid_dim}, BlockDim: {self.block_dim}, Shared Memory {self.shared_mem}"
+
     def __init__(
         self,
         kernel_name: str,
@@ -60,7 +66,7 @@ class RecordedExecution:
         available_specializations: List[bool],
         va_addr: str,
         va_size: int,
-        kernel_instances: List[KernelInstance],
+        kernel_instances: Dict[str, KernelInstance],
     ):
         self.kernel_name = kernel_name
         self.demangled_name = demangled_name
@@ -72,7 +78,34 @@ class RecordedExecution:
         self.kernel_instances = kernel_instances
 
     def __str__(self):
-        return f"{KernelName: {self.kernel_name} NumArgs: {len(self.arg_names)}, VASize: {self.va_size}, VAddr: {self.va_addr}"
+        return f"KernelName: {self.kernel_name} NumArgs: {len(self.arg_names)}, VASize: {self.va_size}, VAddr: {self.va_addr}"
+
+    def __getitem__(self, key):
+        return self.kernel_instances[key]
+
+    def __setitem__(self, key, value):
+        self.kernel_instances[key] = value
+
+    def __delitem__(self, key):
+        del self.kernel_instances[key]
+
+    def __iter__(self):
+        return iter(self.kernel_instances)
+
+    def __len__(self):
+        return len(self.kernel_instances)
+
+    def __contains__(self, key):
+        return key in self.kernel_instances
+
+    def items(self):
+        return self.kernel_instances.items()
+
+    def keys(self):
+        return self.kernel_instances.keys()
+
+    def values(self):
+        return self.kernel_instances.values()
 
     @classmethod
     def from_json(cls, fn: str):
@@ -82,7 +115,7 @@ class RecordedExecution:
         with open(fn, "r") as fd:
             record_db = json.load(fd)
 
-        instances = []
+        instances = {}
         for dhash, inst in record_db["instances"].items():
             print(dhash)
             block_dim = Dim3(
@@ -91,18 +124,17 @@ class RecordedExecution:
             grid_dim = Dim3(
                 inst["GridDims"]["x"], inst["GridDims"]["y"], inst["GridDims"]["z"]
             )
-            instances.append(
-                cls.KernelInstance(
-                    dhash,
-                    inst["Args"],
-                    inst["SharedMem"],
-                    block_dim,
-                    grid_dim,
-                    inst["Occurrences"],
-                    inst["Prologue"],
-                    inst["Epilogue"],
-                )
+            instances[dhash] = cls.KernelInstance(
+                dhash,
+                inst["Args"],
+                inst["SharedMem"],
+                block_dim,
+                grid_dim,
+                inst["Occurrences"],
+                inst["Prologue"],
+                inst["Epilogue"],
             )
+
         for llvm_fn in record_db["Modules"]:
             if not Path(llvm_fn).exists():
                 raise RuntimeError(f"File {llvm_fn} does not exist")

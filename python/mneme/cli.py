@@ -12,4 +12,6 @@ def main():
     )
     args = parser.parse_args()
     records = RecordedExecution.from_json(args.input)
+    for k, v in records.items():
+        print(k, v)
     print(records)
