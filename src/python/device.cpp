@@ -1,4 +1,5 @@
 #include "llvm/core.h"
+#include <cstring>
 #include <hip/hip_runtime_api.h>
 #include <llvm/Support/CBindingWrapping.h>
 #include <llvm/Support/MemoryBuffer.h>
@@ -62,5 +63,12 @@ MnemePY_launchKernelFunction(void *Func, dim3 Grid, dim3 Block) {
 
   if (EC)
     FATAL_ERROR("Error When Launching Kernel: " + EC.value());
+}
+
+const char *MnemePy_getDeviceArch() {
+  auto Arch = DeviceVendorTraits::GetDeviceArch();
+  auto *ret = strdup(Arch.c_str());
+  std::cout << "Got pointer " << (void *)ret << "\n";
+  return ret;
 }
 }

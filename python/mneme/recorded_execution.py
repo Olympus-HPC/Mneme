@@ -2,21 +2,14 @@ from pathlib import Path
 import json
 from enum import Enum
 from typing import Dict, List
+from .device import dim3
+from .llvm import module
+from ctypes import c_int, c_bool, c_void_p, c_uint64
 
 
 class SnapshotType(Enum):
     PROLOGUE = 1
     EPILOGUE = 2
-
-
-class Dim3:
-    def __init__(self, x: int, y: int, z: int):
-        self.x = x
-        self.y = y
-        self.z = z
-
-    def __str__(self):
-        return f"Dim3({self.x}, {self.y}, {self.z})"
 
 
 class SnapshotFile:
@@ -36,8 +29,8 @@ class RecordedExecution:
             dhash: str,
             args: List,
             shared_mem: int,
-            block_dim: Dim3,
-            grid_dim: Dim3,
+            block_dim: dim3,
+            grid_dim: dim3,
             occ: int,
             prologue_fn: str,
             epilogue_fn: str,
@@ -107,6 +100,16 @@ class RecordedExecution:
     def values(self):
         return self.kernel_instances.values()
 
+    def link_llvm_modules(self):
+        modules = []
+        for ll in self.llvm_files:
+            with open(ll, "rb") as fd:
+                bitcode = fd.read()
+            modules.append(module.parse_bitcode(bitcode))
+
+        ArrayType = c_void_p * len(modules)
+        Modules = ArrayType(modules)
+
     @classmethod
     def from_json(cls, fn: str):
         if not Path(fn).exists():
@@ -118,10 +121,10 @@ class RecordedExecution:
         instances = {}
         for dhash, inst in record_db["instances"].items():
             print(dhash)
-            block_dim = Dim3(
+            block_dim = dim3(
                 inst["BlockDims"]["x"], inst["BlockDims"]["y"], inst["BlockDims"]["z"]
             )
-            grid_dim = Dim3(
+            grid_dim = dim3(
                 inst["GridDims"]["x"], inst["GridDims"]["y"], inst["GridDims"]["z"]
             )
             instances[dhash] = cls.KernelInstance(

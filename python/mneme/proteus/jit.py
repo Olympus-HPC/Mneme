@@ -25,6 +25,13 @@ ffi.lib.ProteusPY_optimize.argtypes = [ffi.LLVMModuleRef, c_char_p, c_char, c_ui
 ffi.lib.ProteusPY_internalize.argtypes = [ffi.LLVMModuleRef, c_char_p]
 ffi.lib.ProteusPY_codeGenObject.argtypes = [ffi.LLVMModuleRef, c_char_p]
 ffi.lib.ProteusPY_codeGenObject.restype = ffi.LLVMMemBufferRef
+fii.lib.ProteusPY_LinkModules.argtypes = [POINTER(c_void_p), c_int]
+
+
+def linkModules(modules: List[ModuleRef]):
+    ArrayType = c_void_p * len(modules)
+    Modules = ArrayType(modules)
+    return ffi.lib.ProteusPY_LinkModules(Modules, len(modules))
 
 
 def pruneIR(mod: ModuleRef):

@@ -1,8 +1,10 @@
 import argparse
 from mneme.recorded_execution import RecordedExecution
+from mneme.device import get_device_arch
 
 
 def main():
+    print(get_device_arch())
     parser = argparse.ArgumentParser(description="Mneme auto-tuning tool")
     parser.add_argument(
         "--input",

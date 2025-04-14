@@ -13,6 +13,9 @@ ffi.lib.MnemePY_DisposeDeviceObject.argtypes = [c_void_p]
 ffi.lib.MnemePY_getKernelFunctionFromImage.argtypes = [c_void_p, c_char_p]
 ffi.lib.MnemePY_getKernelFunctionFromImage.restype = c_void_p
 
+ffi.lib.MnemePy_getDeviceArch.argtypes = []
+ffi.lib.MnemePy_getDeviceArch.restype = c_char_p
+
 
 class dim3(Structure):
     _fields_ = [("x", c_uint), ("y", c_uint), ("z", c_uint)]
@@ -87,3 +90,7 @@ class DeviceModule(ffi.ObjectRef):
         dev_func = DeviceFunction(func, self, kernel_name)
         self._functions.add(dev_func)
         return dev_func
+
+
+def get_device_arch():
+    return str(ffi.lib.MnemePy_getDeviceArch().decode())
