@@ -105,13 +105,7 @@ class RecordedExecution:
     def link_llvm_modules(self):
         if self._link_mod is not None:
             return self._link_mod
-
-        self._modules = []
-        for ll in self.llvm_files:
-            with open(ll, "rb") as fd:
-                bitcode = fd.read()
-            self._modules.append(module.parse_bitcode(bitcode))
-        self._link_mod = jit.link_llvm_modules(self._modules)
+        self._link_mod = jit.link_llvm_modules(self.llvm_files)
         print(self._link_mod._ptr)
         return self._link_mod
 

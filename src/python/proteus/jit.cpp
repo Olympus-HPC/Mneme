@@ -1,8 +1,10 @@
 #include "../llvm/core.h"
+#include "mneme/Utils.hpp"
 #include "llvm-c/Core.h"
 #include "llvm/IR/Module.h"
 #include <iostream>
 #include <llvm-c/Types.h>
+#include <llvm/Bitcode/BitcodeReader.h>
 #include <llvm/IR/Module.h>
 #include <proteus/CoreLLVM.hpp>
 #include <proteus/CoreLLVMDevice.hpp>
@@ -40,20 +42,29 @@ ProteusPY_codeGenObject(LLVMModuleRef Mod, const char *DeviceArch) {
 }
 
 API_EXPORT(LLVMModuleRef)
-ProteusPY_linkModules(void **Modules, int size, LLVMContextRef context) {
-  SmallVector<std::unique_ptr<llvm::Module>> LLVMMods;
+ProteusPY_linkModules(const char **LLVMIRFiles, int size,
+                      LLVMContextRef context) {
+  auto Ctx = unwrap(context);
+  llvm::SmallVector<std::unique_ptr<llvm::Module>> RecordedModules;
   for (int i = 0; i < size; i++) {
-    LLVMMods.push_back(std::unique_ptr<llvm::Module>((Module *)(Modules[i])));
+    auto Fn = LLVMIRFiles[i];
+    llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> Buffer =
+        llvm::MemoryBuffer::getFile(Fn);
+    if (!Buffer)
+      FATAL_ERROR("Error with loading file " + Fn +
+                  "\n Error Code:" + Buffer.getError().message());
+
+    llvm::Expected<std::unique_ptr<llvm::Module>> ModuleOrErr =
+        llvm::parseBitcodeFile(Buffer->get()->getMemBufferRef(), *Ctx);
+
+    if (!ModuleOrErr)
+      FATAL_ERROR("Error parsing bitcode: " +
+                  llvm::toString(ModuleOrErr.takeError()));
+
+    RecordedModules.emplace_back(std::move(ModuleOrErr.get()));
   }
 
-  auto Mod = proteus::linkModules(*unwrap(context), LLVMMods);
-
-  // Python is the owner, so we can just release here
-  for (auto &M : LLVMMods) {
-    auto *ptr = M.release();
-  }
-
-  auto mod = Mod.release();
-  return wrap(mod);
+  auto Mod = proteus::linkModules(*unwrap(context), RecordedModules);
+  return wrap(Mod.release());
 }
 }
