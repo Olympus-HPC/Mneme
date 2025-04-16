@@ -2,10 +2,23 @@ from pathlib import Path
 import json
 from enum import Enum
 from typing import Dict, List
-from .device import dim3
-from .llvm import module
+from .mneme_types import dim3
+from .llvm import ffi
 from .proteus import jit
-from ctypes import c_int, c_bool, c_void_p, c_uint64
+from ctypes import c_bool, c_char_p
+
+MnemeRecordStateRef = ffi._make_opaque_ref("MnemeRecordState")
+ffi.lib.MnemePy_initializeMemState.argtypes = [c_char_p, c_char_p, c_bool]
+ffi.lib.MnemePy_initializeMemState.restype = MnemeRecordStateRef
+
+ffi.lib.MnemePy_DisposeMemState.argtypes = [MnemeRecordStateRef]
+
+ffi.lib.MnemePy_LoadMemState.argtypes = [MnemeRecordStateRef]
+
+ffi.lib.MnemePy_CompareMemState.argtypes = [MnemeRecordStateRef, MnemeRecordStateRef]
+ffi.lib.MnemePy_CompareMemState.restype = c_bool
+
+ffi.lib.MnemePy_ResetMemState.argtypes = [MnemeRecordStateRef]
 
 
 class SnapshotType(Enum):
@@ -13,14 +26,56 @@ class SnapshotType(Enum):
     EPILOGUE = 2
 
 
-class SnapshotFile:
-    def __init__(self, fn: str, snap_type: SnapshotType):
+class MemStateRef:
+    def __init__(self, fn: str, kernel_name: str, snap_type: SnapshotType):
         if not Path(fn).exists():
             raise RuntimeError(f"Expected prologue file: {fn} to exist")
         self.fn = fn
+        self.kernel_name = kernel_name
         self.s_type = snap_type
-        self._loaded = False
-        self._map = False
+        self._state = None
+        self._load = False
+
+    def _dispose(self):
+        if self._state is not None:
+            ffi.lib.MnemePy_DisposeMemState(self._state)
+
+    def open(self):
+        if self._state is None:
+            self._state = ffi.lib.MnemePy_initializeMemState(
+                c_char_p(self.kernel_name.encode("utf-8")),
+                c_char_p(self.fn.encode("utf-8")),
+                c_bool(self.s_type == SnapshotType.PROLOGUE),
+            )
+
+        ffi.lib.MnemePy_LoadMemState(self._state)
+        self._load = True
+
+    def close(self):
+        self._dispose()
+
+    def __enter__(self):
+        self.open()
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        self.close()
+        return False
+
+    def reset(self):
+        if self._load is False:
+            self.load()
+
+        ffi.lib.MnemePy_ResetMemState(self._state)
+
+    def __eq__(self, other):
+        return bool(ffi.lib.MnemePy_CompareMemState(self._state, other._state))
+
+    def __ne__(self, other):
+        return not bool(ffi.lib.MnemePy_CompareMemState(self._state, other._state))
+
+    def __del__(self):
+        self._dispose()
 
 
 class RecordedExecution:
@@ -28,6 +83,7 @@ class RecordedExecution:
         def __init__(
             self,
             dhash: str,
+            kernel_name: str,
             args: List,
             shared_mem: int,
             block_dim: dim3,
@@ -37,13 +93,14 @@ class RecordedExecution:
             epilogue_fn: str,
         ):
             self.dhash = dhash
+            self.kernel_name = kernel_name
             self.args = args
             self.shared_mem = shared_mem
             self.block_dim = block_dim
             self.grid_dim = grid_dim
             self.occ = occ
-            self.prologue = SnapshotFile(prologue_fn, SnapshotType.PROLOGUE)
-            self.epilogue = SnapshotFile(epilogue_fn, SnapshotType.EPILOGUE)
+            self.prologue = MemStateRef(prologue_fn, kernel_name, SnapshotType.PROLOGUE)
+            self.epilogue = MemStateRef(epilogue_fn, kernel_name, SnapshotType.EPILOGUE)
 
         def __hash__(self):
             return self.dhash
@@ -102,11 +159,17 @@ class RecordedExecution:
     def values(self):
         return self.kernel_instances.values()
 
-    def link_llvm_modules(self):
+    def link_llvm_modules(self, prune=True):
         if self._link_mod is not None:
             return self._link_mod
+
         self._link_mod = jit.link_llvm_modules(self.llvm_files)
-        print(self._link_mod._ptr)
+
+        jit.internalize(self._link_mod, self.kernel_name)
+
+        if prune:
+            jit.pruneIR(self._link_mod)
+
         return self._link_mod
 
     @classmethod
@@ -128,6 +191,7 @@ class RecordedExecution:
             )
             instances[dhash] = cls.KernelInstance(
                 dhash,
+                record_db["KernelName"],
                 inst["Args"],
                 inst["SharedMem"],
                 block_dim,

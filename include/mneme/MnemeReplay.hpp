@@ -122,6 +122,8 @@ public:
 
   // Overload equality operator
   bool operator==(const ReplayMemState<VendorTypes> &other) const {
+    std::cout << "I am here comparing things\n";
+    LOG_DEBUG("Comparing memory states");
     auto &OtherBlob = other.DeviceMemoryState;
     for (auto &[DevAddr, MemBlob] : DeviceMemoryState) {
       auto it = OtherBlob.find(DevAddr);

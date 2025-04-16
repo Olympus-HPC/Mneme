@@ -2,8 +2,12 @@ from .llvm import ffi
 from .llvm.buffer import MemBufferRef
 from .llvm.common import _decode_string, _encode_string
 
+from .recorded_execution import MnemeRecordStateRef
+
 import weakref
-from ctypes import c_void_p, c_char_p, Structure, c_uint
+from ctypes import POINTER, c_void_p, c_char_p, Structure, c_uint, c_float, c_int
+from .mneme_types import dim3
+
 
 ffi.lib.MnemePY_getDeviceObject.argtypes = [ffi.LLVMMemBufferRef]
 ffi.lib.MnemePY_getDeviceObject.restype = c_void_p
@@ -17,17 +21,18 @@ ffi.lib.MnemePy_getDeviceArch.argtypes = []
 ffi.lib.MnemePy_getDeviceArch.restype = c_char_p
 
 
-class dim3(Structure):
-    _fields_ = [("x", c_uint), ("y", c_uint), ("z", c_uint)]
-
-    def __init__(self, x=1, y=1, z=1):
-        super().__init__(x, y, z)
-
-    def __repr__(self):
-        return f"dim3({self.x}, {self.y}, {self.z})"
-
-
 ffi.lib.MnemePY_launchKernelFunction.argtypes = [c_void_p, dim3, dim3]
+
+
+ffi.lib.MnemePy_profile.argtypes = [
+    c_void_p,
+    dim3,
+    dim3,
+    MnemeRecordStateRef,
+    c_int,
+    c_int,
+    POINTER(c_float),
+]
 
 
 class DeviceFunction(ffi.ObjectRef):
@@ -60,6 +65,21 @@ class DeviceFunction(ffi.ObjectRef):
         if not self.valid:
             raise RuntimeError("Cannot launch function: module was unloaded.")
         ffi.lib.MnemePY_launchKernelFunction(self, grid_dim, block_dim)
+
+    def profile(
+        self,
+        grid_dim: dim3,
+        block_dim: dim3,
+        mem_state: MemBufferRef,
+        shared_mem_size: int,
+        iterations=5,
+    ):
+        arr = (c_float * iterations)()
+        # Set argument types
+        ffi.lib.MnemePy_profile(
+            self, grid_dim, block_dim, mem_state, shared_mem_size, iterations, arr
+        )
+        return [float(v) for v in arr]
 
 
 class DeviceModule(ffi.ObjectRef):
