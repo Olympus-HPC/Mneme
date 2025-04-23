@@ -84,5 +84,4 @@ def link_llvm_modules(modules: List[str]):
         ffi.lib.ProteusPY_linkModules(c_array, len(modules), get_global_context()),
         get_global_context(),
     )
-    print("Got Mod")
     return Mod

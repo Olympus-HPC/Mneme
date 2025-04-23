@@ -1,3 +1,4 @@
+#include "MnemeLogger.hpp"
 #include "mneme/DeviceTraits.hpp"
 #include "mneme/MnemeLogger.hpp"
 #include "mneme/MnemeMemory.hpp"
@@ -22,6 +23,7 @@ public:
   using DeviceError_t = typename MnemeDeviceRT::DeviceError_t;
   using DeviceStream_t = typename MnemeDeviceRT::DeviceStream_t;
   using KernelFunction_t = typename MnemeDeviceRT::KernelFunction_t;
+  using DeviceModule_t = typename DeviceTraits<VendorTypes>::DeviceModule_t;
 
   enum InstanceType { Prologue, Epilogue };
 
@@ -122,7 +124,6 @@ public:
 
   // Overload equality operator
   bool operator==(const ReplayMemState<VendorTypes> &other) const {
-    std::cout << "I am here comparing things\n";
     LOG_DEBUG("Comparing memory states");
     auto &OtherBlob = other.DeviceMemoryState;
     for (auto &[DevAddr, MemBlob] : DeviceMemoryState) {
@@ -195,6 +196,36 @@ public:
     }
     std::unique_ptr<void *> ArgUniquePtr(Args);
     return ArgUniquePtr;
+  }
+
+  void initializeGlobals(DeviceModule_t VendorMod) {
+    LOG_INFO("Initializing {} Globals\n", GlobalVars.size());
+    for (auto &KV : GlobalVars) {
+      auto [LoadedAddr, LoadedSize] =
+          DeviceTraits<VendorTypes>::getGlobalAddrFromModule(VendorMod,
+                                                             KV.first);
+      if (KV.second.DevAddr != LoadedAddr) {
+        LOG_WARN("Global : {} was loaded on different addresses Record:{} vs "
+                 "Replay:{}",
+                 KV.first, KV.second.DevAddr, LoadedAddr);
+        KV.second.DevAddr = LoadedAddr;
+      }
+
+      if (KV.second.VarSize != LoadedSize)
+        FATAL_ERROR("Global :" + KV.first +
+                    "has a different size between record and replay\n" +
+                    "Record Size:" + std::to_string(KV.second.VarSize) +
+                    "\nReplay Size:" + std::to_string(LoadedSize));
+
+      auto EC = DeviceTraits<VendorTypes>::DeviceErrorCheck(
+          DeviceTraits<VendorTypes>::DeviceCopy(
+              KV.second.DevAddr, KV.second.HostAddr.get(), KV.second.VarSize,
+              DeviceTraits<VendorTypes>::MemcpyHostToDeviceKind()));
+      if (EC)
+        FATAL_ERROR("Copying Global :" + KV.first +
+                    " from host to device raised error\nEC: " + EC.value());
+      LOG_INFO("Successfully loaded global variable: {}", KV.first);
+    }
   }
 };
 

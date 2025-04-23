@@ -1,4 +1,5 @@
 import argparse
+import time
 import sys
 from mneme.recorded_execution import RecordedExecution
 from mneme.device import get_device_arch
@@ -52,26 +53,29 @@ def main():
         arch = get_device_arch()
         with kernel_descr.prologue as prologue:
             with kernel_descr.epilogue as epilogue:
-                print("Here")
-                for middle_opt in ["0", "1", "2", "3"]:
+                exp_id = 0
+                for middle_opt in ["0", "1", "2", "3", "s", "z"]:
                     for back_opt in [0, 1, 2, 3]:
-                        print("Here")
                         # We clone, as we are going to modify the code in the next steps
                         code = llvm_ir.clone()
+                        start = time.time()
                         jit.optimize(code, arch, middle_opt, back_opt)
+                        end = time.time()
                         mem_buffer = jit.codegen_object(code, arch)
                         with DeviceModule.from_MemBuffer(mem_buffer) as DeviceObj:
-                            print("Here")
                             device_func = DeviceObj.get_function(
                                 kernel_descr.kernel_name
                             )
-                            time = device_func.profile(
+                            perf_time = device_func.profile(
                                 kernel_descr.grid_dim,
                                 kernel_descr.block_dim,
                                 prologue._state,
                                 kernel_descr.shared_mem,
                             )
-                            print(f"Average Execution time is {sum(time)/len(time)}")
+                            print(
+                                f"[{exp_id}] Enabled Optimizations:midle-end {middle_opt}: back end {back_opt}: Time: {sum(perf_time)/len(perf_time)} Result Verified: {prologue == epilogue} Compile Time: {end - start}"
+                            )
+                            exp_id += 1
 
 
 if __name__ == "__main__":

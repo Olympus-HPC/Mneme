@@ -26,6 +26,7 @@ ffi.lib.MnemePY_launchKernelFunction.argtypes = [c_void_p, dim3, dim3]
 
 ffi.lib.MnemePy_profile.argtypes = [
     c_void_p,
+    c_void_p,
     dim3,
     dim3,
     MnemeRecordStateRef,
@@ -76,8 +77,19 @@ class DeviceFunction(ffi.ObjectRef):
     ):
         arr = (c_float * iterations)()
         # Set argument types
+        DevMod = self._module_ref()
+        if DevMod is None:
+            raise RuntimeError("Device Module has been garbage collected")
+
         ffi.lib.MnemePy_profile(
-            self, grid_dim, block_dim, mem_state, shared_mem_size, iterations, arr
+            DevMod,
+            self,
+            grid_dim,
+            block_dim,
+            mem_state,
+            shared_mem_size,
+            iterations,
+            arr,
         )
         return [float(v) for v in arr]
 

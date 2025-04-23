@@ -78,21 +78,21 @@ class CMakeBuild(build_ext):
             )
 
             # Ensure commands are run inside the Proteus directory
-            run_command(
-                [
-                    "git",
-                    "fetch",
-                    "--depth",
-                    "1",
-                    "origin",
-                    "30f766dbbff8599479739450eee3fdb9bdd3c118",
-                ],
-                cwd=proteus_path,
-            )
-            run_command(
-                ["git", "checkout", "30f766dbbff8599479739450eee3fdb9bdd3c118"],
-                cwd=proteus_path,
-            )
+            # run_command(
+            #    [
+            #        "git",
+            #        "fetch",
+            #        "--depth",
+            #        "1",
+            #        "origin",
+            #        "30f766dbbff8599479739450eee3fdb9bdd3c118",
+            #    ],
+            #    cwd=proteus_path,
+            # )
+            # run_command(
+            #    ["git", "checkout", "30f766dbbff8599479739450eee3fdb9bdd3c118"],
+            #    cwd=proteus_path,
+            # )
 
         build_dir = os.path.join(proteus_path, "build")
         os.makedirs(build_dir, exist_ok=True)
@@ -211,8 +211,8 @@ setup(
     packages=find_packages(where="python"),
     package_dir={"": "python"},
     entry_points={
-        'console_scripts': [
-            'mneme= mneme.cli:main',
+        "console_scripts": [
+            "mneme= mneme.cli:main",
         ],
     },
     cmdclass={"build_ext": CMakeBuild, "build_py": CustomBuildPy},

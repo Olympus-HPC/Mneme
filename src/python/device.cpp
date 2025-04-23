@@ -11,7 +11,6 @@ using namespace llvm;
 
 extern "C" {
 API_EXPORT(void *) MnemePY_getDeviceObject(LLVMMemoryBufferRef Buffer) {
-  std::cout << "Creating module\n";
   llvm::MemoryBuffer *DeviceObject = llvm::unwrap(Buffer);
   auto VendorModule = DeviceVendorTraits::getDeviceModuleFromImage(
       DeviceObject->getBufferStart());
@@ -21,7 +20,6 @@ API_EXPORT(void *) MnemePY_getDeviceObject(LLVMMemoryBufferRef Buffer) {
 }
 
 API_EXPORT(void) MnemePY_DisposeDeviceObject(void *WModule) {
-  std::cout << "Destroying module\n";
   auto VendorModule =
       reinterpret_cast<DeviceVendorTraits::DeviceModule_t>(WModule);
   DeviceVendorTraits::DeviceModuleUnload(VendorModule);
@@ -43,7 +41,6 @@ MnemePY_getKernelFunctionFromImage(void *WrappedModule,
 
 API_EXPORT(void)
 MnemePY_launchKernelFunction(void *Func, dim3 Grid, dim3 Block) {
-  std::cout << "Received function " << Func << "\n";
   auto DevFunc = reinterpret_cast<DeviceVendorTraits::DeviceFunction_t>(Func);
   int Arg = 42;
   void *KernelArgs[] = {&Arg};
@@ -64,14 +61,16 @@ MnemePY_launchKernelFunction(void *Func, dim3 Grid, dim3 Block) {
 API_EXPORT(const char *) MnemePy_getDeviceArch() {
   auto Arch = DeviceVendorTraits::GetDeviceArch();
   auto *ret = strdup(Arch.c_str());
-  std::cout << "Got pointer " << (void *)ret << "\n";
   return ret;
 }
 
 API_EXPORT(void)
-MnemePy_profile(void *Func, dim3 Grid, dim3 Block,
+MnemePy_profile(void *WrappedModule, void *Func, dim3 Grid, dim3 Block,
                 MnemeDeviceMemStateRef MemState, int SharedMemSize, int repeats,
                 float *time) {
+  auto VendorModule =
+      reinterpret_cast<DeviceVendorTraits::DeviceModule_t>(WrappedModule);
+
   DeviceVendorTraits::DeviceStream_t ReplayStream;
   DeviceVendorTraits::DeviceEvent_t StartEvent, EndEvent;
   auto DevFunc = reinterpret_cast<DeviceVendorTraits::DeviceFunction_t>(Func);
@@ -92,12 +91,15 @@ MnemePy_profile(void *Func, dim3 Grid, dim3 Block,
 
   if (EC)
     FATAL_ERROR("Error when creating end event for replay\n" + EC.value());
-  std::cout << "Will execute for " << repeats << "\n";
+
+  State->initializeGlobals(VendorModule);
+
   for (int i = 0; i < repeats; i++) {
     float elapsedTime;
     LOG_DEBUG("Run {}/{}", i + 1, repeats);
 
     auto Args = State->getArgs();
+    State->reset();
 
     DeviceVendorTraits::DeviceErrorCheck(
         DeviceVendorTraits::deviceEventRecord(StartEvent, ReplayStream));
@@ -133,8 +135,6 @@ MnemePy_profile(void *Func, dim3 Grid, dim3 Block,
 
     if (EC)
       FATAL_ERROR("Error When synchronizing with kernel stream: " + EC.value());
-
-    State->reset();
   }
 }
 }
