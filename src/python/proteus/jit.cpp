@@ -30,11 +30,12 @@ ProteusPY_optimize(LLVMModuleRef Mod, const char *DeviceArch,
 }
 
 API_EXPORT(LLVMMemoryBufferRef)
-ProteusPY_codeGenObject(LLVMModuleRef Mod, const char *DeviceArch) {
+ProteusPY_codeGenObject(LLVMModuleRef Mod, const char *DeviceArch,
+                        bool use_rtc) {
   llvm::SmallPtrSet<void *, 8> GlobalLinkedBinaries;
   auto *M = llvm::unwrap(Mod);
   auto DeviceObject =
-      proteus::codegenObject(*M, DeviceArch, GlobalLinkedBinaries);
+      proteus::codegenObject(*M, DeviceArch, GlobalLinkedBinaries, use_rtc);
   if (!DeviceObject)
     return nullptr;
   auto *ptr = DeviceObject.release();

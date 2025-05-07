@@ -36,7 +36,10 @@ public:
 private:
   void copyToDevice() {
     for (auto &[DevAddr, MemBlob] : DeviceMemoryState) {
-      // Copy data to device
+      LOG_DEBUG("Copying {} from Address {} to device address {} {}",
+                IType == InstanceType::Prologue ? "Prologue" : "Epilogue",
+                (void *)MemBlob.getHostData().get(), MemBlob.getBlobAddr(),
+                MemBlob.getSize());
       auto CEC = MnemeDeviceRT::DeviceErrorCheck(MnemeDeviceRT::DeviceCopy(
           MemBlob.getBlobAddr(), MemBlob.getHostData().get(), MemBlob.getSize(),
           MnemeDeviceRT::MemcpyHostToDeviceKind()));
@@ -126,6 +129,7 @@ public:
   bool operator==(const ReplayMemState<VendorTypes> &other) const {
     LOG_DEBUG("Comparing memory states");
     auto &OtherBlob = other.DeviceMemoryState;
+    bool correct = true;
     for (auto &[DevAddr, MemBlob] : DeviceMemoryState) {
       auto it = OtherBlob.find(DevAddr);
       if (it == OtherBlob.end()) {
@@ -141,7 +145,7 @@ public:
       if (!DeviceTraits<VendorTypes>::compareDeviceBlobs(
               (const char *)it->second.getBlobAddr(),
               (const char *)MemBlob.getBlobAddr(), MemBlob.getSize()))
-        return false;
+        correct = false;
     }
 
     for (auto &[GVName, GVI] : GlobalVars) {
@@ -150,7 +154,7 @@ public:
         LOG_WARN("comparing with global var {} that exists only on one of the "
                  "comparators",
                  GVName);
-        return false;
+        correct = false;
       }
 
       const GlobalVarInfo &OtherGV = it->second;
@@ -178,28 +182,31 @@ public:
       }
 
       if (memcmp(comparator, hostData.get(), GVI.VarSize) != 0)
-        return false;
+        correct = false;
     }
+    LOG_DEBUG("Memory States {}", correct ? "are the same" : "differ");
 
-    return true;
+    return correct;
   }
   // Derive inequality operator
   bool operator!=(const ReplayMemState<VendorTypes> &other) const {
     return !(*this == other);
   }
 
-  std::unique_ptr<void *> getArgs() const {
+  std::unique_ptr<void *[]> getArgs() const {
     void **Args = new void *[KInfo->getNumArgs()];
     auto ArgData = KInfo->getArgData();
     for (int I = 0; I < KInfo->getNumArgs(); I++) {
       Args[I] = ArgData[I].get();
     }
-    std::unique_ptr<void *> ArgUniquePtr(Args);
+    std::unique_ptr<void *[]> ArgUniquePtr{Args};
     return ArgUniquePtr;
   }
 
+  uint64_t getNumArgs() const { return KInfo->getNumArgs(); }
+
   void initializeGlobals(DeviceModule_t VendorMod) {
-    LOG_INFO("Initializing {} Globals\n", GlobalVars.size());
+    LOG_INFO("Initializing {} Globals", GlobalVars.size());
     for (auto &KV : GlobalVars) {
       auto [LoadedAddr, LoadedSize] =
           DeviceTraits<VendorTypes>::getGlobalAddrFromModule(VendorMod,
@@ -408,7 +415,7 @@ public:
 
   bool isMemorySame() { return PrologueState == EpilogueState; }
 
-  std::unique_ptr<void *> getArgs() const { return PrologueState.getArgs(); }
+  std::unique_ptr<void *[]> getArgs() const { return PrologueState.getArgs(); }
 
   uint64_t getSharedMemSize() { return SharedMem; }
 

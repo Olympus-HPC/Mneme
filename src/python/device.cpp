@@ -3,6 +3,7 @@
 #include <hip/hip_runtime_api.h>
 #include <llvm/Support/CBindingWrapping.h>
 #include <llvm/Support/MemoryBuffer.h>
+#include <mneme/MnemeLogger.hpp>
 #include <mneme/MnemePython.hpp>
 
 using namespace mneme;
@@ -66,7 +67,8 @@ API_EXPORT(const char *) MnemePy_getDeviceArch() {
 
 API_EXPORT(void)
 MnemePy_profile(void *WrappedModule, void *Func, dim3 Grid, dim3 Block,
-                MnemeDeviceMemStateRef MemState, int SharedMemSize, int repeats,
+                MnemeDeviceMemStateRef Prologue,
+                MnemeDeviceMemStateRef Epilogue, int SharedMemSize, int repeats,
                 float *time) {
   auto VendorModule =
       reinterpret_cast<DeviceVendorTraits::DeviceModule_t>(WrappedModule);
@@ -74,7 +76,8 @@ MnemePy_profile(void *WrappedModule, void *Func, dim3 Grid, dim3 Block,
   DeviceVendorTraits::DeviceStream_t ReplayStream;
   DeviceVendorTraits::DeviceEvent_t StartEvent, EndEvent;
   auto DevFunc = reinterpret_cast<DeviceVendorTraits::DeviceFunction_t>(Func);
-  auto State = unwrap(MemState);
+  auto PrologueState = unwrap(Prologue);
+  auto EpilogueState = unwrap(Epilogue);
   auto EC = DeviceVendorTraits::DeviceErrorCheck(
       DeviceVendorTraits::DeviceStreamCreate(&ReplayStream));
   if (EC)
@@ -92,14 +95,20 @@ MnemePy_profile(void *WrappedModule, void *Func, dim3 Grid, dim3 Block,
   if (EC)
     FATAL_ERROR("Error when creating end event for replay\n" + EC.value());
 
-  State->initializeGlobals(VendorModule);
+  PrologueState->initializeGlobals(VendorModule);
 
   for (int i = 0; i < repeats; i++) {
     float elapsedTime;
     LOG_DEBUG("Run {}/{}", i + 1, repeats);
 
-    auto Args = State->getArgs();
-    State->reset();
+    PrologueState->reset();
+    auto Args = PrologueState->getArgs();
+
+    EC = DeviceVendorTraits::DeviceErrorCheck(
+        DeviceVendorTraits::DeviceStreamSynchronize(ReplayStream));
+
+    if (EC)
+      FATAL_ERROR("Error when synchronizing device stream " + EC.value());
 
     DeviceVendorTraits::DeviceErrorCheck(
         DeviceVendorTraits::deviceEventRecord(StartEvent, ReplayStream));
@@ -133,8 +142,17 @@ MnemePy_profile(void *WrappedModule, void *Func, dim3 Grid, dim3 Block,
     EC = DeviceVendorTraits::DeviceErrorCheck(
         DeviceVendorTraits::DeviceStreamSynchronize(ReplayStream));
 
+    // LOG_INFO("The results at iteration {} were {} verified", i,
+    //         (*PrologueState == *EpilogueState) ? "" : "NOT");
+
     if (EC)
       FATAL_ERROR("Error When synchronizing with kernel stream: " + EC.value());
   }
+
+  EC = DeviceVendorTraits::DeviceErrorCheck(
+      DeviceVendorTraits::DeviceSynchronize());
+
+  if (EC)
+    FATAL_ERROR("Error when synchronizing device" + EC.value());
 }
 }

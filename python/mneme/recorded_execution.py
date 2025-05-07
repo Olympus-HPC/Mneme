@@ -159,13 +159,14 @@ class RecordedExecution:
     def values(self):
         return self.kernel_instances.values()
 
-    def link_llvm_modules(self, prune=True):
+    def link_llvm_modules(self, prune=True, internalize=True):
         if self._link_mod is not None:
             return self._link_mod
 
         self._link_mod = jit.link_llvm_modules(self.llvm_files)
 
-        jit.internalize(self._link_mod, self.kernel_name)
+        if internalize:
+            jit.internalize(self._link_mod, self.kernel_name)
 
         if prune:
             jit.pruneIR(self._link_mod)
@@ -182,7 +183,6 @@ class RecordedExecution:
 
         instances = {}
         for dhash, inst in record_db["instances"].items():
-            print(dhash)
             block_dim = dim3(
                 inst["BlockDims"]["x"], inst["BlockDims"]["y"], inst["BlockDims"]["z"]
             )

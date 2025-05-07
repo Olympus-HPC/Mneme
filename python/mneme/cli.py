@@ -31,6 +31,34 @@ def main():
         action="store_false",
         help="Do NOT prune LLVM IR before optimization",
     )
+
+    # default is True; user can override with --no-foo
+    parser.add_argument(
+        "--internalize",
+        dest="internalize",
+        action="store_true",
+        help="internalize LLVM IR before optimization",
+    )
+    parser.add_argument(
+        "--no-internalize",
+        dest="internalize",
+        action="store_false",
+        help="Do NOT prune LLVM IR before optimization",
+    )
+
+    parser.add_argument(
+        "--rtc",
+        dest="rtc",
+        action="store_true",
+        help="internalize LLVM IR before optimization",
+    )
+    parser.add_argument(
+        "--no-rtc",
+        dest="rtc",
+        action="store_false",
+        help="Do NOT prune LLVM IR before optimization",
+    )
+
     parser.add_argument(
         "--record-id",
         "-id",
@@ -38,17 +66,27 @@ def main():
         help="The record -id (instance-key) to replay",
     )
 
-    parser.set_defaults(prune=True)
+    parser.add_argument(
+        "--iterations",
+        "-it",
+        required=False,
+        type=int,
+        help="Help the number of iterations to run every configuration",
+        default=5,
+    )
+
+    parser.set_defaults(prune=True, internalize=False, rtc=False)
     args = parser.parse_args()
     records = RecordedExecution.from_json(args.input)
 
     # Allocate PM manager addresses
     with PageManagerRef(records.va_addr, records.va_size) as PM:
-        llvm_ir = records.link_llvm_modules(prune=args.prune)
+        llvm_ir = records.link_llvm_modules(
+            prune=args.prune, internalize=args.internalize
+        )
         # The obtained ModuleRef is usable across all kernels in the
         # record database. So we can just use it. The 'llvm_ir' is already
         # internalized, and potentially pruned
-
         kernel_descr = records[args.record_id]
         arch = get_device_arch()
         with kernel_descr.prologue as prologue:
@@ -61,7 +99,7 @@ def main():
                         start = time.time()
                         jit.optimize(code, arch, middle_opt, back_opt)
                         end = time.time()
-                        mem_buffer = jit.codegen_object(code, arch)
+                        mem_buffer = jit.codegen_object(code, arch, args.rtc)
                         with DeviceModule.from_MemBuffer(mem_buffer) as DeviceObj:
                             device_func = DeviceObj.get_function(
                                 kernel_descr.kernel_name
@@ -70,10 +108,14 @@ def main():
                                 kernel_descr.grid_dim,
                                 kernel_descr.block_dim,
                                 prologue._state,
+                                epilogue._state,
                                 kernel_descr.shared_mem,
+                                args.iterations,
                             )
+                            avg_time = sum(perf_time) / len(perf_time)
+                            compile_time = end - start
                             print(
-                                f"[{exp_id}] Enabled Optimizations:midle-end {middle_opt}: back end {back_opt}: Time: {sum(perf_time)/len(perf_time)} Result Verified: {prologue == epilogue} Compile Time: {end - start}"
+                                f"[{exp_id}] \t Enabled Optimizations: midle-end {middle_opt}: back end {back_opt} \t Time: {avg_time:.5f},\t Result Verified: \t{prologue == epilogue}, Compile Time: \t {compile_time:.5f}"
                             )
                             exp_id += 1
 

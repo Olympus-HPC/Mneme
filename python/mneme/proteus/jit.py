@@ -24,7 +24,7 @@ from ctypes import (
 ffi.lib.ProteusPY_pruneIR.argtypes = [ffi.LLVMModuleRef]
 ffi.lib.ProteusPY_optimize.argtypes = [ffi.LLVMModuleRef, c_char_p, c_char, c_uint]
 ffi.lib.ProteusPY_internalize.argtypes = [ffi.LLVMModuleRef, c_char_p]
-ffi.lib.ProteusPY_codeGenObject.argtypes = [ffi.LLVMModuleRef, c_char_p]
+ffi.lib.ProteusPY_codeGenObject.argtypes = [ffi.LLVMModuleRef, c_char_p, c_bool]
 ffi.lib.ProteusPY_codeGenObject.restype = ffi.LLVMMemBufferRef
 ffi.lib.ProteusPY_linkModules.argtypes = [POINTER(c_char_p), c_int, ffi.LLVMContextRef]
 ffi.lib.ProteusPY_linkModules.restype = ffi.LLVMModuleRef
@@ -67,11 +67,11 @@ def internalize(mod: ModuleRef, kernel_name: str):
     ffi.lib.ProteusPY_internalize(mod, _encode_string(kernel_name))
 
 
-def codegen_object(mod: ModuleRef, device_arch):
+def codegen_object(mod: ModuleRef, device_arch, use_rtc=False):
     if not isinstance(mod, ModuleRef):
         raise TypeError(f"Expecting type of ModuleRef instead got {type(mod)}")
     result = MemBufferRef(
-        ffi.lib.ProteusPY_codeGenObject(mod, _encode_string(device_arch))
+        ffi.lib.ProteusPY_codeGenObject(mod, _encode_string(device_arch), use_rtc)
     )
     return result
 
