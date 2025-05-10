@@ -1,5 +1,7 @@
 #include "mneme/DeviceTraits.hpp"
 #include <cstdint>
+#include <cstring>
+#include <mneme/MnemeLogger.hpp>
 
 using namespace mneme;
 
@@ -49,6 +51,9 @@ bool DeviceTraits<DeviceVendors::HIP>::compareDeviceBlobs(const char *Blob1,
 
   EC = DeviceTraits<HIP>::DeviceErrorCheck(
       DeviceTraits<HIP>::DeviceSynchronize());
+  LOG_DEBUG("Comparing {} bytes located at Addr {} and Addr {}", NumBytes,
+            (void *)Blob1, (void *)Blob2);
+
   if (EC)
     FATAL_ERROR("Error in comparing blobs " + EC.value());
 
@@ -56,6 +61,13 @@ bool DeviceTraits<DeviceVendors::HIP>::compareDeviceBlobs(const char *Blob1,
   EC = DeviceTraits<HIP>::DeviceErrorCheck(DeviceTraits<HIP>::DeviceCopy(
       &HNumEqualBytes, NumEqualBytes, sizeof(uint64_t),
       DeviceTraits<HIP>::MemcpyDeviceToHostKind()));
+
+  if (EC)
+    FATAL_ERROR("Error in comparing blobs " + EC.value());
+
+  EC = DeviceTraits<HIP>::DeviceErrorCheck(
+      DeviceTraits<HIP>::DeviceSynchronize());
+
   if (EC)
     FATAL_ERROR("Error in comparing blobs " + EC.value());
 
@@ -64,7 +76,7 @@ bool DeviceTraits<DeviceVendors::HIP>::compareDeviceBlobs(const char *Blob1,
   if (EC)
     FATAL_ERROR("Error in comparing blobs " + EC.value());
 
-  LOG_DEBUG("Compared {} bytes and {} are the same", NumBytes, HNumEqualBytes);
-
+  LOG_DEBUG("There are {} different bytes out of  {} total bytes",
+            NumBytes - HNumEqualBytes, NumBytes);
   return HNumEqualBytes == NumBytes;
 }

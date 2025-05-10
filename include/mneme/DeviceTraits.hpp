@@ -79,13 +79,19 @@ template <> struct DeviceTraits<DeviceVendors::HIP> {
     return std::string(HipArch);
   }
 
-  static hipModule_t getDeviceModuleFromImage(const void *Image) {
+  static DeviceModule_t getDeviceModuleFromImage(const void *Image) {
     hipModule_t HipModule;
 
     auto EC = DeviceErrorCheck(hipModuleLoadData(&HipModule, Image));
     if (EC)
       FATAL_ERROR("Error with loading data from module\nEC:" + EC.value());
     return HipModule;
+  }
+
+  static void DeviceModuleUnload(DeviceModule_t Module) {
+    auto EC = DeviceErrorCheck(hipModuleUnload(Module));
+    if (EC)
+      FATAL_ERROR("Cannot unload module\nEC:" + EC.value());
   }
 
   static std::pair<void *, size_t>
@@ -209,7 +215,7 @@ template <> struct DeviceTraits<DeviceVendors::HIP> {
     return hipStreamDestroy(Stream);
   }
 
-  static constexpr uintptr_t getSuggestedAddr() { return 0x0000153d2be00000; }
+  static constexpr uintptr_t getSuggestedAddr() { return 0x0000153923e00000; }
 
   static hipError_t deviceLaunchKernel(const void *function_address,
                                        dim3 numBlocks, dim3 dimBlocks,

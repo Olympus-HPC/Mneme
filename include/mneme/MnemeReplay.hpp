@@ -1,3 +1,4 @@
+#include "MnemeLogger.hpp"
 #include "mneme/DeviceTraits.hpp"
 #include "mneme/MnemeLogger.hpp"
 #include "mneme/MnemeMemory.hpp"
@@ -22,6 +23,7 @@ public:
   using DeviceError_t = typename MnemeDeviceRT::DeviceError_t;
   using DeviceStream_t = typename MnemeDeviceRT::DeviceStream_t;
   using KernelFunction_t = typename MnemeDeviceRT::KernelFunction_t;
+  using DeviceModule_t = typename DeviceTraits<VendorTypes>::DeviceModule_t;
 
   enum InstanceType { Prologue, Epilogue };
 
@@ -34,7 +36,10 @@ public:
 private:
   void copyToDevice() {
     for (auto &[DevAddr, MemBlob] : DeviceMemoryState) {
-      // Copy data to device
+      LOG_DEBUG("Copying {} from Address {} to device address {} {}",
+                IType == InstanceType::Prologue ? "Prologue" : "Epilogue",
+                (void *)MemBlob.getHostData().get(), MemBlob.getBlobAddr(),
+                MemBlob.getSize());
       auto CEC = MnemeDeviceRT::DeviceErrorCheck(MnemeDeviceRT::DeviceCopy(
           MemBlob.getBlobAddr(), MemBlob.getHostData().get(), MemBlob.getSize(),
           MnemeDeviceRT::MemcpyHostToDeviceKind()));
@@ -122,7 +127,9 @@ public:
 
   // Overload equality operator
   bool operator==(const ReplayMemState<VendorTypes> &other) const {
+    LOG_DEBUG("Comparing memory states");
     auto &OtherBlob = other.DeviceMemoryState;
+    bool correct = true;
     for (auto &[DevAddr, MemBlob] : DeviceMemoryState) {
       auto it = OtherBlob.find(DevAddr);
       if (it == OtherBlob.end()) {
@@ -138,7 +145,7 @@ public:
       if (!DeviceTraits<VendorTypes>::compareDeviceBlobs(
               (const char *)it->second.getBlobAddr(),
               (const char *)MemBlob.getBlobAddr(), MemBlob.getSize()))
-        return false;
+        correct = false;
     }
 
     for (auto &[GVName, GVI] : GlobalVars) {
@@ -147,7 +154,7 @@ public:
         LOG_WARN("comparing with global var {} that exists only on one of the "
                  "comparators",
                  GVName);
-        return false;
+        correct = false;
       }
 
       const GlobalVarInfo &OtherGV = it->second;
@@ -175,24 +182,57 @@ public:
       }
 
       if (memcmp(comparator, hostData.get(), GVI.VarSize) != 0)
-        return false;
+        correct = false;
     }
+    LOG_DEBUG("Memory States {}", correct ? "are the same" : "differ");
 
-    return true;
+    return correct;
   }
   // Derive inequality operator
   bool operator!=(const ReplayMemState<VendorTypes> &other) const {
     return !(*this == other);
   }
 
-  std::unique_ptr<void *> getArgs() const {
+  std::unique_ptr<void *[]> getArgs() const {
     void **Args = new void *[KInfo->getNumArgs()];
     auto ArgData = KInfo->getArgData();
     for (int I = 0; I < KInfo->getNumArgs(); I++) {
       Args[I] = ArgData[I].get();
     }
-    std::unique_ptr<void *> ArgUniquePtr(Args);
+    std::unique_ptr<void *[]> ArgUniquePtr{Args};
     return ArgUniquePtr;
+  }
+
+  uint64_t getNumArgs() const { return KInfo->getNumArgs(); }
+
+  void initializeGlobals(DeviceModule_t VendorMod) {
+    LOG_INFO("Initializing {} Globals", GlobalVars.size());
+    for (auto &KV : GlobalVars) {
+      auto [LoadedAddr, LoadedSize] =
+          DeviceTraits<VendorTypes>::getGlobalAddrFromModule(VendorMod,
+                                                             KV.first);
+      if (KV.second.DevAddr != LoadedAddr) {
+        LOG_WARN("Global : {} was loaded on different addresses Record:{} vs "
+                 "Replay:{}",
+                 KV.first, KV.second.DevAddr, LoadedAddr);
+        KV.second.DevAddr = LoadedAddr;
+      }
+
+      if (KV.second.VarSize != LoadedSize)
+        FATAL_ERROR("Global :" + KV.first +
+                    "has a different size between record and replay\n" +
+                    "Record Size:" + std::to_string(KV.second.VarSize) +
+                    "\nReplay Size:" + std::to_string(LoadedSize));
+
+      auto EC = DeviceTraits<VendorTypes>::DeviceErrorCheck(
+          DeviceTraits<VendorTypes>::DeviceCopy(
+              KV.second.DevAddr, KV.second.HostAddr.get(), KV.second.VarSize,
+              DeviceTraits<VendorTypes>::MemcpyHostToDeviceKind()));
+      if (EC)
+        FATAL_ERROR("Copying Global :" + KV.first +
+                    " from host to device raised error\nEC: " + EC.value());
+      LOG_INFO("Successfully loaded global variable: {}", KV.first);
+    }
   }
 };
 
@@ -375,7 +415,7 @@ public:
 
   bool isMemorySame() { return PrologueState == EpilogueState; }
 
-  std::unique_ptr<void *> getArgs() const { return PrologueState.getArgs(); }
+  std::unique_ptr<void *[]> getArgs() const { return PrologueState.getArgs(); }
 
   uint64_t getSharedMemSize() { return SharedMem; }
 

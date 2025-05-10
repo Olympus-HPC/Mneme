@@ -1,8 +1,9 @@
 
+set(MnemeCoreSrcDir ${CMAKE_CURRENT_SOURCE_DIR})
 set(RecordLibSRC "")
-set(ReplaySRC MnemeReplay.cpp MnemePageManager.cpp MnemeDeviceCode.cpp)
+set(ReplaySRC MnemeReplay.cpp MnemePageManager.cpp MnemeDeviceCode.cpp MnemeSymbols.cpp)
 if (MNEME_ENABLE_HIP)
-  list(APPEND RecordLibSRC MnemeRecordPreloadHIP.cpp MnemePageManager.cpp)
+  list(APPEND RecordLibSRC MnemeRecordPreloadHIP.cpp MnemePageManager.cpp MnemeSymbols.cpp)
 endif()
 
 add_library(record SHARED ${RecordLibSRC})
@@ -37,3 +38,6 @@ if(MNEME_ENABLE_HIP)
 endif()
 
 
+if (MNEME_ENABLE_AUTOTUNE)
+  add_subdirectory(python)
+endif()
