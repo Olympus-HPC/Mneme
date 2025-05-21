@@ -1,10 +1,10 @@
+import glob
 import os
+import shutil
 import subprocess
 import sys
-import glob
-import shutil
-from setuptools import find_packages
-from setuptools import setup, Extension
+
+from setuptools import Extension, find_packages, setup
 from setuptools.command.build_ext import build_ext
 from setuptools.command.build_py import build_py
 
@@ -73,7 +73,16 @@ class CMakeBuild(build_ext):
         proteus_path = os.path.abspath("third_party/proteus")
         if not os.path.exists(proteus_path):
             run_command(
-                ["git", "clone", "--depth", "1", self.PROTEUS_REPO, proteus_path],
+                [
+                    "git",
+                    "clone",
+                    "--depth",
+                    "1",
+                    "--branch",
+                    "features/mneme-integrations",
+                    self.PROTEUS_REPO,
+                    proteus_path,
+                ],
                 cwd="third_party",
             )
 
