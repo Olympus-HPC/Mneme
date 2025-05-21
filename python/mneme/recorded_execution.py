@@ -1,11 +1,12 @@
-from pathlib import Path
 import json
+from ctypes import POINTER, c_bool, c_char_p, c_int, c_void_p
 from enum import Enum
+from pathlib import Path
 from typing import Dict, List
-from .mneme_types import dim3
+
 from .llvm import ffi
+from .mneme_types import dim3
 from .proteus import jit
-from ctypes import c_bool, c_char_p
 
 MnemeRecordStateRef = ffi._make_opaque_ref("MnemeRecordState")
 ffi.lib.MnemePy_initializeMemState.argtypes = [c_char_p, c_char_p, c_bool]
@@ -19,6 +20,12 @@ ffi.lib.MnemePy_CompareMemState.argtypes = [MnemeRecordStateRef, MnemeRecordStat
 ffi.lib.MnemePy_CompareMemState.restype = c_bool
 
 ffi.lib.MnemePy_ResetMemState.argtypes = [MnemeRecordStateRef]
+
+ffi.lib.MnemePy_getNumArgs.argtypes = [MnemeRecordStateRef]
+ffi.lib.MnemePy_getNumArgs.restype = c_int
+
+ffi.lib.MnemePy_getArgs.argtypes = [MnemeRecordStateRef]
+ffi.lib.MnemePy_getArgs.restype = POINTER(c_void_p)
 
 
 class SnapshotType(Enum):
@@ -35,6 +42,8 @@ class MemStateRef:
         self.s_type = snap_type
         self._state = None
         self._load = False
+        self._num_args = None
+        self._args = None
 
     def _dispose(self):
         if self._state is not None:
@@ -51,6 +60,26 @@ class MemStateRef:
         ffi.lib.MnemePy_LoadMemState(self._state)
         self._load = True
 
+    @property
+    def args(self):
+        if not self._load:
+            raise RuntimeError("Cannot access arguments without loading memory state")
+
+        if self._args == None:
+            self._args = ffi.lib.MnemePy_getArgs(self._state)
+
+        return self._args
+
+    @property
+    def num_args(self):
+        if not self._load:
+            raise RuntimeError("Cannot access num_args without loading memory state")
+
+        if self._num_args == None:
+            self._num_args = ffi.lib.MnemePy_getNumArgs(self._state)
+
+        return self._num_args
+
     def close(self):
         self._dispose()
 
@@ -64,7 +93,7 @@ class MemStateRef:
 
     def reset(self):
         if self._load is False:
-            self.load()
+            raise RuntimeError("Cannot reset memory, if state is not read first.")
 
         ffi.lib.MnemePy_ResetMemState(self._state)
 
@@ -82,34 +111,42 @@ class RecordedExecution:
     class KernelInstance:
         def __init__(
             self,
-            dhash: str,
+            static_hash: str,
+            dynamic_hash: str,
             kernel_name: str,
             args: List,
             shared_mem: int,
             block_dim: dim3,
             grid_dim: dim3,
+            available_specializations: List[bool],
             occ: int,
             prologue_fn: str,
             epilogue_fn: str,
         ):
-            self.dhash = dhash
+            self.static_hash = static_hash
+            self.dynamic_hash = dynamic_hash
             self.kernel_name = kernel_name
             self.args = args
             self.shared_mem = shared_mem
             self.block_dim = block_dim
             self.grid_dim = grid_dim
+            self.available_specializations = []
+            for i, v in enumerate(available_specializations):
+                if v:
+                    self.available_specializations.append(i)
             self.occ = occ
             self.prologue = MemStateRef(prologue_fn, kernel_name, SnapshotType.PROLOGUE)
             self.epilogue = MemStateRef(epilogue_fn, kernel_name, SnapshotType.EPILOGUE)
 
         def __hash__(self):
-            return self.dhash
+            return hash(self.dynamic_hash + self.static_hash)
 
         def __str__(self):
             return f"Grid:{self.grid_dim}, BlockDim: {self.block_dim}, Shared Memory {self.shared_mem}"
 
     def __init__(
         self,
+        static_hash: str,
         kernel_name: str,
         demangled_name: str,
         llvm_files: List[str],
@@ -119,6 +156,7 @@ class RecordedExecution:
         va_size: int,
         kernel_instances: Dict[str, KernelInstance],
     ):
+        self.static_hash = static_hash
         self.kernel_name = kernel_name
         self.demangled_name = demangled_name
         self.llvm_files = llvm_files
@@ -190,12 +228,14 @@ class RecordedExecution:
                 inst["GridDims"]["x"], inst["GridDims"]["y"], inst["GridDims"]["z"]
             )
             instances[dhash] = cls.KernelInstance(
+                record_db["StaticHash"],
                 dhash,
                 record_db["KernelName"],
                 inst["Args"],
                 inst["SharedMem"],
                 block_dim,
                 grid_dim,
+                record_db["Specializations"],
                 inst["Occurrences"],
                 inst["Prologue"],
                 inst["Epilogue"],
@@ -206,6 +246,7 @@ class RecordedExecution:
                 raise RuntimeError(f"File {llvm_fn} does not exist")
 
         return cls(
+            record_db["StaticHash"],
             record_db["KernelName"],
             record_db["DemangledName"],
             record_db["Modules"],

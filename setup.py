@@ -99,6 +99,7 @@ class CMakeBuild(build_ext):
 
         cmake_options = [
             "-DCMAKE_BUILD_TYPE=Relwithdebinfo",
+            "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
             "-DBUILD_SHARED=Off",
             "-DCMAKE_BUILD_TYPE=Relwithdebinfo",
             f"-DCMAKE_INSTALL_PREFIX={self.install_dir}",

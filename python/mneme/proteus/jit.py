@@ -1,25 +1,12 @@
+from ctypes import POINTER, c_bool, c_char, c_char_p, c_int, c_uint, c_uint64, c_void_p
 from typing import List
-from ..llvm.module import ModuleRef
-from ..llvm.context import get_global_context
+
 from ..llvm import ffi as ffi
-from ..llvm.common import _decode_string, _encode_string
 from ..llvm.buffer import MemBufferRef
-from ctypes import (
-    POINTER,
-    byref,
-    cast,
-    c_char_p,
-    c_char,
-    c_double,
-    c_int,
-    c_int64,
-    c_size_t,
-    c_uint,
-    c_uint8,
-    c_uint64,
-    c_bool,
-    c_void_p,
-)
+from ..llvm.common import _decode_string, _encode_string
+from ..llvm.context import get_global_context
+from ..llvm.module import ModuleRef
+from ..mneme_types import dim3
 
 ffi.lib.ProteusPY_pruneIR.argtypes = [ffi.LLVMModuleRef]
 ffi.lib.ProteusPY_optimize.argtypes = [ffi.LLVMModuleRef, c_char_p, c_char, c_uint]
@@ -28,6 +15,35 @@ ffi.lib.ProteusPY_codeGenObject.argtypes = [ffi.LLVMModuleRef, c_char_p, c_bool]
 ffi.lib.ProteusPY_codeGenObject.restype = ffi.LLVMMemBufferRef
 ffi.lib.ProteusPY_linkModules.argtypes = [POINTER(c_char_p), c_int, ffi.LLVMContextRef]
 ffi.lib.ProteusPY_linkModules.restype = ffi.LLVMModuleRef
+ffi.lib.ProteusPY_specializeArguments.argtypes = [
+    ffi.LLVMModuleRef,  # Module
+    c_uint64,  # Hash
+    c_char_p,  # KernelName
+    POINTER(c_void_p),  # KernelArguments
+    c_int,  # Number of Arguments
+    POINTER(c_int),  # Indexes to specialize
+    c_int,  # num Indexes
+]
+ffi.lib.ProteusPY_specializeArguments.restype = c_uint64
+
+ffi.lib.ProteusPY_specializeDims.argtypes = [
+    ffi.LLVMModuleRef,
+    c_uint64,
+    c_char_p,
+    dim3,
+    dim3,
+]
+ffi.lib.ProteusPY_specializeDims.restype = c_uint64
+
+ffi.lib.ProteusPY_setLaunchBounds.argtypes = [
+    ffi.LLVMModuleRef,
+    c_uint64,
+    c_char_p,
+    c_int,
+    c_int,
+]
+
+ffi.lib.ProteusPY_setLaunchBounds.restype = c_uint64
 
 
 def pruneIR(mod: ModuleRef):
@@ -85,3 +101,62 @@ def link_llvm_modules(modules: List[str]):
         get_global_context(),
     )
     return Mod
+
+
+def specialize_args(
+    mod: ModuleRef,
+    mod_hash: int,
+    kernel_name: str,
+    kernel_args,
+    num_args: int,
+    specialize_indexes,
+):
+    if num_args < len(specialize_indexes):
+        raise RuntimeError("Trying to specialize more indexes than available")
+
+    indexes = (c_int * len(specialize_indexes))()
+    for i, v in enumerate(specialize_indexes):
+        indexes[i] = v
+
+    return int(
+        ffi.lib.ProteusPY_specializeArguments(
+            mod,
+            c_uint64(mod_hash),
+            _encode_string(kernel_name),
+            kernel_args,
+            num_args,
+            indexes,
+            len(specialize_indexes),
+        )
+    )
+
+
+def specialize_dims(
+    mod: ModuleRef, mod_hash: int, kernel_name: str, grid_dim: dim3, block_dim: dim3
+):
+    return int(
+        ffi.lib.ProteusPY_specializeDims(
+            mod, c_uint64(mod_hash), _encode_string(kernel_name), grid_dim, block_dim
+        )
+    )
+
+
+def set_launch_bounds(
+    mod: ModuleRef,
+    mod_hash: int,
+    kernel_name: str,
+    max_threads_per_block: int,
+    min_blocks_per_sm: int,
+):
+    if max_threads_per_block > 1024:
+        raise RuntimeError("Max threads cannot be larger than 1024")
+
+    return int(
+        ffi.lib.ProteusPY_setLaunchBounds(
+            mod,
+            c_uint64(mod_hash),
+            _encode_string(kernel_name),
+            max_threads_per_block,
+            min_blocks_per_sm,
+        )
+    )

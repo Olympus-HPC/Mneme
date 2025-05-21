@@ -6,8 +6,10 @@
 #include <llvm-c/Types.h>
 #include <llvm/Bitcode/BitcodeReader.h>
 #include <llvm/IR/Module.h>
+#include <proteus/CompilerInterfaceTypes.h>
 #include <proteus/CoreLLVM.hpp>
 #include <proteus/CoreLLVMDevice.hpp>
+#include <proteus/Hashing.hpp>
 
 using namespace proteus;
 
@@ -67,5 +69,50 @@ ProteusPY_linkModules(const char **LLVMIRFiles, int size,
 
   auto Mod = proteus::linkModules(*unwrap(context), RecordedModules);
   return wrap(Mod.release());
+}
+
+API_EXPORT(uint64_t)
+ProteusPY_specializeArguments(LLVMModuleRef Mod, const uint64_t StaticHash,
+                              const char *KernelName, void **KernelArgs,
+                              int NumArgs, int *SpecializeIndexes,
+                              int NumSpecializations) {
+  auto *M = llvm::unwrap(Mod);
+  auto *F = M->getFunction(KernelName);
+  SmallVector<int32_t> RCTypes(NumSpecializations);
+  SmallVector<proteus::RuntimeConstant> RCVec;
+  const ArrayRef<int32_t> RCIndices(SpecializeIndexes, NumSpecializations);
+
+  for (int i = 0; i < NumSpecializations; i++) {
+    RCTypes[i] = proteus::convertTypeToRuntimeConstantType(
+        F->getArg(SpecializeIndexes[i])->getType());
+  }
+  proteus::getRuntimeConstantValues(KernelArgs, RCIndices, RCTypes, RCVec);
+
+  TransformArgumentSpecialization::transform(*M, *F, RCIndices, RCVec);
+
+  auto Hash = hash(StaticHash, StringRef(KernelName), RCVec);
+  return Hash.getValue();
+}
+
+API_EXPORT(uint64_t)
+ProteusPY_specializeDims(LLVMModuleRef Mod, uint64_t CurrentHash,
+                         const char *KernelName, dim3 GridDim, dim3 BlockDim) {
+  auto *M = llvm::unwrap(Mod);
+  auto *F = M->getFunction(KernelName);
+  proteus::setKernelDims(*M, GridDim, BlockDim);
+  auto Hash = hash(CurrentHash, GridDim.x, GridDim.y, GridDim.z, BlockDim.x,
+                   BlockDim.y, BlockDim.z);
+  return Hash.getValue();
+}
+
+API_EXPORT(uint64_t)
+ProteusPY_setLaunchBounds(LLVMModuleRef Mod, uint64_t CurrentHash,
+                          const char *KernelName, int MaxThreadsPerBlock,
+                          int MinBlocksPerSM) {
+  auto *M = llvm::unwrap(Mod);
+  auto *F = M->getFunction(KernelName);
+  auto Hash = hash(CurrentHash, MaxThreadsPerBlock, MinBlocksPerSM);
+  proteus::setLaunchBoundsForKernel(*F, MaxThreadsPerBlock, MinBlocksPerSM);
+  return Hash.getValue();
 }
 }

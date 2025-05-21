@@ -113,8 +113,7 @@ int main(int argc, char *argv[]) {
   auto RecordedGrid = RInstance.getRecordedGrid();
   auto RecordedBlock = RInstance.getRecordedBlock();
   proteus::setLaunchBoundsForKernel(
-      *Mod, *ReplayKernelFunc, RecordedGrid.x * RecordedGrid.y * RecordedGrid.z,
-      RecordedBlock.x * RecordedBlock.y * RecordedBlock.z);
+      *ReplayKernelFunc, RecordedBlock.x * RecordedBlock.y * RecordedBlock.z);
   proteus::runCleanupPassPipeline(*Mod);
   SmallPtrSet<void *, 8> GlobalLinkedBinaries;
 
@@ -164,7 +163,7 @@ int main(int argc, char *argv[]) {
 
     EC = DeviceVendorTraits::DeviceErrorCheck(
         DeviceVendorTraits::launchKernelFunction(
-            Func, RecordedGrid, RecordedBlock, Args.get(),
+            Func, RecordedGrid, RecordedBlock, Args,
             RInstance.getSharedMemSize(), ReplayStream));
     if (EC)
       FATAL_ERROR("Error When Launching Kernel: " + EC.value());

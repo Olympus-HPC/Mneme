@@ -9,4 +9,9 @@ LLVMPY_DisposeMemBuffer(LLVMMemoryBufferRef Buffer) {
   llvm::MemoryBuffer *buff = llvm::unwrap(Buffer);
   delete buff;
 }
+
+API_EXPORT(size_t) LLVMPY_GetMemBufferSize(LLVMMemoryBufferRef Buffer) {
+  auto *buff = llvm::unwrap(Buffer);
+  return buff->getBufferSize();
+}
 }

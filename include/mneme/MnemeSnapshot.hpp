@@ -191,8 +191,9 @@ class KernelInstancesCollection {
   llvm::DenseMap<uint64_t, KernelInstance> Instances;
 
 public:
-  llvm::json::Object toJSON() const {
+  llvm::json::Object toJSON(uint64_t StaticHash) const {
     llvm::json::Object Collection;
+    Collection["StaticHash"] = StaticHash;
     Collection["VAddr"] =
         util::pointerToHexString(reinterpret_cast<uint8_t *>(VAddr));
     Collection["VASize"] = VASize;
@@ -330,7 +331,7 @@ public:
       auto JsonFilename =
           MnemeDirectory / (std::to_string(StaticHash) + ".json");
       std::error_code EC;
-      auto JSONRecord = Record.toJSON();
+      auto JSONRecord = Record.toJSON(StaticHash);
       llvm::raw_fd_ostream JsonOS(JsonFilename.string(), EC);
       JsonOS << llvm::json::Value(std::move(JSONRecord));
       JsonOS.close();

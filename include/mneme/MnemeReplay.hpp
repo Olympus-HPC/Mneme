@@ -32,6 +32,7 @@ public:
   llvm::DenseMap<std::string, GlobalVarInfo> GlobalVars;
   InstanceType IType;
   std::string SnapshotName;
+  std::unique_ptr<void *[]> Args;
 
 private:
   void copyToDevice() {
@@ -93,6 +94,16 @@ private:
     copyToDevice();
   }
 
+  std::unique_ptr<void *[]> copyOutArgs() const {
+    void **Args = new void *[KInfo->getNumArgs()];
+    auto ArgData = KInfo->getArgData();
+    for (int I = 0; I < getNumArgs(); I++) {
+      Args[I] = ArgData[I].get();
+    }
+    std::unique_ptr<void *[]> ArgUniquePtr{Args};
+    return ArgUniquePtr;
+  }
+
 public:
   ReplayMemState() = default;
   ReplayMemState(std::string KernelName, std::string SnapshotName,
@@ -104,6 +115,7 @@ public:
     LOG_DEBUG("Initialized Snapshot for kernel {} of state {}",
               KInfo->getName(),
               (IType == InstanceType::Prologue ? "Prologue" : "Epilogue"));
+    Args = copyOutArgs();
   }
 
   void load() {
@@ -193,15 +205,7 @@ public:
     return !(*this == other);
   }
 
-  std::unique_ptr<void *[]> getArgs() const {
-    void **Args = new void *[KInfo->getNumArgs()];
-    auto ArgData = KInfo->getArgData();
-    for (int I = 0; I < KInfo->getNumArgs(); I++) {
-      Args[I] = ArgData[I].get();
-    }
-    std::unique_ptr<void *[]> ArgUniquePtr{Args};
-    return ArgUniquePtr;
-  }
+  void **getArgs() const { return reinterpret_cast<void **>(Args.get()); }
 
   uint64_t getNumArgs() const { return KInfo->getNumArgs(); }
 
@@ -415,7 +419,7 @@ public:
 
   bool isMemorySame() { return PrologueState == EpilogueState; }
 
-  std::unique_ptr<void *[]> getArgs() const { return PrologueState.getArgs(); }
+  void **getArgs() const { return PrologueState.getArgs(); }
 
   uint64_t getSharedMemSize() { return SharedMem; }
 
