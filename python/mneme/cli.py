@@ -60,6 +60,20 @@ def main():
     )
 
     parser.add_argument(
+        "--tune",
+        dest="tune",
+        action="store_true",
+        help="Explore the configuration space",
+    )
+
+    parser.add_argument(
+        "--no-tune",
+        dest="tune",
+        action="store_false",
+        help="Explore the configuration space",
+    )
+
+    parser.add_argument(
         "--record-id",
         "-id",
         required=True,
@@ -75,7 +89,7 @@ def main():
         default=5,
     )
 
-    parser.set_defaults(prune=True, internalize=False, rtc=False)
+    parser.set_defaults(prune=True, internalize=False, rtc=False, tune=True)
     args = parser.parse_args()
     records = RecordedExecution.from_json(args.input)
 
@@ -93,8 +107,6 @@ def main():
         arch = get_device_arch()
         with kernel_descr.prologue as prologue:
             with kernel_descr.epilogue as epilogue:
-                print("Prologue", prologue.args, prologue.num_args)
-                print("Epilogue", epilogue.args, epilogue.num_args)
                 exp_id = 0
                 max_threads = int(
                     kernel_descr.block_dim.x
@@ -102,14 +114,25 @@ def main():
                     * kernel_descr.block_dim.z,
                 )
 
+                middle_opts = ["1", "2", "3", "s", "z"]
+                back_opts = [1, 2, 3]
+                specializations = [0, 1]
+                dimensions = [0, 1]
                 min_blocks_per_sm = [
                     i for i in range(0, int(math.ceil(1024 / max_threads)) + 1)
                 ]
 
-                for middle_opt in ["1", "2", "3", "s", "z"]:
-                    for back_opt in [1, 2, 3]:
-                        for spec in [0, 1]:
-                            for dims in [0, 1]:
+                if not args.tune:
+                    middle_opts = ["3"]
+                    back_opts = [3]
+                    specializations = [0]
+                    dimensions = [0]
+                    min_blocks_per_sm = [0]
+
+                for middle_opt in middle_opts:
+                    for back_opt in back_opts:
+                        for spec in specializations:
+                            for dims in dimensions:
                                 for lb in min_blocks_per_sm:
                                     # We clone, as we are going to modify the code in the next steps
                                     code = llvm_ir.clone()
