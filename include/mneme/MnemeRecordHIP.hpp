@@ -81,7 +81,7 @@ public:
                 (void *)FatbinWrapper);
       const char *Binary = FatbinWrapper->Binary;
       llvm::StringRef Magic(Binary, sizeof(OFFLOAD_BUNDLER_MAGIC_STR) - 1);
-      if (!Magic.equals(OFFLOAD_BUNDLER_MAGIC_STR))
+      if (Magic != OFFLOAD_BUNDLER_MAGIC_STR)
         FATAL_ERROR("Error missing magic string");
       Pos += sizeof(OFFLOAD_BUNDLER_MAGIC_STR) - 1;
 
@@ -165,7 +165,7 @@ public:
         auto M = extractModuleFromSection(Section, *SectionName);
         LOG_DEBUG("Processing section with name {}", SectionName.get().str());
 
-        if (SectionName->equals(".jit.bitcode.lto")) {
+        if (*SectionName == ".jit.bitcode.lto") {
           LLVMModules.clear();
           LLVMModules.push_back(std::move(M));
           LOG_DEBUG("Found LTO module");
