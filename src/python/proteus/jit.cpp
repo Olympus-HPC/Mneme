@@ -2,10 +2,12 @@
 #include "mneme/Utils.hpp"
 #include "llvm-c/Core.h"
 #include "llvm/IR/Module.h"
+#include <chrono>
 #include <iostream>
 #include <llvm-c/Types.h>
 #include <llvm/Bitcode/BitcodeReader.h>
 #include <llvm/IR/Module.h>
+#include <mneme/MnemeLogger.hpp>
 #include <proteus/CompilerInterfaceTypes.h>
 #include <proteus/CoreLLVM.hpp>
 #include <proteus/CoreLLVMDevice.hpp>
@@ -26,20 +28,34 @@ ProteusPY_internalize(LLVMModuleRef Mod, const char *KernelSym) {
 
 API_EXPORT(void)
 ProteusPY_optimize(LLVMModuleRef Mod, const char *DeviceArch,
-                   const char OptLevel, unsigned CodegenOptLevel) {
+                   const char *OptLevel, unsigned CodegenOptLevel) {
   auto *M = llvm::unwrap(Mod);
+  auto start = std::chrono::high_resolution_clock::now();
   optimizeIR(*M, DeviceArch, OptLevel, CodegenOptLevel);
+  auto end = std::chrono::high_resolution_clock::now();
+  std::chrono::duration<float> duration = end - start;
+  float seconds = duration.count();
+  LOG_DEBUG("Middle end compilation took {} \n", seconds);
 }
 
 API_EXPORT(LLVMMemoryBufferRef)
-ProteusPY_codeGenObject(LLVMModuleRef Mod, const char *DeviceArch,
-                        bool use_rtc) {
+ProteusPY_codeGenObject(LLVMModuleRef Mod, const char *DeviceArch, bool use_rtc,
+                        unsigned CodegenOptLevel) {
   llvm::SmallPtrSet<void *, 8> GlobalLinkedBinaries;
   auto *M = llvm::unwrap(Mod);
-  auto DeviceObject =
-      proteus::codegenObject(*M, DeviceArch, GlobalLinkedBinaries, use_rtc);
-  if (!DeviceObject)
+  auto start = std::chrono::high_resolution_clock::now();
+  auto DeviceObject = proteus::codegenObject(
+      *M, DeviceArch, GlobalLinkedBinaries, use_rtc, CodegenOptLevel);
+  auto end = std::chrono::high_resolution_clock::now();
+
+  // Calculate duration and convert to seconds as float
+  std::chrono::duration<float> duration = end - start;
+  float seconds = duration.count();
+  LOG_DEBUG("Backend compilation took {} \n", seconds);
+  if (!DeviceObject) {
+    std::cout << "Device Object is nullptr\n";
     return nullptr;
+  }
   auto *ptr = DeviceObject.release();
   return wrap(ptr);
 }

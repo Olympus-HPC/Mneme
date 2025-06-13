@@ -107,7 +107,7 @@ int main(int argc, char *argv[]) {
 
   LOG_INFO("Optimizing Kernel with Middle-OptLevel {} and BackEnd-OptLevel {}",
            MnemeMiddleOptLevel.getValue(), MnemeBackendOptLevel.getValue());
-  proteus::optimizeIR(*Mod, Arch, MnemeMiddleOptLevel.getValue(),
+  proteus::optimizeIR(*Mod, Arch, &MnemeMiddleOptLevel.getValue(),
                       MnemeBackendOptLevel.getValue());
 
   auto RecordedGrid = RInstance.getRecordedGrid();
