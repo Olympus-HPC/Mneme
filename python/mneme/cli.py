@@ -220,6 +220,16 @@ def main():
     parser.set_defaults(
         prune=True, internalize=False, rtc=False, tune=True, individual_passes=False
     )
+
+    parser.add_argument(
+        "--seed",
+        required=False,
+        type=int,
+        default=0,
+        dest="seed",
+        help="Seed number to initialize the random pass generation module",
+    )
+
     args = parser.parse_args()
     records = RecordedExecution.from_json(args.input)
 
@@ -235,7 +245,9 @@ def main():
         code_hash = kernel_descr.static_hash
         dynamic_hash = args.record_id
         arch = get_device_arch()
-        db_name = f"{kernel_descr.static_hash}.{kernel_descr.dynamic_hash}.csv"
+        db_name = (
+            f"{kernel_descr.static_hash}.{kernel_descr.dynamic_hash}.{args.seed}.csv"
+        )
         executed_experiments = read_column(db_name, "exp_hash")
         with kernel_descr.prologue as prologue:
             with kernel_descr.epilogue as epilogue:
@@ -258,7 +270,7 @@ def main():
                 LLVMPassManager = PipelineManager()
 
                 passes = LLVMPassManager.generate(
-                    args.num_pipelines, 120, 16.7, False, 0
+                    args.num_pipelines, 120, 33, True, args.seed
                 )
 
                 exploration_passes = {"default": default_pipelines, "random": passes}
@@ -502,11 +514,11 @@ def main():
                                                     "grid_dim.x",
                                                     "grid_dim.y",
                                                     "grid_dim.z",
-                                                    "mpipeline",
-                                                    "bpipeline",
                                                     "rtc",
                                                     "internalize",
                                                     "prune",
+                                                    "mpipeline",
+                                                    "bpipeline",
                                                     "max_threads",
                                                     "min_threads_per_block",
                                                     "specialize",
