@@ -1,6 +1,11 @@
+from ctypes import c_size_t
+
 from . import ffi
 
 ffi.lib.LLVMPY_DisposeMemBuffer.argtypes = [ffi.LLVMMemBufferRef]
+
+ffi.lib.LLVMPY_GetMemBufferSize.argtypes = [ffi.LLVMMemBufferRef]
+ffi.lib.LLVMPY_GetMemBufferSize.restype = c_size_t
 
 
 class MemBufferRef(ffi.ObjectRef):
@@ -9,3 +14,6 @@ class MemBufferRef(ffi.ObjectRef):
 
     def _dispose(self):
         self._capi.LLVMPY_DisposeMemBuffer(self)
+
+    def get_size(self):
+        return int(ffi.lib.LLVMPY_GetMemBufferSize(self))

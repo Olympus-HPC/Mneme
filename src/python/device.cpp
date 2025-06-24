@@ -116,8 +116,8 @@ MnemePy_profile(void *WrappedModule, void *Func, dim3 Grid, dim3 Block,
       FATAL_ERROR("Error when recording event " + EC.value());
 
     EC = DeviceVendorTraits::DeviceErrorCheck(
-        DeviceVendorTraits::launchKernelFunction(
-            DevFunc, Grid, Block, Args.get(), SharedMemSize, ReplayStream));
+        DeviceVendorTraits::launchKernelFunction(DevFunc, Grid, Block, Args,
+                                                 SharedMemSize, ReplayStream));
     if (EC)
       FATAL_ERROR("Error When Launching Kernel: " + EC.value());
 
@@ -154,5 +154,15 @@ MnemePy_profile(void *WrappedModule, void *Func, dim3 Grid, dim3 Block,
 
   if (EC)
     FATAL_ERROR("Error when synchronizing device" + EC.value());
+}
+
+API_EXPORT(int) MnemePy_getNumArgs(MnemeDeviceMemStateRef WState) {
+  auto State = unwrap(WState);
+  return State->getNumArgs();
+}
+
+API_EXPORT(void **) MnemePy_getArgs(MnemeDeviceMemStateRef WState) {
+  auto State = unwrap(WState);
+  return reinterpret_cast<void **>(State->getArgs());
 }
 }

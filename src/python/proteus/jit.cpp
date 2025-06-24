@@ -2,12 +2,16 @@
 #include "mneme/Utils.hpp"
 #include "llvm-c/Core.h"
 #include "llvm/IR/Module.h"
+#include <chrono>
 #include <iostream>
 #include <llvm-c/Types.h>
 #include <llvm/Bitcode/BitcodeReader.h>
 #include <llvm/IR/Module.h>
+#include <mneme/MnemeLogger.hpp>
+#include <proteus/CompilerInterfaceTypes.h>
 #include <proteus/CoreLLVM.hpp>
 #include <proteus/CoreLLVMDevice.hpp>
+#include <proteus/Hashing.hpp>
 
 using namespace proteus;
 
@@ -24,20 +28,34 @@ ProteusPY_internalize(LLVMModuleRef Mod, const char *KernelSym) {
 
 API_EXPORT(void)
 ProteusPY_optimize(LLVMModuleRef Mod, const char *DeviceArch,
-                   const char OptLevel, unsigned CodegenOptLevel) {
+                   const char *OptLevel, unsigned CodegenOptLevel) {
   auto *M = llvm::unwrap(Mod);
+  auto start = std::chrono::high_resolution_clock::now();
   optimizeIR(*M, DeviceArch, OptLevel, CodegenOptLevel);
+  auto end = std::chrono::high_resolution_clock::now();
+  std::chrono::duration<float> duration = end - start;
+  float seconds = duration.count();
+  LOG_DEBUG("Middle end compilation took {} \n", seconds);
 }
 
 API_EXPORT(LLVMMemoryBufferRef)
-ProteusPY_codeGenObject(LLVMModuleRef Mod, const char *DeviceArch,
-                        bool use_rtc) {
+ProteusPY_codeGenObject(LLVMModuleRef Mod, const char *DeviceArch, bool use_rtc,
+                        unsigned CodegenOptLevel) {
   llvm::SmallPtrSet<void *, 8> GlobalLinkedBinaries;
   auto *M = llvm::unwrap(Mod);
-  auto DeviceObject =
-      proteus::codegenObject(*M, DeviceArch, GlobalLinkedBinaries, use_rtc);
-  if (!DeviceObject)
+  auto start = std::chrono::high_resolution_clock::now();
+  auto DeviceObject = proteus::codegenObject(
+      *M, DeviceArch, GlobalLinkedBinaries, use_rtc, CodegenOptLevel);
+  auto end = std::chrono::high_resolution_clock::now();
+
+  // Calculate duration and convert to seconds as float
+  std::chrono::duration<float> duration = end - start;
+  float seconds = duration.count();
+  LOG_DEBUG("Backend compilation took {} \n", seconds);
+  if (!DeviceObject) {
+    std::cout << "Device Object is nullptr\n";
     return nullptr;
+  }
   auto *ptr = DeviceObject.release();
   return wrap(ptr);
 }
@@ -67,5 +85,50 @@ ProteusPY_linkModules(const char **LLVMIRFiles, int size,
 
   auto Mod = proteus::linkModules(*unwrap(context), RecordedModules);
   return wrap(Mod.release());
+}
+
+API_EXPORT(uint64_t)
+ProteusPY_specializeArguments(LLVMModuleRef Mod, const uint64_t StaticHash,
+                              const char *KernelName, void **KernelArgs,
+                              int NumArgs, int *SpecializeIndexes,
+                              int NumSpecializations) {
+  auto *M = llvm::unwrap(Mod);
+  auto *F = M->getFunction(KernelName);
+  SmallVector<int32_t> RCTypes(NumSpecializations);
+  SmallVector<proteus::RuntimeConstant> RCVec;
+  const ArrayRef<int32_t> RCIndices(SpecializeIndexes, NumSpecializations);
+
+  for (int i = 0; i < NumSpecializations; i++) {
+    RCTypes[i] = proteus::convertTypeToRuntimeConstantType(
+        F->getArg(SpecializeIndexes[i])->getType());
+  }
+  proteus::getRuntimeConstantValues(KernelArgs, RCIndices, RCTypes, RCVec);
+
+  TransformArgumentSpecialization::transform(*M, *F, RCIndices, RCVec);
+
+  auto Hash = hash(StaticHash, StringRef(KernelName), RCVec);
+  return Hash.getValue();
+}
+
+API_EXPORT(uint64_t)
+ProteusPY_specializeDims(LLVMModuleRef Mod, uint64_t CurrentHash,
+                         const char *KernelName, dim3 GridDim, dim3 BlockDim) {
+  auto *M = llvm::unwrap(Mod);
+  auto *F = M->getFunction(KernelName);
+  proteus::setKernelDims(*M, GridDim, BlockDim);
+  auto Hash = hash(CurrentHash, GridDim.x, GridDim.y, GridDim.z, BlockDim.x,
+                   BlockDim.y, BlockDim.z);
+  return Hash.getValue();
+}
+
+API_EXPORT(uint64_t)
+ProteusPY_setLaunchBounds(LLVMModuleRef Mod, uint64_t CurrentHash,
+                          const char *KernelName, int MaxThreadsPerBlock,
+                          int MinBlocksPerSM) {
+  auto *M = llvm::unwrap(Mod);
+  auto *F = M->getFunction(KernelName);
+  auto Hash = hash(CurrentHash, MaxThreadsPerBlock, MinBlocksPerSM);
+  proteus::setLaunchBoundsForKernel(*F, MaxThreadsPerBlock, MinBlocksPerSM);
+  return Hash.getValue();
 }
 }

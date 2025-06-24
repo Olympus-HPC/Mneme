@@ -239,9 +239,9 @@ llvm::PassPluginLibraryInfo getMnemePassPluginInfo() {
     // However, there are linking errors, working assumption is that the hiprtc
     // linker cannot re-link already linked device libraries and aborts.
 
-    // PB.registerPipelineStartEPCallback(
-    // PB.registerOptimizerLastEPCallback(
-    PB.registerPipelineEarlySimplificationEPCallback(
+    PB.registerPipelineStartEPCallback(
+        // PB.registerOptimizerLastEPCallback(
+        // PB.registerPipelineEarlySimplificationEPCallback(
         [&](ModulePassManager &MPM, auto) {
           MPM.addPass(MnemePass{false});
           return true;
