@@ -71,8 +71,8 @@ endif()
 
 include(cmake/SetupLLVM.cmake)
 
-add_subdirectory(pass)
 add_subdirectory(src)
+add_subdirectory(pass)
 
 if(MNEME_ENABLE_TESTS)
   enable_testing()

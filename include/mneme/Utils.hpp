@@ -15,23 +15,6 @@
 #define FATAL_ERROR(x)                                                         \
   report_fatal_error(llvm::Twine(std::string{} + __FILE__ + ":" +              \
                                  std::to_string(__LINE__) + " => " + x))
-namespace llvm {
-template <> struct DenseMapInfo<std::string> {
-  static inline std::string getEmptyKey() {
-    return std::string(); // Define an empty key
-  }
-  static inline std::string getTombstoneKey() {
-    return std::string("<TOMBSTONE_KEY>");
-  }
-  static unsigned getHashValue(const std::string &Key) {
-    // Use std::hash for hashing the string
-    return std::hash<std::string>{}(Key);
-  }
-  static bool isEqual(const std::string &LHS, const std::string &RHS) {
-    return LHS == RHS;
-  }
-};
-} // namespace llvm
 
 #ifdef MNEME_ENABLE_HIP
 #include <hip/hip_runtime.h>
@@ -86,3 +69,21 @@ template <typename T> T *hexStringToPointer(const std::string &HEXStr) {
 
 } // namespace util
 } // namespace mneme
+
+namespace llvm {
+template <> struct DenseMapInfo<std::string> {
+  static inline std::string getEmptyKey() {
+    return std::string(); // Define an empty key
+  }
+  static inline std::string getTombstoneKey() {
+    return std::string("<TOMBSTONE_KEY>");
+  }
+  static unsigned getHashValue(const std::string &Key) {
+    // Use std::hash for hashing the string
+    return std::hash<std::string>{}(Key);
+  }
+  static bool isEqual(const std::string &LHS, const std::string &RHS) {
+    return LHS == RHS;
+  }
+};
+} // namespace llvm
