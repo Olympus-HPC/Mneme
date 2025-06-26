@@ -40,7 +40,28 @@
   }
 
 #elif defined(MNEME_ENABLE_CUDA)
-#error pending implementation
+#define cudaErrCheck(CALL)                                                     \
+  {                                                                            \
+    cudaError_t err = CALL;                                                    \
+    if (err != cudaSuccess) {                                                  \
+      printf("ERROR @ %s:%d ->  %s\n", __FILE__, __LINE__,                     \
+             hipGetErrorString(err));                                          \
+      abort();                                                                 \
+    }                                                                          \
+  }
+
+#define cuErrCheck(CALL)                                                       \
+  {                                                                            \
+    CUresult err = CALL;                                                       \
+    if (err != CUDA_SUCCESS) {                                                 \
+      const char *name = nullptr, *desc = nullptr;                             \
+      cuGetErrorName(err, &name);                                              \
+      cuGetErrorString(err, &desc);                                            \
+      fprintf(stderr, "CUDA Driver Error [%s]: %s\n", name ? name : "Unknown", \
+              desc ? desc : "No description");                                 \
+      abort();                                                                 \
+    }                                                                          \
+  }
 #endif
 
 namespace mneme {

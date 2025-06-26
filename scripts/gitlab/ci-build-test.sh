@@ -1,6 +1,6 @@
 #!/bin/bash
 
-temp_dir=$(mktemp -d)
+temp_dir=$(pwd) #$(mktemp -d)
 echo "Temporary directory created at: $temp_dir"
 host=$(hostname)
 host=${host//[0-9]/}
@@ -11,10 +11,9 @@ installDir="/dev/shm/install"
 
 build_proteus() {
   echo "Building PROTEUS"
-  git clone --depth 1 git@github.com:Olympus-HPC/proteus.git
+  git clone --depth 1 --branch "features/mneme-integrations" git@github.com:Olympus-HPC/proteus.git
   pushd proteus 
-  git fetch --depth 1 origin 30f766dbbff8599479739450eee3fdb9bdd3c118
-  git checkout 30f766dbbff8599479739450eee3fdb9bdd3c118
+  git checkout features/mneme-integrations
   PROTEUS_ENABLE_HIP=$1
   PROTEUS_ENABLE_CUDA=$2
   PROTEUS_INSTALL_DIR=$3
@@ -57,24 +56,47 @@ build_spdlog() {
 }
 
 if [[ "$SYS_TYPE" == "blueos_3_ppc64le_ib_p9" ]]; then
-ml load cuda/11.8
 ml load gcc/11.2.1
 ml load cmake/3.23
 ml load python/3.8
 #export PATH="/usr/workspace/LExperts/DaCe/usr_18.1.8/blueos_3_ppc64le_ib_p9/bin/:$PATH"
 ml load clang/18.1.8-cuda-11.8.0-gcc-11.2.1
+llvm_root=dirname $(dirname -- $(which clang))
+echo "Setting root dir to be ${llvm_root}"
+export LLVM_INSTALL_DIR=$(llvm-config --prefix)
+ml load cuda/12.2
 
-cmake .. \
+build_proteus "OFF" "ON" $installDir
+echo "After proteus Current directory is $(pwd)"
+build_spdlog $installDir
+mneme_src=$(pwd)
+pushd $build_dir 
+cmake \
 -DCMAKE_BUILD_TYPE=Relwithdebinfo \
+-Dproteus_DIR=$installDir \
 -DCMAKE_INSTALL_PREFIX=$installDir \
 -DCMAKE_CXX_COMPILER=clang++ \
 -DCMAKE_C_COMPILER=clang \
--DCMAKE_CUDA_COMPILER=clang++ \
--DCMAKE_C_COMPILER=clang \
--DCMAKE_CUDA_COMPILER=clang++ \
--DLLVM_INSTALL_DIR=$(dirname $(dirname $(which clang))) \
--DENABLE_CUDA=On \
--DCMAKE_EXPORT_COMPILE_COMMANDS=on ../
+-DLLVM_INSTALL_DIR=${LLVM_INSTALL_DIR} \
+-DMNEME_ENABLE_HIP=Off \
+-DMNEME_ENABLE_CUDA=On \
+-DMNEME_ENABLE_DEBUG=${MNEME_CI_ENABLE_DEBUG} \
+-DMNEME_ENABLE_TESTS=On \
+-DCMAKE_EXPORT_COMPILE_COMMANDS=on ${mneme_src}
+
+
+
+#cmake .. \
+#-DCMAKE_BUILD_TYPE=Relwithdebinfo \
+#-DCMAKE_INSTALL_PREFIX=$installDir \
+#-DCMAKE_CXX_COMPILER=clang++ \
+#-DCMAKE_C_COMPILER=clang \
+#-DCMAKE_CUDA_COMPILER=clang++ \
+#-DCMAKE_C_COMPILER=clang \
+#-DCMAKE_CUDA_COMPILER=clang++ \
+#-DLLVM_INSTALL_DIR=$(dirname $(dirname $(which clang))) \
+#-DENABLE_CUDA=On \
+#-DCMAKE_EXPORT_COMPILE_COMMANDS=on ../
 
 
 

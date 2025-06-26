@@ -1,9 +1,15 @@
 #pragma once
 #include "mneme/MnemeLogger.hpp"
 #include "mneme/Utils.hpp"
+#include <optional>
+
+#ifdef MNEME_ENABLE_HIP
 #include <hip/amd_detail/amd_hip_runtime.h>
 #include <hip/hip_runtime.h>
-#include <optional>
+#elif defined(MNEME_ENABLE_CUDA)
+#include <cuda.h>
+#include <cuda_runtime.h>
+#endif
 
 namespace mneme {
 enum DeviceVendors { HIP, CUDA };
@@ -251,11 +257,298 @@ template <> struct DeviceTraits<DeviceVendors::HIP> {
   }
 };
 #elif defined(MNEME_ENABLE_CUDA)
-template <> struct DeviceTraits<DeviceVendors::HIP> {
-  using DeviceError_t = hipError_t;
-  using DeviceStream_t = hipStream_t;
-  using KernelFunction_t = hipFunction_t;
-  using AllocGranularityFlags = hipMemAllocationGranularity_flags;
+template <> struct DeviceTraits<DeviceVendors::CUDA> {
+
+  using DeviceError_t = cudaError_t;
+  using DeviceDriverError_t = CUresult;
+
+  using DeviceStream_t = cudaStream_t;
+
+  using KernelFunction_t = CUfunction;
+
+  using MemoryAllocationHandle_t = CUmemGenericAllocationHandle;
+
+  using DeviceModule_t = CUmodule;
+  using DevicePtr_t = CUdeviceptr;
+
+  using DeviceHandle_t = CUdevice;
+  using DeviceContext_t = CUcontext;
+  using DeviceFunction_t = CUfunction;
+
+  using DeviceEvent_t = cudaEvent_t;
+  static constexpr auto DeviceSuccess = cudaSuccess;
+  static constexpr auto DeviceDriverSuccess = CUDA_SUCCESS;
+
+  static inline std::optional<std::string>
+  DeviceErrorCheck(DeviceError_t ErrorCode) {
+    if (ErrorCode == DeviceSuccess)
+      return std::nullopt;
+    return std::string(cudaGetErrorString(ErrorCode));
+  }
+
+  static inline std::optional<std::string>
+  DeviceErrorCheck(DeviceDriverError_t ErrorCode) {
+    if (ErrorCode == DeviceDriverSuccess)
+      return std::nullopt;
+    const char *name = nullptr, *desc = nullptr;
+    cuGetErrorName(ErrorCode, &name);
+    cuGetErrorString(ErrorCode, &desc);
+
+    return std::string("Error:") + std::string(name) +
+           std::string(" description:") + std::string(desc);
+  }
+
+  static DeviceError_t DeviceStreamSynchronize(DeviceStream_t Stream) {
+    return cudaStreamSynchronize(Stream);
+  }
+
+  static DeviceError_t DeviceMemset(void *DevPtr, int Value, size_t Bytes) {
+    auto EC = cudaMemset(DevPtr, Value, Bytes);
+    return EC;
+  }
+
+  static DeviceError_t DeviceMalloc(void **ptr, size_t size) {
+    return cudaMalloc(ptr, size);
+  }
+
+  static DeviceError_t DeviceFree(void *ptr) { return cudaFree(ptr); }
+
+  static DeviceError_t DeviceCopy(void *Dest, void *Src, size_t SizeBytes,
+                                  cudaMemcpyKind Kind) {
+    return cudaMemcpy(Dest, Src, SizeBytes, Kind);
+  }
+
+  static DeviceError_t DeviceSynchronize() { return cudaDeviceSynchronize(); }
+
+  static std::string GetDeviceArch() {
+    DeviceHandle_t Dev;
+    DeviceContext_t Ctx;
+    auto EC = DeviceErrorCheck(cuInit(0));
+    if (EC)
+      FATAL_ERROR("Could not initialize device\n EC:" + EC.value());
+
+    EC = DeviceErrorCheck(cudaGetDevice(&Dev));
+    if (EC)
+      FATAL_ERROR("Could not get device\n EC:" + EC.value());
+
+    EC = DeviceErrorCheck(cuCtxGetCurrent(&Ctx));
+    if (EC)
+      FATAL_ERROR("Could not get current CUDA context\nEC:" + EC.value());
+
+    if (!Ctx) {
+      EC = DeviceErrorCheck(cuCtxCreate(&Ctx, 0, Dev));
+      if (EC)
+        FATAL_ERROR("Could not create new context\nEC:" + EC.value());
+    }
+
+    int CCMajor;
+    EC = DeviceErrorCheck(cuDeviceGetAttribute(
+        &CCMajor, CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR, Dev));
+    if (EC)
+      FATAL_ERROR("Could not get device major attribute\n EC:" + EC.value());
+    int CCMinor;
+    DeviceErrorCheck(cuDeviceGetAttribute(
+        &CCMinor, CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MINOR, Dev));
+    if (EC)
+      FATAL_ERROR("Could not get device minor attribute\n EC:" + EC.value());
+
+    std::string DeviceArch = "sm_" + std::to_string(CCMajor * 10 + CCMinor);
+
+    return DeviceArch;
+  }
+
+  static DeviceModule_t getDeviceModuleFromImage(const void *Image) {
+    DeviceModule_t cudaModule;
+
+    auto EC = DeviceErrorCheck(cuModuleLoadData(&cudaModule, Image));
+    if (EC)
+      FATAL_ERROR("Error with loading data from module\nEC:" + EC.value());
+    return cudaModule;
+  }
+
+  static void DeviceModuleUnload(DeviceModule_t Module) {
+    auto EC = DeviceErrorCheck(cuModuleUnload(Module));
+    if (EC)
+      FATAL_ERROR("Cannot unload module\nEC:" + EC.value());
+  }
+
+  static std::pair<void *, size_t>
+  getGlobalAddrFromModule(DeviceModule_t &cudaModule, std::string &GlobalName) {
+    size_t Size;
+    DevicePtr_t DevPtr;
+    auto EC = DeviceErrorCheck(
+        cuModuleGetGlobal(&DevPtr, &Size, cudaModule, GlobalName.c_str()));
+    if (EC)
+      FATAL_ERROR("Could not load global variable '" + GlobalName +
+                  "' from device module\n:EC:" + EC.value());
+    return std::make_pair((void *)DevPtr, Size);
+  }
+
+  static DeviceFunction_t getKernelFunctionFromImage(DeviceModule_t &Module,
+                                                     std::string &KernelName) {
+    DeviceFunction_t KernelFunc;
+    auto EC = DeviceErrorCheck(
+        cuModuleGetFunction(&KernelFunc, Module, KernelName.c_str()));
+    if (EC)
+      FATAL_ERROR("Error with loading kernel from Module");
+
+    return KernelFunc;
+  }
+
+  static DeviceDriverError_t launchKernelFunction(DeviceFunction_t KernelFunc,
+                                                  dim3 GridDim, dim3 BlockDim,
+                                                  void **KernelArgs,
+                                                  uint64_t ShmemSize,
+                                                  cudaStream_t Stream) {
+    return cuLaunchKernel(KernelFunc, GridDim.x, GridDim.y, GridDim.z,
+                          BlockDim.x, BlockDim.y, BlockDim.z, ShmemSize, Stream,
+                          KernelArgs, nullptr);
+  }
+
+  static inline uint64_t
+  getPageSize(int DeviceID,
+              const CUmemAllocationGranularity_flags Granularity) {
+    uint64_t PageSize;
+    CUmemAllocationProp Prop = {};
+    Prop.type = CUmemAllocationType::CU_MEM_ALLOCATION_TYPE_PINNED;
+    Prop.location.type = CUmemLocationType::CU_MEM_LOCATION_TYPE_DEVICE;
+    Prop.location.id = DeviceID;
+    // TODO: I could not find any documentation regarding the compressionType in
+    // HIP. I will leave unitialized a.t.m.
+    // Prop.allocFlags.compressionType = CU_MEM_ALLOCATION_COMP_GENERIC;
+
+    auto EC = DeviceErrorCheck(
+        cuMemGetAllocationGranularity(&PageSize, &Prop, Granularity));
+    if (EC)
+      FATAL_ERROR("Could not get Allocation Granularity\nEC:" + EC.value());
+    return PageSize;
+  }
+
+  static constexpr cudaMemcpyKind MemcpyHostToDeviceKind() {
+    return cudaMemcpyHostToDevice;
+  }
+
+  static constexpr cudaMemcpyKind MemcpyDeviceToHostKind() {
+    return cudaMemcpyDeviceToHost;
+  }
+
+  static void mmap(MemoryAllocationHandle_t &MHandle, void *Addr,
+                   uintptr_t Size, int DeviceID) {
+    CUmemAllocationProp Prop = {};
+    Prop.type = CU_MEM_ALLOCATION_TYPE_PINNED;
+    Prop.location.type = CU_MEM_LOCATION_TYPE_DEVICE;
+    Prop.location.id = DeviceID;
+    auto EC = DeviceErrorCheck(cuMemCreate(&MHandle, Size, &Prop, 0));
+    if (EC)
+      FATAL_ERROR("Cannot create memory handle\nEC:" + EC.value());
+    EC = DeviceErrorCheck(cuMemMap((DevicePtr_t)Addr, Size, 0, MHandle, 0));
+    if (EC)
+      FATAL_ERROR("Cannot map memory handle\nEC:" + EC.value());
+
+    CUmemAccessDesc ADesc = {};
+    ADesc.location.type = CU_MEM_LOCATION_TYPE_DEVICE;
+    ADesc.location.id = DeviceID;
+    ADesc.flags = CU_MEM_ACCESS_FLAGS_PROT_READWRITE;
+
+    EC = DeviceErrorCheck(cuMemSetAccess((DevicePtr_t)Addr, Size, &ADesc, 1));
+    if (EC)
+      FATAL_ERROR("Cannot set memory Access\nEC:" + EC.value());
+  }
+
+  static uint64_t getMinPageSize(int DeviceID) {
+    return getPageSize(DeviceID, CU_MEM_ALLOC_GRANULARITY_MINIMUM);
+  }
+
+  static void *getVirtualAddress(uint64_t Size, void *VA, uint64_t Alignment) {
+    DevicePtr_t devPtr = 0;
+
+    cuErrCheck(cuMemAddressReserve(&devPtr, Size, Alignment,
+                                   reinterpret_cast<DevicePtr_t>(VA), 0));
+    return (void *)devPtr;
+  }
+
+  static void unmap(MemoryAllocationHandle_t &MHandle, void *Addr,
+                    uintptr_t Size) {
+    LOG_DEBUG("Unmapping Addr:{} SIZE:{}", Addr, Size);
+    auto EC = DeviceErrorCheck(cuMemUnmap((DevicePtr_t)Addr, Size));
+    if (EC)
+      FATAL_ERROR("Cannot set unmap memory\nEC:" + EC.value());
+
+    EC = DeviceErrorCheck(cuMemRelease(MHandle));
+    if (EC)
+      FATAL_ERROR("Cannot set cuMemRelease Handle\nEC:" + EC.value());
+  }
+
+  static size_t getFixedMemorySize() {
+    static uint64_t PageSize{[&]() {
+      const char *env_p = std::getenv("MNEME_PAGE_SIZE");
+      if (!env_p)
+        return static_cast<uint64_t>(64L * 1024L * 1024L * 1024L);
+      return static_cast<uint64_t>(std::atol(env_p) * 1024L * 1024L * 1024L);
+    }()};
+    return PageSize;
+  }
+
+  static void freeVirtualAddress(void *Addr, size_t Size) {
+    LOG_DEBUG("Releasing Device Virtual Address Pages:{} Size:{}", Addr, Size);
+    auto EC = DeviceErrorCheck(cuMemAddressFree((DevicePtr_t)Addr, Size));
+    if (EC) {
+      FATAL_ERROR("Could not release VA addresses " + EC.value());
+    }
+  }
+
+  static bool compareDeviceBlobs(const char *Blob1, const char *Blob2,
+                                 uint64_t NumBytes);
+
+  static DeviceError_t DeviceStreamCreate(DeviceStream_t *Stream) {
+    return cudaStreamCreate(Stream);
+  }
+
+  static DeviceError_t deviceStreamDestroy(DeviceStream_t Stream) {
+    return cudaStreamDestroy(Stream);
+  }
+
+  static constexpr uintptr_t getSuggestedAddr() { return 0x0000153923e00000; }
+
+  static DeviceError_t deviceLaunchKernel(const void *kernelFunc, dim3 gridDim,
+                                          dim3 blockDim, void **kernelArgs,
+                                          size_t sharedMemBytes,
+                                          DeviceStream_t stream) {
+    auto EC = DeviceErrorCheck(cuLaunchKernel(
+        (CUfunction)kernelFunc, gridDim.x, gridDim.y, gridDim.z, blockDim.x,
+        blockDim.y, blockDim.z, sharedMemBytes, stream, kernelArgs, nullptr));
+    if (EC)
+      LOG_WARN("Launching Kernel return error {}", EC.value());
+
+    return cudaGetLastError();
+  }
+
+  static DeviceError_t deviceGetSymbolAddress(void **devPtr,
+                                              const void *symbol) {
+    return cudaGetSymbolAddress(devPtr, symbol);
+  }
+
+  static DeviceError_t deviceEventCreate(DeviceEvent_t *event) {
+    return cudaEventCreate(event);
+  }
+
+  static DeviceError_t deviceEventRecord(DeviceEvent_t event,
+                                         DeviceStream_t stream) {
+    return cudaEventRecord(event, stream);
+  }
+
+  static DeviceError_t deviceEventDestroy(DeviceEvent_t event) {
+    return cudaEventDestroy(event);
+  }
+
+  static DeviceError_t deviceEventSynchronize(DeviceEvent_t event) {
+    return cudaEventSynchronize(event);
+  }
+
+  static DeviceError_t deviceEventElapsedTime(float *ms, DeviceEvent_t start,
+                                              DeviceEvent_t stop) {
+    return cudaEventElapsedTime(ms, start, stop);
+  }
 };
 #else
 #endif

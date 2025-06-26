@@ -7,7 +7,6 @@
 #include <cstdint>
 #include <filesystem>
 #include <functional>
-#include <hip/hip_runtime.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/JSON.h>
 #include <llvm/Support/MemoryBuffer.h>
