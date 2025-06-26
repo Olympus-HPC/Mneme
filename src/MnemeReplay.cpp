@@ -1,4 +1,3 @@
-#include <hip/hip_runtime.h>
 #include <mneme/Utils.hpp>
 
 #ifdef ICMP_NE
@@ -24,9 +23,16 @@ using namespace llvm;
 #ifdef MNEME_ENABLE_HIP
 #include "mneme/MnemeMemoryHIP.hpp"
 #include "mneme/MnemeRecordHIP.hpp"
+#include <hip/hip_runtime.h>
 using MnemeRecorderDevice = MnemeRecorderHIP;
 using DeviceVendorTraits = DeviceTraits<DeviceVendors::HIP>;
 constexpr DeviceVendors Vendor = DeviceVendors::HIP;
+#elif defined(MNEME_ENABLE_CUDA)
+#include <cuda_runtime.h>
+using MnemeRecorderDevice = MnemeRecorderCUDA;
+using DeviceVendorTraits = DeviceTraits<DeviceVendors::CUDA>;
+constexpr DeviceVendors Vendor = DeviceVendors::CUDA;
+
 #endif
 
 static cl::OptionCategory MnemeCategory("Mneme Tool Options",

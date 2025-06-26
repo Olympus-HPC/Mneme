@@ -28,7 +28,7 @@ tests cover 18 and AMD ROCm versions 6.2.1, 6.3).  The top-level
 * `MNEME_ENABLE_LOGGER`: Enalbes Mneme logging.
 
 
-Please check the buld process of our CI [here](https://github.com/Olympus-HPC/Mneme/blob/features/amd-refactor/scripts/gitlab/ci-build-test.sh). 
+Please check the build process of our CI [here](https://github.com/Olympus-HPC/Mneme/blob/features/amd-refactor/scripts/gitlab/ci-build-test.sh). 
 
 The script clones proteus and spdlog builds and installs them and then installs Mneme.
 

@@ -36,6 +36,7 @@ option(MNEME_ENABLE_DEBUG "Enable Debug Output" OFF)
 option(MNEME_ENABLE_LOGGER "Enable logging on mneme" ON)
 option(MNEME_ENABLE_AUTOTUNE "Enable autotuning and generate python" OFF)
 
+include(cmake/SetupLLVM.cmake)
 find_package(proteus REQUIRED)
 get_target_property(proteus_link_dirs proteus INTERFACE_LINK_DIRECTORIES)
 message(STATUS "Proteus Link Directories: ${proteus_link_dirs}")
@@ -68,8 +69,6 @@ endif()
 if(MNEME_ENABLE_DEBUG)
   add_definitions("-DMNEME_ENABLE_DEBUG")
 endif()
-
-include(cmake/SetupLLVM.cmake)
 
 add_subdirectory(src)
 add_subdirectory(pass)
