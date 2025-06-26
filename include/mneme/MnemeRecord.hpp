@@ -183,6 +183,10 @@ public:
   }
 
   DeviceError_t rtFree(void *ptr) {
+    if (ptr == nullptr) {
+      LOG_WARN("Mneme was instructed to de-allocate nullptr..., skipping");
+      return MnemeDeviceRT::DeviceSuccess;
+    }
     if (!AllocatedBlobs.contains(ptr)) {
       LOG_CRITICAL("Free address that is not being allocated through Mneme {}",
                    ptr);
