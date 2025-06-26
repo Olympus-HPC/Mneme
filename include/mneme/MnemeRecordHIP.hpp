@@ -1,8 +1,5 @@
 #pragma once
 
-#include <hip/hip_runtime.h>
-
-#include "MnemeLogger.hpp"
 #include "mneme/DeviceTraits.hpp"
 #include "mneme/MnemeLogger.hpp"
 #include "mneme/MnemeMemoryHIP.hpp"

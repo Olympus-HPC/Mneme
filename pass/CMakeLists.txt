@@ -1,7 +1,7 @@
 add_library(regdeviceir SHARED regdeviceir.cpp)
 
 target_include_directories(regdeviceir
-  SYSTEM PRIVATE ${LLVM_INCLUDE_DIRS})
+  SYSTEM PRIVATE ${LLVM_INCLUDE_DIRS} ${CMAKE_SOURCE_DIR}/include)
 
 if(NOT LLVM_ENABLE_RTTI)
   target_compile_options(regdeviceir PRIVATE -fno-rtti)
