@@ -70,11 +70,11 @@ bash ./${MINICONDA_DIR}/miniconda.sh -b -u -p ./${MINICONDA_DIR}
 rm ./${MINICONDA_DIR}/miniconda.sh
 source ./${MINICONDA_DIR}/bin/activate
 conda create -y -n mneme -c conda-forge \
-    python=3.10 clang=18.1.8 clangxx=18.1.8 llvmdev=18.1.8 lit=18.1.8 zstd-cmake
+    python=3.10 clang=18.1.8 clangxx=18.1.8 llvmdev=18.1.8 lit=18.1.8
 else
 source ./${MINICONDA_DIR}/bin/activate
-conda activate mneme 
 fi
+conda activate mneme 
 
 LLVM_INSTALL_DIR=$(llvm-config --prefix)
 export LLVM_INSTALL_DIR=$(llvm-config --prefix)

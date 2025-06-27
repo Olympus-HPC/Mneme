@@ -3,7 +3,7 @@
 #include <llvm/Support/CBindingWrapping.h>
 #include <llvm/Support/MemoryBuffer.h>
 #include <mneme/DeviceTraits.hpp>
-#include <mneme/Utils.hpp>
+#include <mneme/MnemeUtils.hpp>
 
 using namespace mneme;
 using namespace llvm;
@@ -22,7 +22,7 @@ MnemePY_initializePageManager(uintptr_t Addr, uint64_t VASize) {
   void *VAddr = reinterpret_cast<void *>(Addr);
   auto PM = initializePageManager<DeviceVendorTraits>(VAddr, VASize);
   if (PM->getVAStart() != VAddr) {
-    FATAL_ERROR("Could not allocate Device Pages\n Record got : " +
+    LOG_FATAL("Could not allocate Device Pages\n Record got : " +
                 util::pointerToHexString(VAddr) + " and replay got : " +
                 util::pointerToHexString(PM->getVAStart()));
   }
@@ -33,7 +33,7 @@ MnemePY_initializePageManager(uintptr_t Addr, uint64_t VASize) {
 API_EXPORT(void) MnemePY_DisposePageManager(void *PMPtr) {
   PageManager *PM = reinterpret_cast<PageManager *>(PMPtr);
   if (!PM) {
-    FATAL_ERROR("Calling Dispose of page manager with a null pointer");
+    LOG_FATAL("Calling Dispose of page manager with a null pointer");
   }
   delete PM;
 }

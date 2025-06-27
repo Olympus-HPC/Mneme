@@ -50,13 +50,13 @@ MnemePY_launchKernelFunction(void *Func, dim3 Grid, dim3 Block) {
       DeviceVendorTraits::launchKernelFunction(DevFunc, Grid, Block, KernelArgs,
                                                0, 0));
   if (EC)
-    FATAL_ERROR("Error When Launching Kernel: " + EC.value());
+    LOG_FATAL("Error When Launching Kernel: " + EC.value());
 
   EC = DeviceVendorTraits::DeviceErrorCheck(
       DeviceVendorTraits::DeviceSynchronize());
 
   if (EC)
-    FATAL_ERROR("Error When Launching Kernel: " + EC.value());
+    LOG_FATAL("Error When Launching Kernel: " + EC.value());
 }
 
 API_EXPORT(const char *) MnemePy_getDeviceArch() {
@@ -81,19 +81,19 @@ MnemePy_profile(void *WrappedModule, void *Func, dim3 Grid, dim3 Block,
   auto EC = DeviceVendorTraits::DeviceErrorCheck(
       DeviceVendorTraits::DeviceStreamCreate(&ReplayStream));
   if (EC)
-    FATAL_ERROR("Error when creating a stream for replay\n" + EC.value());
+    LOG_FATAL("Error when creating a stream for replay\n" + EC.value());
 
   EC = DeviceVendorTraits::DeviceErrorCheck(
       DeviceVendorTraits::deviceEventCreate(&StartEvent));
 
   if (EC)
-    FATAL_ERROR("Error when creating start event for replay\n" + EC.value());
+    LOG_FATAL("Error when creating start event for replay\n" + EC.value());
 
   EC = DeviceVendorTraits::DeviceErrorCheck(
       DeviceVendorTraits::deviceEventCreate(&EndEvent));
 
   if (EC)
-    FATAL_ERROR("Error when creating end event for replay\n" + EC.value());
+    LOG_FATAL("Error when creating end event for replay\n" + EC.value());
 
   PrologueState->initializeGlobals(VendorModule);
 
@@ -108,34 +108,34 @@ MnemePy_profile(void *WrappedModule, void *Func, dim3 Grid, dim3 Block,
         DeviceVendorTraits::DeviceStreamSynchronize(ReplayStream));
 
     if (EC)
-      FATAL_ERROR("Error when synchronizing device stream " + EC.value());
+      LOG_FATAL("Error when synchronizing device stream " + EC.value());
 
     DeviceVendorTraits::DeviceErrorCheck(
         DeviceVendorTraits::deviceEventRecord(StartEvent, ReplayStream));
     if (EC)
-      FATAL_ERROR("Error when recording event " + EC.value());
+      LOG_FATAL("Error when recording event " + EC.value());
 
     EC = DeviceVendorTraits::DeviceErrorCheck(
         DeviceVendorTraits::launchKernelFunction(DevFunc, Grid, Block, Args,
                                                  SharedMemSize, ReplayStream));
     if (EC)
-      FATAL_ERROR("Error When Launching Kernel: " + EC.value());
+      LOG_FATAL("Error When Launching Kernel: " + EC.value());
 
     DeviceVendorTraits::DeviceErrorCheck(
         DeviceVendorTraits::deviceEventRecord(EndEvent, ReplayStream));
     if (EC)
-      FATAL_ERROR("Error when recording event " + EC.value());
+      LOG_FATAL("Error when recording event " + EC.value());
 
     EC = DeviceVendorTraits::DeviceErrorCheck(
         DeviceVendorTraits::deviceEventSynchronize(EndEvent));
     if (EC)
-      FATAL_ERROR("Error when synchronizing event " + EC.value());
+      LOG_FATAL("Error when synchronizing event " + EC.value());
 
     EC = DeviceVendorTraits::DeviceErrorCheck(
         DeviceVendorTraits::deviceEventElapsedTime(&elapsedTime, StartEvent,
                                                    EndEvent));
     if (EC)
-      FATAL_ERROR("Error when recording event " + EC.value());
+      LOG_FATAL("Error when recording event " + EC.value());
 
     time[i] = elapsedTime;
 
@@ -146,14 +146,14 @@ MnemePy_profile(void *WrappedModule, void *Func, dim3 Grid, dim3 Block,
     //         (*PrologueState == *EpilogueState) ? "" : "NOT");
 
     if (EC)
-      FATAL_ERROR("Error When synchronizing with kernel stream: " + EC.value());
+      LOG_FATAL("Error When synchronizing with kernel stream: " + EC.value());
   }
 
   EC = DeviceVendorTraits::DeviceErrorCheck(
       DeviceVendorTraits::DeviceSynchronize());
 
   if (EC)
-    FATAL_ERROR("Error when synchronizing device" + EC.value());
+    LOG_FATAL("Error when synchronizing device" + EC.value());
 }
 
 API_EXPORT(int) MnemePy_getNumArgs(MnemeDeviceMemStateRef WState) {

@@ -5,7 +5,7 @@
 #include <sys/types.h>
 
 #include "mneme/MnemeLogger.hpp"
-#include "mneme/Utils.hpp"
+#include "mneme/MnemeUtils.hpp"
 
 struct ContiguousAddrBlock {
   // Starting address of the free block

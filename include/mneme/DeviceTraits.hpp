@@ -1,6 +1,6 @@
 #pragma once
 #include "mneme/MnemeLogger.hpp"
-#include "mneme/Utils.hpp"
+#include "mneme/MnemeUtils.hpp"
 #include <optional>
 
 #ifdef MNEME_ENABLE_HIP

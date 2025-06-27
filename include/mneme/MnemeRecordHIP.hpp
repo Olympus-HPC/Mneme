@@ -4,7 +4,7 @@
 #include "mneme/MnemeLogger.hpp"
 #include "mneme/MnemeMemoryHIP.hpp"
 #include "mneme/MnemeRecord.hpp"
-#include "mneme/Utils.hpp"
+#include "mneme/MnemeUtils.hpp"
 
 #include <dlfcn.h>
 #include <hip/hip_runtime.h>
@@ -79,7 +79,7 @@ public:
       const char *Binary = FatbinWrapper->Binary;
       llvm::StringRef Magic(Binary, sizeof(OFFLOAD_BUNDLER_MAGIC_STR) - 1);
       if (Magic != OFFLOAD_BUNDLER_MAGIC_STR)
-        FATAL_ERROR("Error missing magic string");
+        LOG_FATAL("Error missing magic string");
       Pos += sizeof(OFFLOAD_BUNDLER_MAGIC_STR) - 1;
 
       auto Read8ByteIntLE = [](const char *S, size_t Pos) {
@@ -117,11 +117,11 @@ public:
 
       auto DeviceElf = llvm::object::ELF64LEFile::create(DeviceBinary);
       if (DeviceElf.takeError())
-        FATAL_ERROR("Cannot create the device elf");
+        LOG_FATAL("Cannot create the device elf");
 
       auto Sections = DeviceElf->sections();
       if (Sections.takeError())
-        FATAL_ERROR("Error reading sections");
+        LOG_FATAL("Error reading sections");
 
       llvm::ArrayRef<uint8_t> DeviceBitcode;
 
@@ -133,7 +133,7 @@ public:
         llvm::ArrayRef<uint8_t> BitcodeData;
         auto SectionContents = DeviceElf->getSectionContents(Section);
         if (SectionContents.takeError())
-          FATAL_ERROR("Error reading section contents");
+          LOG_FATAL("Error reading section contents");
         BitcodeData = *SectionContents;
         auto Bitcode =
             llvm::StringRef{reinterpret_cast<const char *>(BitcodeData.data()),
@@ -142,7 +142,7 @@ public:
         llvm::SMDiagnostic Err;
         auto M = parseIR(llvm::MemoryBufferRef{Bitcode, SectionName}, Err, Ctx);
         if (!M)
-          FATAL_ERROR("unexpected");
+          LOG_FATAL("unexpected");
         return M;
       };
 
@@ -154,7 +154,7 @@ public:
       for (auto Section : *Sections) {
         auto SectionName = DeviceElf->getSectionName(Section);
         if (SectionName.takeError())
-          FATAL_ERROR("Error reading section name");
+          LOG_FATAL("Error reading section name");
 
         if (!SectionName->starts_with(".jit.bitcode"))
           continue;

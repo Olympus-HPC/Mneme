@@ -104,7 +104,7 @@ public:
     mneme::MnemeLogger::getLogger().critical(__VA_ARGS__);                     \
     mneme::MnemeLogger::getLogger().critical(                                  \
         "Error occured in file {} at line {}", __FILE__, __LINE__);            \
-    while (0)
+  } while (0)
 
 #else // Logging disabled
 #include <iostream>

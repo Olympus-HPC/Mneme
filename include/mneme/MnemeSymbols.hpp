@@ -1,6 +1,6 @@
 #pragma once
 #include "mneme/MnemeLogger.hpp"
-#include "mneme/Utils.hpp"
+#include "mneme/MnemeUtils.hpp"
 #include <cstdint>
 #include <cstring>
 #include <llvm/ADT/ArrayRef.h>
@@ -47,7 +47,7 @@ public:
 
   void setArgData(const char *&Data, int Index) {
     if (Index >= KernelArgSizes.size() || Index >= ArgData.size())
-      FATAL_ERROR("Setting argument data out of range");
+      LOG_FATAL("Setting argument data out of range");
 
     auto MemSize = KernelArgSizes[Index];
     ArgData[Index] = std::make_unique<uint8_t[]>(MemSize);

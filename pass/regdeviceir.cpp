@@ -73,7 +73,7 @@ constexpr auto debug_build = false;
 #define DEBUG(x)
 #endif
 
-#define FATAL_ERROR(x)                                                         \
+#define LOG_FATAL(x)                                                         \
   report_fatal_error(llvm::Twine(std::string{} + __FILE__ + ":" +              \
                                  std::to_string(__LINE__) + " => " + x))
 
@@ -148,7 +148,7 @@ public:
     dump(M, "host", IsLTO ? "lto-before-mneme" : "before-mneme");
 
     if (verifyModule(M, &errs()))
-      FATAL_ERROR("Broken original module found, compilation aborted!");
+      LOG_FATAL("Broken original module found, compilation aborted!");
 
     dump(M, "host", IsLTO ? "lto-before-mneme" : "after-mneme");
 
@@ -159,7 +159,7 @@ private:
   std::string getJitBitcodeUniqueName(Module &M) {
     llvm::sys::fs::UniqueID ID;
     if (auto EC = llvm::sys::fs::getUniqueID(M.getSourceFileName(), ID))
-      FATAL_ERROR("Could not get unique id");
+      LOG_FATAL("Could not get unique id");
 
     SmallString<64> Out;
     llvm::raw_svector_ostream OutStr(Out);
