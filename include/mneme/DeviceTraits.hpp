@@ -6,9 +6,54 @@
 #ifdef MNEME_ENABLE_HIP
 #include <hip/amd_detail/amd_hip_runtime.h>
 #include <hip/hip_runtime.h>
+
+#define hipErrCheck(CALL)                                                      \
+  {                                                                            \
+    hipError_t err = CALL;                                                     \
+    if (err != hipSuccess) {                                                   \
+      printf("ERROR @ %s:%d ->  %s\n", __FILE__, __LINE__,                     \
+             hipGetErrorString(err));                                          \
+      abort();                                                                 \
+    }                                                                          \
+  }
+
+#define hiprtcErrCheck(CALL)                                                   \
+  {                                                                            \
+    hiprtcResult err = CALL;                                                   \
+    if (err != HIPRTC_SUCCESS) {                                               \
+      printf("ERROR @ %s:%d ->  %s\n", __FILE__, __LINE__,                     \
+             hiprtcGetErrorString(err));                                       \
+      abort();                                                                 \
+    }                                                                          \
+  }
+
 #elif defined(MNEME_ENABLE_CUDA)
 #include <cuda.h>
 #include <cuda_runtime.h>
+
+#define cudaErrCheck(CALL)                                                     \
+  {                                                                            \
+    cudaError_t err = CALL;                                                    \
+    if (err != cudaSuccess) {                                                  \
+      printf("ERROR @ %s:%d ->  %s\n", __FILE__, __LINE__,                     \
+             hipGetErrorString(err));                                          \
+      abort();                                                                 \
+    }                                                                          \
+  }
+
+#define cuErrCheck(CALL)                                                       \
+  {                                                                            \
+    CUresult err = CALL;                                                       \
+    if (err != CUDA_SUCCESS) {                                                 \
+      const char *name = nullptr, *desc = nullptr;                             \
+      cuGetErrorName(err, &name);                                              \
+      cuGetErrorString(err, &desc);                                            \
+      fprintf(stderr, "CUDA Driver Error [%s]: %s\n", name ? name : "Unknown", \
+              desc ? desc : "No description");                                 \
+      abort();                                                                 \
+    }                                                                          \
+  }
+
 #endif
 
 namespace mneme {
@@ -64,18 +109,18 @@ template <> struct DeviceTraits<DeviceVendors::HIP> {
     DeviceContext_t Ctx;
     auto EC = DeviceErrorCheck(hipInit(0));
     if (EC)
-      FATAL_ERROR("Could not initialize device\n EC:" + EC.value());
+      LOG_FATAL("Could not initialize device\n EC:" + EC.value());
 
     EC = DeviceErrorCheck(hipGetDevice(&Dev));
     if (EC)
-      FATAL_ERROR("Could not get device\n EC:" + EC.value());
+      LOG_FATAL("Could not get device\n EC:" + EC.value());
 
     hipDeviceProp_t device_prop;
 
     // Get properties of the current device
     EC = DeviceErrorCheck(hipGetDeviceProperties(&device_prop, Dev));
     if (EC)
-      FATAL_ERROR("Could not get device properties\n EC:" + EC.value());
+      LOG_FATAL("Could not get device properties\n EC:" + EC.value());
 
     std::string arch_name = device_prop.gcnArchName;
     LOG_DEBUG("Architecture name is {}", arch_name);
@@ -90,14 +135,14 @@ template <> struct DeviceTraits<DeviceVendors::HIP> {
 
     auto EC = DeviceErrorCheck(hipModuleLoadData(&HipModule, Image));
     if (EC)
-      FATAL_ERROR("Error with loading data from module\nEC:" + EC.value());
+      LOG_FATAL("Error with loading data from module\nEC:" + EC.value());
     return HipModule;
   }
 
   static void DeviceModuleUnload(DeviceModule_t Module) {
     auto EC = DeviceErrorCheck(hipModuleUnload(Module));
     if (EC)
-      FATAL_ERROR("Cannot unload module\nEC:" + EC.value());
+      LOG_FATAL("Cannot unload module\nEC:" + EC.value());
   }
 
   static std::pair<void *, size_t>
@@ -107,8 +152,8 @@ template <> struct DeviceTraits<DeviceVendors::HIP> {
     auto EC = DeviceErrorCheck(
         hipModuleGetGlobal(&DevPtr, &Size, HipModule, GlobalName.c_str()));
     if (EC)
-      FATAL_ERROR("Could not load global variable '" + GlobalName +
-                  "' from device module\n:EC:" + EC.value());
+      LOG_FATAL("Could not load global variable '" + GlobalName +
+                "' from device module\n:EC:" + EC.value());
     return std::make_pair((void *)DevPtr, Size);
   }
 
@@ -118,7 +163,7 @@ template <> struct DeviceTraits<DeviceVendors::HIP> {
     auto EC = DeviceErrorCheck(
         hipModuleGetFunction(&KernelFunc, HipModule, KernelName.c_str()));
     if (EC)
-      FATAL_ERROR("Error with loading kernel from Module");
+      LOG_FATAL("Error with loading kernel from Module");
 
     return KernelFunc;
   }
@@ -206,7 +251,7 @@ template <> struct DeviceTraits<DeviceVendors::HIP> {
     LOG_DEBUG("Releasing Device Virtual Address Pages:{} Size:{}", Addr, Size);
     auto EC = DeviceErrorCheck(hipMemAddressFree(Addr, Size));
     if (EC) {
-      FATAL_ERROR("Could not release VA addresses " + EC.value());
+      LOG_FATAL("Could not release VA addresses " + EC.value());
     }
   }
 
@@ -325,32 +370,32 @@ template <> struct DeviceTraits<DeviceVendors::CUDA> {
     DeviceContext_t Ctx;
     auto EC = DeviceErrorCheck(cuInit(0));
     if (EC)
-      FATAL_ERROR("Could not initialize device\n EC:" + EC.value());
+      LOG_FATAL("Could not initialize device\n EC:" + EC.value());
 
     EC = DeviceErrorCheck(cudaGetDevice(&Dev));
     if (EC)
-      FATAL_ERROR("Could not get device\n EC:" + EC.value());
+      LOG_FATAL("Could not get device\n EC:" + EC.value());
 
     EC = DeviceErrorCheck(cuCtxGetCurrent(&Ctx));
     if (EC)
-      FATAL_ERROR("Could not get current CUDA context\nEC:" + EC.value());
+      LOG_FATAL("Could not get current CUDA context\nEC:" + EC.value());
 
     if (!Ctx) {
       EC = DeviceErrorCheck(cuCtxCreate(&Ctx, 0, Dev));
       if (EC)
-        FATAL_ERROR("Could not create new context\nEC:" + EC.value());
+        LOG_FATAL("Could not create new context\nEC:" + EC.value());
     }
 
     int CCMajor;
     EC = DeviceErrorCheck(cuDeviceGetAttribute(
         &CCMajor, CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR, Dev));
     if (EC)
-      FATAL_ERROR("Could not get device major attribute\n EC:" + EC.value());
+      LOG_FATAL("Could not get device major attribute\n EC:" + EC.value());
     int CCMinor;
     DeviceErrorCheck(cuDeviceGetAttribute(
         &CCMinor, CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MINOR, Dev));
     if (EC)
-      FATAL_ERROR("Could not get device minor attribute\n EC:" + EC.value());
+      LOG_FATAL("Could not get device minor attribute\n EC:" + EC.value());
 
     std::string DeviceArch = "sm_" + std::to_string(CCMajor * 10 + CCMinor);
 
@@ -362,14 +407,14 @@ template <> struct DeviceTraits<DeviceVendors::CUDA> {
 
     auto EC = DeviceErrorCheck(cuModuleLoadData(&cudaModule, Image));
     if (EC)
-      FATAL_ERROR("Error with loading data from module\nEC:" + EC.value());
+      LOG_FATAL("Error with loading data from module\nEC:" + EC.value());
     return cudaModule;
   }
 
   static void DeviceModuleUnload(DeviceModule_t Module) {
     auto EC = DeviceErrorCheck(cuModuleUnload(Module));
     if (EC)
-      FATAL_ERROR("Cannot unload module\nEC:" + EC.value());
+      LOG_FATAL("Cannot unload module\nEC:" + EC.value());
   }
 
   static std::pair<void *, size_t>
@@ -379,8 +424,8 @@ template <> struct DeviceTraits<DeviceVendors::CUDA> {
     auto EC = DeviceErrorCheck(
         cuModuleGetGlobal(&DevPtr, &Size, cudaModule, GlobalName.c_str()));
     if (EC)
-      FATAL_ERROR("Could not load global variable '" + GlobalName +
-                  "' from device module\n:EC:" + EC.value());
+      LOG_FATAL("Could not load global variable '" + GlobalName +
+                "' from device module\n:EC:" + EC.value());
     return std::make_pair((void *)DevPtr, Size);
   }
 
@@ -390,7 +435,7 @@ template <> struct DeviceTraits<DeviceVendors::CUDA> {
     auto EC = DeviceErrorCheck(
         cuModuleGetFunction(&KernelFunc, Module, KernelName.c_str()));
     if (EC)
-      FATAL_ERROR("Error with loading kernel from Module");
+      LOG_FATAL("Error with loading kernel from Module");
 
     return KernelFunc;
   }
@@ -420,7 +465,7 @@ template <> struct DeviceTraits<DeviceVendors::CUDA> {
     auto EC = DeviceErrorCheck(
         cuMemGetAllocationGranularity(&PageSize, &Prop, Granularity));
     if (EC)
-      FATAL_ERROR("Could not get Allocation Granularity\nEC:" + EC.value());
+      LOG_FATAL("Could not get Allocation Granularity\nEC:" + EC.value());
     return PageSize;
   }
 
@@ -440,10 +485,10 @@ template <> struct DeviceTraits<DeviceVendors::CUDA> {
     Prop.location.id = DeviceID;
     auto EC = DeviceErrorCheck(cuMemCreate(&MHandle, Size, &Prop, 0));
     if (EC)
-      FATAL_ERROR("Cannot create memory handle\nEC:" + EC.value());
+      LOG_FATAL("Cannot create memory handle\nEC:" + EC.value());
     EC = DeviceErrorCheck(cuMemMap((DevicePtr_t)Addr, Size, 0, MHandle, 0));
     if (EC)
-      FATAL_ERROR("Cannot map memory handle\nEC:" + EC.value());
+      LOG_FATAL("Cannot map memory handle\nEC:" + EC.value());
 
     CUmemAccessDesc ADesc = {};
     ADesc.location.type = CU_MEM_LOCATION_TYPE_DEVICE;
@@ -452,7 +497,7 @@ template <> struct DeviceTraits<DeviceVendors::CUDA> {
 
     EC = DeviceErrorCheck(cuMemSetAccess((DevicePtr_t)Addr, Size, &ADesc, 1));
     if (EC)
-      FATAL_ERROR("Cannot set memory Access\nEC:" + EC.value());
+      LOG_FATAL("Cannot set memory Access\nEC:" + EC.value());
   }
 
   static uint64_t getMinPageSize(int DeviceID) {
@@ -472,11 +517,11 @@ template <> struct DeviceTraits<DeviceVendors::CUDA> {
     LOG_DEBUG("Unmapping Addr:{} SIZE:{}", Addr, Size);
     auto EC = DeviceErrorCheck(cuMemUnmap((DevicePtr_t)Addr, Size));
     if (EC)
-      FATAL_ERROR("Cannot set unmap memory\nEC:" + EC.value());
+      LOG_FATAL("Cannot set unmap memory\nEC:" + EC.value());
 
     EC = DeviceErrorCheck(cuMemRelease(MHandle));
     if (EC)
-      FATAL_ERROR("Cannot set cuMemRelease Handle\nEC:" + EC.value());
+      LOG_FATAL("Cannot set cuMemRelease Handle\nEC:" + EC.value());
   }
 
   static size_t getFixedMemorySize() {
@@ -493,7 +538,7 @@ template <> struct DeviceTraits<DeviceVendors::CUDA> {
     LOG_DEBUG("Releasing Device Virtual Address Pages:{} Size:{}", Addr, Size);
     auto EC = DeviceErrorCheck(cuMemAddressFree((DevicePtr_t)Addr, Size));
     if (EC) {
-      FATAL_ERROR("Could not release VA addresses " + EC.value());
+      LOG_FATAL("Could not release VA addresses " + EC.value());
     }
   }
 

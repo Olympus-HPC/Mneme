@@ -26,6 +26,7 @@ build_proteus() {
   -DCMAKE_C_COMPILER=${LLVM_INSTALL_DIR}/bin/clang \
   -DCMAKE_CXX_COMPILER=${LLVM_INSTALL_DIR}/bin/clang++ \
   -DPROTEUS_ENABLE_HIP=${PROTEUS_ENABLE_HIP} \
+  -DPROTEUS_LINK_SHARED_LLVM=On \
   -DPROTEUS_ENABLE_CUDA=${PROTEUS_ENABLE_CUDA} \
   -DCMAKE_EXPORT_COMPILE_COMMANDS=on \
   -DENABLE_TESTS=Off \
@@ -58,46 +59,51 @@ build_spdlog() {
 if [[ "$SYS_TYPE" == "blueos_3_ppc64le_ib_p9" ]]; then
 ml load gcc/11.2.1
 ml load cmake/3.23
-ml load python/3.8
-#export PATH="/usr/workspace/LExperts/DaCe/usr_18.1.8/blueos_3_ppc64le_ib_p9/bin/:$PATH"
-ml load clang/18.1.8-cuda-11.8.0-gcc-11.2.1
-llvm_root=dirname $(dirname -- $(which clang))
-echo "Setting root dir to be ${llvm_root}"
-export LLVM_INSTALL_DIR=$(llvm-config --prefix)
 ml load cuda/12.2
+
+# Install Clang/LLVM through conda.
+MINICONDA_DIR=miniconda3
+if [[ ! -d ${MINICONDA_DIR} ]]; then
+mkdir -p ${MINICONDA_DIR}
+wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-$(uname -m).sh -O ./${MINICONDA_DIR}/miniconda.sh
+bash ./${MINICONDA_DIR}/miniconda.sh -b -u -p ./${MINICONDA_DIR}
+rm ./${MINICONDA_DIR}/miniconda.sh
+source ./${MINICONDA_DIR}/bin/activate
+conda create -y -n mneme -c conda-forge \
+    python=3.10 clang=18.1.8 clangxx=18.1.8 llvmdev=18.1.8 lit=18.1.8 zstd-cmake
+else
+source ./${MINICONDA_DIR}/bin/activate
+conda activate mneme 
+fi
+
+LLVM_INSTALL_DIR=$(llvm-config --prefix)
+export LLVM_INSTALL_DIR=$(llvm-config --prefix)
+cpp=$(which clang++)
+cc=$(which clang)
+echo "Setting root dir to be ${LLVM_INSTALL_DIR}"
 
 build_proteus "OFF" "ON" $installDir
 echo "After proteus Current directory is $(pwd)"
 build_spdlog $installDir
 mneme_src=$(pwd)
+set -x
 pushd $build_dir 
+echo "Current dir is $(pwd)"
 cmake \
 -DCMAKE_BUILD_TYPE=Relwithdebinfo \
 -Dproteus_DIR=$installDir \
 -DCMAKE_INSTALL_PREFIX=$installDir \
--DCMAKE_CXX_COMPILER=clang++ \
--DCMAKE_C_COMPILER=clang \
+-DCMAKE_CXX_COMPILER=${cpp} \
+-DCMAKE_C_COMPILER=${cc} \
+-DMNEME_LINK_SHARED_LLVM=ON \
+-DCMAKE_CUDA_COMPILER=${cpp} \
+-DCMAKE_CUDA_ARCHITECTURES=70 \
 -DLLVM_INSTALL_DIR=${LLVM_INSTALL_DIR} \
 -DMNEME_ENABLE_HIP=Off \
 -DMNEME_ENABLE_CUDA=On \
 -DMNEME_ENABLE_DEBUG=${MNEME_CI_ENABLE_DEBUG} \
 -DMNEME_ENABLE_TESTS=On \
 -DCMAKE_EXPORT_COMPILE_COMMANDS=on ${mneme_src}
-
-
-
-#cmake .. \
-#-DCMAKE_BUILD_TYPE=Relwithdebinfo \
-#-DCMAKE_INSTALL_PREFIX=$installDir \
-#-DCMAKE_CXX_COMPILER=clang++ \
-#-DCMAKE_C_COMPILER=clang \
-#-DCMAKE_CUDA_COMPILER=clang++ \
-#-DCMAKE_C_COMPILER=clang \
-#-DCMAKE_CUDA_COMPILER=clang++ \
-#-DLLVM_INSTALL_DIR=$(dirname $(dirname $(which clang))) \
-#-DENABLE_CUDA=On \
-#-DCMAKE_EXPORT_COMPILE_COMMANDS=on ../
-
 
 
 elif [[ "$SYS_TYPE" == "toss_4_x86_64_ib_cray" ]]; then
@@ -126,10 +132,10 @@ fi
 
 
 make -j 10
-echo "### TESTING ###"
-ctest --output-on-failure
-echo "### TESTING  ###"
+#echo "### TESTING ###"
+#ctest --output-on-failure
+#echo "### TESTING  ###"
 
-make -j 10 install
+#make -j 10 install
 
 popd

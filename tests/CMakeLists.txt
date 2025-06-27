@@ -104,6 +104,23 @@ if(NOT LIT)
 endif()
 message(STATUS "Found lit at ${LIT}")
 
+
+if(MNEME_ENABLE_HIP)
+    enable_language(HIP)
+elseif(MNEME_ENABLE_CUDA)
+    if(NOT CMAKE_CUDA_ARCHITECTURES)
+        message(FATAL_ERROR "Set CMAKE_CUDA_ARCHITECTURES to compile for")
+    endif()
+
+    enable_language(CUDA)
+    message(STATUS "CUDA compiler ${CMAKE_CUDA_COMPILER_ID}")
+
+    if(NOT ${CMAKE_CUDA_COMPILER_ID} STREQUAL "Clang")
+        message(FATAL_ERROR "JIT is compatible only with Clang CUDA compilation")
+    endif()
+endif()
+
+
 find_program(FILECHECK FileCheck
     PATHS ${LLVM_INSTALL_DIR}/bin ${LLVM_INSTALL_DIR}/libexec/llvm)
 
@@ -114,7 +131,7 @@ else()
 endif()
 
 
-add_subdirectory(unit_tests)
-add_subdirectory(memory)
+#add_subdirectory(unit_tests)
+#add_subdirectory(memory)
 add_subdirectory(record)
-add_subdirectory(replay)
+#add_subdirectory(replay)

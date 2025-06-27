@@ -35,6 +35,7 @@ option(MNEME_ENABLE_TESTS "Enable Testing" OFF)
 option(MNEME_ENABLE_DEBUG "Enable Debug Output" OFF)
 option(MNEME_ENABLE_LOGGER "Enable logging on mneme" ON)
 option(MNEME_ENABLE_AUTOTUNE "Enable autotuning and generate python" OFF)
+option(MNEME_LINK_SHARED_LLVM "Link with the LLVM shared library" OFF)
 
 include(cmake/SetupLLVM.cmake)
 find_package(proteus REQUIRED)
@@ -56,7 +57,6 @@ set(LLVM_VERSION "18.1.8" CACHE STRING "LLVM version")
   add_definitions("-DMNEME_ENABLE_CUDA")
   find_package(CUDAToolkit REQUIRED)
   find_package(CUDA REQUIRED)
-  set(CMAKE_CUDA_COMPILER "clang++")
   message(STATUS "Cuda Libraries: ${CUDA_LIBRARIES}")
   message(STATUS "Cuda Library: ${CUDA_LIBRARY}")
 elseif(MNEME_ENABLE_HIP)
@@ -95,7 +95,7 @@ write_basic_package_version_file(
 
 
 install(
-  TARGETS record replay regdeviceir
+  TARGETS record regdeviceir
   EXPORT mnemeTargets
   RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
   LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}"
