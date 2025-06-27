@@ -5,7 +5,6 @@
 #include "mneme/MnemeRecord.hpp"
 #include "mneme/MnemeUtils.hpp"
 
-#include <dlfcn.h>
 #include <hip/hip_runtime.h>
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/StableHashing.h>
@@ -21,52 +20,6 @@ namespace mneme {
 
 class MnemeRecorderHIP : public MnemeRecorder<MnemeRecorderHIP, HIP> {
 public:
-  static auto *getRTLib() { return dlopen("libamdhip64.so", RTLD_NOW); }
-  static constexpr const char *getLaunchKernelFnName() {
-    return "hipLaunchKernel";
-  }
-  static constexpr const char *getDeviceMallocFnName() { return "hipMalloc"; }
-  static constexpr const char *getPinnedMallocFnName() {
-    return "hipHostMalloc";
-  }
-  static constexpr const char *getManagedMallocFnName() {
-    return "hipMallocManaged";
-  }
-  static constexpr const char *getDeviceFreeFnName() { return "hipFree"; }
-  static constexpr const char *getPinnedFreeFnName() { return "hipHostFree"; }
-  static constexpr const char *getUURegisterFunctionFnName() {
-    return "__hipRegisterFunction";
-  }
-  static const char *getUURegisterVarFnName() { return "__hipRegisterVar"; }
-  static const char *getUURegisterFatbinFnName() {
-    return "__hipRegisterFatBinary";
-  }
-
-  static constexpr bool hasFatBinEnd = false;
-
-  const std::string getArch() {
-    static std::string Arch{[]() {
-      int Device;
-      hipErrCheck(hipInit(0));
-      hipErrCheck(hipGetDevice(&Device));
-      hipDeviceProp_t DeviceProperties;
-
-      // Get properties of the current device
-      hipErrCheck(hipGetDeviceProperties(&DeviceProperties, Device));
-
-      // Get the full architecture name (e.g., gfx90a:sramecc+:xnack-)
-      std::string arch_name = DeviceProperties.gcnArchName;
-
-      LOG_DEBUG("Detected architecture {}", arch_name);
-      // Find the colon (:) to isolate the base architecture
-      auto DevArch = std::string(arch_name.substr(0, arch_name.find(':')));
-      LOG_DEBUG("Detected Device Architecture is {}", DevArch);
-      return DevArch;
-    }()};
-
-    return Arch;
-  }
-
   void extractIR() {
     LOG_INFO("Extracting IR from images");
     constexpr char OFFLOAD_BUNDLER_MAGIC_STR[] = "__CLANG_OFFLOAD_BUNDLE__";
@@ -107,7 +60,8 @@ public:
         llvm::StringRef Triple(Binary + Pos, TripleSize);
         Pos += TripleSize;
 
-        if (!Triple.contains("amdgcn") || !Triple.contains(getArch()))
+        if (!Triple.contains("amdgcn") ||
+            !Triple.contains(DeviceTraits<HIP>::GetDeviceArch()))
           continue;
         LOG_DEBUG("Processing bundle {}", Triple.str());
 

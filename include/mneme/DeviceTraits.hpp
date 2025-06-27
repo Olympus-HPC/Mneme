@@ -1,7 +1,9 @@
 #pragma once
+#include <dlfcn.h>
+#include <optional>
+
 #include "mneme/MnemeLogger.hpp"
 #include "mneme/MnemeUtils.hpp"
-#include <optional>
 
 #ifdef MNEME_ENABLE_HIP
 #include <hip/amd_detail/amd_hip_runtime.h>
@@ -74,6 +76,29 @@ template <> struct DeviceTraits<DeviceVendors::HIP> {
   using DeviceFunction_t = hipFunction_t;
   using DeviceEvent_t = hipEvent_t;
   static constexpr auto DeviceSuccess = hipSuccess;
+
+  static inline auto *getRTLib() { return dlopen("libamdhip64.so", RTLD_NOW); }
+  static constexpr const char *getLaunchKernelFnName() {
+    return "hipLaunchKernel";
+  }
+  static constexpr const char *getDeviceMallocFnName() { return "hipMalloc"; }
+  static constexpr const char *getPinnedMallocFnName() {
+    return "hipHostMalloc";
+  }
+  static constexpr const char *getManagedMallocFnName() {
+    return "hipMallocManaged";
+  }
+  static constexpr const char *getDeviceFreeFnName() { return "hipFree"; }
+  static constexpr const char *getPinnedFreeFnName() { return "hipHostFree"; }
+  static constexpr const char *getUURegisterFunctionFnName() {
+    return "__hipRegisterFunction";
+  }
+  static const char *getUURegisterVarFnName() { return "__hipRegisterVar"; }
+  static const char *getUURegisterFatbinFnName() {
+    return "__hipRegisterFatBinary";
+  }
+
+  static constexpr bool hasFatBinEnd = false;
 
   static inline std::optional<std::string>
   DeviceErrorCheck(hipError_t ErrorCode) {
