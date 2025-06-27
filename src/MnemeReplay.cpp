@@ -21,7 +21,6 @@ using namespace mneme;
 using namespace llvm;
 
 #ifdef MNEME_ENABLE_HIP
-#include "mneme/MnemeMemoryHIP.hpp"
 #include "mneme/MnemeRecordHIP.hpp"
 #include <hip/hip_runtime.h>
 using MnemeRecorderDevice = MnemeRecorderHIP;

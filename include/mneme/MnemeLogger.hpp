@@ -99,12 +99,20 @@ public:
 #define LOG_INFO(...) mneme::MnemeLogger::getLogger().info(__VA_ARGS__)
 #define LOG_WARN(...) mneme::MnemeLogger::getLogger().warn(__VA_ARGS__)
 #define LOG_CRITICAL(...) mneme::MnemeLogger::getLogger().critical(__VA_ARGS__)
+#define LOG_FATAL(...)                                                         \
+  do {                                                                         \
+    mneme::MnemeLogger::getLogger().critical(__VA_ARGS__);                     \
+    mneme::MnemeLogger::getLogger().critical(                                  \
+        "Error occured in file {} at line {}", __FILE__, __LINE__);            \
+    while (0)
 
 #else // Logging disabled
-
+#include <iostream>
 #define LOG_DEBUG(...) ((void)0)
 #define LOG_INFO(...) ((void)0)
 #define LOG_WARN(...) ((void)0)
 #define LOG_CRITICAL(...) ((void)0)
+#define LOG_FATAL(x)                                                           \
+  std::cerr << std::string(__FILE__) << ":" << __LINE__ << x << "\n"
 
 #endif // ENABLE_LOGGING
