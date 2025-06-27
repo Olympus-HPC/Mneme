@@ -1,5 +1,3 @@
-#include <mneme/MnemeUtils.hpp>
-
 #ifdef ICMP_NE
 #undef ICMP_NE
 #endif
@@ -10,6 +8,7 @@
 
 #include "mneme/DeviceTraits.hpp"
 #include "mneme/MnemeJITProteus.hpp"
+#include "mneme/MnemeLLVMUtils.hpp"
 #include "mneme/MnemeLogger.hpp"
 #include "mneme/MnemeReplay.hpp"
 

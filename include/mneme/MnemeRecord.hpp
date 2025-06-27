@@ -1,8 +1,9 @@
 #pragma once
 
-#include "MnemeMemory.hpp"
-#include "MnemePageManager.hpp"
-#include "MnemeUtils.hpp"
+#include "mneme/MnemeLLVMUtils.hpp"
+#include "mneme/MnemeMemory.hpp"
+#include "mneme/MnemePageManager.hpp"
+#include "mneme/MnemeUtils.hpp"
 #include <assert.h>
 #include <cstddef>
 #include <cstdint>

@@ -2,7 +2,6 @@
 
 #include "mneme/DeviceTraits.hpp"
 #include "mneme/MnemeLogger.hpp"
-#include "mneme/MnemeMemoryHIP.hpp"
 #include "mneme/MnemeRecord.hpp"
 #include "mneme/MnemeUtils.hpp"
 

@@ -1,11 +1,3 @@
-#include "MnemeLogger.hpp"
-#include "mneme/DeviceTraits.hpp"
-#include "mneme/MnemeLogger.hpp"
-#include "mneme/MnemeMemory.hpp"
-#include "mneme/MnemePageManager.hpp"
-#include "mneme/MnemeSnapshot.hpp"
-#include "mneme/MnemeSymbols.hpp"
-#include "mneme/MnemeUtils.hpp"
 #include <cstdint>
 #include <llvm/Bitcode/BitcodeReader.h>
 #include <llvm/IR/LLVMContext.h>
@@ -15,6 +7,14 @@
 #include <llvm/Support/MemoryBuffer.h>
 #include <memory>
 #include <proteus/Utils.h>
+
+#include "mneme/DeviceTraits.hpp"
+#include "mneme/MnemeLogger.hpp"
+#include "mneme/MnemeMemory.hpp"
+#include "mneme/MnemePageManager.hpp"
+#include "mneme/MnemeSnapshot.hpp"
+#include "mneme/MnemeSymbols.hpp"
+#include "mneme/MnemeUtils.hpp"
 
 namespace mneme {
 template <DeviceVendors VendorTypes> class ReplayMemState {
@@ -46,7 +46,7 @@ private:
           MnemeDeviceRT::MemcpyHostToDeviceKind()));
       if (CEC)
         LOG_FATAL("Could not copy Memory Blob to device EC: " + CEC.value() +
-                    "\n");
+                  "\n");
     }
   }
 
@@ -59,7 +59,7 @@ private:
           MnemeDeviceRT::MemcpyHostToDeviceKind()));
       if (CEC)
         LOG_FATAL("Could not copy global " + GVI.Name +
-                    " to device EC: " + CEC.value() + "\n");
+                  " to device EC: " + CEC.value() + "\n");
     }
   }
 
@@ -68,16 +68,15 @@ private:
       auto EC = DeviceTraits<VendorTypes>::DeviceErrorCheck(
           MemBlob.map(DevAddr, MemBlob.getActualSize(), MemBlob.getSize()));
       if (EC)
-        LOG_FATAL("Error raised during mapping prologue memeory:" +
-                    EC.value());
+        LOG_FATAL("Error raised during mapping prologue memeory:" + EC.value());
 
       if (DevAddr != reinterpret_cast<void *>(MemBlob.getBlobAddr()))
         LOG_FATAL("Could not map Record Address " +
-                    util::pointerToHexString(DevAddr) +
-                    " instead ReplayInstance got " +
-                    util::pointerToHexString(
-                        static_cast<uint8_t *>(MemBlob.getBlobAddr())) +
-                    "\n");
+                  util::pointerToHexString(DevAddr) +
+                  " instead ReplayInstance got " +
+                  util::pointerToHexString(
+                      static_cast<uint8_t *>(MemBlob.getBlobAddr())) +
+                  "\n");
     }
 
     copyToDevice();
@@ -88,8 +87,7 @@ private:
       auto EC = DeviceTraits<VendorTypes>::DeviceErrorCheck(
           MemBlob.allocate(MemBlob.getSize()));
       if (EC)
-        LOG_FATAL("Error raised during mapping prologue memeory:" +
-                    EC.value());
+        LOG_FATAL("Error raised during mapping prologue memeory:" + EC.value());
     }
     copyToDevice();
   }
@@ -178,16 +176,16 @@ public:
             MnemeDeviceRT::DeviceCopy(hostData.get(), GVI.DevAddr, GVI.VarSize,
                                       MnemeDeviceRT::MemcpyDeviceToHostKind()));
         if (CEC)
-          LOG_FATAL(
-              "Could not copy Memory Blob to device EC: " + CEC.value() + "\n");
+          LOG_FATAL("Could not copy Memory Blob to device EC: " + CEC.value() +
+                    "\n");
         comparator = OtherGV.HostAddr.get();
       } else if (other.IType == InstanceType::Prologue) {
         auto CEC = MnemeDeviceRT::DeviceErrorCheck(MnemeDeviceRT::DeviceCopy(
             OtherGV.HostAddr.get(), OtherGV.DevAddr, OtherGV.VarSize,
             MnemeDeviceRT::MemcpyDeviceToHostKind()));
         if (CEC)
-          LOG_FATAL(
-              "Could not copy Memory Blob to device EC: " + CEC.value() + "\n");
+          LOG_FATAL("Could not copy Memory Blob to device EC: " + CEC.value() +
+                    "\n");
         comparator = GVI.HostAddr.get();
       } else {
         LOG_FATAL("Either this or other need to be of Prologue type");
@@ -224,9 +222,9 @@ public:
 
       if (KV.second.VarSize != LoadedSize)
         LOG_FATAL("Global :" + KV.first +
-                    "has a different size between record and replay\n" +
-                    "Record Size:" + std::to_string(KV.second.VarSize) +
-                    "\nReplay Size:" + std::to_string(LoadedSize));
+                  "has a different size between record and replay\n" +
+                  "Record Size:" + std::to_string(KV.second.VarSize) +
+                  "\nReplay Size:" + std::to_string(LoadedSize));
 
       auto EC = DeviceTraits<VendorTypes>::DeviceErrorCheck(
           DeviceTraits<VendorTypes>::DeviceCopy(
@@ -234,7 +232,7 @@ public:
               DeviceTraits<VendorTypes>::MemcpyHostToDeviceKind()));
       if (EC)
         LOG_FATAL("Copying Global :" + KV.first +
-                    " from host to device raised error\nEC: " + EC.value());
+                  " from host to device raised error\nEC: " + EC.value());
       LOG_INFO("Successfully loaded global variable: {}", KV.first);
     }
   }
@@ -273,8 +271,7 @@ public:
         llvm::MemoryBuffer::getFile(JSONDbFn, /* isText */ true,
                                     /* RequiresNullTerminator */ true);
     if (!KernelInfoMB)
-      LOG_FATAL("Error occurred: " + KernelInfoMB.getError().message() +
-                  "\n");
+      LOG_FATAL("Error occurred: " + KernelInfoMB.getError().message() + "\n");
 
     llvm::json::Value JsonInfo =
         llvm::cantFail(llvm::json::parse(KernelInfoMB.get()->getBuffer()),
@@ -311,8 +308,8 @@ public:
     PM = initializePageManager<MnemeDeviceRT>(VAddr, ActualSize);
     if (PM->getVAStart() != VAddr) {
       LOG_FATAL("Could not allocate Device Pages\n Record got : " +
-                  util::pointerToHexString(VAddr) + " and replay got : " +
-                  util::pointerToHexString(PM->getVAStart()));
+                util::pointerToHexString(VAddr) + " and replay got : " +
+                util::pointerToHexString(PM->getVAStart()));
     }
 
     llvm::json::Array *RecordedModules = JSONRoot->getArray("Modules");
@@ -365,14 +362,14 @@ public:
           llvm::MemoryBuffer::getFile(Fn);
       if (!Buffer)
         LOG_FATAL("Error with loading file " + Fn +
-                    "\n Error Code:" + Buffer.getError().message());
+                  "\n Error Code:" + Buffer.getError().message());
 
       llvm::Expected<std::unique_ptr<llvm::Module>> ModuleOrErr =
           llvm::parseBitcodeFile(Buffer->get()->getMemBufferRef(), Ctx);
 
       if (!ModuleOrErr)
         LOG_FATAL("Error parsing bitcode: " +
-                    llvm::toString(ModuleOrErr.takeError()));
+                  llvm::toString(ModuleOrErr.takeError()));
 
       RecordedModules.emplace_back(std::move(ModuleOrErr.get()));
     }
@@ -393,9 +390,9 @@ public:
 
       if (KV.second.VarSize != LoadedSize)
         LOG_FATAL("Global :" + KV.first +
-                    "has a different size between record and replay\n" +
-                    "Record Size:" + std::to_string(KV.second.VarSize) +
-                    "\nReplay Size:" + std::to_string(LoadedSize));
+                  "has a different size between record and replay\n" +
+                  "Record Size:" + std::to_string(KV.second.VarSize) +
+                  "\nReplay Size:" + std::to_string(LoadedSize));
 
       auto EC = DeviceTraits<VendorTypes>::DeviceErrorCheck(
           DeviceTraits<VendorTypes>::DeviceCopy(
@@ -403,7 +400,7 @@ public:
               DeviceTraits<VendorTypes>::MemcpyHostToDeviceKind()));
       if (EC)
         LOG_FATAL("Copying Global :" + KV.first +
-                    " from host to device raised error\nEC: " + EC.value());
+                  " from host to device raised error\nEC: " + EC.value());
       LOG_INFO("Successfully loaded global variable: {}", KV.first);
     }
   }

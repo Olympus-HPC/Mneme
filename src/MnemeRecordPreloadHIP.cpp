@@ -1,4 +1,5 @@
 
+#include "mneme/MnemeLLVMUtils.hpp"
 #include "mneme/MnemeLogger.hpp"
 #include "mneme/MnemeRecordHIP.hpp"
 #include <hip/hip_runtime.h>

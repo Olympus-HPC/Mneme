@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <cstring>
 #include <llvm/ADT/StringRef.h>
+#include <llvm/Support/raw_ostream.h>
 #include <memory>
 #include <sys/types.h>
 #include <utility>
@@ -77,8 +78,7 @@ public:
 
   ~MnemeMemoryBlob() {
     if (BlobAddr != 0 && IsMapped) {
-      LOG_FATAL(
-          "Destroying memory descriptor without releasing device memory");
+      LOG_FATAL("Destroying memory descriptor without releasing device memory");
     }
   }
 
@@ -157,8 +157,8 @@ llvm::raw_ostream &operator<<(llvm::raw_ostream &OS,
           DeviceTraits<VendorTypes>::MemcpyHostToDeviceKind()));
   if (EC)
     LOG_FATAL("Error in copying data from device when serializing context on "
-                "output stream\nDevice Error Msg: " +
-                EC.value() + "\n");
+              "output stream\nDevice Error Msg: " +
+              EC.value() + "\n");
   OS << llvm::StringRef(
       reinterpret_cast<const char *>(Blob.getHostData().get()), Blob.Size);
 

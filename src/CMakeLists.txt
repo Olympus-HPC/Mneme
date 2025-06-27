@@ -9,7 +9,7 @@ elseif(MNEME_ENABLE_CUDA)
 endif()
 
 add_library(record SHARED ${RecordLibSRC})
-#add_executable(replay ${ReplaySRC})
+add_executable(replay ${ReplaySRC})
 
 
 if(MNEME_LINK_SHARED_LLVM)
@@ -54,13 +54,13 @@ endif()
 
 
 target_include_directories(record SYSTEM PRIVATE ${LLVM_INCLUDE_DIRS} ${CMAKE_SOURCE_DIR}/include)
-#target_include_directories(replay SYSTEM PRIVATE ${LLVM_INCLUDE_DIRS} ${CMAKE_SOURCE_DIR}/include)
-#target_link_libraries(replay PRIVATE proteusCore)
+target_include_directories(replay SYSTEM PRIVATE ${LLVM_INCLUDE_DIRS} ${CMAKE_SOURCE_DIR}/include)
+target_link_libraries(replay PRIVATE proteusCore)
 
 if (MNEME_ENABLE_LOGGER)
-	#target_link_libraries(replay PRIVATE spdlog::spdlog_header_only)
+target_link_libraries(replay PRIVATE spdlog::spdlog_header_only)
 target_link_libraries(record PRIVATE spdlog::spdlog_header_only)
-	#target_compile_definitions(replay PRIVATE MNEME_ENABLE_LOGGER)
+target_compile_definitions(replay PRIVATE MNEME_ENABLE_LOGGER)
 target_compile_definitions(record PRIVATE MNEME_ENABLE_LOGGER)
 endif()
 
@@ -72,18 +72,18 @@ if(MNEME_ENABLE_HIP)
   target_link_libraries(replay PRIVATE hip::host)
   target_link_libraries(replay PRIVATE ${llvm_libs})
 
-  #target_link_libraries(replay PRIVATE ${llvm_libs})
+  target_link_libraries(replay PRIVATE ${llvm_libs})
   set_target_properties(replay PROPERTIES INSTALL_RPATH_USE_LINK_PATH TRUE)
 elseif(MNEME_ENABLE_CUDA)
-	target_link_libraries(record PRIVATE CUDA::cudart CUDA::cuda_driver)
-  target_link_libraries(record PRIVATE ${llvm_libs})
-  set_target_properties(record PROPERTIES INSTALL_RPATH_USE_LINK_PATH TRUE)
+target_link_libraries(record PRIVATE CUDA::cudart CUDA::cuda_driver)
+target_link_libraries(record PRIVATE ${llvm_libs})
+set_target_properties(record PROPERTIES INSTALL_RPATH_USE_LINK_PATH TRUE)
 
-	#  target_link_libraries(replay PRIVATE CUDA::cudart)
-	#  target_link_libraries(replay PRIVATE ${llvm_libs})
+target_link_libraries(replay PRIVATE CUDA::cudart CUDA::cuda_driver)
+target_link_libraries(replay PRIVATE ${llvm_libs})
 
-  #target_link_libraries(replay PRIVATE ${llvm_libs})
-	# set_target_properties(replay PROPERTIES INSTALL_RPATH_USE_LINK_PATH TRUE)
+target_link_libraries(replay PRIVATE ${llvm_libs})
+set_target_properties(replay PROPERTIES INSTALL_RPATH_USE_LINK_PATH TRUE)
 
 endif()
 
