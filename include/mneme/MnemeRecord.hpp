@@ -291,56 +291,56 @@ public:
   MnemeRecorder() : ExtractedIR(true) {
     VAStartAddr = nullptr;
     VATotalSize = 0;
-    rtLib = ImplT::getRTLib();
+    rtLib = MnemeDeviceRT::getRTLib();
     RecordReplayDir = DB.getDir();
     // MemManager = nullptr;
 
     // Redirect overloaded device runtime functions.
     reinterpret_cast<void *&>(origLaunchKernel) =
-        dlsym(rtLib, ImplT::getLaunchKernelFnName());
+        dlsym(rtLib, MnemeDeviceRT::getLaunchKernelFnName());
     assert(origLaunchKernel &&
            "Expected non-null kernel-launch function pointer");
 
     reinterpret_cast<void *&>(origMallocDevice) =
-        dlsym(rtLib, ImplT::getDeviceMallocFnName());
+        dlsym(rtLib, MnemeDeviceRT::getDeviceMallocFnName());
     assert(origMallocDevice &&
            "Expected non-null device malloc function pointer");
 
     reinterpret_cast<void *&>(origMallocPinned) =
-        dlsym(rtLib, ImplT::getPinnedMallocFnName());
+        dlsym(rtLib, MnemeDeviceRT::getPinnedMallocFnName());
     assert(origMallocPinned &&
            "Expected non-null pinned malloc function pointer");
 
     reinterpret_cast<void *&>(origMallocManaged) =
-        dlsym(rtLib, ImplT::getManagedMallocFnName());
+        dlsym(rtLib, MnemeDeviceRT::getManagedMallocFnName());
     assert(origMallocManaged &&
            "Expected non-null managed malloc function pointer");
 
     reinterpret_cast<void *&>(origFreeHost) =
-        dlsym(rtLib, ImplT::getPinnedFreeFnName());
+        dlsym(rtLib, MnemeDeviceRT::getPinnedFreeFnName());
     assert(origFreeHost && "Expected non-null Free Pinned Function");
 
     reinterpret_cast<void *&>(origFreeDevice) =
-        dlsym(rtLib, ImplT::getDeviceFreeFnName());
+        dlsym(rtLib, MnemeDeviceRT::getDeviceFreeFnName());
     assert(origFreeDevice && "Expected non-null Device free function pointer");
 
     reinterpret_cast<void *&>(origRegisterFunction) =
-        dlsym(rtLib, ImplT::getUURegisterFunctionFnName());
+        dlsym(rtLib, MnemeDeviceRT::getUURegisterFunctionFnName());
     assert(origRegisterFunction && "Expected non-null Register Function");
 
     reinterpret_cast<void *&>(origRegisterDeviceVar) =
-        dlsym(rtLib, ImplT::getUURegisterVarFnName());
+        dlsym(rtLib, MnemeDeviceRT::getUURegisterVarFnName());
     assert(origRegisterDeviceVar && "Expected non-null register Device Var");
 
     reinterpret_cast<void *&>(origRegisterDeviceVar) =
-        dlsym(rtLib, ImplT::getUURegisterVarFnName());
+        dlsym(rtLib, MnemeDeviceRT::getUURegisterVarFnName());
     assert(origRegisterDeviceVar && "Expected non-null register Device Var");
 
     reinterpret_cast<void *&>(origRegisterFatBinary) =
-        dlsym(rtLib, ImplT::getUURegisterFatbinFnName());
+        dlsym(rtLib, MnemeDeviceRT::getUURegisterFatbinFnName());
     assert(origRegisterFatBinary && "Expected non-null register Device Var");
 
-    if (ImplT::hasFatBinEnd) {
+    if (MnemeDeviceRT::hasFatBinEnd) {
       assert(origRegisterDeviceVar && "Expected non-null register Device Var");
     }
   }
