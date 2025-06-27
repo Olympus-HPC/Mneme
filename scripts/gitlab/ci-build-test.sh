@@ -17,6 +17,7 @@ build_proteus() {
   PROTEUS_ENABLE_HIP=$1
   PROTEUS_ENABLE_CUDA=$2
   PROTEUS_INSTALL_DIR=$3
+  LINK_SHARED_LLVM=$4
   echo "Proteus: ENABLE_HIP: $PROTEUS_ENABLE_HIP ENABLE_CUDA: $PROTEUS_ENABLE_CUDA"
   mkdir build-proteus
   pushd build-proteus
@@ -26,7 +27,7 @@ build_proteus() {
   -DCMAKE_C_COMPILER=${LLVM_INSTALL_DIR}/bin/clang \
   -DCMAKE_CXX_COMPILER=${LLVM_INSTALL_DIR}/bin/clang++ \
   -DPROTEUS_ENABLE_HIP=${PROTEUS_ENABLE_HIP} \
-  -DPROTEUS_LINK_SHARED_LLVM=On \
+  -DPROTEUS_LINK_SHARED_LLVM=${LINK_SHARED_LLVM} \
   -DPROTEUS_ENABLE_CUDA=${PROTEUS_ENABLE_CUDA} \
   -DCMAKE_EXPORT_COMPILE_COMMANDS=on \
   -DENABLE_TESTS=Off \
@@ -82,7 +83,7 @@ cpp=$(which clang++)
 cc=$(which clang)
 echo "Setting root dir to be ${LLVM_INSTALL_DIR}"
 
-build_proteus "OFF" "ON" $installDir
+build_proteus "OFF" "ON" $installDir ON
 echo "After proteus Current directory is $(pwd)"
 build_spdlog $installDir
 mneme_src=$(pwd)
@@ -111,7 +112,7 @@ ml load rocm/${MNEME_CI_ROCM_VERSION}
 export LLVM_INSTALL_DIR=${ROCM_PATH}/llvm
 echo "LLVM INSTALL DIR is ${LLVM_INSTALL_DIR}"
 
-build_proteus "ON" "OFF" $installDir
+build_proteus "ON" "OFF" $installDir OFF
 echo "After proteus Current directory is $(pwd)"
 build_spdlog $installDir
 echo "After spdlog Current directory is $(pwd)"
