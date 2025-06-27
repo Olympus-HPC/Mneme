@@ -6,6 +6,8 @@ using namespace mneme;
 
 #ifdef MNEME_ENABLE_HIP
 using MnemeDeviceRT = DeviceTraits<DeviceVendors::HIP>;
+#elif defined(MNEME_ENABLE_CUDA)
+using MnemeDeviceRT = DeviceTraits<DeviceVendors::CUDA>;
 #endif
 
 int foo() {

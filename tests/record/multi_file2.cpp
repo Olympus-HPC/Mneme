@@ -5,6 +5,8 @@ using namespace mneme;
 
 #ifdef MNEME_ENABLE_HIP
 using MnemeDeviceRT = DeviceTraits<DeviceVendors::HIP>;
+#elif defined(MNEME_ENABLE_CUDA)
+using MnemeDeviceRT = DeviceTraits<DeviceVendors::CUDA>;
 #endif
 
 __global__ static void kernel() { printf("File2-Kernel\n"); }
