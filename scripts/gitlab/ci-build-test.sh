@@ -19,8 +19,8 @@ build_proteus() {
   PROTEUS_INSTALL_DIR=$3
   LINK_SHARED_LLVM=$4
   echo "Proteus: ENABLE_HIP: $PROTEUS_ENABLE_HIP ENABLE_CUDA: $PROTEUS_ENABLE_CUDA"
-  mkdir build-proteus
-  pushd build-proteus
+  mkdir build-proteus-${host}
+  pushd build-proteus-${host}
   cmake .. \
   -DBUILD_SHARED=Off \
   -DLLVM_INSTALL_DIR=${LLVM_INSTALL_DIR} \
@@ -43,8 +43,8 @@ build_spdlog() {
   git clone --depth 1 --branch v1.15.0  --single-branch https://github.com/gabime/spdlog.git
   pushd spdlog
   SPDLOG_INSTALL_DIR=$1
-  mkdir build-spdlog
-  pushd build-spdlog
+  mkdir build-spdlog-${host}
+  pushd build-spdlog-${host}
   cmake \
   -DCMAKE_C_COMPILER=${LLVM_INSTALL_DIR}/bin/clang \
   -DCMAKE_CXX_COMPILER=${LLVM_INSTALL_DIR}/bin/clang++ \
@@ -133,10 +133,10 @@ fi
 
 
 make -j 10
-#echo "### TESTING ###"
-#ctest --output-on-failure
-#echo "### TESTING  ###"
+echo "### TESTING ###"
+ctest --output-on-failure
+echo "### TESTING  ###"
 
-#make -j 10 install
+make -j 10 install
 
 popd
