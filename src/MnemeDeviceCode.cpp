@@ -37,12 +37,12 @@ bool DeviceTraits<DeviceVendors::HIP>::compareDeviceBlobs(const char *Blob1,
   auto EC = DeviceTraits<HIP>::DeviceErrorCheck(DeviceTraits<HIP>::DeviceMalloc(
       reinterpret_cast<void **>(&NumEqualBytes), sizeof(uint64_t)));
   if (EC)
-    FATAL_ERROR("Error in comparing blobs " + EC.value());
+    LOG_FATAL("Error in comparing blobs " + EC.value());
 
   EC = DeviceTraits<HIP>::DeviceErrorCheck(
       DeviceTraits<HIP>::DeviceMemset(NumEqualBytes, 0, sizeof(uint64_t)));
   if (EC)
-    FATAL_ERROR("Error in comparing blobs " + EC.value());
+    LOG_FATAL("Error in comparing blobs " + EC.value());
 
   constexpr int NumThreads = 256;
   size_t NumBlocks = (NumBytes + NumThreads - 1) / NumThreads;
@@ -55,7 +55,7 @@ bool DeviceTraits<DeviceVendors::HIP>::compareDeviceBlobs(const char *Blob1,
             (void *)Blob1, (void *)Blob2);
 
   if (EC)
-    FATAL_ERROR("Error in comparing blobs " + EC.value());
+    LOG_FATAL("Error in comparing blobs " + EC.value());
 
   uint64_t HNumEqualBytes;
   EC = DeviceTraits<HIP>::DeviceErrorCheck(DeviceTraits<HIP>::DeviceCopy(
@@ -63,18 +63,18 @@ bool DeviceTraits<DeviceVendors::HIP>::compareDeviceBlobs(const char *Blob1,
       DeviceTraits<HIP>::MemcpyDeviceToHostKind()));
 
   if (EC)
-    FATAL_ERROR("Error in comparing blobs " + EC.value());
+    LOG_FATAL("Error in comparing blobs " + EC.value());
 
   EC = DeviceTraits<HIP>::DeviceErrorCheck(
       DeviceTraits<HIP>::DeviceSynchronize());
 
   if (EC)
-    FATAL_ERROR("Error in comparing blobs " + EC.value());
+    LOG_FATAL("Error in comparing blobs " + EC.value());
 
   EC = DeviceTraits<HIP>::DeviceErrorCheck(
       DeviceTraits<HIP>::DeviceFree(NumEqualBytes));
   if (EC)
-    FATAL_ERROR("Error in comparing blobs " + EC.value());
+    LOG_FATAL("Error in comparing blobs " + EC.value());
 
   LOG_DEBUG("There are {} different bytes out of  {} total bytes",
             NumBytes - HNumEqualBytes, NumBytes);

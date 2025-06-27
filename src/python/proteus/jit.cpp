@@ -1,5 +1,5 @@
 #include "../llvm/core.h"
-#include "mneme/Utils.hpp"
+#include "mneme/MnemeUtils.hpp"
 #include "llvm-c/Core.h"
 #include "llvm/IR/Module.h"
 #include <chrono>
@@ -70,14 +70,14 @@ ProteusPY_linkModules(const char **LLVMIRFiles, int size,
     llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> Buffer =
         llvm::MemoryBuffer::getFile(Fn);
     if (!Buffer)
-      FATAL_ERROR("Error with loading file " + Fn +
+      LOG_FATAL("Error with loading file " + Fn +
                   "\n Error Code:" + Buffer.getError().message());
 
     llvm::Expected<std::unique_ptr<llvm::Module>> ModuleOrErr =
         llvm::parseBitcodeFile(Buffer->get()->getMemBufferRef(), *Ctx);
 
     if (!ModuleOrErr)
-      FATAL_ERROR("Error parsing bitcode: " +
+      LOG_FATAL("Error parsing bitcode: " +
                   llvm::toString(ModuleOrErr.takeError()));
 
     RecordedModules.emplace_back(std::move(ModuleOrErr.get()));

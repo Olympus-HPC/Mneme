@@ -1,6 +1,6 @@
 #include "llvm/core.h"
 #include <mneme/MnemePython.hpp>
-#include <mneme/Utils.hpp>
+#include <mneme/MnemeUtils.hpp>
 
 using namespace mneme;
 using namespace mneme::python;

@@ -3,7 +3,7 @@
 #include "mneme/MnemeLogger.hpp"
 #include "mneme/MnemeMemory.hpp"
 #include "mneme/MnemeSymbols.hpp"
-#include "mneme/Utils.hpp"
+#include "mneme/MnemeUtils.hpp"
 #include <cstdint>
 #include <filesystem>
 #include <functional>
@@ -41,7 +41,7 @@ public:
     auto DEC = DeviceTraits<VendorTypes>::DeviceErrorCheck(
         DeviceTraits<VendorTypes>::DeviceStreamSynchronize(Stream));
     if (DEC)
-      FATAL_ERROR("Synnchronizing stream  failed");
+      LOG_FATAL("Synnchronizing stream  failed");
     llvm::raw_fd_ostream OutBC(Filename.string(), EC);
     // First write Global Variables.
     size_t TotalGlobals = GlobalVars.size();
@@ -56,7 +56,7 @@ public:
               GV.HostAddr.get(), GV.DevAddr, GV.VarSize,
               DeviceTraits<VendorTypes>::MemcpyDeviceToHostKind()));
       if (DEC)
-        FATAL_ERROR(
+        LOG_FATAL(
             "Copying from device to host for global variables failed\n");
       OutBC << GV;
     }
@@ -96,7 +96,7 @@ public:
       llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &DeviceMemory,
       std::shared_ptr<KernelInfo> KInfo) {
     if (!std::filesystem::exists(Filename))
-      FATAL_ERROR("Mneme Snapshot file does not exist");
+      LOG_FATAL("Mneme Snapshot file does not exist");
 
     LOG_DEBUG("Opening Snapshot file {}", Filename);
 
@@ -104,7 +104,7 @@ public:
     llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> bufferOrErr =
         llvm::MemoryBuffer::getFile(Filename);
     if (std::error_code ec = bufferOrErr.getError())
-      FATAL_ERROR("Error when opening file " + ec.message());
+      LOG_FATAL("Error when opening file " + ec.message());
 
     // Get a pointer to the raw data in the MemoryBuffer
     llvm::MemoryBuffer *Buffer = bufferOrErr.get().get();

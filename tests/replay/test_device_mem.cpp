@@ -9,7 +9,7 @@
 #include <cstdio>
 
 #include "mneme/DeviceTraits.hpp"
-#include "mneme/Utils.hpp"
+#include "mneme/MnemeUtils.hpp"
 using namespace mneme;
 
 #ifdef MNEME_ENABLE_HIP

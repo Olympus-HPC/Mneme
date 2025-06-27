@@ -1,6 +1,6 @@
 #include "Logger.hpp"
 #include "MnemeMemoryHIP.hpp"
-#include "Utils.hpp"
+#include "MnemeUtils.hpp"
 #include <hip/hip_runtime.h>
 #include <vector>
 

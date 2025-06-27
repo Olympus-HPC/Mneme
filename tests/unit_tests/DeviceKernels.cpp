@@ -22,13 +22,13 @@ int main(int argc, char *argv[]) {
           DeviceTraits<HIP>::DeviceErrorCheck(DeviceTraits<HIP>::DeviceMalloc(
               reinterpret_cast<void **>(&DevPtr[i]), NumBytes));
       if (EC)
-        FATAL_ERROR("Error in comparing blobs " + EC.value());
+        LOG_FATAL("Error in comparing blobs " + EC.value());
 
       EC = DeviceTraits<HIP>::DeviceErrorCheck(
           DeviceTraits<HIP>::DeviceMemset(DevPtr[i], 3, NumBytes));
 
       if (EC)
-        FATAL_ERROR("Error in comparing blobs " + EC.value());
+        LOG_FATAL("Error in comparing blobs " + EC.value());
     }
     if (!DeviceTraits<HIP>::compareDeviceBlobs(DevPtr[0], DevPtr[1],
                                                NumBytes)) {
@@ -40,7 +40,7 @@ int main(int argc, char *argv[]) {
       auto EC = DeviceTraits<HIP>::DeviceErrorCheck(
           DeviceTraits<HIP>::DeviceFree(DevPtr[i]));
       if (EC)
-        FATAL_ERROR("Error in comparing blobs " + EC.value());
+        LOG_FATAL("Error in comparing blobs " + EC.value());
     }
   }
 
@@ -52,13 +52,13 @@ int main(int argc, char *argv[]) {
           DeviceTraits<HIP>::DeviceErrorCheck(DeviceTraits<HIP>::DeviceMalloc(
               reinterpret_cast<void **>(&DevPtr[i]), NumBytes));
       if (EC)
-        FATAL_ERROR("Error in comparing blobs " + EC.value());
+        LOG_FATAL("Error in comparing blobs " + EC.value());
 
       EC = DeviceTraits<HIP>::DeviceErrorCheck(
           DeviceTraits<HIP>::DeviceMemset(DevPtr[i], 3 + i, NumBytes));
 
       if (EC)
-        FATAL_ERROR("Error in comparing blobs " + EC.value());
+        LOG_FATAL("Error in comparing blobs " + EC.value());
     }
     if (DeviceTraits<HIP>::compareDeviceBlobs(DevPtr[0], DevPtr[1], NumBytes)) {
       std::cout << "Expected memory to differ";
@@ -69,7 +69,7 @@ int main(int argc, char *argv[]) {
       auto EC = DeviceTraits<HIP>::DeviceErrorCheck(
           DeviceTraits<HIP>::DeviceFree(DevPtr[i]));
       if (EC)
-        FATAL_ERROR("Error in comparing blobs " + EC.value());
+        LOG_FATAL("Error in comparing blobs " + EC.value());
     }
   }
   return 0;

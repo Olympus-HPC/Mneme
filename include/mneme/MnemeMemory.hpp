@@ -9,7 +9,7 @@
 
 #include "mneme/DeviceTraits.hpp"
 #include "mneme/MnemeLogger.hpp"
-#include "mneme/Utils.hpp"
+#include "mneme/MnemeUtils.hpp"
 
 namespace mneme {
 template <DeviceVendors VendorTypes> class MnemeMemoryBlob {
@@ -77,7 +77,7 @@ public:
 
   ~MnemeMemoryBlob() {
     if (BlobAddr != 0 && IsMapped) {
-      FATAL_ERROR(
+      LOG_FATAL(
           "Destroying memory descriptor without releasing device memory");
     }
   }
@@ -156,7 +156,7 @@ llvm::raw_ostream &operator<<(llvm::raw_ostream &OS,
           reinterpret_cast<void *>(Blob.BlobAddr), Blob.Size,
           DeviceTraits<VendorTypes>::MemcpyHostToDeviceKind()));
   if (EC)
-    FATAL_ERROR("Error in copying data from device when serializing context on "
+    LOG_FATAL("Error in copying data from device when serializing context on "
                 "output stream\nDevice Error Msg: " +
                 EC.value() + "\n");
   OS << llvm::StringRef(

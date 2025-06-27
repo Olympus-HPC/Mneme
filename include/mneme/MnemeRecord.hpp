@@ -2,7 +2,7 @@
 
 #include "MnemeMemory.hpp"
 #include "MnemePageManager.hpp"
-#include "Utils.hpp"
+#include "MnemeUtils.hpp"
 #include <assert.h>
 #include <cstddef>
 #include <cstdint>
@@ -138,7 +138,7 @@ public:
     LOG_INFO("Register Function : {} with a thread_limit off {} ", deviceName,
              thread_limit);
     if (!HandleToBin.contains(fatBinHandle))
-      FATAL_ERROR("Handle container does not contain fatbin handle");
+      LOG_FATAL("Handle container does not contain fatbin handle");
     std::shared_ptr<KernelInfo> KI = std::make_shared<KernelInfo>(
         fatBinHandle, (const void *)hostFun, deviceFun);
     KernelInfoMap.insert({(const void *)hostFun, KI});
@@ -190,7 +190,7 @@ public:
     if (!AllocatedBlobs.contains(ptr)) {
       LOG_CRITICAL("Free address that is not being allocated through Mneme {}",
                    ptr);
-      FATAL_ERROR("Free address that is not being allocated through Mneme\n");
+      LOG_FATAL("Free address that is not being allocated through Mneme\n");
     }
     auto ret = AllocatedBlobs[ptr].release();
     LOG_DEBUG("Intercepted device Free PTR:{} SIZE:{} ACTUALSIZE:{}", ptr,
@@ -228,7 +228,7 @@ public:
     auto KInfo = KernelInfoMap[func];
     auto Handle = KInfo->getHandle();
     if (!HandleToGlobalSymbol.contains(Handle))
-      FATAL_ERROR("Accessing Kernel Without a Handle");
+      LOG_FATAL("Accessing Kernel Without a Handle");
 
     auto RecordAction = DB.takeSnapshot<VendorTypes>(
         PM->getVAStart(), PM->getTotalVASize(), KInfo,
@@ -277,7 +277,7 @@ public:
                              .string());
     llvm::raw_fd_ostream OutBC(Filename, EC);
     if (EC)
-      FATAL_ERROR("Cannot write module ir file");
+      LOG_FATAL("Cannot write module ir file");
 
     OutBC << StrBuffer;
     LOG_DEBUG("Stored Module with StaticHash:{} to file {}", StableHash,

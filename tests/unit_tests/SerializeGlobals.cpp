@@ -35,12 +35,12 @@ int main(int argc, char **argv) {
   auto EC =
       Vendor::DeviceErrorCheck(Vendor::DeviceMalloc((void **)&DData, 128));
   if (EC)
-    FATAL_ERROR("Could not allocate device data");
+    LOG_FATAL("Could not allocate device data");
 
   EC = Vendor::DeviceErrorCheck(
       Vendor::DeviceCopy(DData, HData, 128, Vendor::MemcpyHostToDeviceKind()));
   if (EC)
-    FATAL_ERROR("Could not allocate device data");
+    LOG_FATAL("Could not allocate device data");
 
   GlobalVarInfo GV("Test", nullptr, 128, DData);
   std::memcpy(GV.HostAddr.get(), HData, 128);
@@ -78,7 +78,7 @@ int main(int argc, char **argv) {
 
   EC = Vendor::DeviceErrorCheck(Vendor::DeviceFree(DData));
   if (EC)
-    FATAL_ERROR("Could not release device memory\n");
+    LOG_FATAL("Could not release device memory\n");
 
   return Ret;
 }

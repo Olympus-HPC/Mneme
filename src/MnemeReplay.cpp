@@ -1,4 +1,4 @@
-#include <mneme/Utils.hpp>
+#include <mneme/MnemeUtils.hpp>
 
 #ifdef ICMP_NE
 #undef ICMP_NE
@@ -140,19 +140,19 @@ int main(int argc, char *argv[]) {
   auto EC = DeviceVendorTraits::DeviceErrorCheck(
       DeviceVendorTraits::DeviceStreamCreate(&ReplayStream));
   if (EC)
-    FATAL_ERROR("Error when creating a stream for replay\n" + EC.value());
+    LOG_FATAL("Error when creating a stream for replay\n" + EC.value());
 
   EC = DeviceVendorTraits::DeviceErrorCheck(
       DeviceVendorTraits::deviceEventCreate(&StartEvent));
 
   if (EC)
-    FATAL_ERROR("Error when creating start event for replay\n" + EC.value());
+    LOG_FATAL("Error when creating start event for replay\n" + EC.value());
 
   EC = DeviceVendorTraits::DeviceErrorCheck(
       DeviceVendorTraits::deviceEventCreate(&EndEvent));
 
   if (EC)
-    FATAL_ERROR("Error when creating end event for replay\n" + EC.value());
+    LOG_FATAL("Error when creating end event for replay\n" + EC.value());
 
   std::vector<float> timings;
   for (int i = 0; i < _MnemeRepeats; i++) {
@@ -164,30 +164,30 @@ int main(int argc, char *argv[]) {
     DeviceVendorTraits::DeviceErrorCheck(
         DeviceVendorTraits::deviceEventRecord(StartEvent, ReplayStream));
     if (EC)
-      FATAL_ERROR("Error when recording event " + EC.value());
+      LOG_FATAL("Error when recording event " + EC.value());
 
     EC = DeviceVendorTraits::DeviceErrorCheck(
         DeviceVendorTraits::launchKernelFunction(
             Func, RecordedGrid, RecordedBlock, Args,
             RInstance.getSharedMemSize(), ReplayStream));
     if (EC)
-      FATAL_ERROR("Error When Launching Kernel: " + EC.value());
+      LOG_FATAL("Error When Launching Kernel: " + EC.value());
 
     DeviceVendorTraits::DeviceErrorCheck(
         DeviceVendorTraits::deviceEventRecord(EndEvent, ReplayStream));
     if (EC)
-      FATAL_ERROR("Error when recording event " + EC.value());
+      LOG_FATAL("Error when recording event " + EC.value());
 
     EC = DeviceVendorTraits::DeviceErrorCheck(
         DeviceVendorTraits::deviceEventSynchronize(EndEvent));
     if (EC)
-      FATAL_ERROR("Error when synchronizing event " + EC.value());
+      LOG_FATAL("Error when synchronizing event " + EC.value());
 
     EC = DeviceVendorTraits::DeviceErrorCheck(
         DeviceVendorTraits::deviceEventElapsedTime(&elapsedTime, StartEvent,
                                                    EndEvent));
     if (EC)
-      FATAL_ERROR("Error when recording event " + EC.value());
+      LOG_FATAL("Error when recording event " + EC.value());
 
     std::cout << "Kernel execution time: " << elapsedTime << " ms\n";
     timings.push_back(elapsedTime);
@@ -196,7 +196,7 @@ int main(int argc, char *argv[]) {
         DeviceVendorTraits::DeviceStreamSynchronize(ReplayStream));
 
     if (EC)
-      FATAL_ERROR("Error When synchronizing with kernel stream: " + EC.value());
+      LOG_FATAL("Error When synchronizing with kernel stream: " + EC.value());
 
     verify &= RInstance.isMemorySame();
     RInstance.reset();
@@ -214,19 +214,19 @@ int main(int argc, char *argv[]) {
   EC = DeviceVendorTraits::DeviceErrorCheck(
       DeviceVendorTraits::deviceStreamDestroy(ReplayStream));
   if (EC)
-    FATAL_ERROR("Error when destroying stream for replay\n" + EC.value());
+    LOG_FATAL("Error when destroying stream for replay\n" + EC.value());
 
   EC = DeviceVendorTraits::DeviceErrorCheck(
       DeviceVendorTraits::deviceEventDestroy(StartEvent));
 
   if (EC)
-    FATAL_ERROR("Error when destroying start event for replay\n" + EC.value());
+    LOG_FATAL("Error when destroying start event for replay\n" + EC.value());
 
   EC = DeviceVendorTraits::DeviceErrorCheck(
       DeviceVendorTraits::deviceEventDestroy(EndEvent));
 
   if (EC)
-    FATAL_ERROR("Error when destroying end event for replay\n" + EC.value());
+    LOG_FATAL("Error when destroying end event for replay\n" + EC.value());
 
   if (verify)
     std::cout << "Results Match" << "\n";

@@ -42,12 +42,12 @@ int main(int argc, char **argv) {
     auto EC = DeviceVendorTraits::DeviceErrorCheck(
         DeviceVendorTraits::DeviceMalloc((void **)&DData, 128));
     if (EC)
-      FATAL_ERROR("Could not allocate device data");
+      LOG_FATAL("Could not allocate device data");
 
     EC = DeviceVendorTraits::DeviceErrorCheck(DeviceVendorTraits::DeviceCopy(
         DData, HData, 128, DeviceVendorTraits::MemcpyHostToDeviceKind()));
     if (EC)
-      FATAL_ERROR("Could not allocate device data");
+      LOG_FATAL("Could not allocate device data");
     return std::make_pair(DData, HData);
   };
 
@@ -194,12 +194,12 @@ int main(int argc, char **argv) {
   auto EC = DeviceVendorTraits::DeviceErrorCheck(
       DeviceVendorTraits::DeviceFree(GlobalData.first));
   if (EC)
-    FATAL_ERROR("Could not release device memory\n");
+    LOG_FATAL("Could not release device memory\n");
 
   EC = DeviceVendorTraits::DeviceErrorCheck(
       DeviceVendorTraits::DeviceFree(BlobData.first));
   if (EC)
-    FATAL_ERROR("Could not release device memory\n");
+    LOG_FATAL("Could not release device memory\n");
 
   return Ret;
 }

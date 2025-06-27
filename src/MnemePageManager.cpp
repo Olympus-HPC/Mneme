@@ -1,5 +1,5 @@
 #include "mneme/MnemePageManager.hpp"
-#include "mneme/Utils.hpp"
+#include "mneme/MnemeUtils.hpp"
 #include <cstdint>
 
 using namespace mneme;
@@ -123,7 +123,7 @@ std::pair<uintptr_t, uint64_t> PageManager::requestExactPage(uint64_t VASize,
           << reinterpret_cast<uintptr_t>(VA)
           << " instead the returned address is " << std::hex
           << reinterpret_cast<uintptr_t>(Ptr) << std::dec << "\n";
-      FATAL_ERROR(oss.str());
+      LOG_FATAL(oss.str());
     }
   }
 
