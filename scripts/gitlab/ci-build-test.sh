@@ -91,7 +91,7 @@ set -x
 pushd $build_dir 
 echo "Current dir is $(pwd)"
 cmake \
--DCMAKE_BUILD_TYPE=Relwithdebinfo \
+-DCMAKE_BUILD_TYPE=Debug \
 -Dproteus_DIR=$installDir \
 -DCMAKE_INSTALL_PREFIX=$installDir \
 -DCMAKE_CXX_COMPILER=${cpp} \
