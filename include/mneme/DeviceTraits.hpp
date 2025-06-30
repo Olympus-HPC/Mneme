@@ -349,6 +349,29 @@ template <> struct DeviceTraits<DeviceVendors::CUDA> {
   static constexpr auto DeviceSuccess = cudaSuccess;
   static constexpr auto DeviceDriverSuccess = CUDA_SUCCESS;
 
+  static inline auto *getRTLib() { return dlopen("libcudart.so", RTLD_NOW); }
+  static constexpr const char *getLaunchKernelFnName() {
+    return "cudaLaunchKernel";
+  }
+  static constexpr const char *getDeviceMallocFnName() { return "cudaMalloc"; }
+  static constexpr const char *getPinnedMallocFnName() {
+    return "cudaHostMalloc";
+  }
+  static constexpr const char *getManagedMallocFnName() {
+    return "cudaMallocManaged";
+  }
+  static constexpr const char *getDeviceFreeFnName() { return "cudaFree"; }
+  static constexpr const char *getPinnedFreeFnName() { return "cudaHostFree"; }
+  static constexpr const char *getUURegisterFunctionFnName() {
+    return "__cudaRegisterFunction";
+  }
+  static const char *getUURegisterVarFnName() { return "__cudaRegisterVar"; }
+  static const char *getUURegisterFatbinFnName() {
+    return "__cudaRegisterFatBinary";
+  }
+
+  static constexpr bool hasFatBinEnd = true;
+
   static inline std::optional<std::string>
   DeviceErrorCheck(DeviceError_t ErrorCode) {
     if (ErrorCode == DeviceSuccess)

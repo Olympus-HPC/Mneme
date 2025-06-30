@@ -1,7 +1,7 @@
 #ifdef ICMP_NE
 #undef ICMP_NE
 #endif
-
+#include <cstdint>
 #include <llvm/IR/GlobalVariable.h>
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/Support/CommandLine.h>
@@ -26,6 +26,7 @@ using MnemeRecorderDevice = MnemeRecorderHIP;
 using DeviceVendorTraits = DeviceTraits<DeviceVendors::HIP>;
 constexpr DeviceVendors Vendor = DeviceVendors::HIP;
 #elif defined(MNEME_ENABLE_CUDA)
+#include "mneme/MnemeRecordCUDA.hpp"
 #include <cuda_runtime.h>
 using MnemeRecorderDevice = MnemeRecorderCUDA;
 using DeviceVendorTraits = DeviceTraits<DeviceVendors::CUDA>;
