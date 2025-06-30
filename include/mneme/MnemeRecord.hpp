@@ -62,6 +62,7 @@ private:
   bool ExtractedIR;
   RecordDatabase DB;
   std::once_flag ExtractFlag;
+  bool ReleaseMemory;
 
   DeviceError_t (*origLaunchKernel)(const void *func, dim3 gridDim,
                                     dim3 blockDim, void **args,
@@ -93,6 +94,8 @@ private:
 
   void (*origRegisterFatBinaryEnd)(void *);
 
+  void (*origUnregisterFatBinary)(void **);
+
 private:
   void extractIR() { static_cast<ImplT &>(*this).extractIR(); }
 
@@ -108,7 +111,21 @@ private:
   }
 
 public:
-  void registerFatBinEnd(void *ptr) { origRegisterFatBinaryEnd(ptr); }
+  void unregisterFatBinEnd(void **ptr) {
+    LOG_DEBUG("Unregistering fatbinary");
+    if (!ReleaseMemory) {
+      LOG_DEBUG("Releasing memory");
+      MnemeDeviceRT::freeVirtualAddress(PM->getVAStart(), PM->getTotalVASize());
+      LOG_DEBUG("Done with Releasing memory");
+      ReleaseMemory = true;
+    }
+    origUnregisterFatBinary(ptr);
+  }
+
+  void registerFatBinEnd(void *ptr) {
+    LOG_DEBUG("Marking end of fat binary");
+    origRegisterFatBinaryEnd(ptr);
+  }
 
   void **registerFatBin(FatBinaryWrapper_t *fatbin) {
     void **Handle = origRegisterFatBinary(fatbin);
@@ -221,6 +238,11 @@ public:
     }
 
     std::call_once(ExtractFlag, [this]() {
+      // NOTE: We need this arch cause internally we initialize the device.
+      // FIXME: We need to have a DeviceTrait function to initialize the GPU and
+      // call it separately here. Let's do this on a separate PR
+      auto arch = MnemeDeviceRT::GetDeviceArch();
+      LOG_DEBUG("Initializing system {}", arch);
       PM = initializePageManager<MnemeDeviceRT>();
       extractIR();
       getGlobalAddresses();
@@ -288,7 +310,7 @@ public:
                           std::filesystem::canonical(Filename).string());
   }
 
-  MnemeRecorder() : ExtractedIR(true) {
+  MnemeRecorder() : ExtractedIR(true), ReleaseMemory(false) {
     VAStartAddr = nullptr;
     VATotalSize = 0;
     rtLib = MnemeDeviceRT::getRTLib();
@@ -340,13 +362,25 @@ public:
         dlsym(rtLib, MnemeDeviceRT::getUURegisterFatbinFnName());
     assert(origRegisterFatBinary && "Expected non-null register Device Var");
 
+    reinterpret_cast<void *&>(origUnregisterFatBinary) =
+        dlsym(rtLib, MnemeDeviceRT::getUUUnRegisterFatBinaryFnName());
+    assert(origUnregisterFatBinary && "Expected non-null unregister fatbinary");
+
     if (MnemeDeviceRT::hasFatBinEnd) {
-      assert(origRegisterDeviceVar && "Expected non-null register Device Var");
+      reinterpret_cast<void *&>(origRegisterFatBinaryEnd) =
+          dlsym(rtLib, MnemeDeviceRT::getUURegisterFatbinEndFnName());
+      assert(origRegisterFatBinaryEnd &&
+             "Expected non-null register Device Var");
     }
   }
 
   ~MnemeRecorder() {
+    if (ReleaseMemory)
+      return;
+    LOG_DEBUG("Releasing memory");
     MnemeDeviceRT::freeVirtualAddress(PM->getVAStart(), PM->getTotalVASize());
+    LOG_DEBUG("Done with Releasing memory");
+    ReleaseMemory = true;
   }
 };
 } // namespace mneme

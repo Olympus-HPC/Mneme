@@ -98,6 +98,10 @@ template <> struct DeviceTraits<DeviceVendors::HIP> {
     return "__hipRegisterFatBinary";
   }
 
+  static const char *getUURegisterFatbinEndFnName() {
+    return "__hipRegisterFatBinaryEnd";
+  }
+
   static constexpr bool hasFatBinEnd = false;
 
   static inline std::optional<std::string>
@@ -355,19 +359,27 @@ template <> struct DeviceTraits<DeviceVendors::CUDA> {
   }
   static constexpr const char *getDeviceMallocFnName() { return "cudaMalloc"; }
   static constexpr const char *getPinnedMallocFnName() {
-    return "cudaHostMalloc";
+    return "cudaMallocHost";
   }
   static constexpr const char *getManagedMallocFnName() {
     return "cudaMallocManaged";
   }
   static constexpr const char *getDeviceFreeFnName() { return "cudaFree"; }
-  static constexpr const char *getPinnedFreeFnName() { return "cudaHostFree"; }
+  static constexpr const char *getPinnedFreeFnName() { return "cudaFreeHost"; }
   static constexpr const char *getUURegisterFunctionFnName() {
     return "__cudaRegisterFunction";
   }
   static const char *getUURegisterVarFnName() { return "__cudaRegisterVar"; }
   static const char *getUURegisterFatbinFnName() {
     return "__cudaRegisterFatBinary";
+  }
+
+  static const char *getUURegisterFatbinEndFnName() {
+    return "__cudaRegisterFatBinaryEnd";
+  }
+
+  static const char *getUUUnRegisterFatBinaryFnName() {
+    return "__cudaUnregisterFatBinary";
   }
 
   static constexpr bool hasFatBinEnd = true;
@@ -383,12 +395,22 @@ template <> struct DeviceTraits<DeviceVendors::CUDA> {
   DeviceErrorCheck(DeviceDriverError_t ErrorCode) {
     if (ErrorCode == DeviceDriverSuccess)
       return std::nullopt;
+
+    if (ErrorCode == CUDA_ERROR_DEINITIALIZED) {
+      LOG_WARN("Device is deinitialized ignoring errors");
+      return std::nullopt;
+    }
+
     const char *name = nullptr, *desc = nullptr;
     cuGetErrorName(ErrorCode, &name);
     cuGetErrorString(ErrorCode, &desc);
+    auto EC = std::string("Error:") + std::to_string(ErrorCode) + ":";
+    if (name)
+      EC += std::string(name);
+    if (desc)
+      EC += std::string(" description:") + std::string(name);
 
-    return std::string("Error:") + std::string(name) +
-           std::string(" description:") + std::string(desc);
+    return EC;
   }
 
   static DeviceError_t DeviceStreamSynchronize(DeviceStream_t Stream) {
@@ -506,9 +528,6 @@ template <> struct DeviceTraits<DeviceVendors::CUDA> {
     Prop.type = CUmemAllocationType::CU_MEM_ALLOCATION_TYPE_PINNED;
     Prop.location.type = CUmemLocationType::CU_MEM_LOCATION_TYPE_DEVICE;
     Prop.location.id = DeviceID;
-    // TODO: I could not find any documentation regarding the compressionType in
-    // HIP. I will leave unitialized a.t.m.
-    // Prop.allocFlags.compressionType = CU_MEM_ALLOCATION_COMP_GENERIC;
 
     auto EC = DeviceErrorCheck(
         cuMemGetAllocationGranularity(&PageSize, &Prop, Granularity));
@@ -576,7 +595,7 @@ template <> struct DeviceTraits<DeviceVendors::CUDA> {
     static uint64_t PageSize{[&]() {
       const char *env_p = std::getenv("MNEME_PAGE_SIZE");
       if (!env_p)
-        return static_cast<uint64_t>(64L * 1024L * 1024L * 1024L);
+        return static_cast<uint64_t>(2L * 1024L * 1024L * 1024L);
       return static_cast<uint64_t>(std::atol(env_p) * 1024L * 1024L * 1024L);
     }()};
     return PageSize;
@@ -584,7 +603,10 @@ template <> struct DeviceTraits<DeviceVendors::CUDA> {
 
   static void freeVirtualAddress(void *Addr, size_t Size) {
     LOG_DEBUG("Releasing Device Virtual Address Pages:{} Size:{}", Addr, Size);
-    auto EC = DeviceErrorCheck(cuMemAddressFree((DevicePtr_t)Addr, Size));
+    auto Ret = cuMemAddressFree((DevicePtr_t)Addr, Size);
+    LOG_DEBUG("Done from driver call ({} {})", Addr, Size);
+    auto EC = DeviceErrorCheck(Ret);
+    std::cout << "Got error code\n";
     if (EC) {
       LOG_FATAL("Could not release VA addresses " + EC.value());
     }
@@ -601,7 +623,7 @@ template <> struct DeviceTraits<DeviceVendors::CUDA> {
     return cudaStreamDestroy(Stream);
   }
 
-  static constexpr uintptr_t getSuggestedAddr() { return 0x0000153923e00000; }
+  static constexpr uintptr_t getSuggestedAddr() { return 0x153940000000; }
 
   static DeviceError_t deviceLaunchKernel(const void *kernelFunc, dim3 gridDim,
                                           dim3 blockDim, void **kernelArgs,

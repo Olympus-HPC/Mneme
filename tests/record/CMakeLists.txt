@@ -10,7 +10,7 @@ function(CREATE_GPU_TEST exe check_source)
   elseif(MNEME_ENABLE_CUDA)
 		set_source_files_properties(${check_source} ${ARGN} PROPERTIES LANGUAGE CUDA) 
     target_compile_definitions(${exe} PRIVATE MNEME_ENABLE_CUDA)
-		target_link_libraries(${exe} PRIVATE CUDA::cudart CUDA::cuda_driver)
+    target_link_libraries(${exe} PRIVATE CUDA::cudart CUDA::cuda_driver)
   endif()
   target_include_directories(${exe} PRIVATE ${CMAKE_SOURCE_DIR}/include/)
 

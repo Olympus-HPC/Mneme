@@ -7,7 +7,7 @@ using namespace mneme;
 
 class MnemeRecorderCUDAPreload : public MnemeRecorderCUDA {
 private:
-  static constexpr bool hasFatBinEnd = false;
+  static constexpr bool hasFatBinEnd = true;
   MnemeRecorderCUDAPreload(MnemeRecorderCUDA &) = delete;
   MnemeRecorderCUDAPreload(MnemeRecorderCUDA &&) = delete;
 
@@ -19,6 +19,13 @@ public:
 };
 
 extern "C" {
+
+void __cudaUnregisterFatBinary(void **ptr) {
+  LOG_DEBUG("Entering mneme to unregister fatbinary");
+  auto &mneme = MnemeRecorderCUDAPreload::instance();
+  mneme.unregisterFatBinEnd(ptr);
+}
+
 void __cudaRegisterFatBinaryEnd(void *ptr) {
   LOG_DEBUG("Entering mneme to finalize fatbinary");
   auto &mneme = MnemeRecorderCUDAPreload::instance();
