@@ -5,7 +5,7 @@ set(ReplaySRC MnemeReplay.cpp MnemePageManager.cpp MnemeDeviceCode.cpp MnemeSymb
 if (MNEME_ENABLE_HIP)
   list(APPEND RecordLibSRC MnemeRecordPreloadHIP.cpp MnemePageManager.cpp MnemeSymbols.cpp)
 elseif(MNEME_ENABLE_CUDA)
-  list(APPEND RecordLibSRC MnemePageManager.cpp MnemeSymbols.cpp)
+	list(APPEND RecordLibSRC MnemeRecordPreloadCUDA.cpp MnemePageManager.cpp MnemeSymbols.cpp)
 endif()
 
 add_library(record SHARED ${RecordLibSRC})
@@ -15,6 +15,7 @@ add_executable(replay ${ReplaySRC})
 if(MNEME_LINK_SHARED_LLVM)
   if(LLVM_LINK_LLVM_DYLIB)
     llvm_config(record USE_SHARED)
+    llvm_config(replay USE_SHARED)
   else()
     find_library(LLVM_SHARED_LIB
       NAMES LLVM
@@ -45,6 +46,8 @@ else()
   list(REMOVE_ITEM llvm_libs "LLVM")
 endif()
 
+message(STATUS "LLVM Libraries are: ${llvm_libs}")
+
 
 if (MNEME_ENABLE_HIP)
   set_source_files_properties(MnemeDeviceCode.cpp PROPERTIES LANGUAGE HIP)
@@ -65,15 +68,15 @@ target_compile_definitions(record PRIVATE MNEME_ENABLE_LOGGER)
 endif()
 
 if(MNEME_ENABLE_HIP)
-  target_link_libraries(record PRIVATE hip::host)
-  target_link_libraries(record PRIVATE ${llvm_libs})
-  set_target_properties(record PROPERTIES INSTALL_RPATH_USE_LINK_PATH TRUE)
+target_link_libraries(record PRIVATE hip::host)
+target_link_libraries(record PRIVATE ${llvm_libs})
+set_target_properties(record PROPERTIES INSTALL_RPATH_USE_LINK_PATH TRUE)
 
-  target_link_libraries(replay PRIVATE hip::host)
-  target_link_libraries(replay PRIVATE ${llvm_libs})
+target_link_libraries(replay PRIVATE hip::host)
+target_link_libraries(replay PRIVATE ${llvm_libs})
 
-  target_link_libraries(replay PRIVATE ${llvm_libs})
-  set_target_properties(replay PROPERTIES INSTALL_RPATH_USE_LINK_PATH TRUE)
+target_link_libraries(replay PRIVATE ${llvm_libs})
+set_target_properties(replay PROPERTIES INSTALL_RPATH_USE_LINK_PATH TRUE)
 elseif(MNEME_ENABLE_CUDA)
 target_link_libraries(record PRIVATE CUDA::cudart CUDA::cuda_driver)
 target_link_libraries(record PRIVATE ${llvm_libs})
@@ -84,7 +87,6 @@ target_link_libraries(replay PRIVATE ${llvm_libs})
 
 target_link_libraries(replay PRIVATE ${llvm_libs})
 set_target_properties(replay PROPERTIES INSTALL_RPATH_USE_LINK_PATH TRUE)
-
 endif()
 
 

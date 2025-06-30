@@ -7,19 +7,17 @@ using namespace mneme;
 
 #define FULL_MASK 0xffffffff
 
-__device__ int warpReduceSum(int val) {
-  // Perform butterfly reduction using __shfl_down_sync
-  for (int offset = 32; offset > 0; offset /= 2) {
-    val += __shfl_down(val, offset);
-  }
-  return val;
-}
+#ifdef MNEME_ENABLE_HIP
+using DeviceVendorTraits = DeviceTraits<DeviceVendors::HIP>;
+#elif defined(MNEME_ENABLE_CUDA)
+using DeviceVendorTraits = DeviceTraits<DeviceVendors::CUDA>;
+#endif
 
 __global__ void compareDevBlobs(const char *Blob1, const char *Blob2,
-                                uint64_t *GSame, uint64_t MemSize) {
+                                unsigned long long *GSame, uint64_t MemSize) {
   size_t ID = threadIdx.x + blockDim.x * blockIdx.x;
   size_t GridSize = blockDim.x * gridDim.x;
-  uint64_t NumEqual = 0;
+  unsigned long long NumEqual = 0;
 
   if (ID >= MemSize)
     return;
@@ -30,17 +28,19 @@ __global__ void compareDevBlobs(const char *Blob1, const char *Blob2,
   atomicAdd(GSame, NumEqual);
 }
 
-bool DeviceTraits<DeviceVendors::HIP>::compareDeviceBlobs(const char *Blob1,
-                                                          const char *Blob2,
-                                                          uint64_t NumBytes) {
-  uint64_t *NumEqualBytes;
-  auto EC = DeviceTraits<HIP>::DeviceErrorCheck(DeviceTraits<HIP>::DeviceMalloc(
-      reinterpret_cast<void **>(&NumEqualBytes), sizeof(uint64_t)));
+bool DeviceVendorTraits::compareDeviceBlobs(const char *Blob1,
+                                            const char *Blob2,
+                                            uint64_t NumBytes) {
+  unsigned long long *NumEqualBytes;
+  auto EC =
+      DeviceVendorTraits::DeviceErrorCheck(DeviceVendorTraits::DeviceMalloc(
+          reinterpret_cast<void **>(&NumEqualBytes),
+          sizeof(unsigned long long)));
   if (EC)
     LOG_FATAL("Error in comparing blobs " + EC.value());
 
-  EC = DeviceTraits<HIP>::DeviceErrorCheck(
-      DeviceTraits<HIP>::DeviceMemset(NumEqualBytes, 0, sizeof(uint64_t)));
+  EC = DeviceVendorTraits::DeviceErrorCheck(DeviceVendorTraits::DeviceMemset(
+      NumEqualBytes, 0, sizeof(unsigned long long)));
   if (EC)
     LOG_FATAL("Error in comparing blobs " + EC.value());
 
@@ -49,8 +49,8 @@ bool DeviceTraits<DeviceVendors::HIP>::compareDeviceBlobs(const char *Blob1,
   compareDevBlobs<<<NumBlocks, NumThreads>>>(Blob1, Blob2, NumEqualBytes,
                                              NumBytes);
 
-  EC = DeviceTraits<HIP>::DeviceErrorCheck(
-      DeviceTraits<HIP>::DeviceSynchronize());
+  EC = DeviceVendorTraits::DeviceErrorCheck(
+      DeviceVendorTraits::DeviceSynchronize());
   LOG_DEBUG("Comparing {} bytes located at Addr {} and Addr {}", NumBytes,
             (void *)Blob1, (void *)Blob2);
 
@@ -58,21 +58,21 @@ bool DeviceTraits<DeviceVendors::HIP>::compareDeviceBlobs(const char *Blob1,
     LOG_FATAL("Error in comparing blobs " + EC.value());
 
   uint64_t HNumEqualBytes;
-  EC = DeviceTraits<HIP>::DeviceErrorCheck(DeviceTraits<HIP>::DeviceCopy(
+  EC = DeviceVendorTraits::DeviceErrorCheck(DeviceVendorTraits::DeviceCopy(
       &HNumEqualBytes, NumEqualBytes, sizeof(uint64_t),
-      DeviceTraits<HIP>::MemcpyDeviceToHostKind()));
+      DeviceVendorTraits::MemcpyDeviceToHostKind()));
 
   if (EC)
     LOG_FATAL("Error in comparing blobs " + EC.value());
 
-  EC = DeviceTraits<HIP>::DeviceErrorCheck(
-      DeviceTraits<HIP>::DeviceSynchronize());
+  EC = DeviceVendorTraits::DeviceErrorCheck(
+      DeviceVendorTraits::DeviceSynchronize());
 
   if (EC)
     LOG_FATAL("Error in comparing blobs " + EC.value());
 
-  EC = DeviceTraits<HIP>::DeviceErrorCheck(
-      DeviceTraits<HIP>::DeviceFree(NumEqualBytes));
+  EC = DeviceVendorTraits::DeviceErrorCheck(
+      DeviceVendorTraits::DeviceFree(NumEqualBytes));
   if (EC)
     LOG_FATAL("Error in comparing blobs " + EC.value());
 
