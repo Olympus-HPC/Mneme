@@ -1,4 +1,6 @@
 #include "mneme/DeviceTraits.hpp"
+#include "mneme/MnemeKernelInfo.hpp"
+#include "mneme/MnemeLogger.hpp"
 #include "mneme/MnemeSnapshot.hpp"
 #include "mneme/MnemeSymbols.hpp"
 #include <cstdint>
@@ -9,16 +11,17 @@
 #include <memory>
 #include <random>
 
-#ifdef MNEME_ENABLE_HIP
-#include "mneme/MnemeMemoryHIP.hpp"
-#include "mneme/MnemeRecordHIP.hpp"
-#endif
-
 using namespace mneme;
 
-using MnemeRecorderDevice = MnemeRecorderHIP;
+#ifdef MNEME_ENABLE_HIP
+using Vendor = DeviceVendors::HIP;
+using MnemeDeviceRT = DeviceTraits<DeviceVendors::HIP>;
 using MnemeMemoryBlobDevice = MnemeMemoryBlob<DeviceVendors::HIP>;
-using DeviceVendorTraits = DeviceTraits<DeviceVendors::HIP>;
+#elif defined(MNEME_ENABLE_CUDA)
+constexpr DeviceVendors Vendor = DeviceVendors::CUDA;
+using MnemeDeviceRT = DeviceTraits<DeviceVendors::CUDA>;
+using MnemeMemoryBlobDevice = MnemeMemoryBlob<DeviceVendors::CUDA>;
+#endif
 
 template <typename T> void initializeRandomBuffer(T *Buffer, size_t Size) {
   // Random number generation setup
@@ -33,19 +36,20 @@ template <typename T> void initializeRandomBuffer(T *Buffer, size_t Size) {
 }
 
 int main(int argc, char **argv) {
+  MnemeDeviceLinkedBin Exec{nullptr, nullptr};
   // We allocate some "fake" globals
   auto initializeDeviceData = [&] {
     uint8_t *HData = new uint8_t[128];
     initializeRandomBuffer(HData, 128);
     uint8_t *DData;
 
-    auto EC = DeviceVendorTraits::DeviceErrorCheck(
-        DeviceVendorTraits::DeviceMalloc((void **)&DData, 128));
+    auto EC = MnemeDeviceRT::DeviceErrorCheck(
+        MnemeDeviceRT::DeviceMalloc((void **)&DData, 128));
     if (EC)
       LOG_FATAL("Could not allocate device data");
 
-    EC = DeviceVendorTraits::DeviceErrorCheck(DeviceVendorTraits::DeviceCopy(
-        DData, HData, 128, DeviceVendorTraits::MemcpyHostToDeviceKind()));
+    EC = MnemeDeviceRT::DeviceErrorCheck(MnemeDeviceRT::DeviceCopy(
+        DData, HData, 128, MnemeDeviceRT::MemcpyHostToDeviceKind()));
     if (EC)
       LOG_FATAL("Could not allocate device data");
     return std::make_pair(DData, HData);
@@ -63,7 +67,7 @@ int main(int argc, char **argv) {
 
   std::string KernelName("TestKernel");
   std::shared_ptr<KernelInfo> TestKernel =
-      std::make_shared<KernelInfo>(nullptr, KernelName);
+      std::make_shared<KernelInfo>(Exec, KernelName);
 
   int NumArgs = 4;
   llvm::SmallVector<size_t> ArgSizes(4);
@@ -81,17 +85,17 @@ int main(int argc, char **argv) {
   DeviceMemMap.try_emplace((void *)BlobData.first, std::move(Blob));
   std::filesystem::path SnapshotFN("./test.mneme");
 
-  MnemeSnapshot<DeviceVendors::HIP>::takeMnemeSnapshot(
-      GVars, DeviceMemMap, SnapshotFN, TestKernel, Args, 0);
+  MnemeSnapshot<Vendor>::takeMnemeSnapshot(GVars, DeviceMemMap, SnapshotFN,
+                                           TestKernel, Args, 0);
 
   llvm::DenseMap<std::string, GlobalVarInfo> ReadGVars;
   llvm::DenseMap<void *, MnemeMemoryBlobDevice> ReadDeviceMemMap;
   std::string RKernelName("TestKernel");
   std::shared_ptr<KernelInfo> RTestKernel =
-      std::make_shared<KernelInfo>(nullptr, KernelName);
+      std::make_shared<KernelInfo>(Exec, KernelName);
 
-  MnemeSnapshot<DeviceVendors::HIP>::readMnemeSnapShot(
-      SnapshotFN, ReadGVars, ReadDeviceMemMap, RTestKernel);
+  MnemeSnapshot<Vendor>::readMnemeSnapShot(SnapshotFN, ReadGVars,
+                                           ReadDeviceMemMap, RTestKernel);
 
   auto ValidateDeviceMem = [&]() {
     for (auto &RKV : ReadDeviceMemMap) {
@@ -162,7 +166,7 @@ int main(int argc, char **argv) {
     }
 
     auto WArgSizes = WKernel.getArgSizes();
-    auto RArgSizes = WKernel.getArgSizes();
+    auto RArgSizes = RKernel.getArgSizes();
     for (auto A = 0; A < WKernel.getNumArgs(); A++) {
       if (WArgSizes[A] != RArgSizes[A]) {
         std::cerr << "The size of argument " << A
@@ -173,10 +177,9 @@ int main(int argc, char **argv) {
     }
 
     auto WArgData = WKernel.getArgData();
-    auto RArgData = WKernel.getArgData();
+    auto RArgData = RKernel.getArgData();
     for (auto A = 0; A < WKernel.getNumArgs(); A++) {
-      if (std::memcmp(WArgData[A].get(), RArgData[A].get(), WArgSizes[A]) !=
-          0) {
+      if (std::memcmp(Args[A], RArgData[A].get(), WArgSizes[A]) != 0) {
         if (WArgSizes[A] != RArgSizes[A]) {
           std::cerr << "The Memory of argument " << A << "differs \n";
           return 4;
@@ -191,13 +194,13 @@ int main(int argc, char **argv) {
   delete[] GlobalData.second;
   delete[] BlobData.second;
 
-  auto EC = DeviceVendorTraits::DeviceErrorCheck(
-      DeviceVendorTraits::DeviceFree(GlobalData.first));
+  auto EC = MnemeDeviceRT::DeviceErrorCheck(
+      MnemeDeviceRT::DeviceFree(GlobalData.first));
   if (EC)
     LOG_FATAL("Could not release device memory\n");
 
-  EC = DeviceVendorTraits::DeviceErrorCheck(
-      DeviceVendorTraits::DeviceFree(BlobData.first));
+  EC = MnemeDeviceRT::DeviceErrorCheck(
+      MnemeDeviceRT::DeviceFree(BlobData.first));
   if (EC)
     LOG_FATAL("Could not release device memory\n");
 
