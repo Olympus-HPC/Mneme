@@ -1,6 +1,6 @@
 #include "mneme/MnemeLLVMUtils.hpp"
 #include "mneme/MnemeLogger.hpp"
-#include "mneme/MnemeRecordCUDA.hpp"
+#include "mneme/MnemeRecord.hpp"
 #include <cuda_runtime.h>
 
 #ifdef __GNUC__
@@ -11,11 +11,12 @@
 
 using namespace mneme;
 
-class MnemeRecorderCUDAPreload : public MnemeRecorderCUDA {
+class MnemeRecorderCUDAPreload
+    : public MnemeRecorder<mneme::DeviceVendors::CUDA> {
 private:
   static constexpr bool hasFatBinEnd = true;
-  MnemeRecorderCUDAPreload(MnemeRecorderCUDA &) = delete;
-  MnemeRecorderCUDAPreload(MnemeRecorderCUDA &&) = delete;
+  MnemeRecorderCUDAPreload(MnemeRecorderCUDAPreload &) = delete;
+  MnemeRecorderCUDAPreload(MnemeRecorderCUDAPreload &&) = delete;
   MnemeRecorderCUDAPreload() {
     // NOTE: This is important to be called in the initializer. As it enforces
     // the initialization/de-initialization order.
