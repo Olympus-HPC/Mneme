@@ -42,7 +42,7 @@ struct MnemeDeviceExecutable {
   MnemeDeviceExecutable() : CurrHandle(nullptr) {}
 };
 
-template <typename ImplT, DeviceVendors VendorTypes> class MnemeRecorder {
+template <DeviceVendors VendorTypes> class MnemeRecorder {
 protected:
   void *rtLib;
   std::string RecordReplayDir;
@@ -115,7 +115,6 @@ private:
           LOG_FATAL("When copying device global received error\n{}",
                     EC.value());
         }
-        // static_cast<ImplT &>(*this).initializeGlobal(GVar);
         LOG_INFO("Getting Global Variable: {} stored at address {} mapped "
                  "with host symbol addr {} of size {}",
                  GVar.Name, GVar.DevAddr, GVar.HostSymbolAddr, GVar.VarSize);
