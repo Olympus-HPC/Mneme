@@ -1,19 +1,29 @@
-if(MNEME_ENABLE_HIP)
-    SET(lang HIP)
-else()
-    SET(lang CUDA)
-endif()
-
 function(BUILD_DEVICE_UNIT_TEST exe)
   message(STATUS "Building test ${exe} ${ARGN}")
   add_executable(${exe} ${CMAKE_SOURCE_DIR}/src/MnemeDeviceCode.cpp ${CMAKE_SOURCE_DIR}/src/MnemeSymbols.cpp ${ARGN})
-  target_include_directories(${exe} PRIVATE ${CMAKE_SOURCE_DIR}/src/ ${CMAKE_SOURCE_DIR}/include/ ${LLVM_INCLUDE_DIRS}})
+  target_include_directories(${exe} PRIVATE ${CMAKE_SOURCE_DIR}/src/ ${CMAKE_SOURCE_DIR}/include/ ${LLVM_INCLUDE_DIRS})
   if (MNEME_ENABLE_HIP)
     message(STATUS "Building test ${exe}")
     set_source_files_properties(${CMAKE_SOURCE_DIR}/src/MnemeDeviceCode.cpp PROPERTIES LANGUAGE HIP)
     target_link_libraries(${exe} PRIVATE hip::host)
+  elseif(MNEME_ENABLE_CUDA)
+    set_source_files_properties(${CMAKE_SOURCE_DIR}/src/MnemeDeviceCode.cpp PROPERTIES LANGUAGE CUDA)
+    target_link_libraries(${exe} PRIVATE CUDA::cudart CUDA::cuda_driver)
   endif()
-  target_link_libraries(${exe} PRIVATE ${LLVM_AVAILABLE_LIBS})
+
+  if (LLVM_LINK_LLVM_DYLIB)
+	llvm_config(${exe} USE_SHARED)
+	target_link_libraries(${exe} PRIVATE ${CMAKE_DL_LIBS})
+   else()
+	target_link_libraries(${exe} PRIVATE ${llvm_libs} ${CMAKE_DL_LIBS})
+   endif()
+
+
+if (MNEME_ENABLE_LOGGER)
+target_link_libraries(${exe} PRIVATE spdlog::spdlog_header_only)
+target_compile_definitions(${exe} PRIVATE MNEME_ENABLE_LOGGER)
+endif()
+
 endfunction()
 
 
@@ -21,11 +31,25 @@ function(BUILD_UNIT_TEST exe)
   message(STATUS "Building test ${exe} ${ARGN}")
   add_executable(${exe} ${CMAKE_SOURCE_DIR}/src/MnemeSymbols.cpp ${ARGN})
   target_include_directories(${exe} PRIVATE ${CMAKE_SOURCE_DIR}/src/ ${CMAKE_SOURCE_DIR}/include/ ${LLVM_INCLUDE_DIRS})
+message("Include dir is ${LLVM_INCLUDE_DIRS}")
   if (MNEME_ENABLE_HIP)
-    message(STATUS "Building test ${exe}")
     target_link_libraries(${exe} PRIVATE hip::host)
+  elseif(MNEME_ENABLE_CUDA)
+    target_link_libraries(${exe} PRIVATE CUDA::cudart CUDA::cuda_driver)
   endif()
-  target_link_libraries(${exe} PRIVATE ${LLVM_AVAILABLE_LIBS})
+  if (LLVM_LINK_LLVM_DYLIB)
+	llvm_config(${exe} USE_SHARED)
+	target_link_libraries(${exe} PRIVATE ${CMAKE_DL_LIBS})
+   else()
+	target_link_libraries(${exe} PRIVATE ${llvm_libs} ${CMAKE_DL_LIBS})
+   endif()
+
+if (MNEME_ENABLE_LOGGER)
+target_link_libraries(${exe} PRIVATE spdlog::spdlog_header_only)
+target_compile_definitions(${exe} PRIVATE MNEME_ENABLE_LOGGER)
+endif()
+
+
 endfunction()
 
 BUILD_UNIT_TEST("SerializeGlobals" SerializeGlobals.cpp)
@@ -39,3 +63,5 @@ add_test(NAME Serialize::RWSnapshot COMMAND ReadWriteSnapshot)
 
 BUILD_DEVICE_UNIT_TEST("CompareMemoryBlob" DeviceKernels.cpp)
 add_test(NAME DeviceKernel::CompareMemory COMMAND CompareMemoryBlob)
+
+

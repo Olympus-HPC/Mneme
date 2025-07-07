@@ -10,9 +10,11 @@
 
 using namespace mneme;
 
-using MnemeRecorderDevice = MnemeRecorderHIP;
-using MnemeMemoryBlobDevice = MnemeMemoryBlob<DeviceVendors::HIP>;
-using Vendor = DeviceTraits<DeviceVendors::HIP>;
+#ifdef MNEME_ENABLE_HIP
+using MnemeDeviceRT = DeviceTraits<DeviceVendors::HIP>;
+#elif defined(MNEME_ENABLE_CUDA)
+using MnemeDeviceRT = DeviceTraits<DeviceVendors::CUDA>;
+#endif
 
 void initializeRandomBuffer(uint8_t *Buffer, size_t Size) {
   // Random number generation setup
@@ -32,13 +34,13 @@ int main(int argc, char **argv) {
   initializeRandomBuffer(HData, 128);
   uint8_t *DData;
 
-  auto EC =
-      Vendor::DeviceErrorCheck(Vendor::DeviceMalloc((void **)&DData, 128));
+  auto EC = MnemeDeviceRT::DeviceErrorCheck(
+      MnemeDeviceRT::DeviceMalloc((void **)&DData, 128));
   if (EC)
     LOG_FATAL("Could not allocate device data");
 
-  EC = Vendor::DeviceErrorCheck(
-      Vendor::DeviceCopy(DData, HData, 128, Vendor::MemcpyHostToDeviceKind()));
+  EC = MnemeDeviceRT::DeviceErrorCheck(MnemeDeviceRT::DeviceCopy(
+      DData, HData, 128, MnemeDeviceRT::MemcpyHostToDeviceKind()));
   if (EC)
     LOG_FATAL("Could not allocate device data");
 
@@ -76,7 +78,7 @@ int main(int argc, char **argv) {
   delete[] HData;
   HData = nullptr;
 
-  EC = Vendor::DeviceErrorCheck(Vendor::DeviceFree(DData));
+  EC = MnemeDeviceRT::DeviceErrorCheck(MnemeDeviceRT::DeviceFree(DData));
   if (EC)
     LOG_FATAL("Could not release device memory\n");
 
