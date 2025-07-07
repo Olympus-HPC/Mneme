@@ -13,18 +13,29 @@
 #include <llvm/IRReader/IRReader.h>
 #include <llvm/Linker/Linker.h>
 #include <llvm/Object/ELF.h>
-#include <llvm/Support/MemoryBuffer.h>
 #include <llvm/Support/SourceMgr.h>
+#include "llvm/Support/MemoryBuffer.h"
+#include "llvm/Object/ObjectFile.h"
 
 namespace mneme {
+typedef struct __cudaFatCudaBinary2HeaderRec {
+  unsigned int          magic;   // 0x466243b1 or variant
+  unsigned int          version; // usually 1 or 2
+  unsigned long long    length;  // size of the rest of this region
+} __cudaFatCudaBinary2Header;
 
 class MnemeRecorderHIP : public MnemeRecorder<MnemeRecorderHIP, HIP> {
+private:
+
+
 public:
   void extractIR() {
     LOG_INFO("Extracting IR from images");
     constexpr char OFFLOAD_BUNDLER_MAGIC_STR[] = "__CLANG_OFFLOAD_BUNDLE__";
 
     for (auto &[Handle, FatbinWrapper] : HandleToBin) {
+auto hdr = reinterpret_cast<const __cudaFatCudaBinary2Header*>(FatbinWrapper->Binary);
+			LOG_DEBUG("Fatbin size is {}", hdr->length);
       size_t Pos = 0;
       LOG_DEBUG("Processing Handle and FatbinWrapper {} {}", (void *)Handle,
                 (void *)FatbinWrapper);

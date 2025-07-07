@@ -73,7 +73,7 @@ constexpr auto debug_build = false;
 #define DEBUG(x)
 #endif
 
-#define LOG_FATAL(x)                                                         \
+#define LOG_FATAL(x)                                                           \
   report_fatal_error(llvm::Twine(std::string{} + __FILE__ + ":" +              \
                                  std::to_string(__LINE__) + " => " + x))
 
@@ -120,8 +120,23 @@ void dump(Module &M, StringRef device, StringRef phase) {
 }
 
 class MnemePassImpl {
+private:
+  Type *PtrTy = nullptr;
+  Type *VoidTy = nullptr;
+  Type *Int8Ty = nullptr;
+  Type *Int32Ty = nullptr;
+  Type *Int64Ty = nullptr;
+  Type *Int128Ty = nullptr;
+
 public:
-  MnemePassImpl(Module &M) {}
+  MnemePassImpl(Module &M) {
+    PtrTy = PointerType::getUnqual(M.getContext());
+    VoidTy = Type::getVoidTy(M.getContext());
+    Int8Ty = Type::getInt8Ty(M.getContext());
+    Int32Ty = Type::getInt32Ty(M.getContext());
+    Int64Ty = Type::getInt64Ty(M.getContext());
+    Int128Ty = Type::getInt128Ty(M.getContext());
+  }
 
   bool isDeviceCompilation(Module &M) {
     Triple TargetTriple(M.getTargetTriple());
@@ -146,6 +161,12 @@ public:
     // Host compilation
     // ================
     dump(M, "host", IsLTO ? "lto-before-mneme" : "before-mneme");
+
+    instrumentRegisterLinkedBinary(M);
+    instrumentRegisterFatBinary(M);
+    instrumentRegisterFatBinaryEnd(M);
+    instrumentRegisterVar(M);
+    instrumentRegisterFunction(M);
 
     if (verifyModule(M, &errs()))
       LOG_FATAL("Broken original module found, compilation aborted!");
@@ -187,6 +208,190 @@ private:
                            GlobalValue::ExternalLinkage, DeviceModule, GVName);
     appendToUsed(M, {GV});
     GV->setSection(".jit.bitcode" + (IsLTO ? ".lto" : getUniqueModuleId(&M)));
+  }
+
+  /* HOST INSTRUMENTATION */
+
+  Function *getOrCreateFunction(Module &M, FunctionType *FnTy,
+                                StringRef FnName) {
+    LLVMContext &Ctx = M.getContext();
+    Function *F = M.getFunction(FnName);
+    if (!F) {
+      F = Function::Create(FnTy, GlobalValue::ExternalLinkage, FnName, M);
+      F->addFnAttr(Attribute::NoInline);
+      F->setDSOLocal(true);
+
+      // Create dummy body that does nothing
+      BasicBlock *BB = BasicBlock::Create(Ctx, "entry", F);
+      IRBuilder<> B(BB);
+      B.CreateRetVoid();
+    }
+    return F;
+  }
+
+  FunctionCallee getOrCreateRegisterLinkedBinaryFn(Module &M) {
+    FunctionType *JitRegisterLinkedBinaryFnTy =
+        FunctionType::get(VoidTy, {PtrTy, PtrTy},
+                          /* isVarArg=*/false);
+    return M.getOrInsertFunction("__register_linked_binary",
+                                 JitRegisterLinkedBinaryFnTy);
+  }
+
+  FunctionCallee getOrCreateRegisterFatbinary(Module &M) {
+    LLVMContext &Ctx = M.getContext();
+    FunctionType *RegisterFatbinaryFnTy =
+        FunctionType::get(VoidTy, {PtrTy, PtrTy, PtrTy},
+                          /* isVarArg=*/false);
+    return M.getOrInsertFunction("__register_fatbinary", RegisterFatbinaryFnTy);
+  }
+
+  FunctionCallee getOrCreateRegisterFatBinaryEndFn(Module &M) {
+    FunctionType *RegisterFatBinaryEndFnTy =
+        FunctionType::get(VoidTy, {PtrTy},
+                          /* isVarArg=*/false);
+
+    return M.getOrInsertFunction("__register_fatbinary_end",
+                                 RegisterFatBinaryEndFnTy);
+  }
+
+  FunctionCallee getOrCreateRegisterVarFn(Module &M) {
+    FunctionType *RegisterVarFnTy = FunctionType::get(
+        VoidTy,
+        {PtrTy, PtrTy, PtrTy, PtrTy, Int32Ty, Int64Ty, Int32Ty, Int32Ty},
+        /* isVarArg=*/false);
+    return M.getOrInsertFunction("__register_var", RegisterVarFnTy);
+  }
+
+  FunctionCallee getOrCreateRegisterFunctionFn(Module &M) {
+    FunctionType *RegisterFunctionFnTy =
+        FunctionType::get(VoidTy,
+                          {PtrTy, PtrTy, PtrTy, PtrTy, Int32Ty, PtrTy, PtrTy,
+                           PtrTy, PtrTy, PtrTy},
+                          /* isVarArg=*/false);
+    return M.getOrInsertFunction("__register_function", RegisterFunctionFnTy);
+  }
+
+  void instrumentRegisterLinkedBinary(Module &M) {
+// This is CUDA specific.
+#if !MNEME_ENABLE_CUDA
+    return;
+#endif
+
+    // Note: we check for __cuda_fatibn_wrapper to avoid emitting for the
+    // link.stub. It's not strictly necessary since this module will not have a
+    // device bitcode to pull and we skip at runtime.
+    if (!M.getGlobalVariable("__cuda_fatbin_wrapper", /*AllowInternal=*/true)) {
+      return;
+    }
+
+    FunctionCallee JitRegisterLinkedBinaryFn =
+        getOrCreateRegisterLinkedBinaryFn(M);
+
+    for (auto &F : M.getFunctionList()) {
+      if (!F.getName().starts_with("__cudaRegisterLinkedBinary"))
+        continue;
+
+      for (auto *User : F.users()) {
+        CallBase *CB = dyn_cast<CallBase>(User);
+        if (!CB)
+          continue;
+
+        IRBuilder<> Builder(CB);
+        std::string GVName = getJitBitcodeUniqueName(M);
+        auto *Arg = Builder.CreateGlobalString(GVName);
+        Builder.CreateCall(JitRegisterLinkedBinaryFn,
+                           {CB->getArgOperand(1), Arg});
+      }
+    }
+  }
+
+  void instrumentRegisterFatBinary(Module &M) {
+    Function *F = nullptr;
+
+    if (!RegisterFatBinaryName)
+      return;
+
+    F = M.getFunction(RegisterFatBinaryName);
+    if (!F)
+      return;
+
+    FunctionCallee JitRegisterFatBinaryFn = getOrCreateRegisterFatbinary(M);
+
+    for (auto *User : F->users()) {
+      CallBase *CB = dyn_cast<CallBase>(User);
+      if (!CB)
+        continue;
+
+      IRBuilder<> Builder(CB->getNextNode());
+      Value *FatbinWrapper = CB->getArgOperand(0);
+
+      std::string GVName = getJitBitcodeUniqueName(M);
+      auto *Arg = Builder.CreateGlobalString(GVName);
+
+      Builder.CreateCall(JitRegisterFatBinaryFn, {CB, FatbinWrapper, Arg});
+    }
+  }
+
+  void instrumentRegisterFatBinaryEnd(Module &M) {
+// This is CUDA specific.
+#if !MNEME_ENABLE_CUDA
+    return;
+#endif
+
+    Function *F = M.getFunction("__cudaRegisterFatBinaryEnd");
+    if (!F)
+      return;
+
+    FunctionCallee JitRegisterFatBinaryEndFn =
+        getOrCreateRegisterFatBinaryEndFn(M);
+
+    for (auto *User : F->users()) {
+      CallBase *CB = dyn_cast<CallBase>(User);
+      if (!CB)
+        continue;
+
+      IRBuilder<> Builder(CB->getNextNode());
+      Value *FatbinWrapper = CB->getArgOperand(0);
+      Builder.CreateCall(JitRegisterFatBinaryEndFn, {FatbinWrapper});
+    }
+  }
+
+  void instrumentRegisterVar(Module &M) {
+    Function *RegisterVarFn = nullptr;
+    if (!RegisterVarName)
+      return;
+
+    RegisterVarFn = M.getFunction(RegisterVarName);
+    if (!RegisterVarFn)
+      return;
+
+    FunctionCallee JitRegisterVarFn = getOrCreateRegisterVarFn(M);
+
+    for (User *Usr : RegisterVarFn->users())
+      if (CallBase *CB = dyn_cast<CallBase>(Usr)) {
+        IRBuilder<> Builder(CB->getNextNode());
+        SmallVector<Value *> Args{CB->args()};
+        Builder.CreateCall(JitRegisterVarFn, Args);
+      }
+  }
+
+  void instrumentRegisterFunction(Module &M) {
+    Function *RegisterFunctionFn = nullptr;
+    if (!RegisterFunctionName)
+      return;
+
+    RegisterFunctionFn = M.getFunction(RegisterFunctionName);
+    if (!RegisterFunctionFn)
+      return;
+
+    FunctionCallee JitRegisterFunctionFn = getOrCreateRegisterFunctionFn(M);
+
+    for (User *Usr : RegisterFunctionFn->users())
+      if (CallBase *CB = dyn_cast<CallBase>(Usr)) {
+        IRBuilder<> Builder(CB->getNextNode());
+        SmallVector<Value *> Args{CB->args()};
+        Builder.CreateCall(JitRegisterFunctionFn, Args);
+      }
   }
 };
 

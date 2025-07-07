@@ -1,9 +1,4 @@
 #pragma once
-#include "mneme/DeviceTraits.hpp"
-#include "mneme/MnemeLogger.hpp"
-#include "mneme/MnemeMemory.hpp"
-#include "mneme/MnemeSymbols.hpp"
-#include "mneme/MnemeUtils.hpp"
 #include <cstdint>
 #include <filesystem>
 #include <functional>
@@ -19,6 +14,14 @@
 #include <llvm/ADT/StringRef.h>
 #include <string>
 #include <sys/types.h>
+
+#include "mneme/DeviceTraits.hpp"
+#include "mneme/MnemeLLVMUtils.hpp"
+#include "mneme/MnemeLogger.hpp"
+#include "mneme/MnemeMemory.hpp"
+#include "mneme/MnemeSymbols.hpp"
+#include "mneme/MnemeUtils.hpp"
+
 namespace mneme {
 
 template <DeviceVendors VendorTypes> class MnemeSnapshot {
@@ -56,8 +59,7 @@ public:
               GV.HostAddr.get(), GV.DevAddr, GV.VarSize,
               DeviceTraits<VendorTypes>::MemcpyDeviceToHostKind()));
       if (DEC)
-        LOG_FATAL(
-            "Copying from device to host for global variables failed\n");
+        LOG_FATAL("Copying from device to host for global variables failed\n");
       OutBC << GV;
     }
 
@@ -198,7 +200,9 @@ public:
     Collection["VASize"] = VASize;
     Collection["KernelName"] = KInfo->getName();
     Collection["DemangledName"] = llvm::demangle(KInfo->getName());
-    Collection["Modules"] = llvm::json::Array(KInfo->ModuleFiles);
+    Collection["Modules"] = llvm::json::Array(KInfo->Exec.getModuleIRFiles());
+    Collection["BinaryBlobs"] =
+        llvm::json::Array(KInfo->Exec.getModuleBinFiles());
     Collection["ArgNames"] = llvm::json::Array(KInfo->getArgNames());
     Collection["Specializations"] =
         llvm::json::Array(KInfo->getArgSpecializations());
@@ -212,7 +216,17 @@ public:
 
   KernelInstancesCollection(void *VAddr, uint64_t VASize,
                             std::shared_ptr<KernelInfo> KInfo)
-      : VAddr(VAddr), VASize(VASize), KInfo(KInfo) {}
+      : VAddr(VAddr), VASize(VASize), KInfo(KInfo) {
+    // Here I need to extract information regarding the kernel
+    auto Func = KInfo->Exec.getKernelFunction(KInfo->Name);
+    if (!Func)
+      LOG_FATAL("Cannot find descriptor of function {}", KInfo->Name);
+
+    KInfo->setArgSizes(mneme::getFuncDescr(*Func.value()));
+    KInfo->setArgNames(mneme::getArgNames(*Func.value()));
+    KInfo->setSpecializations(mneme::canSpecialize(*Func.value()));
+    KInfo->setToDoubleFunc(mneme::convertToDouble(*Func.value()));
+  }
 
   llvm::stable_hash computeHash(dim3 &GridDim, dim3 &BlockDim,
                                 uint64_t SharedMem, void **Args) {
@@ -368,10 +382,11 @@ public:
     }
 
     auto IT = KernelRecords.try_emplace(
-        KInfo->StaticHash, KernelInstancesCollection(VAddr, VASize, KInfo));
+        KInfo->getStaticHash(),
+        KernelInstancesCollection(VAddr, VASize, KInfo));
     return IT.first->second.takeSnapshot<VendorTypes>(
         MnemeDirectory, GlobalVars, DeviceMemory, GridDim, BlockDim, Args,
-        SharedMem, Stream, KInfo->StaticHash);
+        SharedMem, Stream, KInfo->getStaticHash());
   }
 
   std::string getDir() const { return MnemeDirectory.string(); }
