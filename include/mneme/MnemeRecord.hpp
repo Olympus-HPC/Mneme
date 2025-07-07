@@ -22,17 +22,24 @@
 #include <mutex>
 
 #include "mneme/DeviceTraits.hpp"
+#include "mneme/MnemeDeviceBinary.hpp"
+#include "mneme/MnemeKernelInfo.hpp"
 #include "mneme/MnemeLogger.hpp"
 #include "mneme/MnemeSnapshot.hpp"
 #include "mneme/MnemeSymbols.hpp"
 
 namespace mneme {
 
-struct FatBinaryWrapper_t {
-  int Magic;
-  int Version;
-  const char *Binary;
-  void **PrelinkedFatBins;
+struct MnemeDeviceExecutable {
+  /* An execution can have a collection of Linked  Binaries. Without RDC enabled
+   * every translation unit is handled as a separate linked binary and the
+   * scoped is limited in that binary */
+  llvm::LLVMContext Ctx;
+  llvm::DenseMap<DeviceHandle, MnemeDeviceLinkedBin> LinkedBinaries;
+  llvm::DenseMap<void *, const char *> PendingRegistrations;
+  llvm::DenseMap<const void *, std::shared_ptr<KernelInfo>> TrackedKernels;
+  DeviceHandle CurrHandle;
+  MnemeDeviceExecutable() : CurrHandle(nullptr) {}
 };
 
 template <typename ImplT, DeviceVendors VendorTypes> class MnemeRecorder {
@@ -47,6 +54,7 @@ protected:
       HandleToGlobalSymbol;
   llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> AllocatedBlobs;
   llvm::DenseSet<const void *> BlackList;
+  MnemeDeviceExecutable Executable;
 
   std::unique_ptr<PageManager> PM;
   void *VAStartAddr;
@@ -97,8 +105,6 @@ private:
   void (*origUnregisterFatBinary)(void **);
 
 private:
-  void extractIR() { static_cast<ImplT &>(*this).extractIR(); }
-
   void getGlobalAddresses() {
     for (auto &[Handle, GVars] : HandleToGlobalSymbol) {
       for (auto &GVar : GVars) {
@@ -136,33 +142,116 @@ public:
     return Handle;
   }
 
-  void registerVar(void **fatBinHandle, char *hostVar, char *deviceAddress,
+  void explicitRegisterPreLinkedBinary(FatBinaryWrapper_t *FatbinWrapper,
+                                       const char *ModuleId) {
+    LOG_DEBUG("Received prelinked binary with the following fields {} {} {} {}",
+              FatbinWrapper->Magic, FatbinWrapper->Version,
+              (void *)FatbinWrapper->Binary,
+              (void *)FatbinWrapper->PrelinkedFatBins);
+    Executable.PendingRegistrations.insert(
+        {(void *)FatbinWrapper->Binary, ModuleId});
+  }
+
+  void explicitRegisterFatBin(DeviceHandle Handle,
+                              FatBinaryWrapper_t *FatbinWrapper,
+                              const char *ModuleId) {
+    if (Executable.CurrHandle == nullptr)
+      Executable.CurrHandle = Handle;
+    if (Executable.CurrHandle != Handle) {
+#ifdef MNEME_ENABLE_CUDA
+      LOG_FATAL("Current Handle is still open and we received a new one");
+#endif
+      Executable.CurrHandle = Handle;
+    }
+
+    if (Executable.LinkedBinaries.contains(Handle)) {
+      LOG_FATAL("Received a new Handle but we already have a fatbinary for "
+                "this handle");
+    }
+
+    auto [LinkedIt, inserted] =
+        Executable.LinkedBinaries.try_emplace(Handle, Handle, FatbinWrapper);
+    auto &Linked = LinkedIt->second;
+    // TODO: Do we need this for HIP?
+    if (FatbinWrapper->Version == 1) {
+      Linked.ModuleIds.push_back(ModuleId);
+    } else if (FatbinWrapper->Version == 2) {
+      // NOTE: On version 2 binaries, we should not pushs the module-id of this
+      // Fatbinary. Instead we inherit the module ids from the internal
+      // fat-binaries.
+      for (int I = 0; FatbinWrapper->PrelinkedFatBins[I] != nullptr; I++) {
+        auto it = Executable.PendingRegistrations.find(
+            FatbinWrapper->PrelinkedFatBins[I]);
+        if (it != Executable.PendingRegistrations.end()) {
+          // Element exists
+          auto &val = it->second;
+          Linked.ModuleIds.push_back(val);
+          Executable.PendingRegistrations.erase(it);
+        } else {
+          Linked.ModuleIds.push_back("");
+        }
+        LOG_DEBUG("RDC Binary {} includes Binary address of {}", I,
+                  (void *)FatbinWrapper->PrelinkedFatBins[I]);
+      }
+    } else {
+      LOG_FATAL("Cannot handle binary type {}", FatbinWrapper->Version);
+    }
+  }
+
+  void explicitEndRegisterFatBinary(DeviceHandle Handle) {
+
+    if (Executable.CurrHandle != Handle) {
+      LOG_WARN("Register Fat Binary End Handle does not match with current "
+               "Handle {}:{}",
+               (void *)Handle, (void *)Executable.CurrHandle);
+    }
+    // We turn off the tracking of the current handle.
+    Executable.CurrHandle = nullptr;
+  }
+
+  void registerVar(DeviceHandle Handle, char *hostVar, char *deviceAddress,
                    const char *deviceName, int ext, size_t size, int constant,
                    int global) {
     LOG_INFO("Register Global Variable: {} SIZE:{}, CONSTANT:{} GLOBAL:{} ",
              deviceName, size, constant, global);
 
-    origRegisterDeviceVar(fatBinHandle, hostVar, deviceAddress, deviceName, ext,
-                          size, constant, global);
-    if (!constant)
-      HandleToGlobalSymbol[fatBinHandle].emplace_back(
-          GlobalVarInfo(deviceName, hostVar, size));
+    origRegisterDeviceVar(Handle, hostVar, deviceAddress, deviceName, ext, size,
+                          constant, global);
+
+    auto it = Executable.LinkedBinaries.find(Handle);
+    if (it == Executable.LinkedBinaries.end()) {
+      LOG_DEBUG("Dropping tracking of {} as we are not tracking the fatbinary",
+                deviceName);
+      return;
+    }
+
+    if (constant)
+      return;
+
+    it->second.GlobalSymbols.emplace_back(
+        GlobalVarInfo(deviceName, hostVar, size));
     return;
   }
 
-  void registerFunc(void **fatBinHandle, const char *hostFun, char *deviceFun,
+  void registerFunc(DeviceHandle Handle, const char *hostFun, char *deviceFun,
                     const char *deviceName, int thread_limit, uint3 *tid,
                     uint3 *bid, dim3 *bDim, dim3 *gDim, int *wSize) {
-    LOG_INFO("Register Function : {} with a thread_limit off {} ", deviceName,
-             thread_limit);
-    if (!HandleToBin.contains(fatBinHandle))
+    LOG_INFO("Register Function with handle: {} and Name: {} with a "
+             "thread_limit off {} ",
+             (void *)Handle, deviceName, thread_limit);
+
+    auto it = Executable.LinkedBinaries.find(Handle);
+    if (it == Executable.LinkedBinaries.end())
       LOG_FATAL("Handle container does not contain fatbin handle");
+
+    auto &LinkedBin = it->second;
+
     std::shared_ptr<KernelInfo> KI = std::make_shared<KernelInfo>(
-        fatBinHandle, (const void *)hostFun, deviceFun);
-    KernelInfoMap.insert({(const void *)hostFun, KI});
-    HandleToKernels[fatBinHandle].emplace_back(KI);
-    origRegisterFunction(fatBinHandle, hostFun, deviceFun, deviceName,
-                         thread_limit, tid, bid, bDim, gDim, wSize);
+        LinkedBin, (const void *)hostFun, deviceFun);
+    Executable.TrackedKernels.insert({(const void *)hostFun, KI});
+
+    origRegisterFunction(Handle, hostFun, deviceFun, deviceName, thread_limit,
+                         tid, bid, bDim, gDim, wSize);
   };
 
   DeviceError_t rtMalloc(void **ptr, size_t size) {
@@ -171,7 +260,6 @@ public:
 
     std::call_once(ExtractFlag, [this]() {
       PM = initializePageManager<MnemeDeviceRT>();
-      extractIR();
       getGlobalAddresses();
     });
 
@@ -227,8 +315,10 @@ public:
   DeviceError_t rtLaunchKernel(const void *func, dim3 &GridDim, dim3 &BlockDim,
                                void **Args, size_t SharedMem,
                                DeviceStream_t Stream) {
-    if (!KernelInfoMap.contains(func)) {
-      LOG_WARN("Skipping kernel cause not tracked in map");
+    auto it = Executable.TrackedKernels.find(func);
+
+    if (it == Executable.TrackedKernels.end()) {
+      LOG_WARN("Skipping kernel {} cause not tracked", func);
       return origLaunchKernel(func, GridDim, BlockDim, Args, SharedMem, Stream);
     }
 
@@ -237,21 +327,24 @@ public:
       return origLaunchKernel(func, GridDim, BlockDim, Args, SharedMem, Stream);
     }
 
+    auto KInfo = it->second;
     std::call_once(ExtractFlag, [this]() {
       // NOTE: We need this arch cause internally we initialize the device.
-      // FIXME: We need to have a DeviceTrait function to initialize the GPU and
-      // call it separately here. Let's do this on a separate PR
+      // FIXME: We need to have a DeviceTrait function to initialize the GPU
+      // and call it separately here. Let's do this on a separate PR
       auto arch = MnemeDeviceRT::GetDeviceArch();
       LOG_DEBUG("Initializing system {}", arch);
       PM = initializePageManager<MnemeDeviceRT>();
-      extractIR();
       getGlobalAddresses();
     });
 
-    auto KInfo = KernelInfoMap[func];
-    auto Handle = KInfo->getHandle();
-    if (!HandleToGlobalSymbol.contains(Handle))
-      LOG_FATAL("Accessing Kernel Without a Handle");
+    auto &LinkedExecutable = KInfo->getHandle();
+    if (LinkedExecutable.ExtractCode<VendorTypes>(Executable.Ctx)) {
+      LinkedExecutable.StoreModules<VendorTypes>(RecordReplayDir);
+      LinkedExecutable.FindKernels<VendorTypes>();
+    }
+
+    void **Handle = nullptr;
 
     auto RecordAction = DB.takeSnapshot<VendorTypes>(
         PM->getVAStart(), PM->getTotalVASize(), KInfo,
@@ -277,37 +370,6 @@ public:
                BlockDim.y, BlockDim.z, SharedMem);
     }
     return ret;
-  }
-
-  std::pair<llvm::stable_hash, std::string> storeModule(llvm::Module &M) {
-    static int TotalModules = 0;
-    std::error_code EC;
-
-    std::string StrBuffer;
-    llvm::raw_string_ostream RSO(StrBuffer);
-
-    // Serialize the module into the string buffer
-    llvm::WriteBitcodeToFile(M, RSO);
-    RSO.flush();
-
-    uint64_t StableHash = llvm::stable_hash_combine_string(
-        llvm::StringRef(StrBuffer.data(), StrBuffer.size()));
-
-    std::string Filename(std::filesystem::path(
-                             llvm::Twine(RecordReplayDir + "/RecordedIR_" +
-                                         std::to_string(TotalModules++) + ".bc")
-                                 .str())
-                             .string());
-    llvm::raw_fd_ostream OutBC(Filename, EC);
-    if (EC)
-      LOG_FATAL("Cannot write module ir file");
-
-    OutBC << StrBuffer;
-    LOG_DEBUG("Stored Module with StaticHash:{} to file {}", StableHash,
-              std::filesystem::canonical(Filename).string());
-    OutBC.close();
-    return std::make_pair(StableHash,
-                          std::filesystem::canonical(Filename).string());
   }
 
   MnemeRecorder() : ExtractedIR(true), ReleaseMemory(false) {

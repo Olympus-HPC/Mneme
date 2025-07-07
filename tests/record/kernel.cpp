@@ -17,15 +17,17 @@ using MnemeDeviceRT = DeviceTraits<DeviceVendors::HIP>;
 using MnemeDeviceRT = DeviceTraits<DeviceVendors::CUDA>;
 #endif
 
+__device__ int var = 0;
+
 // CHECK-RR:DemangledName: kernel()
 // CHECK-RR:NumModules: 1
 // CHECK-RR:NumInstances: 1
-__global__ void kernel() { printf("Kernel\n"); }
+__global__ void kernel(int a) { printf("Kernel %d %d\n", var, a); }
 
 int main() {
   // CHECK-RR:BlockDims:(1, 1, 1)
   // CHECK-RR:GridDims:(1, 1, 1)
-  kernel<<<1, 1>>>();
+  kernel<<<1, 1>>>(5);
   auto EC = MnemeDeviceRT::DeviceErrorCheck(MnemeDeviceRT::DeviceSynchronize());
   if (EC) {
     std::cout << "Error when running benchmark " << EC.value() << "\n";
