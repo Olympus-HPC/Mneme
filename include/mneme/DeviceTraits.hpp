@@ -638,11 +638,6 @@ template <> struct DeviceTraits<DeviceVendors::CUDA> {
     return cudaGetLastError();
   }
 
-  static DeviceError_t deviceGetSymbolAddress(void **devPtr,
-                                              const void *symbol) {
-    return cudaGetSymbolAddress(devPtr, symbol);
-  }
-
   static DeviceError_t deviceEventCreate(DeviceEvent_t *event) {
     return cudaEventCreate(event);
   }
@@ -663,6 +658,11 @@ template <> struct DeviceTraits<DeviceVendors::CUDA> {
   static DeviceError_t deviceEventElapsedTime(float *ms, DeviceEvent_t start,
                                               DeviceEvent_t stop) {
     return cudaEventElapsedTime(ms, start, stop);
+  }
+
+  static DeviceError_t deviceGetSymbolAddress(void **devPtr,
+                                              const void *symbol) {
+    return cudaGetSymbolAddress(devPtr, symbol);
   }
 };
 #else

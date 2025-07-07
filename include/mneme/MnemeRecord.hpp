@@ -108,7 +108,14 @@ private:
   void getGlobalAddresses() {
     for (auto &[Handle, GVars] : HandleToGlobalSymbol) {
       for (auto &GVar : GVars) {
-        static_cast<ImplT &>(*this).initializeGlobal(GVar);
+        auto EC = MnemeDeviceRT::DeviceErrorCheck(
+            MnemeDeviceRT::deviceGetSymbolAddress(&GVar.DevAddr,
+                                                  GVar.HostSymbolAddr));
+        if (EC) {
+          LOG_FATAL("When copying device global received error\n{}",
+                    EC.value());
+        }
+        // static_cast<ImplT &>(*this).initializeGlobal(GVar);
         LOG_INFO("Getting Global Variable: {} stored at address {} mapped "
                  "with host symbol addr {} of size {}",
                  GVar.Name, GVar.DevAddr, GVar.HostSymbolAddr, GVar.VarSize);
@@ -136,8 +143,6 @@ public:
   void **registerFatBin(FatBinaryWrapper_t *fatbin) {
     void **Handle = origRegisterFatBinary(fatbin);
     LOG_DEBUG("Register Fatbin Returned handle {}", (void *)Handle);
-    HandleToBin.insert({Handle, fatbin});
-    HandleToGlobalSymbol.insert({Handle, {}});
 
     return Handle;
   }
@@ -218,17 +223,20 @@ public:
     origRegisterDeviceVar(Handle, hostVar, deviceAddress, deviceName, ext, size,
                           constant, global);
 
-    auto it = Executable.LinkedBinaries.find(Handle);
-    if (it == Executable.LinkedBinaries.end()) {
-      LOG_DEBUG("Dropping tracking of {} as we are not tracking the fatbinary",
-                deviceName);
-      return;
-    }
-
     if (constant)
       return;
 
-    it->second.GlobalSymbols.emplace_back(
+    if (Handle != Executable.CurrHandle) {
+      LOG_WARN("Assuming this is not a tracked fatbin skipping ...");
+      return;
+    }
+
+    auto it = HandleToGlobalSymbol.find(Handle);
+    if (it == HandleToGlobalSymbol.end()) {
+      HandleToGlobalSymbol.insert({Handle, {}});
+    }
+
+    HandleToGlobalSymbol[Handle].emplace_back(
         GlobalVarInfo(deviceName, hostVar, size));
     return;
   }
@@ -344,7 +352,7 @@ public:
       LinkedExecutable.FindKernels<VendorTypes>();
     }
 
-    void **Handle = nullptr;
+    auto Handle = KInfo->getHandle().Handle;
 
     auto RecordAction = DB.takeSnapshot<VendorTypes>(
         PM->getVAStart(), PM->getTotalVASize(), KInfo,
@@ -411,10 +419,6 @@ public:
     reinterpret_cast<void *&>(origRegisterFunction) =
         dlsym(rtLib, MnemeDeviceRT::getUURegisterFunctionFnName());
     assert(origRegisterFunction && "Expected non-null Register Function");
-
-    reinterpret_cast<void *&>(origRegisterDeviceVar) =
-        dlsym(rtLib, MnemeDeviceRT::getUURegisterVarFnName());
-    assert(origRegisterDeviceVar && "Expected non-null register Device Var");
 
     reinterpret_cast<void *&>(origRegisterDeviceVar) =
         dlsym(rtLib, MnemeDeviceRT::getUURegisterVarFnName());
