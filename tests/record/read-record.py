@@ -1,12 +1,12 @@
-import json
 import glob
+import json
 import sys
 from pathlib import Path
-
 
 for fn in glob.glob("./*.json"):
     with open(fn, "r") as fd:
         rr_data = json.load(fd)
+    d_name = rr_data["DemangledName"]
     print("DemangledName:", rr_data["DemangledName"])
     print("NumModules:", len(rr_data["Modules"]))
     print("NumInstances:", len(rr_data["instances"]))

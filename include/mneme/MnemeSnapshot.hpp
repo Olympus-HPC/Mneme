@@ -198,8 +198,13 @@ public:
     Collection["VAddr"] =
         util::pointerToHexString(reinterpret_cast<uint8_t *>(VAddr));
     Collection["VASize"] = VASize;
-    Collection["KernelName"] = KInfo->getName();
-    Collection["DemangledName"] = llvm::demangle(KInfo->getName());
+    auto &KName = KInfo->getName();
+    Collection["KernelName"] = KName;
+    std::size_t pos = KName.find("__intern__");
+    std::string Orig =
+        (pos != std::string::npos) ? KName.substr(0, pos) : KName;
+
+    Collection["DemangledName"] = llvm::demangle(Orig);
     Collection["Modules"] = llvm::json::Array(KInfo->Exec.getModuleIRFiles());
     Collection["BinaryBlobs"] =
         llvm::json::Array(KInfo->Exec.getModuleBinFiles());

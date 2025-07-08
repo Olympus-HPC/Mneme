@@ -53,7 +53,10 @@ public:
 
   void releaseAddr(uint64_t VASize, void *VA);
 
-  void *getVAStart() const { return reinterpret_cast<void *>(ReservedVA); }
+  void *getVAStart() const {
+    LOG_DEBUG("Returning address {}", ReservedVA);
+    return reinterpret_cast<void *>(ReservedVA);
+  }
   uint64_t getTotalVASize() const { return TotalVASize; }
 };
 
