@@ -47,5 +47,5 @@ endif()
 
 add_subdirectory(unit_tests)
 #add_subdirectory(memory)
-#add_subdirectory(record)
+add_subdirectory(record)
 #add_subdirectory(replay)

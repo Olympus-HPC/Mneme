@@ -57,7 +57,7 @@ void __register_linked_binary(void *FatbinWrapper, const char *ModuleId) {
 void __register_fatbinary_end(void **Handle) {
   auto &mneme = MnemeRecorderCUDAPreload::instance();
   LOG_DEBUG("Mneme received explicit request to finalize fatbinary "
-            "registretation: "
+            "registration: "
             "{}",
             (void *)Handle);
   mneme.explicitEndRegisterFatBinary(Handle);

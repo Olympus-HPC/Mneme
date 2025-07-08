@@ -629,9 +629,8 @@ template <> struct DeviceTraits<DeviceVendors::CUDA> {
                                           dim3 blockDim, void **kernelArgs,
                                           size_t sharedMemBytes,
                                           DeviceStream_t stream) {
-    auto EC = DeviceErrorCheck(cuLaunchKernel(
-        (CUfunction)kernelFunc, gridDim.x, gridDim.y, gridDim.z, blockDim.x,
-        blockDim.y, blockDim.z, sharedMemBytes, stream, kernelArgs, nullptr));
+    auto EC = DeviceErrorCheck(cudaLaunchKernel(
+        kernelFunc, gridDim, blockDim, kernelArgs, sharedMemBytes, stream));
     if (EC)
       LOG_WARN("Launching Kernel return error {}", EC.value());
 
