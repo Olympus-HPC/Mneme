@@ -110,7 +110,7 @@ write_basic_package_version_file(
   COMPATIBILITY AnyNewerVersion)
 
 install(
-  TARGETS record replay regdeviceir mneme_shallow 
+  TARGETS record regdeviceir mneme_shallow 
   EXPORT mnemeTargets
   RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
   LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}"

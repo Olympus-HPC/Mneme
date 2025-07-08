@@ -35,6 +35,7 @@ elseif(MNEME_ENABLE_CUDA)
 endif()
 
 
+message(STATUS "LLVM INSTALL DIR is ${LLVM_INSTALL_DIR}")
 find_program(FILECHECK FileCheck
     PATHS ${LLVM_INSTALL_DIR}/bin ${LLVM_INSTALL_DIR}/libexec/llvm)
 

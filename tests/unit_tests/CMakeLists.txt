@@ -31,7 +31,6 @@ function(BUILD_UNIT_TEST exe)
   message(STATUS "Building test ${exe} ${ARGN}")
   add_executable(${exe} ${CMAKE_SOURCE_DIR}/src/MnemeSymbols.cpp ${ARGN})
   target_include_directories(${exe} PRIVATE ${CMAKE_SOURCE_DIR}/src/ ${CMAKE_SOURCE_DIR}/include/ ${LLVM_INCLUDE_DIRS})
-message("Include dir is ${LLVM_INCLUDE_DIRS}")
   if (MNEME_ENABLE_HIP)
     target_link_libraries(${exe} PRIVATE hip::host)
   elseif(MNEME_ENABLE_CUDA)
@@ -48,7 +47,6 @@ if (MNEME_ENABLE_LOGGER)
 target_link_libraries(${exe} PRIVATE spdlog::spdlog_header_only)
 target_compile_definitions(${exe} PRIVATE MNEME_ENABLE_LOGGER)
 endif()
-
 
 endfunction()
 
