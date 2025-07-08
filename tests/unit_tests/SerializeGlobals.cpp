@@ -3,11 +3,6 @@
 #include <cstdint>
 #include <random>
 
-#ifdef MNEME_ENABLE_HIP
-#include "mneme/MnemeMemoryHIP.hpp"
-#include "mneme/MnemeRecordHIP.hpp"
-#endif
-
 using namespace mneme;
 
 #ifdef MNEME_ENABLE_HIP

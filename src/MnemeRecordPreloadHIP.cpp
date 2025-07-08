@@ -1,16 +1,17 @@
-
+#include "mneme/DeviceTraits.hpp"
 #include "mneme/MnemeLLVMUtils.hpp"
 #include "mneme/MnemeLogger.hpp"
-#include "mneme/MnemeRecordHIP.hpp"
+#include "mneme/MnemeRecord.hpp"
 #include <hip/hip_runtime.h>
 
 using namespace mneme;
 
-class MnemeRecorderHIPPreload : public MnemeRecorderHIP {
+class MnemeRecorderHIPPreload
+    : public MnemeRecorder<mneme::DeviceVendors::HIP> {
 private:
   static constexpr bool hasFatBinEnd = false;
-  MnemeRecorderHIPPreload(MnemeRecorderHIP &) = delete;
-  MnemeRecorderHIPPreload(MnemeRecorderHIP &&) = delete;
+  MnemeRecorderHIPPreload(MnemeRecorderHIPPreload &) = delete;
+  MnemeRecorderHIPPreload(MnemeRecorderHIPPreload &&) = delete;
 
 public:
   static MnemeRecorderHIPPreload &instance() {
@@ -20,6 +21,37 @@ public:
 };
 
 extern "C" {
+
+void __register_fatbinary(void **Handle, void *FatbinWrapper,
+                          const char *ModuleId) {
+  auto &mneme = MnemeRecorderHIPPreload::instance();
+  auto Wrapper = (FatBinaryWrapper_t *)FatbinWrapper;
+  LOG_DEBUG("Mneme received explicit request to register binary with ID: {} "
+            "HANDLE:{} WRAPPER: {}",
+            ModuleId, (void *)Handle, FatbinWrapper);
+  mneme.explicitRegisterFatBin(Handle, Wrapper, ModuleId);
+}
+
+void __register_linked_binary(void *FatbinWrapper, const char *ModuleId) {
+  auto &mneme = MnemeRecorderHIPPreload::instance();
+  auto Wrapper = (FatBinaryWrapper_t *)FatbinWrapper;
+  LOG_DEBUG(
+      "Mneme received explicit request to register linked binary with ID: "
+      "{} WRAPPER : {}",
+      ModuleId, FatbinWrapper);
+  mneme.explicitRegisterPreLinkedBinary((FatBinaryWrapper_t *)Wrapper,
+                                        ModuleId);
+}
+
+void __register_fatbinary_end(void **Handle) {
+  auto &mneme = MnemeRecorderHIPPreload::instance();
+  LOG_DEBUG("Mneme received explicit request to finalize fatbinary "
+            "registration: "
+            "{}",
+            (void *)Handle);
+  mneme.explicitEndRegisterFatBinary(Handle);
+}
+
 void __hipRegisterFatBinaryEnd(void *ptr) {
   LOG_DEBUG("Entering mneme to finalize fatbinary");
   auto &mneme = MnemeRecorderHIPPreload::instance();

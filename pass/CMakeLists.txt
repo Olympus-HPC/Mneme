@@ -7,7 +7,7 @@ if(NOT LLVM_ENABLE_RTTI)
   target_compile_options(regdeviceir PRIVATE -fno-rtti)
 endif()
 
-llvm_map_components_to_libnames(llvm_libs all)
+llvm_map_components_to_libnames(llvm_pass_libs all)
 
 if (MNEME_ENABLE_CUDA)
 target_compile_definitions(regdeviceir PRIVATE -DMNEME_ENABLE_CUDA -DMNEME_ENABLE_DEBUG)
@@ -15,7 +15,7 @@ elseif(MNEME_ENABLE_HIP)
   target_compile_definitions(regdeviceir PRIVATE -DMNEME_ENABLE_HIP -DMNEME_ENABLE_DEBUG)
 endif()
 
-target_link_libraries(regdeviceir PRIVATE ${llvm_libs})
+target_link_libraries(regdeviceir PRIVATE ${llvm_pass_libs})
 target_include_directories(regdeviceir PRIVATE "${PROJECT_SOURCE_DIR}/src")
 
 target_link_libraries(regdeviceir

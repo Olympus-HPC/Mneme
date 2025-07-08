@@ -102,6 +102,10 @@ template <> struct DeviceTraits<DeviceVendors::HIP> {
     return "__hipRegisterFatBinaryEnd";
   }
 
+  static const char *getUUUnRegisterFatBinaryFnName() {
+    return "__hipUnregisterFatBinary";
+  }
+
   static constexpr bool hasFatBinEnd = false;
 
   static inline std::optional<std::string>

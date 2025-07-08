@@ -14,7 +14,7 @@
 using namespace mneme;
 
 #ifdef MNEME_ENABLE_HIP
-using Vendor = DeviceVendors::HIP;
+constexpr DeviceVendors Vendor = DeviceVendors::HIP;
 using MnemeDeviceRT = DeviceTraits<DeviceVendors::HIP>;
 using MnemeMemoryBlobDevice = MnemeMemoryBlob<DeviceVendors::HIP>;
 #elif defined(MNEME_ENABLE_CUDA)
