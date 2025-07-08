@@ -9,6 +9,7 @@
 #include <proteus/Utils.h>
 
 #include "mneme/DeviceTraits.hpp"
+#include "mneme/MnemeDeviceBinary.hpp"
 #include "mneme/MnemeLogger.hpp"
 #include "mneme/MnemeMemory.hpp"
 #include "mneme/MnemePageManager.hpp"
@@ -104,9 +105,9 @@ private:
 
 public:
   ReplayMemState() = default;
-  ReplayMemState(std::string KernelName, std::string SnapshotName,
-                 InstanceType IType)
-      : KInfo(std::make_shared<KernelInfo>(nullptr, KernelName)),
+  ReplayMemState(MnemeDeviceLinkedBin &Exec, std::string KernelName,
+                 std::string SnapshotName, InstanceType IType)
+      : KInfo(std::make_shared<KernelInfo>(Exec, KernelName)),
         SnapshotName(SnapshotName), IType(IType) {
     MnemeSnapshot<VendorTypes>::readMnemeSnapShot(SnapshotName, GlobalVars,
                                                   DeviceMemoryState, KInfo);
@@ -251,6 +252,7 @@ class ReplayInstance : public mneme::KernelInstance {
   DeviceMemState EpilogueState;
   llvm::SmallVector<std::string> ModuleFileNames;
   std::unique_ptr<PageManager> PM;
+  MnemeDeviceLinkedBin Exec;
 
 private:
   static dim3 getDim3(llvm::json::Object &Info, std::string key) {
@@ -340,9 +342,9 @@ public:
 
     SharedMem = ShmSize.value();
 
-    PrologueState = DeviceMemState(KernelName, PrologueFn,
+    PrologueState = DeviceMemState(Exec, KernelName, PrologueFn,
                                    DeviceMemState::InstanceType::Prologue);
-    EpilogueState = DeviceMemState(KernelName, EpilogueFn,
+    EpilogueState = DeviceMemState(Exec, KernelName, EpilogueFn,
                                    DeviceMemState::InstanceType::Epilogue);
   }
 

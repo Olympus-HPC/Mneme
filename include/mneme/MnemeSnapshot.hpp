@@ -16,6 +16,7 @@
 #include <sys/types.h>
 
 #include "mneme/DeviceTraits.hpp"
+#include "mneme/MnemeKernelInfo.hpp"
 #include "mneme/MnemeLLVMUtils.hpp"
 #include "mneme/MnemeLogger.hpp"
 #include "mneme/MnemeMemory.hpp"
