@@ -266,6 +266,11 @@ public:
     int DeviceID = 0;
 
     std::call_once(ExtractFlag, [this]() {
+      // NOTE: We need this arch cause internally we initialize the device.
+      // FIXME: We need to have a DeviceTrait function to initialize the GPU
+      // and call it separately here. Let's do this on a separate PR
+      auto arch = MnemeDeviceRT::GetDeviceArch();
+      LOG_DEBUG("Initializing system {}", arch);
       PM = initializePageManager<MnemeDeviceRT>();
       getGlobalAddresses();
     });

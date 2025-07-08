@@ -1,7 +1,7 @@
 // clang-format off
 // RUN: rm -rf *.json Recorded*.bc DeviceState*.mneme
-// RUN: LD_PRELOAD=MNEME_PRELOAD_LIB MNEME_LOG_LEVEL=debug MNEME_PAGE_SIZE=%PG ./test_rr_device_mem%ext | FileCheck %s --check-prefixes=CHECK
-// RUN: %RR | FileCheck %s --check-prefix=CHECK-RR
+// RUN: LD_PRELOAD=MNEME_PRELOAD_LIB MNEME_LOG_LEVEL=debug MNEME_PAGE_SIZE=%PG ./test_rr_device_mem%ext | %FILECHECK %s --check-prefixes=CHECK
+// RUN: %RR | %FILECHECK %s --check-prefix=CHECK-RR
 // RUN: rm -rf *.json Recorded*.bc DeviceState*.mneme
 // clang-format on
 
@@ -15,6 +15,8 @@ using namespace mneme;
 #ifdef MNEME_ENABLE_HIP
 using MnemeDeviceRT = DeviceTraits<DeviceVendors::HIP>;
 #define SYMBOL(x) HIP_SYMBOL(x)
+#elif defined(MNEME_ENABLE_CUDA)
+using MnemeDeviceRT = DeviceTraits<DeviceVendors::CUDA>;
 #endif
 
 // CHECK-RR: DemangledName: test(A, float*, int)
