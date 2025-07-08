@@ -68,15 +68,13 @@ function(CREATE_RDC_GPU_TEST exe check_source)
         --hip-link
         -Xoffload-linker --load-pass-plugin=$<TARGET_FILE:regdeviceir>
     )
-	elseif(MNEME_ENABLE_CUDA)
+    elseif(MNEME_ENABLE_CUDA)
         target_compile_options(
             ${exe}.rdc
             PUBLIC
             -fpass-plugin=$<TARGET_FILE:regdeviceir>
         )
-
-        # set_target_properties(${exe}.${lang} PROPERTIES CUDA_RUNTIME_LIBRARY Shared)
-        set_target_properties(${exe}.rdc PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
+    set_target_properties(${exe}.rdc PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
   endif()
 
   add_test(NAME ${exe}.rdc COMMAND ${LIT} -a -vv -DFILECHECK=${FILECHECK} -D ext=.rdc -D PG=1 -D RR=${RECORD_READ_JSON} ${check_source})

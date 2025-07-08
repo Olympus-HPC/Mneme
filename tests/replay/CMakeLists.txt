@@ -6,10 +6,11 @@ function(CREATE_GPU_TEST exe check_source)
   if (MNEME_ENABLE_HIP)
     set_source_files_properties(${check_source} ${ARGN} PROPERTIES LANGUAGE HIP) 
     target_compile_definitions(${exe} PRIVATE MNEME_ENABLE_HIP)
-    target_link_libraries(${exe} PRIVATE hip::host)
     target_link_libraries(${exe} PRIVATE hip::host mneme_shallow)
   elseif(MNEME_ENABLE_CUDA)
+    set_source_files_properties(${check_source} ${ARGN} PROPERTIES LANGUAGE CUDA) 
     target_compile_definitions(${exe} PRIVATE MNEME_ENABLE_CUDA)
+    target_link_libraries(${exe} PRIVATE CUDA::cudart CUDA::cuda_driver mneme_shallow)
   endif()
   target_include_directories(${exe} PRIVATE ${CMAKE_SOURCE_DIR}/include/)
 
@@ -26,7 +27,7 @@ function(CREATE_GPU_TEST exe check_source)
       -fpass-plugin=$<TARGET_FILE:regdeviceir>
   )
 
-add_test(NAME ${exe} COMMAND ${LIT} -a -vv -D ext='' -D PG=1 -D RR=${RECORD_READ_JSON} ${check_source})
+add_test(NAME ${exe} COMMAND ${LIT} -a -vv -DFILECHECK=${FILECHECK} -D ext='' -D PG=1 -D RR=${RECORD_READ_JSON} ${check_source})
 set_tests_properties(${exe} PROPERTIES LABELS "MnemeReplay::Link")
 endfunction()
 
@@ -35,10 +36,11 @@ function(CREATE_RDC_GPU_TEST exe check_source)
   if (MNEME_ENABLE_HIP)
     set_source_files_properties(${check_source} ${ARGN} PROPERTIES LANGUAGE HIP) 
     target_compile_definitions(${exe}.rdc PRIVATE MNEME_ENABLE_HIP)
-    target_link_libraries(${exe}.rdc PRIVATE hip::host)
     target_link_libraries(${exe}.rdc PRIVATE hip::host mneme_shallow)
   elseif(MNEME_ENABLE_CUDA)
+    set_source_files_properties(${check_source} ${ARGN} PROPERTIES LANGUAGE CUDA) 
     target_compile_definitions(${exe}.rdc PRIVATE MNEME_ENABLE_CUDA)
+    target_link_libraries(${exe}.rdc PRIVATE CUDA::cudart CUDA::cuda_driver mneme_shallow)
   endif()
   target_include_directories(${exe}.rdc PRIVATE ${CMAKE_SOURCE_DIR}/include/)
 
@@ -68,9 +70,16 @@ function(CREATE_RDC_GPU_TEST exe check_source)
         --hip-link
         -Xoffload-linker --load-pass-plugin=$<TARGET_FILE:regdeviceir>
     )
+    elseif(MNEME_ENABLE_CUDA)
+        target_compile_options(
+            ${exe}.rdc
+            PUBLIC
+            -fpass-plugin=$<TARGET_FILE:regdeviceir>
+        )
+    set_target_properties(${exe}.rdc PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
   endif()
 
-  add_test(NAME ${exe}.rdc COMMAND ${LIT} -a -vv -D ext=.rdc -D PG=1 -D RR=${RECORD_READ_JSON} ${check_source})
+  add_test(NAME ${exe}.rdc COMMAND ${LIT} -a -vv -DFILECHECK=${FILECHECK} -D ext=.rdc -D PG=1 -D RR=${RECORD_READ_JSON} ${check_source})
   set_tests_properties(${exe}.rdc PROPERTIES LABELS "MnemeReplay::RDC")
 endfunction()
 
@@ -96,10 +105,12 @@ MNEME_PRELOAD_LIB='${CMAKE_BINARY_DIR}/src/librecord.so'
 PAGE_SIZE = lit_config.params['PG']
 RR = lit_config.params['RR']
 EXT = lit_config.params['ext']
+FILECHECK = lit_config.params['FILECHECK']
 config.substitutions.append(('MNEME_PRELOAD_LIB', MNEME_PRELOAD_LIB))
 config.substitutions.append(('%PG', PAGE_SIZE))
 config.substitutions.append(('%RR', RR))
 config.substitutions.append(('%ext', EXT))
+config.substitutions.append(('%FILECHECK', FILECHECK))
 "
 )
 
