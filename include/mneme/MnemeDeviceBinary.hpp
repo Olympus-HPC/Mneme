@@ -46,6 +46,9 @@ struct MnemeDeviceLinkedBin {
   MnemeDeviceLinkedBin(DeviceHandle Handle, FatBinaryWrapper_t *Wrapper)
       : Handle(Handle), FatBinary(Wrapper), ExtractedCode(false) {}
 
+  MnemeDeviceLinkedBin()
+      : Handle(nullptr), FatBinary(nullptr), ExtractedCode(false) {}
+
   template <DeviceVendors Vendor> bool ExtractCode(llvm::LLVMContext &Ctx) {
     if (ExtractedCode)
       return false;
