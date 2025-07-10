@@ -2,8 +2,6 @@
 #include <mneme/MnemeReplay.hpp>
 
 #ifdef MNEME_ENABLE_HIP
-#include <mneme/MnemeRecordHIP.hpp>
-using MnemeRecorderDevice = mneme::MnemeRecorderHIP;
 using DeviceVendorTraits = mneme::DeviceTraits<mneme::DeviceVendors::HIP>;
 constexpr mneme::DeviceVendors Vendor = mneme::DeviceVendors::HIP;
 using DeviceMemState = mneme::ReplayMemState<Vendor>;
