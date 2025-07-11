@@ -105,9 +105,9 @@ private:
 
 public:
   ReplayMemState() = default;
-  ReplayMemState(MnemeDeviceLinkedBin &Exec, std::string KernelName,
-                 std::string SnapshotName, InstanceType IType)
-      : KInfo(std::make_shared<KernelInfo>(Exec, KernelName)),
+  ReplayMemState(std::string KernelName, std::string SnapshotName,
+                 InstanceType IType)
+      : KInfo(std::make_shared<KernelInfo>(KernelName)),
         SnapshotName(SnapshotName), IType(IType) {
     MnemeSnapshot<VendorTypes>::readMnemeSnapShot(SnapshotName, GlobalVars,
                                                   DeviceMemoryState, KInfo);
@@ -252,7 +252,6 @@ class ReplayInstance : public mneme::KernelInstance {
   DeviceMemState EpilogueState;
   llvm::SmallVector<std::string> ModuleFileNames;
   std::unique_ptr<PageManager> PM;
-  MnemeDeviceLinkedBin Exec;
 
 private:
   static dim3 getDim3(llvm::json::Object &Info, std::string key) {
@@ -342,9 +341,9 @@ public:
 
     SharedMem = ShmSize.value();
 
-    PrologueState = DeviceMemState(Exec, KernelName, PrologueFn,
+    PrologueState = DeviceMemState(KernelName, PrologueFn,
                                    DeviceMemState::InstanceType::Prologue);
-    EpilogueState = DeviceMemState(Exec, KernelName, EpilogueFn,
+    EpilogueState = DeviceMemState(KernelName, EpilogueFn,
                                    DeviceMemState::InstanceType::Epilogue);
   }
 

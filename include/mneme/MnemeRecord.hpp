@@ -350,13 +350,13 @@ public:
       getGlobalAddresses();
     });
 
-    auto &LinkedExecutable = KInfo->getHandle();
+    auto &LinkedExecutable = KInfo->getExecutable();
     if (LinkedExecutable.ExtractCode<VendorTypes>(Executable.Ctx)) {
       LinkedExecutable.StoreModules<VendorTypes>(RecordReplayDir);
       LinkedExecutable.FindKernels<VendorTypes>();
     }
 
-    auto Handle = KInfo->getHandle().Handle;
+    auto Handle = KInfo->getExecutable().Handle;
 
     auto RecordAction = DB.takeSnapshot<VendorTypes>(
         PM->getVAStart(), PM->getTotalVASize(), KInfo,

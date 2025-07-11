@@ -70,15 +70,15 @@ ProteusPY_linkModules(const char **LLVMIRFiles, int size,
     llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> Buffer =
         llvm::MemoryBuffer::getFile(Fn);
     if (!Buffer)
-      LOG_FATAL("Error with loading file " + Fn +
-                  "\n Error Code:" + Buffer.getError().message());
+      LOG_FATAL("Error with loading file {}\n Error Code:", Fn,
+                Buffer.getError().message());
 
     llvm::Expected<std::unique_ptr<llvm::Module>> ModuleOrErr =
         llvm::parseBitcodeFile(Buffer->get()->getMemBufferRef(), *Ctx);
 
     if (!ModuleOrErr)
-      LOG_FATAL("Error parsing bitcode: " +
-                  llvm::toString(ModuleOrErr.takeError()));
+      LOG_FATAL("Error parsing bitcode: {}",
+                llvm::toString(ModuleOrErr.takeError()));
 
     RecordedModules.emplace_back(std::move(ModuleOrErr.get()));
   }

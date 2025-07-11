@@ -204,11 +204,11 @@ public:
     std::size_t pos = KName.find("__intern__");
     std::string Orig =
         (pos != std::string::npos) ? KName.substr(0, pos) : KName;
-
+    auto &Executable = KInfo->getExecutable();
     Collection["DemangledName"] = llvm::demangle(Orig);
-    Collection["Modules"] = llvm::json::Array(KInfo->Exec.getModuleIRFiles());
+    Collection["Modules"] = llvm::json::Array(Executable.getModuleIRFiles());
     Collection["BinaryBlobs"] =
-        llvm::json::Array(KInfo->Exec.getModuleBinFiles());
+        llvm::json::Array(Executable.getModuleBinFiles());
     Collection["ArgNames"] = llvm::json::Array(KInfo->getArgNames());
     Collection["Specializations"] =
         llvm::json::Array(KInfo->getArgSpecializations());
@@ -224,7 +224,7 @@ public:
                             std::shared_ptr<KernelInfo> KInfo)
       : VAddr(VAddr), VASize(VASize), KInfo(KInfo) {
     // Here I need to extract information regarding the kernel
-    auto Func = KInfo->Exec.getKernelFunction(KInfo->Name);
+    auto Func = KInfo->getExecutable().getKernelFunction(KInfo->Name);
     if (!Func)
       LOG_FATAL("Cannot find descriptor of function {}", KInfo->Name);
 

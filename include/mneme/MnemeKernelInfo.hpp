@@ -9,7 +9,7 @@
 
 namespace mneme {
 struct KernelInfo {
-  MnemeDeviceLinkedBin &Exec;
+  std::optional<std::reference_wrapper<MnemeDeviceLinkedBin>> Exec;
   const void *HostFun;
   std::string Name;
   std::optional<uint64_t> StaticHash;
@@ -23,6 +23,9 @@ struct KernelInfo {
         StaticHash(std::nullopt) {};
   KernelInfo(MnemeDeviceLinkedBin &Executable, std::string &Name)
       : Exec(Executable), Name(Name), StaticHash(std::nullopt) {};
+  KernelInfo(const void *HostFun, char *Name)
+      : HostFun(HostFun), Name(Name), StaticHash(std::nullopt) {};
+  KernelInfo(std::string &Name) : Name(Name), StaticHash(std::nullopt) {};
 
 public:
   void setArgSizes(llvm::ArrayRef<size_t> ArgSizes) {
@@ -53,7 +56,12 @@ public:
   }
 
   int64_t getNumArgs() const { return KernelArgSizes.size(); }
-  MnemeDeviceLinkedBin &getHandle() const { return Exec; }
+  MnemeDeviceLinkedBin &getExecutable() const {
+    if (!Exec)
+      LOG_FATAL(
+          "Requesting Handle on an execution with uninitialized binary handle");
+    return Exec->get();
+  }
   const std::string getName() const { return Name; }
   const void *getFunHandle() const { return HostFun; }
   llvm::ArrayRef<size_t> getArgSizes() const { return KernelArgSizes; }
@@ -78,9 +86,10 @@ public:
 
 private:
   llvm::stable_hash computeStaticHash() {
+    auto &Executable = getExecutable();
     StaticHash = llvm::stable_hash_combine_string(Name);
-    StaticHash =
-        llvm::stable_hash_combine(StaticHash.value(), Exec.getStaticHash());
+    StaticHash = llvm::stable_hash_combine(StaticHash.value(),
+                                           Executable.getStaticHash());
     return StaticHash.value();
   }
 };
