@@ -59,7 +59,7 @@ public:
   MnemeDeviceLinkedBin &getExecutable() const {
     if (!Exec)
       LOG_FATAL(
-          "Requesting Handle on an execution with unitialized binary handle");
+          "Requesting Handle on an execution with uninitialized binary handle");
     return Exec->get();
   }
   const std::string getName() const { return Name; }
