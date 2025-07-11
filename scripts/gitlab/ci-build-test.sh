@@ -1,5 +1,7 @@
 #!/bin/bash
 
+set -e
+
 temp_dir=$(pwd) #$(mktemp -d)
 echo "Temporary directory created at: $temp_dir"
 host=$(hostname)
