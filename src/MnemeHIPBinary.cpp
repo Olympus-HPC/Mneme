@@ -116,7 +116,7 @@ void MnemeDeviceLinkedBin::FindKernels<DeviceVendors::HIP>(
     if (Func.getCallingConv() != llvm::CallingConv::AMDGPU_KERNEL)
       continue;
 
-    // Can a declarion have a calling conv, if no this is unecessary.
+    // Can a declaration have a calling conv, if no this is unnecessary.
     if (Func.isDeclaration())
       continue;
     LOG_DEBUG("Adding kernel {}", Func.getName().str());
