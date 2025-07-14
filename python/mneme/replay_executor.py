@@ -3,6 +3,7 @@ import time
 from typing import Tuple
 
 from mneme.device import DeviceModule, dim3, get_device_arch
+from mneme.experiment import Experiment
 from mneme.llvm.module import ModuleRef
 from mneme.page_manager import PageManagerRef
 from mneme.pipeline import PipelineManager
@@ -92,7 +93,7 @@ class BaseExecutor:
         self._epilogue = None
         self._prologue = None
         self._page_manager = None
-        self._iteration = 3
+        self._iterations = iterations
 
     def open(self):
         self._page_manager = PageManagerRef(self.records.va_addr, self.records.va_size)
@@ -131,12 +132,9 @@ class BaseExecutor:
             prune=self.prune, internalize=self.internalize
         )
 
-    def execute(
-        self,
-        ir_module: ModuleRef,
-        middle_end_opt: str,
-        clone,
-    ) -> Tuple[ModuleRef, float, float, float, float, bool]:
+    def _execute(
+        self, exp: Experiment, ir_module: ModuleRef, middle_end_opt: str
+    ) -> Tuple[Experiment, ModuleRef]:
         m_start = time.perf_counter()
         jit.optimize(
             ir_module,
@@ -145,40 +143,34 @@ class BaseExecutor:
             self.codegen_opt,
         )
         m_end = time.perf_counter()
-        m_compile_time = m_end - m_start
+        exp.opt_time = m_end - m_start
         opt_file = ir_module
-        if clone:
-            opt_file = ir_module.clone()
 
         c_start = time.perf_counter()
         mem_buffer = jit.codegen_object(
             opt_file, self.device_arch, self.rtc, self.codegen_opt
         )
         c_end = time.perf_counter()
-        b_compile_time = c_end - c_start
-        object_size = mem_buffer.get_size()
+        exp.codegen_time = c_end - c_start
+        exp.obj_size = mem_buffer.get_size()
+
         if self._prologue._state is None or self._epilogue._state is None:
             raise RuntimeError("States should never be none when executing a kernel")
 
         with DeviceModule.from_MemBuffer(mem_buffer) as DeviceObj:
             device_func = DeviceObj.get_function(self.kernel_descr.kernel_name)
-            perf_time = device_func.profile(
+            exp.exec_time = device_func.profile(
                 self.kernel_descr.grid_dim,
                 self.kernel_descr.block_dim,
                 self._prologue._state,
                 self._epilogue._state,
                 self.kernel_descr.shared_mem,
-                self._iteration,
+                self._iterations,
             )
-            avg_time = sum(perf_time) / len(perf_time)
-            return (
-                opt_file,
-                avg_time,
-                m_compile_time,
-                b_compile_time,
-                object_size,
-                self.prologue == self.epilogue,
-            )
+            exp.verified = self.prologue == self.epilogue
+            exp.executed = True
+
+            return exp, opt_file
 
 
 class CLIExecutor(BaseExecutor):
@@ -278,29 +270,35 @@ class CLIExecutor(BaseExecutor):
         self.pass_manager = PipelineManager()
         self.passes = self.pass_manager.from_string(self.pipeline)
 
+    def get_experiment(self, pipeline):
+        return Experiment(
+            specialize=self.specialize,
+            max_threads=self.max_threads,
+            min_blocks_per_sm=self.min_blocks_per_sm,
+            specialize_dims=self.dims,
+            passes=pipeline,
+            prune=self.prune,
+            internalize=self.internalize,
+            codegen_opt=self.codegen_opt,
+            rtc=self.rtc,
+            device_arch=self.device_arch,
+        )
+
     def __str__(self):
         return f"{self.__class__.__name__}"
 
     def execute(self, ir_module, clone=False):
         if not self.increamental:
-            return super().execute(ir_module, self.pipeline, clone)
+            exp = self.get_experiment(self.pipeline)
+            return super()._execute(exp, ir_module, self.pipeline)
 
         results = []
         for i, _ in enumerate(self.passes):
-            (
-                opt_code,
-                avg_time,
-                m_c_time,
-                b_c_time,
-                object_size,
-                verified,
-            ) = super().execute(
-                ir_module, self.pass_manager.to_string(self.passes[: i + 1]), True
-            )
-
-            print(
-                f"Applied pipeline: {self.pass_manager.to_string(self.passes[: i + 1])} \t Time: {avg_time:.5f},\t Verified: \t{verified}, MCompile Time: \t {m_c_time:.5f}, BCompile Time: \t {b_c_time:.5f}\t Obj. Size: {object_size}"
-            )
+            code = ir_module.clone()
+            passes = self.pass_manager.to_string(self.passes[: i + 1])
+            exp = self.get_experiment(passes)
+            exp, generated_ir = super()._execute(exp, code, passes)
+            exp.dump()
 
     @staticmethod
     def run(args):
@@ -314,19 +312,9 @@ class CLIExecutor(BaseExecutor):
         root_ir = executor.link_ir()
         with executor as Memory:
             code_hash, code = executor.apply_user_options(root_ir)
-            (
-                opt_code,
-                avg_time,
-                m_c_time,
-                b_c_time,
-                object_size,
-                verified,
-            ) = executor.execute(
+            executor.execute(
                 code,
                 True,
             )
 
-            print(
-                f"[{code_hash}] \t Time: {avg_time:.5f},\t Verified: \t{verified}, MCompile Time: \t {m_c_time:.5f}, BCompile Time: \t {b_c_time:.5f}\t Obj. Size: {object_size}"
-            )
         return
