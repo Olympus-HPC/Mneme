@@ -59,6 +59,7 @@ class MemStateRef:
 
         ffi.lib.MnemePy_LoadMemState(self._state)
         self._load = True
+        return self
 
     @property
     def args(self):

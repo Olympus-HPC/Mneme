@@ -413,6 +413,47 @@ Machine function analyses (WIP):
 """
 
 
+def __split_top_level__(s: str) -> list[str]:
+    """
+    Split on commas that are not nested inside parentheses.
+    """
+    parts = []
+    buf = []
+    depth = 0
+    for ch in s:
+        if ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+        if ch == "," and depth == 0:
+            parts.append("".join(buf).strip())
+            buf = []
+        else:
+            buf.append(ch)
+    if buf:
+        parts.append("".join(buf).strip())
+    return parts
+
+
+def __flatten_passes__(s: str) -> list[str]:
+    """
+    Recursively extract only the *leaf* pass names from a pipeline string.
+    Any pass that has parentheses is expanded, its *contents* flattened,
+    and the outer name dropped.
+    """
+    out = []
+    for tok in split_top_level(s):
+        # if it has a parenthesized sub-list, peel it off
+        m = re.match(r"^[^(]+\((.*)\)$", tok)
+        if m:
+            inner = m.group(1)
+            # recurse into the contents
+            out.extend(flatten_passes(inner))
+        else:
+            out.append(tok)
+    return out
+
+
 def test_pass_requires_analysis(pipeline_str, ir_path, output):
     result = subprocess.run(
         [
@@ -475,8 +516,12 @@ class PassOption:
 
 class AbstractPass:
     class ConcretePass:
-        def __init__(self, apass: AbstractPass):
+        def __init__(self, apass: AbstractPass, options=None):
             self._apass = apass
+
+            if options is not None:
+                self.options = options
+                return
 
             self.options = []
             if apass.options is None:
@@ -694,7 +739,6 @@ class PipelineManager:
                 if v in line:
                     skipflag = True
             if skipflag:
-                print(f"Skipping {line}")
                 continue
 
             if options[0]:
@@ -707,8 +751,10 @@ class PipelineManager:
 
     def __init__(self):
         self._passes = PipelineManager.__parse_llvm_pipeline__(__all_passes__)
-        for p in self._passes:
-            print(p)
+        self._kw_passes = {k.pass_name: k for k in self._passes}
+
+    def split_pipeline(self, pipeline):
+        return __flatten_passes__(__split_top_level__(pipeline))
 
     def _generate_random_pipeline(
         self,
@@ -764,6 +810,38 @@ class PipelineManager:
             random_selection.append(sp)
 
         return random_selection
+
+    def from_string(self, str_pipeline: str) -> List[AbstractPass.ConcretePass]:
+        def get_options(names):
+            if len(names) <= 1:
+                return []
+
+            opts_str = names[1:]
+            opts_str[-1] = opts_str[-1].rstrip(">")
+            options = (
+                [opts_str[-1].strip() for opt in opts_str[-1].split(",")]
+                if opts_str
+                else []
+            )
+            return options
+
+        # We first replace all adaptors.
+        no_funtion = str_pipeline.replace("function<eager-inv>(", "")
+        no_cgscc = no_funtion.replace("cgscc(", "")
+        no_loop = no_cgscc.replace("loop(", "")
+        no_loopmassa = no_loop.replace("loop-mssa(", "")
+        no_loopnest = no_loopmassa.replace("loopnest", "")
+        passes = no_loopnest.replace(")", "").split(",")
+        passes = [x for x in passes if x != ""]
+        pipeline = []
+        for p in passes:
+            names = p.split("<", 1)
+            name = names[0]
+            options = get_options(names)
+            if name not in self._kw_passes:
+                raise RuntimeError(f"Unknown pass {name}")
+            pipeline.append(AbstractPass.ConcretePass(self._kw_passes[name], options))
+        return pipeline
 
     @staticmethod
     def to_string(passes: List[AbstractPass.ConcretePass]) -> str:
@@ -949,11 +1027,9 @@ if __name__ == "__main__":
     passes = PM.generate(100, 120, 16.7, False, 0)
     print("START")
     for i, pipeline in enumerate(passes):
-        print(PipelineManager.to_string(pipeline))
         input = "RecordedIR_0.bc"
         for j, p in enumerate(pipeline):
             pipe = PipelineManager.to_string([p])
-            print(f"Running pipeline {i} out of {len(passes)} {pipe}")
             output = f"file_{j}.bc"
             ret, res = test_pass_requires_analysis(pipe, input, output)
             input = output
