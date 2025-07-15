@@ -1,0 +1,20 @@
+The CUDA port of the miniFE is based on the OpenMP4.5-opt.  The source files Vector_functions.hpp and SparseMatrix_functions.hpp contain the kernel implementations. The CUDA block size of each kernel is fixed at 256.  The kernels are launched in cg_solve.cpp.
+
+Verification
+Verification is always enabled by commenting "if (params.verify_solution > 0)" in driver.hpp.
+
+Debugging
+Debugging can be enabled by adding the option -DMINIFE_DEBUG in Makefile
+
+
+Build miniFE:
+   make
+
+Clean miniFE
+   make realclean
+
+Quick run 
+  ./miniFE.x
+
+The performance results are collected using the dimensions (128,128,128) :
+  ./miniFE.x -nx 128 -ny 128 -nz 128

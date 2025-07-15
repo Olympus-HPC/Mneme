@@ -1,0 +1,122 @@
+dpcpp -std=c++14 -Wall -I../include -O3 -DUSE_GPU -c main.cpp -o main.o
+main.cpp:44:8: error: redefinition of 'result' with a different type: 'bool' vs 'uint *' (aka 'unsigned int *')
+  bool result = (count == cpuResults);
+       ^
+main.cpp:27:11: note: previous definition is here
+    uint* result, uint searchLenPerWG, 
+          ^
+main.cpp:45:66: error: member reference base type 'uint' (aka 'unsigned int') is not a structure or union
+  result = result && std::equal (result, result+count, cpuResults.begin());
+                                                       ~~~~~~~~~~^~~~~~
+main.cpp:136:8: error: use of undeclared identifier 'caseSensitive'
+    if(caseSensitive)
+       ^
+main.cpp:138:18: warning: array subscript is of type 'char' [-Wchar-subscripts]
+      badCharSkip[subStr[scan]] = last - scan;
+                 ^~~~~~~~~~~~~
+main.cpp:152:29: error: use of undeclared identifier 'caseSensitive'
+    for(scan=(last+curPos); COMPARE(text[scan], subStr[p--]); scan -= 1)
+                            ^
+./StringSearch.h:22:27: note: expanded from macro 'COMPARE'
+#define COMPARE(x,y)    ((caseSensitive) ? (x==y) : (toupper(x) == toupper(y)))
+                          ^
+main.cpp:173:20: error: no matching constructor for initialization of 'buffer<sycl::uchar, 1>' (aka 'buffer<unsigned char, 1>')
+  buffer<uchar, 1> subStrBuf (subStr.c_str(), subStrLength);
+                   ^          ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/opt/intel/oneapi/compiler/2021.2.0/linux/bin/../include/sycl/CL/sycl/buffer.hpp:79:3: note: candidate constructor not viable: no known conversion from 'const char *' to 'unsigned char *' for 1st argument
+  buffer(T *hostData, const range<dimensions> &bufferRange,
+  ^
+/opt/intel/oneapi/compiler/2021.2.0/linux/bin/../include/sycl/CL/sycl/buffer.hpp:99:3: note: candidate constructor [with _T = unsigned char] not viable: no known conversion from 'const char *' to 'const EnableIfSameNonConstIterators<unsigned char, unsigned char> *' (aka 'const unsigned char *') for 1st argument
+  buffer(EnableIfSameNonConstIterators<T, _T> const *hostData,
+  ^
+/opt/intel/oneapi/compiler/2021.2.0/linux/bin/../include/sycl/CL/sycl/buffer.hpp:132:3: note: candidate constructor not viable: no known conversion from 'const char *' to 'const shared_ptr_class<unsigned char>' (aka 'const shared_ptr<unsigned char>') for 1st argument
+  buffer(const shared_ptr_class<T> &hostData,
+  ^
+/opt/intel/oneapi/compiler/2021.2.0/linux/bin/../include/sycl/CL/sycl/buffer.hpp:62:3: note: candidate constructor not viable: no known conversion from 'const char *' to 'const range<1>' for 1st argument
+  buffer(const range<dimensions> &bufferRange,
+  ^
+/opt/intel/oneapi/compiler/2021.2.0/linux/bin/../include/sycl/CL/sycl/buffer.hpp:70:3: note: candidate constructor not viable: no known conversion from 'const char *' to 'const range<1>' for 1st argument
+  buffer(const range<dimensions> &bufferRange, AllocatorT allocator,
+  ^
+/opt/intel/oneapi/compiler/2021.2.0/linux/bin/../include/sycl/CL/sycl/buffer.hpp:206:3: note: candidate constructor template not viable: no known conversion from 'const char *' to 'cl_mem' (aka '_cl_mem *') for 1st argument
+  buffer(cl_mem MemObject, const context &SyclContext,
+  ^
+/opt/intel/oneapi/compiler/2021.2.0/linux/bin/../include/sycl/CL/sycl/buffer.hpp:158:3: note: candidate template ignored: deduced conflicting types for parameter 'InputIterator' ('const char *' vs. 'int')
+  buffer(InputIterator first, InputIterator last,
+  ^
+/opt/intel/oneapi/compiler/2021.2.0/linux/bin/../include/sycl/CL/sycl/buffer.hpp:171:3: note: candidate template ignored: substitution failure [with Container = const char *, N = 1, $2 = void]: member reference base type 'const char *' is not a structure or union
+  buffer(Container &container, AllocatorT allocator,
+  ^
+/opt/intel/oneapi/compiler/2021.2.0/linux/bin/../include/sycl/CL/sycl/buffer.hpp:185:3: note: candidate template ignored: substitution failure [with Container = const char *, N = 1, $2 = void]: member reference base type 'const char *' is not a structure or union
+  buffer(Container &container, const property_list &propList = {})
+  ^
+/opt/intel/oneapi/compiler/2021.2.0/linux/bin/../include/sycl/CL/sycl/buffer.hpp:220:3: note: candidate constructor not viable: requires single argument 'rhs', but 2 arguments were provided
+  buffer(const buffer &rhs) = default;
+  ^
+/opt/intel/oneapi/compiler/2021.2.0/linux/bin/../include/sycl/CL/sycl/buffer.hpp:222:3: note: candidate constructor not viable: requires single argument 'rhs', but 2 arguments were provided
+  buffer(buffer &&rhs) = default;
+  ^
+/opt/intel/oneapi/compiler/2021.2.0/linux/bin/../include/sycl/CL/sycl/buffer.hpp:188:3: note: candidate constructor not viable: requires 3 arguments, but 2 were provided
+  buffer(buffer<T, dimensions, AllocatorT> &b, const id<dimensions> &baseIndex,
+  ^
+/opt/intel/oneapi/compiler/2021.2.0/linux/bin/../include/sycl/CL/sycl/buffer.hpp:88:3: note: candidate constructor not viable: requires at least 3 arguments, but 2 were provided
+  buffer(T *hostData, const range<dimensions> &bufferRange,
+  ^
+/opt/intel/oneapi/compiler/2021.2.0/linux/bin/../include/sycl/CL/sycl/buffer.hpp:110:3: note: candidate constructor template not viable: requires at least 3 arguments, but 2 were provided
+  buffer(EnableIfSameNonConstIterators<T, _T> const *hostData,
+  ^
+/opt/intel/oneapi/compiler/2021.2.0/linux/bin/../include/sycl/CL/sycl/buffer.hpp:121:3: note: candidate constructor not viable: requires at least 3 arguments, but 2 were provided
+  buffer(const shared_ptr_class<T> &hostData,
+  ^
+/opt/intel/oneapi/compiler/2021.2.0/linux/bin/../include/sycl/CL/sycl/buffer.hpp:145:3: note: candidate constructor template not viable: requires at least 3 arguments, but 2 were provided
+  buffer(InputIterator first, InputIterator last, AllocatorT allocator,
+  ^
+/opt/intel/oneapi/compiler/2021.2.0/linux/bin/../include/sycl/CL/sycl/buffer.hpp:357:3: note: candidate constructor not viable: requires 4 arguments, but 2 were provided
+  buffer(shared_ptr_class<detail::buffer_impl> Impl,
+  ^
+main.cpp:189:17: error: unknown type name 'localThreads'
+  range<1> gws (localThreads * workGroupCount);
+                ^
+main.cpp:189:16: warning: parentheses were disambiguated as a function declaration [-Wvexing-parse]
+  range<1> gws (localThreads * workGroupCount);
+               ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+main.cpp:189:17: note: add a pair of parentheses to declare a variable
+  range<1> gws (localThreads * workGroupCount);
+                ^
+                (                            )
+main.cpp:205:29: error: use of undeclared identifier 'sycl_atomics'; did you mean 'sycl_atomic'?
+          accessor<uint, 1, sycl_atomics, access::target::local> groupSuccessCounter(1, cgh);
+                            ^~~~~~~~~~~~
+                            sycl_atomic
+../include/common.h:12:24: note: 'sycl_atomic' declared here
+constexpr access::mode sycl_atomic     = access::mode::atomic;
+                       ^
+main.cpp:207:15: error: use of undeclared identifier 'StringSearchNaive'
+              StringSearchNaive(textBuf_acc.get_pointer(),
+              ^
+main.cpp:246:29: error: use of undeclared identifier 'sycl_atomics'; did you mean 'sycl_atomic'?
+          accessor<uint, 1, sycl_atomics, access::target::local> stack1Counter(1, cgh);
+                            ^~~~~~~~~~~~
+                            sycl_atomic
+../include/common.h:12:24: note: 'sycl_atomic' declared here
+constexpr access::mode sycl_atomic     = access::mode::atomic;
+                       ^
+main.cpp:247:29: error: use of undeclared identifier 'sycl_atomics'; did you mean 'sycl_atomic'?
+          accessor<uint, 1, sycl_atomics, access::target::local> stack2Counter(1, cgh);
+                            ^~~~~~~~~~~~
+                            sycl_atomic
+../include/common.h:12:24: note: 'sycl_atomic' declared here
+constexpr access::mode sycl_atomic     = access::mode::atomic;
+                       ^
+main.cpp:248:29: error: use of undeclared identifier 'sycl_atomics'; did you mean 'sycl_atomic'?
+          accessor<uint, 1, sycl_atomics, access::target::local> groupSuccessCounter(1, cgh);
+                            ^~~~~~~~~~~~
+                            sycl_atomic
+../include/common.h:12:24: note: 'sycl_atomic' declared here
+constexpr access::mode sycl_atomic     = access::mode::atomic;
+                       ^
+main.cpp:250:15: error: use of undeclared identifier 'StringSearchLoadBalance'
+              StringSearchLoadBalance(textBuf_acc.get_pointer(),
+              ^
+2 warnings and 12 errors generated.
+make: *** [Makefile:54: main.o] Error 1

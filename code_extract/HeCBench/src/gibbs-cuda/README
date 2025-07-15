@@ -1,0 +1,24 @@
+This program implements a MCMC algorithm for the following hierarchical
+model:
+
+y_k     ~ Poisson(n_k * theta_k)
+theta_k ~ Gamma(a, b)
+a       ~ Unif(0, a0)
+b       ~ Unif(0, b0) 
+
+The values of a0 and b0 are arbitrarily large.
+
+Arguments:
+    1) input file name
+        With two space delimited columns holding integer values for
+        y and float values for n.
+    2) number of trials (1000 by default)
+
+Output: the average values of a and b over the trials
+
+Example:
+
+$ ./main data.csv 2500
+
+This code borrows from the nVidia developer zone documentation, 
+specifically http://docs.nvidia.com/cuda/curand/index.html#topic_1_2_1

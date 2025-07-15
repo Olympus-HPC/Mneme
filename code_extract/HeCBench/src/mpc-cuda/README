@@ -1,0 +1,7 @@
+Datasets are available at https://userweb.cs.txstate.edu/~burtscher/research/datasets/FPdouble/
+
+To download the dataset for the benchmark:
+
+  wget --no-check-certificate http://www.cs.txstate.edu/~burtscher/research/datasets/FPdouble/msg_sp.trace.fpc
+
+The data needs to be uncompressed. Please see the Makefile for more details.

@@ -1,0 +1,36 @@
+Fast Block Distributed CUDA Implementation of the Hungarian Algorithm
+
+Annex to the paper:
+Paulo A. C. Lopes, Satyendra Singh Yadav, Aleksandar Ilic, Sarat Kumar Patra , 
+"Fast Block Distributed CUDA Implementation of the Hungarian Algorithm",
+Journal Parallel Distributed Computing
+
+Hungarian algorithm:
+(This algorithm was modified to result in an efficient GPU implementation, see paper)
+
+Initialize the slack matrix with the cost matrix, and then work with the slack matrix.
+
+STEP 1: Subtract the row minimum from each row. Subtract the column minimum from each column.
+
+STEP 2: Find a zero of the slack matrix. If there are no starred zeros in its column or row star the zero.
+Repeat for each zero.
+
+STEP 3: Cover each column with a starred zero. If all the columns are
+covered then the matching is maximum.
+
+STEP 4: Find a non-covered zero and prime it. If there is no starred zero in the row containing this primed zero,
+Go to Step 5. Otherwise, cover this row and uncover the column containing the starred zero.
+Continue in this manner until there are no uncovered zeros left.
+Save the smallest uncovered value and Go to Step 6.
+
+STEP 5: Construct a series of alternating primed and starred zeros as follows:
+Let Z0 represent the uncovered primed zero found in Step 4.
+Let Z1 denote the starred zero in the column of Z0(if any).
+Let Z2 denote the primed zero in the row of Z1(there will always be one).
+Continue until the series terminates at a primed zero that has no starred zero in its column.
+Un-star each starred zero of the series, star each primed zero of the series, 
+erase all primes and uncover every row in the matrix. Return to Step 3.
+
+STEP 6: Add the minimum uncovered value to every element of each covered row, 
+and subtract it from every element of each uncovered column.
+Return to Step 4 without altering any stars, primes, or covered rows.

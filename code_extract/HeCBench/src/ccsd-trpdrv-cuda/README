@@ -1,0 +1,7 @@
+The program arguments are as follows:
+./test nocc nvir [maxiter] [nkpass]
+- nocc is 40 to 200
+- nvir is 5 to 10 times nocc
+- maxiter defaults to 100. With a ccuda simulator or a GPU, you can get away with 10 iterations or less.
+- nkpass is usually optional.  If you run a very large problem like nvir=2000, you’ll need to set nkpass>1 to fit into 4 GB.
+

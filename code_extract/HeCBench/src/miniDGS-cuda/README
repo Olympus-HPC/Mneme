@@ -1,0 +1,30 @@
+# ------------------------------------------------------------------------
+# see the copyright information for MIDG in LICENSE
+# MIDG: a MIni Discontinuous Galerkin solver for CPUs or GPUS with MPI parallelism
+# Copyright (c) 2008, Tim Warburton
+# http://www.nudg.org
+# ------------------------------------------------------------------------
+
+# The following simulation codes all run in parallel
+# using ParMetis for mesh partitioning and MPI for
+# parallel computation.
+
+# First compile the ParMetis library
+cd 3rdParty/ParMetis-3.1/
+make
+
+
+# !! WARNING !!
+# When the number of processes is one, cuda-memcheck reports CUDA API errors
+#
+# Run the various configurations (in parallel using MPI) with sample meshes:
+mpirun -np 2 ./MaxwellsGPU3d Meshes/FS_K01022.neu
+
+# Only one GPU device is used in the driver (src/MaxwellsDriver3d.c).
+#
+# When running with multiple GPUs you may wish to adjust the device 
+# used by each cpu properly in the driver 
+#
+# More datasets can be downloaded at 
+# https://github.com/gpgpu-sim/ispass2009-benchmarks/DG
+# ------------------------------------------------------------------------

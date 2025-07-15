@@ -1,0 +1,3 @@
+The images are available at https://github.com/ATNF/askap-benchmarks/tree/master/data
+
+Verification is disabled by default to eliminate serial execution time for 1000 iterations

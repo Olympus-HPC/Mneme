@@ -1,0 +1,5 @@
+Notes
+
+1 Use single-precision floating-point operations
+2 drand48(), which is not supported natively, is replaced with a user-defined random function
+3 "plane" and "spheres", which were global variables, are defined in the main function.

@@ -1,0 +1,37 @@
+/****************************************************************************
+ *
+ * Changes.txt, Version 1.0.0 Mon 09 Jan 2012
+ *
+ * ----------------------------------------------------------------------------
+ *
+ * CUDA EGS
+ * Copyright (C) 2012 CancerCare Manitoba
+ *
+ * The latest version of CUDA EGS and additional information are available online at 
+ * http://www.physics.umanitoba.ca/~elbakri/cuda_egs/ and http://www.lippuner.ca/cuda_egs
+ *
+ * CUDA EGS is free software; you can redistribute it and/or modify it under the 
+ * terms of the GNU General Public License as published by the Free Software 
+ * Foundation; either version 2 of the License, or (at your option) any later
+ * version.                                       
+ *                                                                           
+ * CUDA EGS is distributed in the hope that it will be useful, but WITHOUT ANY 
+ * WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS 
+ * FOR A PARTICULAR PURPOSE. See the GNU General Public License for more 
+ * details.                              
+ *                                                                           
+ * You should have received a copy of the GNU General Public License along with
+ * this program; if not, write to the Free Software Foundation, Inc., 
+ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ *
+ * ----------------------------------------------------------------------------
+ *
+ *   Contact:
+ *
+ *   Jonas Lippuner
+ *   Email: jonas@lippuner.ca 
+ *
+ ****************************************************************************/
+
+ Version 1.0.0 Mon 09 Jan 2012
+    - First version with all core features implemented.

@@ -1,0 +1,2 @@
+export DATAPATH=/absolute/path/to/prna-cuda/data_tables
+

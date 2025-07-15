@@ -1,0 +1,6 @@
+RNA structure can be downloaded from https://rna.urmc.rochester.edu/RNAstructure.html
+
+Data tables are available in ../prna-cuda/data_tables.tar.gz
+The large dataset is available in ../prna-cuda/HIV1-NL43.tar.gz
+
+export DATAPATH=/absolute/path/to/prna-cuda/data_tables

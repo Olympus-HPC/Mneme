@@ -1,0 +1,10 @@
+Stream Compaction (SC)
+
+For more options:
+
+    ./main -h
+
+Read more:
+J. Gómez-Luna, L.-W. Chang, I.-J. Sung, W.-M. Hwu, and N. Guil, "Inplace data 
+sliding algorithms for many-core architectures," in Parallel Processing, 44th 
+International Conference on, 2015.

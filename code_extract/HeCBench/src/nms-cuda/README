@@ -1,0 +1,76 @@
+===================================================================================
+ NMS Benchmarking Framework
+===================================================================================
+
+ CUDA implementation of the algorithm described in the paper:
+ 
+ "Work-Efficient Parallel Non-Maximum Suppression Kernels" 
+
+ http://dx.doi.org/10.1093/comjnl/bxaa108
+ 
+ The Computer Journal
+
+ David Oro, Carles Fernández, Xavier Martorell, Javier Hernando
+===================================================================================
+
+
+* Requirements:
+
+           1. GCC Compiler v5.0 or greater
+           2. CUDA Toolkit v6.0 or greater
+           3. NVIDIA GPU with Compute Capability 3.2 or greater
+
+* Build instructions:
+
+           1. Set the GPU_ARCH and SM_ARCH variables in the Makefile according to 
+              the underlying NVIDIA GPU architecture of your computer. For further 
+              details, please refer to our GitHub Wiki page:
+
+                    https://github.com/hertasecurity/gpu-nms/wiki
+
+           2. Set your CUDA installation path in the Makefile (CUDA_HEADERS and 
+              CUDA_LIBS variables)
+
+           3. Compile the source code:   make
+
+* Execution:
+
+           * You can run the GPU NMS benchmark using a comma-separated input file 
+             containing the list of detected objects in the following format:
+
+                    xcoordinate,ycoordinate,width,score
+
+           * We provide a sample input file "detections.txt" obtained after having 
+             executed a face detector over the "oscars.png" file.
+
+           * The GPU NMS benchmark must be executed as follows:
+
+                    ./nmstest  detections.txt  output.txt
+
+           * The application should then return the computation time of both the MAP 
+             and REDUCE GPU NMS kernels and write the results in the "output.txt" file.
+
+           * Finally, you can visualize both the input (pre-NMS) and the output 
+             (post-NMS) with the "drawrectangles" Python script. For example:
+
+                    ./drawrectangles  detections.txt
+
+             Or:
+
+                    ./drawrectangles  output.txt
+
+             The graphical output is stored in the "oscarsdets.png" file
+
+* IMPORTANT:
+
+           * The source code must be compiled to the microarchitecture matching the 
+             GPU platform during execution (check GPU_ARCH and SM_ARCH variables 
+             in the Makefile).
+
+           * If the NMS algorithm is not capable of properly merging the candidate 
+             windows, re-check the GPU_ARCH and SM_ARCH variables and then 
+             recompile the code.
+
+           * This GPU NMS benchmark is limited to a maximum of 4096 detected 
+             objects per input. If you want to increase this limit, please 
+             modify the MAX_DETECTIONS constant in the "nms.cu" file.

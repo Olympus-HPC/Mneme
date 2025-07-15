@@ -1,0 +1,5 @@
+Test graphs (e.g., delaunay_n24.egr) are available at https://userweb.cs.txstate.edu/~burtscher/research/ECLgraph/index.html
+
+When running the program, a segmentation fault may occur. It could be fixed by typing the following command before running the program.
+
+  ulimit -s unlimited

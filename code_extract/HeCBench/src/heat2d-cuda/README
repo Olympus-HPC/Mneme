@@ -1,0 +1,6 @@
+This benchmark performs a discreet 2D laplacian operation a number of times on a given vector. The benchmark evaluates the performance of nearest neighboring single hop stencil operations.  The CUDA version is compared to a version using SSE intrinsics which runs on the CPU. 
+
+Python files are included to create an initial vector (mkinit.py) and to visualize the resulting vector. The application can be thought of as evolving the 2D heat equation on a given initial heat distribution. The GPU result is validated by comparing it with the CPU result.
+
+The benchmark code was originally developed under the Cyprus Research Promotion Foundation (RPF) project "GPU Clusterware". 
+
