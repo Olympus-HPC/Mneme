@@ -20,7 +20,8 @@ class Experiment:
         self._verified = kwargs.pop("verified", None)
         self._obj_size = kwargs.pop("obj_size", None)
         self._exec_time = kwargs.pop("exec_time", None)
-        self._executed = kwargs.pop("executed", None)
+        self._executed = kwargs.pop("executed", False)
+        self._failed = kwargs.pop("failed", False)
 
     @property
     def exec_time(self):
@@ -75,18 +76,26 @@ class Experiment:
     def executed(self, value):
         self._executed = value
 
+    @property
+    def failed(self):
+        return self._failed
+
+    @failed.setter
+    def failed(self, value):
+        self._failed = value
+
     def hash(self):
         hasher = hashlib.sha256()
-        hasher.update(self._specialize)
-        hasher.update(self._max_threads)
-        hasher.update(self._min_blocks_per_sm)
-        hasher.update(self._specialize_dims)
-        hasher.update(self._passes)
-        hasher.update(self._prune)
-        hasher.update(self._internalize)
-        hasher.update(self._codegen_opt)
-        hasher.update(self._rtc)
-        hasher.update(self._device_arch)
+        hasher.update(str(self._specialize).encode("utf-8"))
+        hasher.update(str(self._max_threads).encode("utf-8"))
+        hasher.update(str(self._min_blocks_per_sm).encode("utf-8"))
+        hasher.update(str(self._specialize_dims).encode("utf-8"))
+        hasher.update(str(self._passes).encode("utf-8"))
+        hasher.update(str(self._prune).encode("utf-8"))
+        hasher.update(str(self._internalize).encode("utf-8"))
+        hasher.update(str(self._codegen_opt).encode("utf-8"))
+        hasher.update(str(self._rtc).encode("utf-8"))
+        hasher.update(str(self._device_arch).encode("utf-8"))
         return hasher.hexdigest()
 
     @classmethod
@@ -105,6 +114,7 @@ class Experiment:
         data["codegen_opt"] = self._codegen_opt
         data["rtc"] = self._rtc
         data["device_arch"] = self._device_arch
+        data["failed"] = self.failed
 
         data["opt_time"] = self._opt_time
         data["codegen_time"] = self._codegen_time

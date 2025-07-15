@@ -2,6 +2,7 @@ import argparse
 import time
 from typing import Tuple
 
+from mneme.db import MnemeDB
 from mneme.device import DeviceModule, dim3, get_device_arch
 from mneme.experiment import Experiment
 from mneme.llvm.module import ModuleRef
@@ -177,6 +178,20 @@ class CLIExecutor(BaseExecutor):
     @staticmethod
     def set_cli_args(parser):
         parser.add_argument(
+            "--db-dir",
+            required=False,
+            default=None,
+            help="Directory to store the collected data to",
+        )
+
+        parser.add_argument(
+            "--suffix",
+            required=False,
+            default=None,
+            help="Suffix of the database file (e.g. <args.db_dir><static_hash><dynamic_hash><suffix>.csv)",
+        )
+
+        parser.add_argument(
             "--apply-increamentally",
             required=False,
             action=argparse.BooleanOptionalAction,
@@ -266,9 +281,12 @@ class CLIExecutor(BaseExecutor):
         self.max_threads = kwargs.pop("max_threads", False)
         self.min_blocks_per_sm = kwargs.pop("min_blocks_per_sm", 0)
         self.dims = kwargs.pop("dims", False)
+        self.db_dir = kwargs.pop("db_dir", None)
+        self.db_suffix = kwargs.pop("suffix", None)
         super().__init__(*args, **kwargs)
         self.pass_manager = PipelineManager()
         self.passes = self.pass_manager.from_string(self.pipeline)
+        self._db = None
 
     def get_experiment(self, pipeline):
         return Experiment(
@@ -288,16 +306,35 @@ class CLIExecutor(BaseExecutor):
         return f"{self.__class__.__name__}"
 
     def execute(self, ir_module, clone=False):
+        orig = ""
+        if self.db_dir is not None:
+            self._db = MnemeDB(
+                self.db_dir,
+                self.kernel_descr.static_hash,
+                self.kernel_descr.dynamic_hash,
+                self.db_suffix,
+            ).open()
+            orig = self._db.save_ir(str(ir_module), "orig")
         if not self.increamental:
             exp = self.get_experiment(self.pipeline)
-            return super()._execute(exp, ir_module, self.pipeline)
+            exp, generated_ir = super()._execute(exp, ir_module, self.pipeline)
+            if self._db is not None:
+                final = self._db.save_ir(str(generated_ir), exp.hash())
+                self._db.add(orig, final, exp)
 
         results = []
         for i, _ in enumerate(self.passes):
             code = ir_module.clone()
             passes = self.pass_manager.to_string(self.passes[: i + 1])
             exp = self.get_experiment(passes)
+            if self._db is not None and not self._db.should_execute(exp):
+                print("Skipping")
+                continue
+
             exp, generated_ir = super()._execute(exp, code, passes)
+            if self._db is not None:
+                final = self._db.save_ir(str(generated_ir), exp.hash())
+                self._db.add(orig, final, exp)
             exp.dump()
 
     @staticmethod
