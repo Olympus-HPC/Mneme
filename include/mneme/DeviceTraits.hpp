@@ -201,6 +201,12 @@ template <> struct DeviceTraits<DeviceVendors::HIP> {
     return KernelFunc;
   }
 
+  static hipError_t getDeviceCount(int &devCount) {
+    return hipGetDeviceCount(&devCount);
+  }
+
+  static hipError_t setDevice(int DeviceId) { return hipSetDevice(DeviceId); }
+
   static hipError_t launchKernelFunction(hipFunction_t KernelFunc, dim3 GridDim,
                                          dim3 BlockDim, void **KernelArgs,
                                          uint64_t ShmemSize,

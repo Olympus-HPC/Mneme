@@ -41,7 +41,7 @@ MnemePY_getKernelFunctionFromImage(void *WrappedModule,
 }
 
 API_EXPORT(void)
-MnemePY_launchKernelFunction(void *Func, dim3 Grid, dim3 Block) {
+MnemePy_launchKernelFunction(void *Func, dim3 Grid, dim3 Block) {
   auto DevFunc = reinterpret_cast<DeviceVendorTraits::DeviceFunction_t>(Func);
   int Arg = 42;
   void *KernelArgs[] = {&Arg};
@@ -164,5 +164,22 @@ API_EXPORT(int) MnemePy_getNumArgs(MnemeDeviceMemStateRef WState) {
 API_EXPORT(void **) MnemePy_getArgs(MnemeDeviceMemStateRef WState) {
   auto State = unwrap(WState);
   return reinterpret_cast<void **>(State->getArgs());
+}
+
+API_EXPORT(int) MnemePy_getDeviceCount() {
+  int DevCount;
+  auto EC = DeviceVendorTraits::DeviceErrorCheck(
+      DeviceVendorTraits::getDeviceCount(DevCount));
+  if (EC)
+    LOG_FATAL("Error when getting the number of available devices\nEC: {}",
+              EC.value());
+  return DevCount;
+}
+
+API_EXPORT(void) MnemePy_setDevice(int DevId) {
+  auto EC = DeviceVendorTraits::DeviceErrorCheck(
+      DeviceVendorTraits::setDevice(DevId));
+  if (EC)
+    LOG_FATAL("Error when setting the device id\nEC: {}", EC.value());
 }
 }
