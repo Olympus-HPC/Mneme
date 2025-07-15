@@ -3,7 +3,13 @@ import time
 from typing import Tuple
 
 from mneme.db import MnemeDB
-from mneme.device import DeviceModule, dim3, get_device_arch
+from mneme.device import (
+    DeviceModule,
+    dim3,
+    get_device_arch,
+    get_device_count,
+    set_device,
+)
 from mneme.experiment import Experiment
 from mneme.llvm.module import ModuleRef
 from mneme.page_manager import PageManagerRef
@@ -70,6 +76,16 @@ class BaseExecutor:
             default=3,
         )
 
+        parser.add_argument(
+            "--device-id",
+            "-dev",
+            dest="device_id",
+            type=int,
+            required=False,
+            help="The GPU device ID to use",
+            default=0,
+        )
+
         parser.set_defaults(prune=True, internalize=False, rtc=False)
 
         return parser
@@ -83,10 +99,12 @@ class BaseExecutor:
         iterations: int = 3,
         rtc: bool = False,
         codegen_opt: int = 3,
+        device_id: int = 0,
     ):
         self.records = RecordedExecution.from_json(db)
         self.kernel_descr = self.records[id]
         self.device_arch = get_device_arch()
+        self.device_id = device_id
         self.prune = prune
         self.internalize = internalize
         self.codegen_opt = 3
@@ -95,6 +113,9 @@ class BaseExecutor:
         self._prologue = None
         self._page_manager = None
         self._iterations = iterations
+        self.num_devices = get_device_count()
+        set_device(device_id)
+        print(f"Setting Device ID to {device_id} out of {self.num_devices}")
 
     def open(self):
         self._page_manager = PageManagerRef(self.records.va_addr, self.records.va_size)

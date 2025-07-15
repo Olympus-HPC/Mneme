@@ -1,13 +1,11 @@
+import weakref
+from ctypes import POINTER, Structure, c_char_p, c_float, c_int, c_uint, c_void_p
+
 from .llvm import ffi
 from .llvm.buffer import MemBufferRef
 from .llvm.common import _decode_string, _encode_string
-
-from .recorded_execution import MnemeRecordStateRef
-
-import weakref
-from ctypes import POINTER, c_void_p, c_char_p, Structure, c_uint, c_float, c_int
 from .mneme_types import dim3
-
+from .recorded_execution import MnemeRecordStateRef
 
 ffi.lib.MnemePY_getDeviceObject.argtypes = [ffi.LLVMMemBufferRef]
 ffi.lib.MnemePY_getDeviceObject.restype = c_void_p
@@ -21,7 +19,13 @@ ffi.lib.MnemePy_getDeviceArch.argtypes = []
 ffi.lib.MnemePy_getDeviceArch.restype = c_char_p
 
 
-ffi.lib.MnemePY_launchKernelFunction.argtypes = [c_void_p, dim3, dim3]
+ffi.lib.MnemePy_launchKernelFunction.argtypes = [c_void_p, dim3, dim3]
+
+ffi.lib.MnemePy_getDeviceCount.argtypes = []
+ffi.lib.MnemePy_getDeviceCount.restype = c_int
+
+
+ffi.lib.MnemePy_setDevice.argtypes = [c_int]
 
 
 ffi.lib.MnemePy_profile.argtypes = [
@@ -66,7 +70,7 @@ class DeviceFunction(ffi.ObjectRef):
 
         if not self.valid:
             raise RuntimeError("Cannot launch function: module was unloaded.")
-        ffi.lib.MnemePY_launchKernelFunction(self, grid_dim, block_dim)
+        ffi.lib.MnemePy_launchKernelFunction(self, grid_dim, block_dim)
 
     def profile(
         self,
@@ -129,3 +133,11 @@ class DeviceModule(ffi.ObjectRef):
 
 def get_device_arch():
     return str(ffi.lib.MnemePy_getDeviceArch().decode())
+
+
+def get_device_count():
+    return int(ffi.lib.MnemePy_getDeviceCount())
+
+
+def set_device(dev_id: int):
+    ffi.lib.MnemePy_setDevice(dev_id)
