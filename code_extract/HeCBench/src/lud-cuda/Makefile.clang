@@ -1,0 +1,52 @@
+#===============================================================================
+# User Options
+#===============================================================================
+
+# Compiler can be set below, or via environment variable
+CC = clang++
+OPTIMIZE = false
+DEBUG     = no
+ARCH = sm_70
+LAUNCHER  =
+
+#===============================================================================
+# Program name & source code list
+#===============================================================================
+
+program = lud
+
+source = lud.cu ./common/common.cu 
+
+#===============================================================================
+# Sets Flags
+#===============================================================================
+
+# Standard Flags
+CFLAGS = $(EXTRA_CFLAGS) -std=c++14 -Wall --offload-arch=$(ARCH) -I./common --cuda-path=$(CUDA_HOME) --save-temps -I$(CUDA_HOME)/nvidia/targets/ppc64le-linux/include
+
+# Linker Flags
+LDFLAGS = -Wl,-rpath,${CUDA_HOME}/nvidia/lib64 -L${CUDA_HOME}/nvidia/lib64 -lcuda -lcudadevrt -lcudart_static -lrt -lpthread -ldl
+
+# Debug Flags
+ifeq ($(DEBUG),yes)
+  CFLAGS += -g
+  LDFLAGS  += -g
+endif
+
+# Optimization Flags
+ifeq ($(OPTIMIZE),yes)
+  CFLAGS += -O3
+endif
+
+#===============================================================================
+# Targets to Build
+#===============================================================================
+
+$(program): $(source) lud_kernels.cu ./common/common.h Makefile
+	$(CC) $(CFLAGS) $(source) -o $@ $(LDFLAGS)
+
+clean: 
+	rm -rf $(program) $(obj)
+
+run: $(program)
+	$(LAUNCHER) ./$(program) -s 8192

@@ -38,7 +38,7 @@ def main():
         print(f"Functions: {funcs}")
         cc_path = file.parent / 'compile_commands.json'
         if not cc_path.exists():
-            cmd = ['bear', '--', 'make']
+            cmd = ['bear', '--', 'make', '-f', 'Makefile.clang']
             os.chdir(file.parent)
             sb.run(['make', 'clean'])
             sb.run(cmd)

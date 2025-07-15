@@ -260,18 +260,3 @@ for data in datapoints:
     #     mkedit.set_variable("CFLAGS", cflags + " -DNO_WARN_X86_INTRINSICS")
     mkedit.output_makefile(mkclang)
 
-    env = os.environ.copy()
-    env["VERBOSE"] = "1"
-    builddir = mkclang.parent
-    cmd = ["make", "-f", f"{mkclang.resolve()}"]
-    proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr = subprocess.PIPE, cwd=builddir, env=env)
-    retcode = proc.returncode
-
-    bc_files = list(builddir.glob("*-cuda-nvptx64-nvidia-cuda-sm_*.bc"))
-    print("\t", data.name, len(bc_files))
-
-    if retcode != 0:
-        print(f"  Return Code: {retcode} \t\t Has cuda bc: {len(bc_files) > 0}\n\ncd {builddir.resolve()} && {' '.join(cmd)} \n\n-------------------------------- LOG -----------------------------\n\n\n{proc.stdout.decode()}\n\n--------------------\n\n{proc.stderr.decode()}")
-    if len(bc_files) == 0:
-        print( f"\n\ncd {builddir.resolve()} && {' '.join(cmd)}\n{list(builddir.glob('*'))}\n{proc.stderr.decode()}")
-
