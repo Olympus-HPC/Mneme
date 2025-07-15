@@ -2,6 +2,7 @@ import re
 from pathlib import Path
 import subprocess as sb
 import os
+import argparse
 
 def search_kernel_functions(directory_path):
     directory = Path(directory_path)
@@ -15,25 +16,37 @@ def search_kernel_functions(directory_path):
             with open(file, 'r', encoding='utf8', errors='ignore') as f:
                 matches = func_pattern.findall(f.read())
                 if matches:
-                    function_names[Path(file)] = set(matches)
+                    function_names[Path(file).expanduser().resolve()] = set(matches)
 
     return function_names
 
-directory = '.'
+def main():
+    parser = argparse.ArgumentParser(description="Search for CUDA kernel functions and extract code.")
+    parser.add_argument('source_dir', help='Directory to search for source files')
+    parser.add_argument('temp_dir', help='Path to temp folder (for chdir and code-extract)')
+    args = parser.parse_args()
 
-kernel_functions = search_kernel_functions(directory)
+    temp_dir = os.path.expanduser(args.temp_dir)
+    source_dir = os.path.expanduser(args.source_dir)
 
-os.chdir('.')
+    kernel_functions = search_kernel_functions(source_dir)
 
-for file, funcs in kernel_functions.items():
-    print(funcs)
-    cc_path = file.parent / 'compile_commands.json'
-    if not cc_path.exists():
-        cmd = ['bear', '--', 'make']
-        os.chdir(file.parent)
-        sb.run(cmd)
-        os.chdir('~/Mneme/code_extract/build/temp')
-    for func in funcs:
-        cmd = ['../code-extract', file.parent, func]
-        sb.run(cmd)
-    break
+    os.chdir(temp_dir)
+
+    for file, funcs in kernel_functions.items():
+        print(f"File: {file}")
+        print(f"Functions: {funcs}")
+        cc_path = file.parent / 'compile_commands.json'
+        if not cc_path.exists():
+            cmd = ['bear', '--', 'make']
+            os.chdir(file.parent)
+            sb.run(['make', 'clean'])
+            sb.run(cmd)
+            os.chdir(temp_dir)
+        for func in funcs:
+            cmd = ['../code-extract', str(file.parent), func]
+            sb.run(cmd)
+        break
+
+if __name__ == "__main__":
+    main()
