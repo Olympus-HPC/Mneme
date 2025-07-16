@@ -1,5 +1,6 @@
 import argparse
 import time
+from multiprocessing import Queue
 from typing import Tuple
 
 from mneme.db import MnemeDB
@@ -374,5 +375,91 @@ class CLIExecutor(BaseExecutor):
                 code,
                 True,
             )
+
+        return
+
+
+class TuneWorker(BaseExecutor):
+    def preprocess_ir(self, llvm_ir, specialize, dims, max_threads, min_blocks_per_sm):
+        code_hash = self.kernel_descr.static_hash
+        if specialize:
+            code_hash = jit.specialize_args(
+                llvm_ir,
+                code_hash,
+                self.kernel_descr.kernel_name,
+                self.prologue.args,
+                self.prologue.num_args,
+                self.kernel_descr.available_specializations,
+            )
+
+        if dims:
+            code_hash = jit.specialize_dims(
+                code,
+                code_hash,
+                self.kernel_descr.kernel_name,
+                self.kernel_descr.grid_dim,
+                self.kernel_descr.block_dim,
+            )
+        if max_threads != 0:
+            code_hash = jit.set_launch_bounds(
+                code,
+                code_hash,
+                self.kernel_descr.kernel_name,
+                max_threads,
+                min_blocks_per_sm,
+            )
+        return code_hash, code
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.pass_manager = PipelineManager()
+
+    def process_payload(self, ir_module, exp_dict) -> Tuple[Experiment, ModuleRef]:
+        exp = Experiment.from_dict(**exp_dict)
+        code_hash, code = self.preprocess_ir(
+            code,
+            exp.specialize,
+            exp.specialize_dims,
+            exp.max_threads,
+            exp.min_blocks_per_sm,
+        )
+        exp, generated_ir = super()._execute(exp, code, exp.passes)
+        return exp, generated_ir
+
+    @staticmethod
+    def run(
+        request_q: Queue,
+        response_q: Queue,
+        db: str,
+        id: str,
+        device_id: int,
+        prune: bool,
+        internalize: bool,
+        codegen_opt: int,
+        rtc: bool,
+        iterations: int,
+    ):
+        # We need this to actually run things...
+        worker = TuneWorker()
+        # Open GPU memory, setup prologue epilogue and create a single
+        # LLVM IR file to start working on optimizations
+        root_ir = worker.link_ir()
+        with worker as Memory:
+            while True:
+                msg = request_q.get()
+                if msg["payload"] == "terminate":
+                    print("Instructed to terminate normally, doing so...")
+                    break
+                elif msg["payload"] == "process":
+                    print("Received message to start processing request")
+                    exp, ir = worker.process_payload(root_ir, msg["data"])
+                    response_q.put(
+                        {
+                            "id": msg["id"],
+                            "payload": "result",
+                            "data": exp.to_dict(),
+                            "llvm_ir": str(ir),
+                        }
+                    )
 
         return

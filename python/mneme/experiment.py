@@ -84,6 +84,26 @@ class Experiment:
     def failed(self, value):
         self._failed = value
 
+    @property
+    def passes(self) -> str:
+        return self._passes
+
+    @property
+    def specialize(self):
+        return self._specialize
+
+    @property
+    def specialize_dims(self):
+        return self._specialize_dims
+
+    @property
+    def max_threads(self):
+        return self._max_threads
+
+    @property
+    def min_blocks_per_sm(self):
+        return self._min_blocks_per_sm
+
     def hash(self):
         hasher = hashlib.sha256()
         hasher.update(str(self._specialize).encode("utf-8"))
