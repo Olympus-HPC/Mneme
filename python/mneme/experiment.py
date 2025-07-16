@@ -142,6 +142,7 @@ class Experiment:
         data["obj_size"] = self._obj_size
         data["exec_time"] = self._exec_time
         data["executed"] = self._executed
+        data["hash"] = self.hash()
         return data
 
     def dump(self):

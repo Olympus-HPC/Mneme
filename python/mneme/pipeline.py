@@ -827,11 +827,13 @@ class PipelineManager:
 
         # We first replace all adaptors.
         no_funtion = str_pipeline.replace("function<eager-inv>(", "")
+        no_funtion = no_funtion.replace("function(", "")
         no_cgscc = no_funtion.replace("cgscc(", "")
         no_loop = no_cgscc.replace("loop(", "")
         no_loopmassa = no_loop.replace("loop-mssa(", "")
         no_loopnest = no_loopmassa.replace("loopnest", "")
         passes = no_loopnest.replace(")", "").split(",")
+
         passes = [x for x in passes if x != ""]
         pipeline = []
         for p in passes:

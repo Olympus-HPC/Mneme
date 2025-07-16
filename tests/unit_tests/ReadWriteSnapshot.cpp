@@ -58,7 +58,7 @@ int main(int argc, char **argv) {
   auto BlobData = initializeDeviceData();
   auto GlobalData = initializeDeviceData();
 
-  MnemeMemoryBlobDevice Blob(128L, BlobData.first, 128L, 0L);
+  MnemeMemoryBlobDevice Blob(128L, BlobData.first, 128L);
 
   Blob.setHostData(std::unique_ptr<uint8_t[]>(new uint8_t[128]));
 

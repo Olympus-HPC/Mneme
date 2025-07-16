@@ -262,9 +262,6 @@ public:
   };
 
   DeviceError_t rtMalloc(void **ptr, size_t size) {
-    // TODO: Find a better way to find the current active device;
-    int DeviceID = 0;
-
     std::call_once(ExtractFlag, [this]() {
       // NOTE: We need this arch cause internally we initialize the device.
       // FIXME: We need to have a DeviceTrait function to initialize the GPU
@@ -276,10 +273,9 @@ public:
     });
 
     auto [Addr, ReservedSize] = PM->allocateAddr(size, nullptr);
-    MnemeMemoryBlob<VendorTypes> MemBlob(
-        ReservedSize, reinterpret_cast<void *>(Addr), size, DeviceID);
-    auto ret = MemBlob.map(reinterpret_cast<void *>(Addr), ReservedSize, size,
-                           DeviceID);
+    MnemeMemoryBlob<VendorTypes> MemBlob(ReservedSize,
+                                         reinterpret_cast<void *>(Addr), size);
+    auto ret = MemBlob.map(reinterpret_cast<void *>(Addr), ReservedSize, size);
     *ptr = MemBlob.ptr();
     AllocatedBlobs.insert({*ptr, std::move(MemBlob)});
     LOG_DEBUG("Intercepted Device Malloc PTR:{} SIZE:{} ACTUALSIZE:{}", *ptr,

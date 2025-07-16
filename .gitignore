@@ -1,0 +1,6 @@
+build*/
+*.ll
+*.core
+gpucore.*
+.cache/
+*.csv

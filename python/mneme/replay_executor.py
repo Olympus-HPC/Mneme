@@ -31,7 +31,11 @@ class BaseExecutor:
             help="Path to Mneme JSON/db file",
         )
         parser.add_argument(
-            "-id", "--id", required=True, help="Kernel ID to operate on"
+            "-record-id",
+            "-rid",
+            dest="record_id",
+            required=True,
+            help="Kernel ID to operate on",
         )
 
         parser.add_argument(
@@ -94,7 +98,7 @@ class BaseExecutor:
     def __init__(
         self,
         db: str = "",
-        id: str = "",
+        record_id: str = "",
         prune: bool = True,
         internalize: bool = False,
         iterations: int = 3,
@@ -102,13 +106,16 @@ class BaseExecutor:
         codegen_opt: int = 3,
         device_id: int = 0,
     ):
+        self.db = db
+        self.record_id = record_id
+        print(f"Got {db} and {record_id} for gpu {device_id}")
         self.records = RecordedExecution.from_json(db)
-        self.kernel_descr = self.records[id]
+        self.kernel_descr = self.records[record_id]
         self.device_arch = get_device_arch()
         self.device_id = device_id
         self.prune = prune
         self.internalize = internalize
-        self.codegen_opt = 3
+        self.codegen_opt = codegen_opt
         self.rtc = rtc
         self._epilogue = None
         self._prologue = None
@@ -165,6 +172,7 @@ class BaseExecutor:
             middle_end_opt,
             self.codegen_opt,
         )
+
         m_end = time.perf_counter()
         exp.opt_time = m_end - m_start
         opt_file = ir_module
@@ -339,22 +347,26 @@ class CLIExecutor(BaseExecutor):
             orig = self._db.save_ir(str(ir_module), "orig")
         if not self.increamental:
             exp = self.get_experiment(self.pipeline)
-            exp, generated_ir = super()._execute(exp, ir_module, self.pipeline)
+            print("Starting to execute")
+            exp.dump()
+            exp, generated_ir = super()._execute(exp, ir_module.clone(), self.pipeline)
             if self._db is not None:
                 final = self._db.save_ir(str(generated_ir), exp.hash())
                 self._db.add(orig, final, exp)
+            exp.dump()
+            return
 
         results = []
         for i, _ in enumerate(self.passes):
-            code = ir_module.clone()
             passes = self.pass_manager.to_string(self.passes[: i + 1])
             exp = self.get_experiment(passes)
             if self._db is not None and not self._db.should_execute(exp):
                 print("Skipping")
                 continue
 
-            exp, generated_ir = super()._execute(exp, code, passes)
+            exp, generated_ir = super()._execute(exp, ir_module.clone(), passes)
             if self._db is not None:
+                print(f"Hash of code is {exp.hash()}")
                 final = self._db.save_ir(str(generated_ir), exp.hash())
                 self._db.add(orig, final, exp)
             exp.dump()
@@ -394,7 +406,7 @@ class TuneWorker(BaseExecutor):
 
         if dims:
             code_hash = jit.specialize_dims(
-                code,
+                llvm_ir,
                 code_hash,
                 self.kernel_descr.kernel_name,
                 self.kernel_descr.grid_dim,
@@ -402,13 +414,13 @@ class TuneWorker(BaseExecutor):
             )
         if max_threads != 0:
             code_hash = jit.set_launch_bounds(
-                code,
+                llvm_ir,
                 code_hash,
                 self.kernel_descr.kernel_name,
                 max_threads,
                 min_blocks_per_sm,
             )
-        return code_hash, code
+        return code_hash, llvm_ir
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -417,7 +429,7 @@ class TuneWorker(BaseExecutor):
     def process_payload(self, ir_module, exp_dict) -> Tuple[Experiment, ModuleRef]:
         exp = Experiment.from_dict(**exp_dict)
         code_hash, code = self.preprocess_ir(
-            code,
+            ir_module.clone(),
             exp.specialize,
             exp.specialize_dims,
             exp.max_threads,
@@ -431,7 +443,7 @@ class TuneWorker(BaseExecutor):
         request_q: Queue,
         response_q: Queue,
         db: str,
-        id: str,
+        record_id: str,
         device_id: int,
         prune: bool,
         internalize: bool,
@@ -440,26 +452,41 @@ class TuneWorker(BaseExecutor):
         iterations: int,
     ):
         # We need this to actually run things...
-        worker = TuneWorker()
+        worker = TuneWorker(
+            db=db,
+            record_id=record_id,
+            device_id=device_id,
+            prune=prune,
+            internalize=internalize,
+            codegen_opt=codegen_opt,
+            rtc=rtc,
+            iterations=iterations,
+        )
         # Open GPU memory, setup prologue epilogue and create a single
         # LLVM IR file to start working on optimizations
         root_ir = worker.link_ir()
         with worker as Memory:
+            print("Starting busy loop")
             while True:
                 msg = request_q.get()
                 if msg["payload"] == "terminate":
                     print("Instructed to terminate normally, doing so...")
                     break
                 elif msg["payload"] == "process":
-                    print("Received message to start processing request")
+                    print(
+                        f"Worker {worker.device_id} Received message to start processing request",
+                        msg["exp_id"],
+                    )
                     exp, ir = worker.process_payload(root_ir, msg["data"])
                     response_q.put(
                         {
-                            "id": msg["id"],
+                            "exp_id": msg["exp_id"],
                             "payload": "result",
                             "data": exp.to_dict(),
                             "llvm_ir": str(ir),
                         }
                     )
+                else:
+                    print(f"Received uknown message {msg}")
 
         return
