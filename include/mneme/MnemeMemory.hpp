@@ -27,20 +27,24 @@ protected:
   MemoryAllocationHandle_t MemHandle;
   void *BlobAddr;
   uint64_t Size;
-  uint64_t DeviceID;
+  int DeviceID;
   std::unique_ptr<uint8_t[]> HostData;
   bool IsMapped;
 
 public:
   MnemeMemoryBlob(uint64_t ActualSize = 0, void *BlobAddr = nullptr,
-                  uint64_t Size = 0, uint64_t DeviceID = 0)
-      : ActualSize(ActualSize), BlobAddr(BlobAddr), Size(Size), DeviceID(0),
-        HostData(new uint8_t[Size]), IsMapped(false) {}
+                  uint64_t Size = 0)
+      : ActualSize(ActualSize), BlobAddr(BlobAddr), Size(Size),
+        HostData(new uint8_t[Size]), IsMapped(false) {
+    auto EC =
+        MnemeDeviceRT::DeviceErrorCheck(MnemeDeviceRT::getDevice(DeviceID));
+    if (EC)
+      LOG_FATAL("Could not set device id on memory blob\nEC:{}", EC.value());
+    LOG_INFO("Setting Device ID for Blob to {}", DeviceID);
+  }
 
-  DeviceError_t map(void *VA, uint64_t ActualSize, uint64_t Size,
-                    int DeviceID = 0) {
+  DeviceError_t map(void *VA, uint64_t ActualSize, uint64_t Size) {
     this->Size = Size;
-    this->DeviceID = DeviceID;
     // We need to pass here "ActualSize". As device allocators depend on page
     // aligned allocations
     MnemeDeviceRT::mmap(MemHandle, VA, ActualSize, DeviceID);
@@ -87,7 +91,7 @@ public:
     size_t ActualSize = util::extractScalar<size_t>(Buffer);
     size_t Size = util::extractScalar<size_t>(Buffer);
     void *DeviceAddr = util::extractScalar<void *>(Buffer);
-    auto Blob = MnemeMemoryBlob<VendorTypes>(ActualSize, 0, Size, 0);
+    auto Blob = MnemeMemoryBlob<VendorTypes>(ActualSize, 0, Size);
     std::memcpy(Blob.getHostData().get(), Buffer, Size);
     Buffer += Size;
     LOG_DEBUG("Read memory blob at address {} SIZE: {} ActualSize:{}",

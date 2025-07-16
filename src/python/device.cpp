@@ -73,12 +73,19 @@ MnemePy_profile(void *WrappedModule, void *Func, dim3 Grid, dim3 Block,
   auto VendorModule =
       reinterpret_cast<DeviceVendorTraits::DeviceModule_t>(WrappedModule);
 
+  int DeviceId;
+  auto EC = DeviceVendorTraits::DeviceErrorCheck(
+      DeviceVendorTraits::getDevice(DeviceId));
+  if (EC)
+    LOG_FATAL("Error when requesting active device\n", EC.value());
+  LOG_INFO("Executing replay on device {}", DeviceId);
+
   DeviceVendorTraits::DeviceStream_t ReplayStream;
   DeviceVendorTraits::DeviceEvent_t StartEvent, EndEvent;
   auto DevFunc = reinterpret_cast<DeviceVendorTraits::DeviceFunction_t>(Func);
   auto PrologueState = unwrap(Prologue);
   auto EpilogueState = unwrap(Epilogue);
-  auto EC = DeviceVendorTraits::DeviceErrorCheck(
+  EC = DeviceVendorTraits::DeviceErrorCheck(
       DeviceVendorTraits::DeviceStreamCreate(&ReplayStream));
   if (EC)
     LOG_FATAL("Error when creating a stream for replay\n" + EC.value());

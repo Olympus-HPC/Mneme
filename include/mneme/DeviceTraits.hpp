@@ -207,6 +207,8 @@ template <> struct DeviceTraits<DeviceVendors::HIP> {
 
   static hipError_t setDevice(int DeviceId) { return hipSetDevice(DeviceId); }
 
+  static hipError_t getDevice(int &DeviceId) { return hipGetDevice(&DeviceId); }
+
   static hipError_t launchKernelFunction(hipFunction_t KernelFunc, dim3 GridDim,
                                          dim3 BlockDim, void **KernelArgs,
                                          uint64_t ShmemSize,
@@ -518,6 +520,16 @@ template <> struct DeviceTraits<DeviceVendors::CUDA> {
       LOG_FATAL("Error with loading kernel from Module");
 
     return KernelFunc;
+  }
+
+  static cudaError_t getDeviceCount(int &devCount) {
+    return cudaGetDeviceCount(&devCount);
+  }
+
+  static cudaError_t setDevice(int DeviceId) { return cudaSetDevice(DeviceId); }
+
+  static cudaError_t getDevice(int &DeviceId) {
+    return cudaGetDevice(&DeviceId);
   }
 
   static DeviceDriverError_t launchKernelFunction(DeviceFunction_t KernelFunc,
