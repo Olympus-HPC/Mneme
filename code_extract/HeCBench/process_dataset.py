@@ -27,8 +27,8 @@ def update_cflags(inp):
     required = [
         "--cuda-path=$(CUDA_HOME)",
         "--offload-arch=$(ARCH)",
-        "--save-temps",
-        "-I$(CUDA_HOME)/nvidia/targets/ppc64le-linux/include",
+        # "--save-temps",
+        "-I$(CUDA_INCLUDES)",
     ]
 
     cflags = inp.split()
@@ -55,8 +55,8 @@ def update_ldflags(inp):
     unsupported = [
     ]
     required = [
-        "-Wl,-rpath,${CUDA_HOME}/nvidia/lib64",
-        "-L${CUDA_HOME}/nvidia/lib64",
+        "-Wl,-rpath,${CUDA_LIBS}",
+        "-L${CUDA_LIBS}",
         "-lcuda",
         "-lcudadevrt",
         "-lcudart_static",

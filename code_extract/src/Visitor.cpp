@@ -62,7 +62,7 @@ std::tuple<T const *, bool> visitAndRegister(clang::NamedDecl const *decl,
   std::string keyName = CodeDB::getKeyName(decl);
 
   if (vm.isVisited(keyName))
-    return {static_cast<T const *>(vm.getVisitedObj(keyName)->getDefiniton()),
+    return {static_cast<T const *>(vm.getVisitedObj(keyName)->getDefinition()),
             false};
 
   auto incFile = locToIncFile(decl->getLocation(), decl->getASTContext());
@@ -76,7 +76,7 @@ std::tuple<T const *, bool> visitAndRegister(clang::NamedDecl const *decl,
   auto objInfo = cdb.getObjInfoOrNull(keyName);
 
   // Lookup definition from database
-  auto defDecl = static_cast<T const *>(objInfo->getDefiniton());
+  auto defDecl = static_cast<T const *>(objInfo->getDefinition());
   vm.markVisited(keyName, objInfo);
   vm.registerDecl(defDecl);
 

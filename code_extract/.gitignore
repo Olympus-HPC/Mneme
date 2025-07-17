@@ -1,8 +1,0 @@
-build/
-test
-*venv
-.vscode/
-*.out
-*.o
-*.cache
-compile_commands.json

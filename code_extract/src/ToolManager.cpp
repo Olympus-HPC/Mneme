@@ -62,7 +62,7 @@ ToolManager::ToolManager(std::string const &dirPath, bool emitRR,
   /// FIXME: eventually we should collect includes all over
   auto command = compDb->getAllCompileCommands()[0].CommandLine;
   std::unordered_set<std::string> includePaths;
-  for (auto const& flag : command) {
+  for (auto const &flag : command) {
     auto idx = flag.find("-I");
     if (idx == std::string::npos)
       continue;
@@ -74,10 +74,7 @@ ToolManager::ToolManager(std::string const &dirPath, bool emitRR,
 
   // Build code database
   tool->buildASTs(asts);
-  db.reset(new CodeDB(
-      canDirPath,
-      includePaths,
-      includeExternals));
+  db.reset(new CodeDB(canDirPath, includePaths, includeExternals));
   // Build code database
   for (auto &ast : asts) {
     CodeExtractVisitor vis(*db.get(), *ast, dirPath);
@@ -126,7 +123,7 @@ ObjInfo *ToolManager::findFnDeclByName(std::string const &fnName,
     }
   }
 
-  if (!obj->getDefiniton()) {
+  if (!obj->getDefinition()) {
     std::cerr << "Could not find body for function(s) named " << fnName
               << " within specified project! Make sure it is not an externally "
                  "defined function!"
@@ -141,19 +138,19 @@ void ToolManager::getStandaloneFnContext(std::string const &fnName,
                                          std::string const &outFileName,
                                          std::string mangledFnName) {
   primaryFn = findFnDeclByName(fnName, mangledFnName);
-  auto &ctx = primaryFn->getDefiniton()->getASTContext();
+  auto &ctx = primaryFn->getDefinition()->getASTContext();
   auto fnSrcFile = ctx.getSourceManager().getFilename(
-      primaryFn->getDefiniton()->getLocation());
+      primaryFn->getDefinition()->getLocation());
   bool isCuda = ctx.getLangOpts().CUDA;
 
-  std::string filename;
+  std::string basename;
   if (!outFileName.empty())
-    filename = outFileName;
+    basename = outFileName;
   else
-    filename = fnName;
-  filename = std::regex_replace(filename, std::regex("[^\\w]"), "_");
-  std::string objname = filename + ".o";
-  filename += (isCuda ? ".cu" : ".cpp");
+    basename = fnName;
+  basename = std::regex_replace(basename, std::regex("[^\\w]"), "_");
+  std::string objname = basename + ".o";
+  std::string filename = basename + (isCuda ? ".cu" : ".cpp");
 
   VisitManager mv(*primaryFn, *db.get());
 
@@ -177,9 +174,10 @@ void ToolManager::getStandaloneFnContext(std::string const &fnName,
   std::string command = "clang-format -i " + filename;
   if (system(command.c_str()) != 0)
     std::cerr << "Formatting failed!" << std::endl;
-  
+
   // Then remove unused includes
-  command = "clang-tidy --quiet --checks='-*,misc-include-cleaner' -fix " + filename + " > /dev/null";
+  command = "clang-tidy --quiet --checks='-*,misc-include-cleaner' -fix " +
+            filename + " > /dev/null";
   if (system(command.c_str()) != 0)
     std::cerr << "Removing unused headers failed!" << std::endl;
 
@@ -189,8 +187,11 @@ void ToolManager::getStandaloneFnContext(std::string const &fnName,
   // Remove warning for use of uninitialized vars, eventually make this optional
   std::string defaultOpts = "-Wno-uninitialized";
   command =
-      helper::getCompilationFlags(cli, {"-c", "-o", "--driver-mode=g++", "--"});
+      helper::getCompilationFlags(cli, {"-triple", "-filetype", "-main-file-name", "-target-cpu", "-mrelocation-model", "-cc1as", "-c", "-o", "--driver-mode=g++", "--"});
   command += " " + defaultOpts;
+  // If its cuda, we will do 2 phase compilation + linking
+  if (isCuda)
+    command += " -c";
   command += " -o " + objname + " " + filename;
   std::cout << "Compiling " << fnName << " with command:\n"
             << command << std::endl;
@@ -198,6 +199,22 @@ void ToolManager::getStandaloneFnContext(std::string const &fnName,
     std::cerr << "Compilation failed!" << std::endl;
   } else {
     std::cout << "Compilation successful!" << std::endl;
+    // For now, only link against basic libs for cuda, ideally we want to pull
+    // all link flags from CC
+    if (isCuda) {
+      std::string linkCommand =
+          "clang++ " + objname +
+          " -Wl,-rpath,${CUDA_LIBS} -L${CUDA_LIBS} -lcuda -lcudadevrt "
+          "-lcudart_static -lrt -lpthread -ldl -o " +
+          basename;
+      if (system(linkCommand.c_str()) != 0) {
+        if (!std::getenv("CUDA_LIBS"))
+          std::cout << "Point CUDA_LIBS to your cuda libraries, otherwise "
+                       "linking WILL fail.";
+        std::cout << "Linking failed!" << std::endl;
+      } else
+        std::cout << "Linking successful!" << std::endl;
+    }
   }
 }
 

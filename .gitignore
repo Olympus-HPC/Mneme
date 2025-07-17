@@ -1,0 +1,15 @@
+build/
+test
+*venv
+.vscode/
+*.out
+*.o
+*.cache
+compile_commands.json
+*.s
+*.cui
+*.bc
+*.fatbin
+*.ii
+**/Makefile.clang
+**/main

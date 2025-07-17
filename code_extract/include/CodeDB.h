@@ -29,8 +29,8 @@ public:
       : decl(mainDecl), def(defDecl), keyName(keyName) {}
   void addDefinitionDecl(clang::Decl *defDecl) { def = defDecl; }
 
-  clang::Decl *getDefiniton() { return getDef(); }
-  clang::Decl const *getDefiniton() const { return getDef(); }
+  clang::Decl *getDefinition() { return getDef(); }
+  clang::Decl const *getDefinition() const { return getDef(); }
 };
 
 class CodeDB {
@@ -41,7 +41,7 @@ class CodeDB {
 
   clang::Decl *getDef(std::string const &keyName) const {
     if (isRegistered(keyName))
-      return db.at(keyName)->getDefiniton();
+      return db.at(keyName)->getDefinition();
     else
       return nullptr;
   }

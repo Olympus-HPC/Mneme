@@ -323,7 +323,7 @@ void VisitManager::fillParams(std::string const &prefix, T *begin, T *end) {
 }
 
 void VisitManager::registerParameterPrologue(ObjInfo *fnObj) {
-  clang::FunctionDecl *fnDecl = fnObj->getDefiniton()->getAsFunction();
+  clang::FunctionDecl *fnDecl = fnObj->getDefinition()->getAsFunction();
 
   if (!fnDecl->getNumParams())
     return;
@@ -334,7 +334,7 @@ void VisitManager::registerParameterPrologue(ObjInfo *fnObj) {
 void VisitManager::emitStandaloneFile(std::string &output, bool emitRR,
                                       std::string const &configString) {
   auto body =
-      static_cast<clang::FunctionDecl const *>(primaryFn.getDefiniton());
+      static_cast<clang::FunctionDecl const *>(primaryFn.getDefinition());
   bool cudaKernel = body->hasAttr<clang::CUDAGlobalAttr>();
   bool emitRRHooks = cudaKernel && emitRR;
 
@@ -459,7 +459,7 @@ void VisitManager::emitStandaloneFile(std::string &output, bool emitRR,
 }
 
 void VisitManager::pullPrimaryFnContext() {
-  auto primaryDecl = primaryFn.getDefiniton()->getAsFunction();
+  auto primaryDecl = primaryFn.getDefinition()->getAsFunction();
   auto parent = primaryDecl->getParent();
   auto isMemberFn = parent ? parent->isRecord() : false;
 
