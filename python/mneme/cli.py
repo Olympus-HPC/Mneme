@@ -4,6 +4,8 @@ import hashlib
 import json
 import math
 import multiprocessing
+
+multiprocessing.set_start_method("spawn")
 import os
 import sys
 import time
@@ -47,6 +49,4 @@ def main():
 
 if __name__ == "__main__":
     # We need this to avoid copying the context
-    multiprocessing.set_start_method("spawn")
-
     sys.exit(main())
