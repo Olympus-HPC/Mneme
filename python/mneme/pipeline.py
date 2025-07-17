@@ -492,7 +492,7 @@ class PassOption:
         self,
         option: Union[str, List[str]],
         type: PassOption.OptionType,
-        bound: int = -1,
+        bound: int = 1,
     ):
         if isinstance(option, list):
             self.options = option
@@ -574,6 +574,30 @@ class AbstractPass:
             return f"{self.pass_name}<{opt}>"
         else:
             return self.pass_name
+
+    def optuna_pass(self, trial, identifier):
+        options = []
+        if len(options) == 0:
+            return AbstractPass.ConcretePass(self)
+
+        for k, v in self.options.items():
+            if v.is_toggle():
+                opt = trial.suggest_categorical(
+                    f"{identifier}_{v.option_name}",
+                    [v.option_name, "no-" + v.option_name],
+                )
+                options.append(opt)
+            if v.is_range():
+                opt = trial.suggest_int(
+                    f"{identifier}_{v.option_name}", 1, v.get_upper_bound()
+                )
+                options.append(v.option_name + "=" + str(opt))
+            if v.is_setting():
+                for opt in v.options:
+                    opt = trial.suggest_categorical(f"{identifier}_{v}", [True, False])
+                    if opt is True:
+                        options.append(v)
+        return AbstractPass.ConcretePass(self, options)
 
 
 class PipelineManager:
@@ -752,6 +776,7 @@ class PipelineManager:
     def __init__(self):
         self._passes = PipelineManager.__parse_llvm_pipeline__(__all_passes__)
         self._kw_passes = {k.pass_name: k for k in self._passes}
+        print(f"LLVM Has in total {len(self._passes)} total passes")
 
     def split_pipeline(self, pipeline):
         return __flatten_passes__(__split_top_level__(pipeline))

@@ -151,7 +151,6 @@ def set_launch_bounds(
 ):
     if max_threads_per_block > 1024:
         raise RuntimeError("Max threads cannot be larger than 1024")
-
     return int(
         ffi.lib.ProteusPY_setLaunchBounds(
             mod,

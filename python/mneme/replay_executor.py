@@ -273,9 +273,9 @@ class CLIExecutor(BaseExecutor):
 
         parser.set_defaults(func=CLIExecutor.run)
 
-    def apply_user_options(self, llvm_ir):
+    def apply_user_options(self, llvm_ir, exp):
         code_hash = self.kernel_descr.static_hash
-        code = llvm_ir.clone()
+        _hash = exp.hash()
         if self.specialize:
             code_hash = jit.specialize_args(
                 llvm_ir,
@@ -288,21 +288,29 @@ class CLIExecutor(BaseExecutor):
 
         if self.dims:
             code_hash = jit.specialize_dims(
-                code,
+                llvm_ir,
                 code_hash,
                 self.kernel_descr.kernel_name,
                 self.kernel_descr.grid_dim,
                 self.kernel_descr.block_dim,
             )
+
         if self.max_threads:
+            self.max_threads = int(
+                self.kernel_descr.block_dim.x
+                * self.kernel_descr.block_dim.y
+                * self.kernel_descr.block_dim.z
+            )
+
             code_hash = jit.set_launch_bounds(
-                code,
-                self.code_hash,
+                llvm_ir,
+                code_hash,
                 self.kernel_descr.kernel_name,
                 self.max_threads,
                 self.min_blocks_per_sm,
             )
-        return code_hash, code
+
+        return code_hash, llvm_ir
 
     def __init__(self, *args, **kwargs):
         self.pipeline = kwargs.pop("pipeline", None)
@@ -319,9 +327,16 @@ class CLIExecutor(BaseExecutor):
         self._db = None
 
     def get_experiment(self, pipeline):
+        max_threads = self.max_threads
+        if self.max_threads:
+            max_threads = (
+                self.kernel_descr.block_dim.x
+                * self.kernel_descr.block_dim.y
+                * self.kernel_descr.block_dim.z
+            )
         return Experiment(
             specialize=self.specialize,
-            max_threads=self.max_threads,
+            max_threads=max_threads,
             min_blocks_per_sm=self.min_blocks_per_sm,
             specialize_dims=self.dims,
             passes=pipeline,
@@ -335,21 +350,11 @@ class CLIExecutor(BaseExecutor):
     def __str__(self):
         return f"{self.__class__.__name__}"
 
-    def execute(self, ir_module, clone=False):
-        orig = ""
-        if self.db_dir is not None:
-            self._db = MnemeDB(
-                self.db_dir,
-                self.kernel_descr.static_hash,
-                self.kernel_descr.dynamic_hash,
-                self.db_suffix,
-            ).open()
-            orig = self._db.save_ir(str(ir_module), "orig")
+    def execute(self, exp, ir_module, clone=False, orig=""):
         if not self.increamental:
-            exp = self.get_experiment(self.pipeline)
             print("Starting to execute")
             exp.dump()
-            exp, generated_ir = super()._execute(exp, ir_module.clone(), self.pipeline)
+            exp, generated_ir = super()._execute(exp, ir_module, self.pipeline)
             if self._db is not None:
                 final = self._db.save_ir(str(generated_ir), exp.hash())
                 self._db.add(orig, final, exp)
@@ -359,7 +364,6 @@ class CLIExecutor(BaseExecutor):
         results = []
         for i, _ in enumerate(self.passes):
             passes = self.pass_manager.to_string(self.passes[: i + 1])
-            exp = self.get_experiment(passes)
             if self._db is not None and not self._db.should_execute(exp):
                 print("Skipping")
                 continue
@@ -381,9 +385,22 @@ class CLIExecutor(BaseExecutor):
         # We currently link all LLVM IR modules together
         # NOTE: Does this break with externals on CUDA?
         root_ir = executor.link_ir()
+
+        orig = ""
+        if executor.db_dir is not None:
+            executor._db = MnemeDB(
+                executor.db_dir,
+                executor.kernel_descr.static_hash,
+                executor.kernel_descr.dynamic_hash,
+                executor.db_suffix,
+            ).open()
+            orig = executor._db.save_ir(str(root_ir), "orig")
+
         with executor as Memory:
-            code_hash, code = executor.apply_user_options(root_ir)
+            exp = executor.get_experiment(executor.pipeline)
+            code_hash, code = executor.apply_user_options(root_ir.clone(), exp)
             executor.execute(
+                exp,
                 code,
                 True,
             )
@@ -429,7 +446,7 @@ class TuneWorker(BaseExecutor):
     def process_payload(self, ir_module, exp_dict) -> Tuple[Experiment, ModuleRef]:
         exp = Experiment.from_dict(**exp_dict)
         code_hash, code = self.preprocess_ir(
-            ir_module.clone(),
+            ir_module,
             exp.specialize,
             exp.specialize_dims,
             exp.max_threads,
@@ -477,7 +494,7 @@ class TuneWorker(BaseExecutor):
                         f"Worker {worker.device_id} Received message to start processing request",
                         msg["exp_id"],
                     )
-                    exp, ir = worker.process_payload(root_ir, msg["data"])
+                    exp, ir = worker.process_payload(root_ir.clone(), msg["data"])
                     response_q.put(
                         {
                             "exp_id": msg["exp_id"],

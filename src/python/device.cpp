@@ -145,6 +145,8 @@ MnemePy_profile(void *WrappedModule, void *Func, dim3 Grid, dim3 Block,
       LOG_FATAL("Error when recording event " + EC.value());
 
     time[i] = elapsedTime;
+    LOG_INFO("Iteration: {} exeucuted on {} took {} ms", i, DeviceId,
+             elapsedTime);
 
     EC = DeviceVendorTraits::DeviceErrorCheck(
         DeviceVendorTraits::DeviceStreamSynchronize(ReplayStream));
