@@ -25,7 +25,7 @@ class Experiment:
 
     @property
     def exec_time(self):
-        return self._opt_time
+        return self._exec_time
 
     @exec_time.setter
     def exec_time(self, value):

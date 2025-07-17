@@ -42,6 +42,10 @@ class MnemeDB:
             "failed",
         ]
 
+    @property
+    def db_dir(self):
+        return self._dir
+
     def open(self):
         if not self._dir.exists():
             self._dir.mkdir(parents=True, exist_ok=True)
