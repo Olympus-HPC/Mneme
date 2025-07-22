@@ -328,11 +328,13 @@ class ReplayTuner(BaseExecutor):
             for i in range(executor.num_workers)
         ]
 
+        suffix = f"{executor.specialize}.{executor.prune}.{executor.internalize}.{executor.rtc}.{executor.codegen_opt}.{executor.sampler}.{executor.seed}"
+
         db = MnemeDB(
             executor.db_dir,
             executor.kernel_descr.static_hash,
             executor.kernel_descr.dynamic_hash,
-            executor.suffix,
+            suffix,
         ).open()
 
         print("I am here")

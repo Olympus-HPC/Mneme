@@ -112,13 +112,14 @@ def run_optuna_tune(
     import optuna
     from optuna.trial import TrialState
 
-    _filename = f"{custom_db.db_dir}/mneme.{executor.kernel_descr.static_hash}.{executor.kernel_descr.dynamic_hash}"
-    if executor.suffix is not None:
-        _filename += f".{executor.suffix}"
+    if not custom_db.is_open:
+        raise RuntimeError("Expecting database to be open")
+
+    _filename = f"{custom_db.db_dir}/{custom_db.prefix}.sql"
 
     sampler = get_sampler(sampler_name, seed)
 
-    db_path = f"sqlite:////{_filename}.{sampler_name}.{seed}.sql"
+    db_path = f"sqlite:////{_filename}"
     print(db_path)
     study = optuna.create_study(
         sampler=sampler,
