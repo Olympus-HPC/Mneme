@@ -1,5 +1,6 @@
 import argparse
 import time
+from datetime import datetime
 from multiprocessing import Queue
 from typing import Tuple
 
@@ -445,6 +446,7 @@ class TuneWorker(BaseExecutor):
 
     def process_payload(self, ir_module, exp_dict) -> Tuple[Experiment, ModuleRef]:
         exp = Experiment.from_dict(**exp_dict)
+        exp.start_time = datetime.utcnow().isoformat()
         code_hash, code = self.preprocess_ir(
             ir_module,
             exp.specialize,
@@ -453,6 +455,8 @@ class TuneWorker(BaseExecutor):
             exp.min_blocks_per_sm,
         )
         exp, generated_ir = super()._execute(exp, code, exp.passes)
+        exp.end_time = datetime.utcnow().isoformat()
+        exp.gpu_id = self.device_id
         return exp, generated_ir
 
     @staticmethod

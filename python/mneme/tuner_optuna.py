@@ -132,6 +132,7 @@ def run_optuna_tune(
     performed_experiments = len(study.trials)
     num_in_process = 0
     exp_id = performed_experiments
+    count = exp_id
 
     if performed_experiments >= num_trials:
         return
@@ -163,9 +164,12 @@ def run_optuna_tune(
     while len(in_flight) != 0:
         res = completed_jobs_q.get()
         if res["payload"] == "result":
+            count += 1
             done_exp_id = res["exp_id"]
             exp1, worker, trial = in_flight.pop(done_exp_id)
             exp2 = Experiment.from_dict(**res["data"])
+            exp2.start_id = done_exp_id
+            exp2.commit_id = count
             num_in_process -= 1
             performed_experiments += 1
             if exp1.hash() != exp2.hash():
