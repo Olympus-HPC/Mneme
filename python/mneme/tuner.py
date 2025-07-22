@@ -218,7 +218,7 @@ class ReplayTuner(BaseExecutor):
             choices=[
                 "RandomSampler",
                 "TPESampler",
-                "GPSampler",
+                #                "GPSampler",
                 "NSGAIISampler",
                 "QMCSampler",
             ],

@@ -88,8 +88,10 @@ def get_sampler(sampler_name, seed):
         return RandomSampler(seed=seed)
     elif sampler_name == "TPESampler":
         return TPESampler(seed=seed)
-    elif sampler_name == "GPSampler":
-        return GPSampler(seed=seed)
+    # GP fails cause it does not fine a good minimum. Likely requires more
+    # samples to search for
+    #    elif sampler_name == "GPSampler":
+    #        return GPSampler(seed=seed)
     elif sampler_name == "NSGAIISampler":
         return NSGAIISampler(seed=seed)
     elif sampler_name == "QMCSampler":
