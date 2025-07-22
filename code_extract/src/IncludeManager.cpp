@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "Utils/IncludeManager.h"
+#include <iostream>
 
 IncludeManager::IncludeManager(
     std::string const &directory,
@@ -141,20 +142,19 @@ std::string IncludeManager::getFileFromID(FileID id) const {
     return id_to_path[id];
 }
 
-IncludeManager::FileID
+std::tuple<int, bool>
 IncludeManager::getIDFromFile(std::string const &file) const {
   auto it = path_to_id.find(file);
   if (it != path_to_id.end())
-    return it->second;
+    return {it->second, true};
 
   for (auto const &path : include_paths) {
     auto idx = file.find(path);
     if (idx != std::string::npos)
-      return path_to_id.at(file.substr(idx + path.size() + 1));
+      return {path_to_id.at(file.substr(idx + path.size() + 1)), true};
   }
 
-  assert(false && "All included files should already be seen!");
-  return -1;
+  return {-1, false};
 }
 
 void IncludeManager::getIncludes(FileID id,

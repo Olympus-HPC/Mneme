@@ -39,7 +39,8 @@ public:
 
   std::string getFileFromID(FileID id) const;
 
-  FileID getIDFromFile(std::string const &file) const;
+  // May return -1 in case file not found (indirect include), user side checking required.
+  std::tuple<int, bool> getIDFromFile(std::string const &file) const;
 
   void getIncludes(FileID id, std::unordered_set<FileID> &outSet) const;
 

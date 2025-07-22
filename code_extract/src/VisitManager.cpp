@@ -184,6 +184,10 @@ extern std::string locToIncFile(clang::SourceLocation sloc,
 extern bool isIncludeExternal(std::string const &incFile, CodeDB const &codedb);
 } // namespace helper
 
+void VisitManager::markIndirectDef(clang::TagDecl const *decl) {
+  hasIndirectDef.insert(decl);
+}
+
 void VisitManager::registerDecl(clang::NamedDecl const *decl) {
   declRefs.push_back(decl);
 }
@@ -201,6 +205,19 @@ void VisitManager::registerDecl(clang::CXXRecordDecl const *decl) {
 }
 
 void VisitManager::registerDecl(clang::TypedefNameDecl const *decl) {
+  auto underlyingTag = decl->getUnderlyingType()->getAsTagDecl();
+  if (underlyingTag) {
+    auto file = helper::locToIncFile(underlyingTag->getLocation(),
+                                     underlyingTag->getASTContext());
+    // Ugly fix, we don't want to expand typedefs over externals.
+    if (helper::isIncludeExternal(file, db)) {
+      tagDecls.push_back(decl);
+      return;
+    }
+  }
+
+  /// FIXME: Separate typedefs over struct defs, handle them differently.
+  // We always expand this with the full definition of the aliased type.
   typedefDecls.push_back(decl);
 }
 
@@ -210,22 +227,34 @@ void VisitManager::registerDecl(clang::FunctionDecl const *decl) {
   if (isClassMember && decl->isInlined())
     return;
 
-  clang::NamedDecl const *declToPush = decl;
-  if (auto tmpDecl = decl->getPrimaryTemplate())
-    declRefs.push_back(tmpDecl);
-  else {
-    // If we see a declaration only, most likely it has weird circular
-    // dependencies so we always fwd declare them.
-    auto hasOnlyOneRedecl = (++decl->redecls_begin()) == decl->redecls_end();
-    if (!isClassMember && !hasOnlyOneRedecl)
-      fwdDecls.push_back(decl);
+  if (auto tmpDecl = decl->getPrimaryTemplate()) {
+    // If it is an explicit template spec, also add the definition of that
+    // specialization.
+    if (decl->getTemplateSpecializationInfo()->isExplicitSpecialization()) {
+      fwdDecls.insert(tmpDecl);
+      declRefs.push_back(decl);
+    } else if (tempDecls.find(tmpDecl) == tempDecls.end()) {
+      tempDecls.insert(tmpDecl);
+      declRefs.push_back(tmpDecl);
+    }
+  } else
     declRefs.push_back(decl);
-  }
+}
+
+void VisitManager::fwdDeclFuncDecl(clang::FunctionDecl const *decl) {
+  if (decl->isCXXClassMember())
+    return; // Even class members can have circular dependencies but ignore
+            // here.
+  if (auto tmpDecl = decl->getPrimaryTemplate())
+    fwdDecls.insert(tmpDecl);
+  else
+    fwdDecls.insert(decl);
 }
 
 void VisitManager::registerInclude(std::string const &includePath) {
-  auto id = db.includes.getIDFromFile(includePath);
-  db.includes.getIncludes(id, includes);
+  auto [id, needsExplicitInclude] = db.includes.getIDFromFile(includePath);
+  if (needsExplicitInclude)
+    db.includes.getIncludes(id, includes);
 }
 
 bool VisitManager::isVisited(std::string const &name) {
@@ -241,10 +270,9 @@ void VisitManager::markVisited(std::string const &name,
   visitedNodes.try_emplace(name, objInfo);
 }
 
-void VisitManager::addToVisit(clang::Stmt *stmt) { toVisitNodes.push(stmt); }
-
 template <typename T>
-void VisitManager::fillParams(std::string const &prefix, T *begin, T *end) {
+void VisitManager::fillParams(std::string const &prefix, T *begin, T *end,
+                              MatchVisitor &mv) {
   int idx = 0;
   for (auto paramIt = begin; paramIt != end; paramIt++) {
     clang::ValueDecl const *expr = nullptr;
@@ -274,7 +302,7 @@ void VisitManager::fillParams(std::string const &prefix, T *begin, T *end) {
       auto lmbExpr = callback.lambdaExpr;
       assert(lmbExpr && "Could not find lambda expression!");
 
-      addToVisit(lmbExpr->getBody());
+      mv.TraverseStmt(lmbExpr->getBody());
       std::string lmbBody, lmbAttrs;
       llvm::raw_string_ostream stream(lmbBody);
       llvm::raw_string_ostream attrStream(lmbAttrs);
@@ -286,7 +314,7 @@ void VisitManager::fillParams(std::string const &prefix, T *begin, T *end) {
         lmbBody.insert(lmbBody.find(']') + 1, lmbAttrs);
       params_expr.emplace_back(key, lmbBody);
 
-      fillParams(key, lmbExpr->capture_begin(), lmbExpr->capture_end());
+      fillParams(key, lmbExpr->capture_begin(), lmbExpr->capture_end(), mv);
     } else if (recordDecl) {
       clang::CXXConstructorDecl *ctor = nullptr;
       bool hasNonDeletedDefault = false;
@@ -313,7 +341,8 @@ void VisitManager::fillParams(std::string const &prefix, T *begin, T *end) {
       helper::buildCallExpr(ctor->parameters(), stream, key + "_");
       params_expr.emplace_back(key, ctorCall);
 
-      fillParams(key.substr(1) + "_", ctor->param_begin(), ctor->param_end());
+      fillParams(key.substr(1) + "_", ctor->param_begin(), ctor->param_end(),
+                 mv);
     } else {
       params_decl.emplace_back(key, expr);
     }
@@ -322,13 +351,13 @@ void VisitManager::fillParams(std::string const &prefix, T *begin, T *end) {
   }
 }
 
-void VisitManager::registerParameterPrologue(ObjInfo *fnObj) {
+void VisitManager::registerParameterPrologue(MatchVisitor &mv, ObjInfo *fnObj) {
   clang::FunctionDecl *fnDecl = fnObj->getDefinition()->getAsFunction();
 
   if (!fnDecl->getNumParams())
     return;
 
-  fillParams("", fnDecl->param_begin(), fnDecl->param_end());
+  fillParams("", fnDecl->param_begin(), fnDecl->param_end(), mv);
 }
 
 void VisitManager::emitStandaloneFile(std::string &output, bool emitRR,
@@ -357,6 +386,8 @@ void VisitManager::emitStandaloneFile(std::string &output, bool emitRR,
   ss << "\n";
 
   for (auto &tags : tagDecls) {
+    if (hasIndirectDef.find(tags) != hasIndirectDef.end())
+      continue;
     tags->print(ss);
     ss << ";\n\n";
   }
@@ -376,9 +407,8 @@ void VisitManager::emitStandaloneFile(std::string &output, bool emitRR,
   }
   ss << '\n';
 
-  // Emit all declrefs (functions calls + global refs)
-  for (auto ref_it = declRefs.rbegin(); ref_it != declRefs.rend(); ref_it++) {
-    auto decl = *ref_it;
+  // Emit all other declrefs
+  for (auto decl : declRefs) {
     helper::print(ss, decl);
     ss << "\n\n";
   }
@@ -466,13 +496,18 @@ void VisitManager::pullPrimaryFnContext() {
   MatchVisitor mv(*this, db);
 
   mv.VisitParams(primaryDecl, isMemberFn);
-  registerParameterPrologue(&primaryFn);
+  registerParameterPrologue(mv, &primaryFn);
   mv.VisitTemplateParams(primaryDecl);
 
   auto incFile = helper::locToIncFile(primaryDecl->getLocation(),
                                       primaryDecl->getASTContext());
   if (!helper::isIncludeExternal(incFile, db)) {
-    addToVisit(primaryDecl->getBody());
+    // Register includes from point of instantiation as well
+    if (primaryDecl->isFunctionTemplateSpecialization())
+      registerInclude(
+          helper::locToIncFile(primaryDecl->getPointOfInstantiation(),
+                               primaryDecl->getASTContext()));
+    mv.TraverseStmt(primaryDecl->getBody());
     registerDecl(primaryDecl);
     registerInclude(incFile);
   } else {
@@ -481,11 +516,4 @@ void VisitManager::pullPrimaryFnContext() {
     db.includes.getAllExternals(includes);
   }
   markVisited(primaryFn.keyName, &primaryFn);
-
-  while (!toVisitNodes.empty()) {
-    auto stmt = toVisitNodes.front();
-    toVisitNodes.pop();
-    mv.TraverseStmt(stmt);
-  }
-  /// TODO: Complete
 }

@@ -55,19 +55,16 @@ void storeDecl(T *decl, clang::ASTUnit const &unit, CodeDB &cdb) {
   }
 }
 
-template <typename T>
-std::tuple<T const *, bool> visitAndRegister(clang::NamedDecl const *decl,
-                                             VisitManager &vm,
-                                             CodeDB const &cdb) {
+std::tuple<clang::Decl const *, bool>
+visit(clang::NamedDecl const *decl, VisitManager &vm, CodeDB const &cdb) {
   std::string keyName = CodeDB::getKeyName(decl);
 
   if (vm.isVisited(keyName))
-    return {static_cast<T const *>(vm.getVisitedObj(keyName)->getDefinition()),
-            false};
+    return {vm.getVisitedObj(keyName)->getDefinition(), false};
 
   auto incFile = locToIncFile(decl->getLocation(), decl->getASTContext());
   if (isIncludeExternal(incFile, cdb))
-    return {static_cast<T const *>(decl), false};
+    return {decl, false};
 
   if (!cdb.isRegistered(keyName))
     decl->dump();
@@ -75,15 +72,12 @@ std::tuple<T const *, bool> visitAndRegister(clang::NamedDecl const *decl,
          "All decl to visit should be registered!");
   auto objInfo = cdb.getObjInfoOrNull(keyName);
 
-  // Lookup definition from database
-  auto defDecl = static_cast<T const *>(objInfo->getDefinition());
   vm.markVisited(keyName, objInfo);
-  vm.registerDecl(defDecl);
-
   // register source for includes
   vm.registerInclude(incFile);
 
-  return {defDecl, true};
+  // Lookup definition from database
+  return {objInfo->getDefinition(), true};
 }
 
 /// @brief Checks if the given input is either of the types specifed in the
@@ -127,9 +121,10 @@ bool isPotentialBuiltinByName(std::string const &name) {
   return name.size() > 2 && '_' == name[0] && '_' == name[1];
 }
 
-void handleVarDecl(clang::QualType qt, VisitManager &vm, CodeDB const &codedb);
+void handleVarDecl(clang::QualType qt, VisitManager &vm, CodeDB const &codedb,
+                   bool isWithinTypedef = false);
 void handleRecordDecl(clang::CXXRecordDecl const *recordDecl, VisitManager &vm,
-                      CodeDB const &codedb) {
+                      CodeDB const &codedb, bool dontEmitDecl = false) {
   // If externally defined (or built-in), do not include def as we will include
   // the file itself.
   if (isPotentialBuiltinByName(recordDecl->getNameAsString()) ||
@@ -143,13 +138,17 @@ void handleRecordDecl(clang::CXXRecordDecl const *recordDecl, VisitManager &vm,
   // We will typically not find RecordDecls within function bodies or init
   // expressions. Hence, we need to visit them when we encounter either their
   // var decl or static function call (unsupported as of yet).
-  helper::visitAndRegister<clang::CXXRecordDecl>(recordDecl, vm, codedb);
+  auto [defDecl, doVisit] = helper::visit(recordDecl, vm, codedb);
+  if (doVisit && !dontEmitDecl) {
+    vm.registerDecl(static_cast<clang::CXXRecordDecl const *>(defDecl));
+  }
 
   // Also we do not want to visit anything else from here as we will visit the
   // function calls separately
 }
 
-void handleVarDecl(clang::QualType qt, VisitManager &vm, CodeDB const &codedb) {
+void handleVarDecl(clang::QualType qt, VisitManager &vm, CodeDB const &codedb,
+                   bool isWithinTypedef) {
   if (!qt.getTypePtrOrNull())
     return;
 
@@ -163,10 +162,17 @@ void handleVarDecl(clang::QualType qt, VisitManager &vm, CodeDB const &codedb) {
     if (isPotentialBuiltinByName(typDecl->getNameAsString()))
       return;
 
-    handleVarDecl(typDecl->getUnderlyingType(), vm, codedb);
-    visitAndRegister<clang::TypedefNameDecl>(typDecl, vm, codedb);
-  } else if (auto decl = cannonType->getAsCXXRecordDecl())
-    handleRecordDecl(decl, vm, codedb);
+    handleVarDecl(typDecl->getUnderlyingType(), vm, codedb, true);
+    auto [defDecl, doVisit] = visit(typDecl, vm, codedb);
+
+    if (doVisit && defDecl->isDefinedOutsideFunctionOrMethod())
+      vm.registerDecl(static_cast<clang::TypedefNameDecl const *>(defDecl));
+  } else if (auto decl = cannonType->getAsCXXRecordDecl()) {
+    if (isWithinTypedef || !decl->isDefinedOutsideFunctionOrMethod())
+      vm.markIndirectDef(decl);
+    handleRecordDecl(decl, vm, codedb,
+                     isWithinTypedef && decl->isThisDeclarationADefinition());
+  }
 }
 } // namespace helper
 
@@ -222,8 +228,8 @@ bool MatchVisitor::VisitDeclRefExpr(clang::DeclRefExpr *declRef) {
   if (!helper::isGlobalVar(varDecl) || isPotentialBuiltin)
     return true;
 
-  auto [defDecl, visitBody] =
-      helper::visitAndRegister<clang::VarDecl>(varDecl, vm, codedb);
+  auto [decl, visitBody] = helper::visit(varDecl, vm, codedb);
+  auto defDecl = static_cast<clang::VarDecl const *>(decl);
   if (!visitBody)
     return true;
 
@@ -243,8 +249,9 @@ bool MatchVisitor::VisitDeclRefExpr(clang::DeclRefExpr *declRef) {
       !helper::isOneOf<clang::CXXBoolLiteralExpr, clang::CharacterLiteral,
                        clang::FixedPointLiteral, clang::FloatingLiteral,
                        clang::IntegerLiteral, clang::StringLiteral>(varInit))
-    vm.addToVisit(varInit);
+    TraverseStmt(varInit);
 
+  vm.registerDecl(defDecl);
   return true;
 }
 
@@ -263,11 +270,29 @@ bool MatchVisitor::VisitCallExpr(clang::CallExpr *callExpr) {
       return true;
   }
 
-  auto [defDecl, visitBody] =
-      helper::visitAndRegister<clang::FunctionDecl>(decl, vm, codedb);
+  // Redundant but better to check here than later
+  if (vm.isVisited(CodeDB::getKeyName(decl))) {
+    vm.fwdDeclFuncDecl(decl);
+    return true;
+  }
+
+  auto [DBdecl, visitBody] = helper::visit(decl, vm, codedb);
+  auto defDecl = static_cast<clang::FunctionDecl const *>(DBdecl);
+
+  // If function is a call to a template instantiation, we need to save the
+  // includes for it at the point of instantiation (as well).
+  if (decl->isFunctionTemplateSpecialization())
+    vm.registerInclude(
+        helper::locToIncFile(decl->getLocation(), decl->getASTContext()));
+
   if (!visitBody || !defDecl->hasBody())
     return true;
-  vm.addToVisit(defDecl->getBody());
+
+  // First visit dependent calls
+  TraverseStmt(defDecl->getBody());
+
+  // Then register
+  vm.registerDecl(defDecl);
 
   // Handle function param var decls
   // Also, dont visit the parent decl here, we either have visited it or will

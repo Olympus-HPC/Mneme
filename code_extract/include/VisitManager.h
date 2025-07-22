@@ -20,15 +20,24 @@ class ASTContext;
 class Type;
 } // namespace clang
 
+class MatchVisitor;
+
 /// @brief Manages nodes to visit and decls to add to the extracted body.
 class VisitManager {
   CodeDB const &db;
   ObjInfo &primaryFn;
   std::queue<clang::Stmt *> toVisitNodes;
+  std::vector<clang::NamedDecl const *> varDeclRefs;
   std::vector<clang::NamedDecl const *> declRefs;
-  std::vector<clang::NamedDecl const *> fwdDecls;
   std::vector<clang::NamedDecl const *> tagDecls;
   std::vector<clang::NamedDecl const *> typedefDecls;
+  // All named decls whose defs are a part of a different decl (i.e. typedefs)
+  // and hence should not be emitted separately, currently only for tag types.
+  std::unordered_set<clang::NamedDecl const *> hasIndirectDef;
+  // Keeps tracks of primary template decls so we don't emit them multiple
+  // times.
+  std::unordered_set<clang::NamedDecl const *> tempDecls;
+  std::unordered_set<clang::NamedDecl const *> fwdDecls;
   std::unordered_map<std::string, ObjInfo const *> visitedNodes;
   std::unordered_set<std::size_t> includes;
   std::vector<std::pair<std::string, std::string>> params_expr;
@@ -37,7 +46,8 @@ class VisitManager {
   /// @brief Fills params from the given vals into the params map with string id
   /// as prefix + param_position.
   template <typename T>
-  void fillParams(std::string const &prefix, T *begin, T *end);
+  void fillParams(std::string const &prefix, T *begin, T *end,
+                  MatchVisitor &mv);
 
 public:
   VisitManager(ObjInfo &pf, CodeDB const &cdb) : db(cdb), primaryFn(pf) {}
@@ -54,8 +64,9 @@ public:
   /// @param objInfo Object info associated with decl to mark.
   void markVisited(std::string const &keyName, ObjInfo const *objInfo);
 
-  /// @brief Adds a clang statement to visit queue.
-  void addToVisit(clang::Stmt *stmt);
+  /// @brief Marks a decl to not be independently emitted (currently only for
+  /// tag types.)
+  void markIndirectDef(clang::TagDecl const *decl);
 
   /// @brief Adds a declaration to be emitted to code later.
   void registerDecl(clang::NamedDecl const *decl);
@@ -79,6 +90,9 @@ public:
   /// path must be project internal.
   void registerInclude(std::string const &includePath);
 
+  /// @brief Register a function call as a forward decl.
+  void fwdDeclFuncDecl(clang::FunctionDecl const *decl);
+
   /// @brief Default instantiates all function parameters for the given
   /// functionDecl and returns a vector of decl strings for each param.
   /// @param fnObj The function ObjInfo to instantiate params for.
@@ -88,7 +102,7 @@ public:
   /// @brief Registers all variable parameters that will be used to build the
   /// standalone function call for fnObj. These params may be params to fnObj or
   /// to function call/lambda expression params.
-  void registerParameterPrologue(ObjInfo *fnObj);
+  void registerParameterPrologue(MatchVisitor &mv, ObjInfo *fnObj);
 
   /// @brief Emits the standalone code file containing the searched function and
   /// all other dependencies into output.
