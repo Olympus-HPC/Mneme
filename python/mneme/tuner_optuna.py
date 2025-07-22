@@ -186,8 +186,7 @@ def run_optuna_tune(
                     raise RuntimeError(
                         "Expected llvm ir to exist on non failed experiment"
                     )
-                final = custom_db.save_ir(res["llvm_ir"], exp2.hash())
-                custom_db.add(orig, final, exp2)
+                custom_db.add(orig, res["llvm_ir"], exp2)
                 for k, v in res["data"].items():
                     trial.set_user_attr(k, v)
                 study.tell(trial, values=exp2.exec_time)
