@@ -35,6 +35,8 @@ class TuneWorkerHandle:
         codegen_opt: int,
         rtc: bool,
         iterations: int,
+        db_dir: str,
+        suffix: str,
     ):
 
         self.idx = idx
@@ -55,6 +57,8 @@ class TuneWorkerHandle:
         self.codegen_opt = codegen_opt
         self.rtc = rtc
         self.iterations = iterations
+        self.db_dir = db_dir
+        self.suffix = suffix
 
         # Start the subprocess and its monitor thread
         self._spawn_process()
@@ -77,6 +81,8 @@ class TuneWorkerHandle:
                 self.codegen_opt,
                 self.rtc,
                 self.iterations,
+                self.db_dir,
+                self.suffix,
             ),
             daemon=False,
         )
@@ -311,6 +317,8 @@ class ReplayTuner(BaseExecutor):
     def run_optuna(executor):
         completed_jobs_q = Queue()
 
+        suffix = f"{executor.specialize}.{executor.prune}.{executor.internalize}.{executor.rtc}.{executor.codegen_opt}.{executor.sampler}.{executor.seed}"
+
         workers = [
             TuneWorkerHandle(
                 i,
@@ -324,11 +332,11 @@ class ReplayTuner(BaseExecutor):
                 executor.codegen_opt,
                 executor.rtc,
                 executor._iterations,
+                executor.db_dir,
+                suffix,
             )
             for i in range(executor.num_workers)
         ]
-
-        suffix = f"{executor.specialize}.{executor.prune}.{executor.internalize}.{executor.rtc}.{executor.codegen_opt}.{executor.sampler}.{executor.seed}"
 
         db = MnemeDB(
             executor.db_dir,
@@ -379,6 +387,7 @@ class ReplayTuner(BaseExecutor):
         completed_jobs_q = Queue()
         exp_id = 0
 
+        suffix = f"{executor.specialize}.{executor.prune}.{executor.internalize}.{executor.rtc}.{executor.codegen_opt}.{executor.seed}"
         workers = [
             TuneWorkerHandle(
                 i,
@@ -392,6 +401,8 @@ class ReplayTuner(BaseExecutor):
                 executor.codegen_opt,
                 executor.rtc,
                 executor._iterations,
+                executor.db_dir,
+                suffix,
             )
             for i in range(executor.num_workers)
         ]

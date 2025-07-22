@@ -471,6 +471,8 @@ class TuneWorker(BaseExecutor):
         codegen_opt: int,
         rtc: bool,
         iterations: int,
+        db_dir: str,
+        suffix: str,
     ):
         # We need this to actually run things...
         worker = TuneWorker(
@@ -486,6 +488,13 @@ class TuneWorker(BaseExecutor):
         # Open GPU memory, setup prologue epilogue and create a single
         # LLVM IR file to start working on optimizations
         root_ir = worker.link_ir()
+        resdb = MnemeDB(
+            db_dir,
+            worker.kernel_descr.static_hash,
+            worker.kernel_descr.dynamic_hash,
+            suffix,
+        ).open()
+
         with worker as Memory:
             print("Starting busy loop")
             while True:
@@ -499,12 +508,13 @@ class TuneWorker(BaseExecutor):
                         msg["exp_id"],
                     )
                     exp, ir = worker.process_payload(root_ir.clone(), msg["data"])
+                    final = resdb.save_ir(str(ir), exp.hash())
                     response_q.put(
                         {
                             "exp_id": msg["exp_id"],
                             "payload": "result",
                             "data": exp.to_dict(),
-                            "llvm_ir": str(ir),
+                            "llvm_ir": final,
                         }
                     )
                 else:
