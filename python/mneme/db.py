@@ -42,6 +42,11 @@ class MnemeDB:
             "exec_time",
             "executed",
             "failed",
+            "start_time",
+            "end_time",
+            "start_id",
+            "commit_id",
+            "gpu_id",
         ]
 
     @property

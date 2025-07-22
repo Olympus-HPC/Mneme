@@ -22,6 +22,35 @@ class Experiment:
         self._exec_time = kwargs.pop("exec_time", None)
         self._executed = kwargs.pop("executed", False)
         self._failed = kwargs.pop("failed", False)
+        self._start_id = kwargs.pop("start_id", -1)
+        self._commit_id = kwargs.pop("commit_id", -1)
+        self._start_time = kwargs.pop("start_time", 0)
+        self._end_time = kwargs.pop("end_time", 0)
+        self._gpu_id = kwargs.pop("gpu_id", 0)
+
+    @property
+    def gpu_id(self):
+        return self._gpu_id
+
+    @gpu_id.setter
+    def gpu_id(self, value):
+        self._gpu_id = value
+
+    @property
+    def start_id(self):
+        return self._start_id
+
+    @start_id.setter
+    def start_id(self, value):
+        self._start_id = value
+
+    @property
+    def commit_id(self):
+        return self._commit_id
+
+    @commit_id.setter
+    def commit_id(self, value):
+        self._commit_id = value
 
     @property
     def exec_time(self):
@@ -35,6 +64,22 @@ class Experiment:
             )
 
         self._exec_time = sum(value) / len(value)
+
+    @property
+    def start_time(self):
+        return self._start_time
+
+    @start_time.setter
+    def start_time(self, value):
+        self._start_time = value
+
+    @property
+    def end_time(self):
+        return self._end_time
+
+    @end_time.setter
+    def end_time(self, value):
+        self._end_time = value
 
     @property
     def obj_size(self):
@@ -135,6 +180,11 @@ class Experiment:
         data["rtc"] = self._rtc
         data["device_arch"] = self._device_arch
         data["failed"] = self.failed
+        data["start_time"] = self._start_time
+        data["end_time"] = self._end_time
+        data["commit_id"] = self._commit_id
+        data["start_id"] = self._start_id
+        data["gpu_id"] = self._gpu_id
 
         data["opt_time"] = self._opt_time
         data["codegen_time"] = self._codegen_time
