@@ -13,11 +13,13 @@ class MnemeDB:
         self._open = False
         self._suffix = suffix
         if suffix is not None:
-            self._filename = (
-                f"mneme{self._static_hash}.{self._dynamic_hash}.{self._suffix}.csv"
+            self._prefix = (
+                f"mneme.{self._static_hash}.{self._dynamic_hash}.{self._suffix}"
             )
         else:
-            self._filename = f"mneme.{self._static_hash}.{self._dynamic_hash}.csv"
+            self._prefix = f"mneme.{self._static_hash}.{self._dynamic_hash}"
+
+        self._filename = f"{self._prefix}.csv"
 
         self._columns = [
             "hash",
@@ -43,8 +45,16 @@ class MnemeDB:
         ]
 
     @property
+    def prefix(self):
+        return self._prefix
+
+    @property
     def db_dir(self):
         return self._dir
+
+    @property
+    def is_open(self):
+        return self._open
 
     def open(self):
         if not self._dir.exists():
