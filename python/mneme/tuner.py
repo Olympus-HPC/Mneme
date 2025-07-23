@@ -453,8 +453,7 @@ class ReplayTuner(BaseExecutor):
                         raise RuntimeError(
                             "Expected llvm ir to exist on non failed experiment"
                         )
-                    final = db.save_ir(res["llvm_ir"], exp2.hash())
-                    db.add(orig, final, exp2)
+                    db.add(orig, res["llvm_ir"], exp2)
 
                 if len(total_experiments) != 0:
                     vals = schedule_job(db, total_experiments, exp_id, worker)

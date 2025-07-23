@@ -1,6 +1,7 @@
 import json
 import math
 import random
+import time
 
 from mneme.experiment import Experiment
 from optuna.samplers import (
@@ -21,8 +22,10 @@ class BuildConfigWrapper:
         self.max_threads = max_threads
 
         self.min_blocks_per_sm_max = int(math.ceil(1024 / (max_threads * 2)))
+        self.time_in_config = 0
 
     def __call__(self, executor, trial):
+        start = time.time()
         indexes = []
         for v in range(0, 160):
             indexes.append(trial.suggest_int(f"pass_id_{v}", -40, 116))
@@ -38,6 +41,7 @@ class BuildConfigWrapper:
         max_threads = self.max_threads
         if min_blocks_per_sm == 0:
             max_threads = 0
+        self.time_in_config += time.time() - start
 
         return Experiment(
             specialize=executor.specialize,
@@ -68,9 +72,9 @@ def schedule_job(
             trial = study.ask()
             e = ConfigWrapper(executor, trial)
             # TODO: We should implement skipping, but we need to register (tell optuna) about the result.
-            if not db.should_execute(e):
-                print(f"Skipping experiment {e.hash()}")
-                continue
+            # if not db.should_execute(e):
+            #     print(f"Skipping experiment {e.hash()}")
+            #     continue
             worker.assign(
                 {
                     "payload": "process",
@@ -161,9 +165,17 @@ def run_optuna_tune(
         in_flight[exp_id] = (exp, w, trial)
         num_in_process += 1
 
+    wait_duration = 0
+    schedule_duration = 0
+    update_duration = 0
+    total_start = time.time()
     while len(in_flight) != 0:
+        wait_q_start = time.time()
         res = completed_jobs_q.get()
+        wait_q_end = time.time()
+        wait_duration += wait_q_end - wait_q_start
         if res["payload"] == "result":
+            update_start = time.time()
             count += 1
             done_exp_id = res["exp_id"]
             exp1, worker, trial = in_flight.pop(done_exp_id)
@@ -193,7 +205,10 @@ def run_optuna_tune(
             else:
                 custom_db.add(orig, "Error", exp2)
                 study.tell(trial, state=TrialState.FAIL)
+            update_end = time.time()
+            update_duration += update_end - update_start
 
+            schedule_start = time.time()
             vals = schedule_job(
                 custom_db,
                 study,
@@ -204,6 +219,8 @@ def run_optuna_tune(
                 exp_id,
                 worker,
             )
+            schedule_end = time.time()
+            schedule_duration += schedule_end - schedule_start
             if vals is None:
                 continue
             exp, trial, exp_id = vals[0], vals[1], vals[2]
@@ -213,4 +230,27 @@ def run_optuna_tune(
             print(json.dumps(res, indent=6))
             raise RuntimeError("Unknown paylod")
 
+    default_pipelines = [
+        "default<O1>",
+        "default<O2>",
+        "default<O3>",
+        "default<Os>",
+        "default<Oz>",
+    ]
+
+    # TODO
+
+    total_end = time.time()
+    with open(f"{custom_db.db_dir}/{custom_db.prefix}.prof.json", "w") as fd:
+        json.dump(
+            {
+                "wait_duration": wait_duration,
+                "schedule_duration": schedule_duration,
+                "update_duration": update_duration,
+                "total_duration": total_end - total_start,
+                "generate_config": Configure.time_in_config,
+            },
+            fd,
+            indent=6,
+        )
     print("Going back")

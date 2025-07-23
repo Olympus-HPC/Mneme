@@ -1,5 +1,6 @@
 import hashlib
 import json
+import math
 
 
 class Experiment:
@@ -19,7 +20,8 @@ class Experiment:
         self._codegen_time = kwargs.pop("codegen_time", None)
         self._verified = kwargs.pop("verified", None)
         self._obj_size = kwargs.pop("obj_size", None)
-        self._exec_time = kwargs.pop("exec_time", None)
+        self._exec_time_mean = kwargs.pop("exec_time_mean", None)
+        self._exec_time_std = kwargs.pop("exec_time_std", None)
         self._executed = kwargs.pop("executed", False)
         self._failed = kwargs.pop("failed", False)
         self._start_id = kwargs.pop("start_id", -1)
@@ -54,7 +56,7 @@ class Experiment:
 
     @property
     def exec_time(self):
-        return self._exec_time
+        return self._exec_time_mean
 
     @exec_time.setter
     def exec_time(self, value):
@@ -63,7 +65,9 @@ class Experiment:
                 f"Optimization time expects a list of values {value}, {type(value)}"
             )
 
-        self._exec_time = sum(value) / len(value)
+        self._exec_time_mean = sum(value) / len(value)
+        var = sum((x - self._exec_time_mean) ** 2 for x in value) / len(value)
+        self._exec_time_std = math.sqrt(var)
 
     @property
     def start_time(self):
@@ -190,7 +194,8 @@ class Experiment:
         data["codegen_time"] = self._codegen_time
         data["verified"] = self._verified
         data["obj_size"] = self._obj_size
-        data["exec_time"] = self._exec_time
+        data["exec_time_mean"] = self._exec_time_mean
+        data["exec_time_std"] = self._exec_time_std
         data["executed"] = self._executed
         data["hash"] = self.hash()
         return data
