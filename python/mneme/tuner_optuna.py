@@ -148,7 +148,6 @@ def run_optuna_tune(
     sampler = get_sampler(sampler_name, seed)
 
     db_path = f"sqlite:////{_filename}"
-    print(db_path)
     study = optuna.create_study(
         sampler=sampler,
         storage=db_path,
@@ -252,7 +251,7 @@ def run_optuna_tune(
             num_in_process += 1
         else:
             print(json.dumps(res, indent=6))
-            raise RuntimeError("Unknown paylod")
+            raise RuntimeError("Unknown payload")
 
     default_pipelines = [
         "default<O1>",
@@ -268,8 +267,6 @@ def run_optuna_tune(
 
     runner(orig, experiments, workers, completed_jobs_q, custom_db, exp_id, count)
 
-    # TODO
-
     total_end = time.time()
     with open(f"{custom_db.db_dir}/{custom_db.prefix}.prof.json", "w") as fd:
         json.dump(
@@ -283,4 +280,3 @@ def run_optuna_tune(
             fd,
             indent=6,
         )
-    print("Going back")
