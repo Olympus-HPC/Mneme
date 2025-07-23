@@ -35,7 +35,8 @@ struct MnemeDeviceExecutable {
    * every translation unit is handled as a separate linked binary and the
    * scoped is limited in that binary */
   llvm::LLVMContext Ctx;
-  llvm::DenseMap<DeviceHandle, MnemeDeviceLinkedBin> LinkedBinaries;
+  llvm::DenseMap<DeviceHandle, std::unique_ptr<MnemeDeviceLinkedBin>>
+      LinkedBinaries;
   llvm::DenseMap<void *, const char *> PendingRegistrations;
   llvm::DenseMap<const void *, std::shared_ptr<KernelInfo>> TrackedKernels;
   DeviceHandle CurrHandle;
@@ -173,9 +174,9 @@ public:
                 "this handle");
     }
 
-    auto [LinkedIt, inserted] =
-        Executable.LinkedBinaries.try_emplace(Handle, Handle, FatbinWrapper);
-    auto &Linked = LinkedIt->second;
+    auto [LinkedIt, inserted] = Executable.LinkedBinaries.insert(std::make_pair(
+        Handle, std::make_unique<MnemeDeviceLinkedBin>(Handle, FatbinWrapper)));
+    auto &Linked = *LinkedIt->second;
     // TODO: Do we need this for HIP?
     if (FatbinWrapper->Version == 1) {
       Linked.ModuleIds.push_back(ModuleId);
@@ -243,19 +244,23 @@ public:
   void registerFunc(DeviceHandle Handle, const char *hostFun, char *deviceFun,
                     const char *deviceName, int thread_limit, uint3 *tid,
                     uint3 *bid, dim3 *bDim, dim3 *gDim, int *wSize) {
-    LOG_INFO("Register Function with handle: {} and Name: {} with a "
-             "thread_limit off {} ",
-             (void *)Handle, deviceName, thread_limit);
+    if (!Executable.LinkedBinaries.contains(Handle)) {
+      LOG_DEBUG("Function {} will not be tracked, as handle is not explicitly "
+                "registered",
+                deviceName);
+      origRegisterFunction(Handle, hostFun, deviceFun, deviceName, thread_limit,
+                           tid, bid, bDim, gDim, wSize);
+      return;
+    }
 
-    auto it = Executable.LinkedBinaries.find(Handle);
-    if (it == Executable.LinkedBinaries.end())
-      LOG_FATAL("Handle container does not contain fatbin handle");
-
-    auto &LinkedBin = it->second;
+    auto &Exec = Executable.LinkedBinaries[Handle];
 
     std::shared_ptr<KernelInfo> KI = std::make_shared<KernelInfo>(
-        LinkedBin, (const void *)hostFun, deviceFun);
+        *Exec.get(), (const void *)hostFun, deviceFun);
     Executable.TrackedKernels.insert({(const void *)hostFun, KI});
+    LOG_INFO("Register Function with handle: {} and Name: {} with a "
+             "thread_limit off {} at address {}",
+             (void *)Handle, deviceName, thread_limit, (void *)hostFun);
 
     origRegisterFunction(Handle, hostFun, deviceFun, deviceName, thread_limit,
                          tid, bid, bDim, gDim, wSize);
