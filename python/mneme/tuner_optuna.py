@@ -56,6 +56,29 @@ class BuildConfigWrapper:
             device_arch=executor.device_arch,
         )
 
+    def create_experiments(self, executor, pipeline):
+        exp = []
+        for m in range(0, self.min_blocks_per_sm_max + 1):
+            max_threads = self.max_threads
+            if m == 0:
+                max_threads = 0
+
+            exp.append(
+                Experiment(
+                    specialize=executor.specialize,
+                    max_threads=max_threads,
+                    min_blocks_per_sm=m,
+                    specialize_dims=executor.specialize,
+                    passes=pipeline,
+                    prune=executor.prune,
+                    internalize=executor.internalize,
+                    codegen_opt=executor.codegen_opt,
+                    rtc=executor.rtc,
+                    device_arch=executor.device_arch,
+                )
+            )
+        return exp
+
 
 def schedule_job(
     db,
@@ -105,6 +128,7 @@ def get_sampler(sampler_name, seed):
 
 
 def run_optuna_tune(
+    runner,
     custom_db,
     executor,
     workers,
@@ -237,6 +261,12 @@ def run_optuna_tune(
         "default<Os>",
         "default<Oz>",
     ]
+
+    experiments = []
+    for p in default_pipelines:
+        experiments += Configure.create_experiments(executor, p)
+
+    runner(orig, experiments, workers, completed_jobs_q, custom_db, exp_id, count)
 
     # TODO
 

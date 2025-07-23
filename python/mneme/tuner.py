@@ -348,6 +348,7 @@ class ReplayTuner(BaseExecutor):
         print("I am here")
 
         run_optuna_tune(
+            ReplayTuner.execute_list_of_experiments,
             db,
             executor,
             workers,
@@ -364,14 +365,13 @@ class ReplayTuner(BaseExecutor):
             w.join_monitor()
 
     @staticmethod
-    def run_random(executor):
+    def execute_list_of_experiments(
+        orig, total_experiments, workers, completed_jobs_q, db, exp_id, start_id=0
+    ):
         def schedule_job(db, pending_experiments, exp_id, worker):
             while True:
                 if len(pending_experiments) > 0:
                     e = pending_experiments.pop()
-                    if not db.should_execute(e):
-                        print(f"Skipping experiment {e.hash()}")
-                        continue
                     worker.assign(
                         {
                             "payload": "process",
@@ -383,7 +383,53 @@ class ReplayTuner(BaseExecutor):
                 else:
                     return None
 
-        run_jobs_q = Queue()
+        count = start_id
+        in_flight = {}
+        print(f"Total experiments are {len(total_experiments)}")
+        for w in workers:
+            vals = schedule_job(db, total_experiments, exp_id, w)
+            if vals is None:
+                continue
+            exp, exp_id = vals[0], vals[1]
+            print("Experiment id is", exp_id)
+            in_flight[exp_id] = (exp, w)
+
+        while len(in_flight) != 0:
+            res = completed_jobs_q.get()
+            if res["payload"] == "result":
+                count += 1
+                done_exp_id = res["exp_id"]
+                exp1, worker = in_flight.pop(done_exp_id)
+                exp2 = Experiment.from_dict(**res["data"])
+                exp2.start_id = done_exp_id
+                exp2.commit_id = count
+                if exp1.hash() != exp2.hash():
+                    raise RuntimeError(
+                        f"Received experiment should have same hash with workers experiment {exp1.hash()} {exp2.hash()}"
+                    )
+                if not exp2.failed:
+                    if "llvm_ir" not in res:
+                        raise RuntimeError(
+                            "Expected llvm ir to exist on non failed experiment"
+                        )
+                    db.add(orig, res["llvm_ir"], exp2)
+                print(
+                    f"Worker {worker.idx} Done with {done_exp_id} had {exp2.failed} and took {exp2.exec_time}"
+                )
+
+                if len(total_experiments) != 0:
+                    vals = schedule_job(db, total_experiments, exp_id, worker)
+                    if vals is None:
+                        continue
+
+                    exp, exp_id = vals[0], vals[1]
+                    in_flight[exp_id] = (exp, worker)
+            else:
+                print("Unknown payload")
+            sys.stdout.flush()
+
+    @staticmethod
+    def run_random(executor):
         completed_jobs_q = Queue()
         exp_id = 0
 
@@ -391,7 +437,7 @@ class ReplayTuner(BaseExecutor):
         workers = [
             TuneWorkerHandle(
                 i,
-                run_jobs_q,
+                Queue(),
                 completed_jobs_q,
                 executor.db,
                 executor.record_id,
@@ -411,7 +457,6 @@ class ReplayTuner(BaseExecutor):
             executor.num_trials, executor.mean_size, 33, True, executor.seed
         )
 
-        in_flight = {}
         total_experiments = []
 
         for p in passes:
@@ -429,42 +474,9 @@ class ReplayTuner(BaseExecutor):
         root_ir = executor.link_ir()
         orig = db.save_ir(str(root_ir), "orig")
 
-        print(f"Total experiments are {len(total_experiments)}")
-        for w in workers:
-            vals = schedule_job(db, total_experiments, exp_id, w)
-            if vals is None:
-                continue
-            exp, exp_id = vals[0], vals[1]
-            print("Experiment id is", exp_id)
-            in_flight[exp_id] = (exp, w)
-
-        while len(in_flight) != 0:
-            res = completed_jobs_q.get()
-            if res["payload"] == "result":
-                exp1, worker = in_flight.pop(res["exp_id"])
-                exp2 = Experiment.from_dict(**res["data"])
-                if exp1.hash() != exp2.hash():
-                    raise RuntimeError(
-                        f"Received experiment should have same hash with workers experiment {exp1.hash()} {exp2.hash()}"
-                    )
-                exp2.dump()
-                if not exp2.failed:
-                    if "llvm_ir" not in res:
-                        raise RuntimeError(
-                            "Expected llvm ir to exist on non failed experiment"
-                        )
-                    db.add(orig, res["llvm_ir"], exp2)
-
-                if len(total_experiments) != 0:
-                    vals = schedule_job(db, total_experiments, exp_id, worker)
-                    if vals is None:
-                        continue
-
-                    exp, exp_id = vals[0], vals[1]
-                    in_flight[exp_id] = (exp, worker)
-            else:
-                print("Unknown payload")
-            sys.stdout.flush()
+        ReplayTuner.execute_list_of_experiments(
+            orig, total_experiments, workers, completed_jobs_q, db, 0
+        )
 
         for w in workers:
             w.shutdown_process()
