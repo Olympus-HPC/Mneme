@@ -345,8 +345,6 @@ class ReplayTuner(BaseExecutor):
             suffix,
         ).open()
 
-        print("I am here")
-
         run_optuna_tune(
             ReplayTuner.execute_list_of_experiments,
             db,
@@ -357,7 +355,6 @@ class ReplayTuner(BaseExecutor):
             executor.sampler,
             executor.seed,
         )
-        print("I am done")
 
         for w in workers:
             w.shutdown_process()
