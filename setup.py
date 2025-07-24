@@ -232,5 +232,5 @@ setup(
         "Operating System :: OS Independent",
     ],
     python_requires=">=3.6",
-    install_requires=["optuna>=4.4"],
+    install_requires=["optuna>=4.4", "scipy"],
 )

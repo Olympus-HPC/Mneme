@@ -5,7 +5,11 @@ import json
 import math
 import multiprocessing
 
-multiprocessing.set_start_method("spawn")
+try:
+    multiprocessing.set_start_method("spawn")
+except RuntimeError:
+    pass
+
 import os
 import sys
 import time
