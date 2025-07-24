@@ -278,6 +278,7 @@ public:
     });
 
     auto [Addr, ReservedSize] = PM->allocateAddr(size, nullptr);
+    LOG_DEBUG("User requested {} and was rounded up to {}", size, ReservedSize);
     MnemeMemoryBlob<VendorTypes> MemBlob(ReservedSize,
                                          reinterpret_cast<void *>(Addr), size);
     auto ret = MemBlob.map(reinterpret_cast<void *>(Addr), ReservedSize, size);
@@ -312,6 +313,8 @@ public:
       LOG_FATAL("Free address that is not being allocated through Mneme\n");
     }
     auto ret = AllocatedBlobs[ptr].release();
+
+    PM->releaseAddr(AllocatedBlobs[ptr].getActualSize(), ptr);
     LOG_DEBUG("Intercepted device Free PTR:{} SIZE:{} ACTUALSIZE:{}", ptr,
               AllocatedBlobs[ptr].getSize(),
               AllocatedBlobs[ptr].getActualSize());

@@ -62,9 +62,12 @@ std::pair<uintptr_t, uint64_t>
 PageManager::reserveBestFitPage(uint64_t VASize) {
   // We need to always reserve at least a single page
   uint64_t ReqSize = util::roundUp(VASize, PageSize);
+  LOG_DEBUG("The requsted size is rounded up from {} to {}", VASize, ReqSize);
   auto FreeNode = findFreeBlock(ReqSize);
-  if (FreeNode == FreeVARanges.end())
-    return std::make_pair((uintptr_t) nullptr, 0);
+  if (FreeNode == FreeVARanges.end()) {
+    LOG_FATAL("We do not have any memory to give");
+    return std::make_pair((uintptr_t)nullptr, 0);
+  }
 
   auto Ptr = FreeNode->PageAddr;
   auto NodePageSize = FreeNode->Size;
@@ -104,7 +107,7 @@ std::pair<uintptr_t, uint64_t> PageManager::requestExactPage(uint64_t VASize,
   uint64_t ReqSize = util::roundUp(VASize, PageSize);
   auto FreeNode = findInclusivePage((uintptr_t)VA, ReqSize);
   if (FreeNode == FreeVARanges.end())
-    return std::make_pair((uintptr_t) nullptr, 0);
+    return std::make_pair((uintptr_t)nullptr, 0);
 
   auto Ptr = FreeNode->PageAddr;
   auto NodePageSize = FreeNode->Size;

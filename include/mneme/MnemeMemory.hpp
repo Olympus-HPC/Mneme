@@ -40,17 +40,17 @@ public:
         MnemeDeviceRT::DeviceErrorCheck(MnemeDeviceRT::getDevice(DeviceID));
     if (EC)
       LOG_FATAL("Could not set device id on memory blob\nEC:{}", EC.value());
-    LOG_INFO("Setting Device ID for Blob to {}", DeviceID);
   }
 
-  DeviceError_t map(void *VA, uint64_t ActualSize, uint64_t Size) {
+  DeviceError_t map(void *VA, uint64_t ASize, uint64_t Size) {
     this->Size = Size;
+    ActualSize = ASize;
     // We need to pass here "ActualSize". As device allocators depend on page
     // aligned allocations
+    LOG_DEBUG("Going to call map with size {} {}", ActualSize, ActualSize);
     MnemeDeviceRT::mmap(MemHandle, VA, ActualSize, DeviceID);
     this->BlobAddr = VA;
     this->IsMapped = true;
-    this->ActualSize = ActualSize;
     return MnemeDeviceRT::DeviceSuccess;
   };
 

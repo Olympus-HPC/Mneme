@@ -6,8 +6,8 @@
 #include "mneme/MnemeUtils.hpp"
 
 #ifdef MNEME_ENABLE_HIP
-#include <hip/amd_detail/amd_hip_runtime.h>
 #include <hip/hip_runtime.h>
+#include <hip/hip_runtime_api.h>
 
 #define hipErrCheck(CALL)                                                      \
   {                                                                            \
@@ -243,11 +243,12 @@ template <> struct DeviceTraits<DeviceVendors::HIP> {
   }
 
   static void mmap(hipMemGenericAllocationHandle_t &MHandle, void *Addr,
-                   uintptr_t Size, int DeviceID) {
+                   size_t Size, int DeviceID) {
     hipMemAllocationProp Prop = {};
     Prop.type = hipMemAllocationTypePinned;
     Prop.location.type = hipMemLocationTypeDevice;
     Prop.location.id = DeviceID;
+    LOG_DEBUG("Requested size to mem create is {}", Size);
     hipErrCheck(hipMemCreate(&MHandle, Size, &Prop, 0));
     hipErrCheck(hipMemMap((void *)Addr, Size, 0, MHandle, 0));
 
