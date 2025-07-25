@@ -55,12 +55,27 @@ void storeDecl(T *decl, clang::ASTUnit const &unit, CodeDB &cdb) {
   }
 }
 
+// This might not be efficient but we still keep it.
+void visitNamespaceChain(clang::Decl const *decl, VisitManager &vm) {
+  auto *ctx = decl->getDeclContext();
+  while (ctx) {
+    if (auto const *ns = llvm::dyn_cast<clang::NamespaceDecl>(ctx)) {
+      if (ns->isAnonymousNamespace())
+        continue;
+      vm.addIfNamespaceAliased(ns->getNameAsString());
+    }
+    ctx = ctx->getParent();
+  }
+}
+
 std::tuple<clang::Decl const *, bool>
 visit(clang::NamedDecl const *decl, VisitManager &vm, CodeDB const &cdb) {
   std::string keyName = CodeDB::getKeyName(decl);
 
   if (vm.isVisited(keyName))
     return {vm.getVisitedObj(keyName)->getDefinition(), false};
+
+  helper::visitNamespaceChain(decl, vm);
 
   auto incFile = locToIncFile(decl->getLocation(), decl->getASTContext());
   if (isIncludeExternal(incFile, cdb))
@@ -75,9 +90,10 @@ visit(clang::NamedDecl const *decl, VisitManager &vm, CodeDB const &cdb) {
   vm.markVisited(keyName, objInfo);
   // register source for includes
   vm.registerInclude(incFile);
+  auto defDecl = objInfo->getDefinition();
 
   // Lookup definition from database
-  return {objInfo->getDefinition(), true};
+  return {defDecl, true};
 }
 
 /// @brief Checks if the given input is either of the types specifed in the
@@ -106,8 +122,8 @@ clang::QualType getUnderlyingType(clang::QualType const &type) {
   clang::QualType qt;
   if (auto pointerType = type->getAs<clang::PointerType>())
     qt = pointerType->getPointeeType();
-  else if (type->isArrayType())
-    qt = llvm::cast<clang::ArrayType>(type)->getElementType();
+  else if (auto arrayType = llvm::dyn_cast<clang::ArrayType>(type))
+    qt = arrayType->getElementType();
   else if (auto referenceType = type->getAs<clang::ReferenceType>())
     qt = referenceType->getPointeeType();
   else
@@ -123,7 +139,7 @@ bool isPotentialBuiltinByName(std::string const &name) {
 
 void handleVarDecl(clang::QualType qt, VisitManager &vm, CodeDB const &codedb,
                    bool isWithinTypedef = false);
-void handleRecordDecl(clang::CXXRecordDecl const *recordDecl, VisitManager &vm,
+void handleRecordDecl(clang::RecordDecl const *recordDecl, VisitManager &vm,
                       CodeDB const &codedb, bool dontEmitDecl = false) {
   // If externally defined (or built-in), do not include def as we will include
   // the file itself.
@@ -140,7 +156,7 @@ void handleRecordDecl(clang::CXXRecordDecl const *recordDecl, VisitManager &vm,
   // var decl or static function call (unsupported as of yet).
   auto [defDecl, doVisit] = helper::visit(recordDecl, vm, codedb);
   if (doVisit && !dontEmitDecl) {
-    vm.registerDecl(static_cast<clang::CXXRecordDecl const *>(defDecl));
+    vm.registerDecl(static_cast<clang::RecordDecl const *>(defDecl));
   }
 
   // Also we do not want to visit anything else from here as we will visit the
@@ -200,6 +216,17 @@ bool CodeExtractVisitor::VisitTypedefNameDecl(clang::TypedefNameDecl *decl) {
   return true;
 }
 
+bool CodeExtractVisitor::VisitNamespaceAliasDecl(
+    clang::NamespaceAliasDecl *decl) {
+  codedb.addNamespaceAlias(decl);
+  return true;
+}
+
+bool CodeExtractVisitor::VisitEnumDecl(clang::EnumDecl *decl) {
+  helper::storeDecl(decl, unit, codedb);
+  return true;
+}
+
 bool MatchVisitor::VisitCXXConstructExpr(clang::CXXConstructExpr *expr) {
   auto ctor = expr->getConstructor();
   if (helper::isPotentialBuiltinByName(ctor->getNameAsString()))
@@ -209,13 +236,13 @@ bool MatchVisitor::VisitCXXConstructExpr(clang::CXXConstructExpr *expr) {
 }
 
 bool MatchVisitor::VisitDeclRefExpr(clang::DeclRefExpr *declRef) {
+  // Even if the vardecls are not interesting, visit their type.
+  helper::handleVarDecl(declRef->getType(), vm, codedb);
+
   // Need to filter out global varDeclRef...
   auto varDecl = llvm::dyn_cast<clang::VarDecl>(declRef->getDecl());
   if (!varDecl)
     return true;
-
-  // Even if the vardecls are not interesting, visit their type.
-  helper::handleVarDecl(declRef->getType(), vm, codedb);
 
   // Need to filter out cuda internals, for now we check if either the variable
   // name or variable type name is potentially builtin. OR if the variable decl
@@ -233,13 +260,12 @@ bool MatchVisitor::VisitDeclRefExpr(clang::DeclRefExpr *declRef) {
   if (!visitBody)
     return true;
 
-  // If this vardecl is locally but extern'd we don't visit its init.
+  // If this vardecl is locally but extern'd we don't visit its init or emit it.
   if (defDecl->isLocalExternDecl())
     return true;
 
-  assert(
-      defDecl->hasDefinition() &&
-      "We should have seen this variable's decl before unless it is external!");
+  assert((defDecl->hasDefinition() || defDecl->hasExternalStorage()) &&
+         "We should have seen this non-extern variable's decl before!");
 
   /// FIXIT: Replace with better design...
   auto varInit = const_cast<clang::VarDecl *>(defDecl)->getInit();
@@ -257,7 +283,10 @@ bool MatchVisitor::VisitDeclRefExpr(clang::DeclRefExpr *declRef) {
 
 bool MatchVisitor::VisitCallExpr(clang::CallExpr *callExpr) {
   auto decl = callExpr->getDirectCallee();
-  if (!decl || helper::isPotentialBuiltinByName(decl->getNameAsString()))
+  auto incFile =
+      helper::locToIncFile(decl->getLocation(), decl->getASTContext());
+  if (!decl || (helper::isPotentialBuiltinByName(decl->getNameAsString()) &&
+                helper::isIncludeExternal(incFile, codedb)))
     return true;
 
   clang::CXXRecordDecl *parentDecl = nullptr;
@@ -282,8 +311,7 @@ bool MatchVisitor::VisitCallExpr(clang::CallExpr *callExpr) {
   // If function is a call to a template instantiation, we need to save the
   // includes for it at the point of instantiation (as well).
   if (decl->isFunctionTemplateSpecialization())
-    vm.registerInclude(
-        helper::locToIncFile(decl->getLocation(), decl->getASTContext()));
+    vm.registerInclude(incFile);
 
   if (!visitBody || !defDecl->hasBody())
     return true;

@@ -129,15 +129,14 @@ void buildCallExpr(clang::ArrayRef<clang::ParmVarDecl *> const &parameters,
 void print(llvm::raw_ostream &ss, clang::Decl const *decl, bool terse = false) {
   clang::PrintingPolicy pp(decl->getLangOpts());
   pp.TerseOutput = terse;
+  pp.PolishForDeclaration = terse;
   std::string outString;
   llvm::raw_string_ostream out(outString);
 
   decl->print(out, pp);
   auto fnDecl = decl->getAsFunction();
-  if (decl->getKind() == clang::Decl::Kind::Var)
-    out << ";";
-  else if (fnDecl && fnDecl->getDescribedFunctionTemplate() ||
-           fnDecl->isFunctionTemplateSpecialization()) {
+  if (fnDecl && (fnDecl->getDescribedFunctionTemplate() ||
+                 fnDecl->isFunctionTemplateSpecialization())) {
     std::string attrs;
     llvm::raw_string_ostream attrsStream(attrs);
     auto &Attrs = fnDecl->getAttrs();
@@ -149,9 +148,19 @@ void print(llvm::raw_ostream &ss, clang::Decl const *decl, bool terse = false) {
     }
     auto fnName = fnDecl->getName();
     outString.insert(outString.find(fnName), attrs);
-  }
+  } else if (llvm::isa<clang::VarDecl>(decl) ||
+             llvm::isa<clang::VarTemplateDecl>(decl))
+    out << ";";
 
   ss << outString;
+}
+
+void print(llvm::raw_ostream &ss, clang::NamespaceAliasDecl const *decl) {
+  if (auto nestedNSAlias = llvm::dyn_cast<clang::NamespaceAliasDecl>(
+          decl->getAliasedNamespace()))
+    print(ss, nestedNSAlias);
+  decl->print(ss);
+  ss << ";\n";
 }
 
 void makeCUDACompatible(std::string &code) {
@@ -169,7 +178,12 @@ void makeCUDACompatible(std::string &code) {
     std::replace(pragma.begin(), pragma.end(), '(', ' ');
     std::replace(pragma.begin(), pragma.end(), ')', ' ');
 
-    if (auto enPos = pragma.find("enable"))
+    auto disPos = pragma.find("disable");
+    if (disPos != std::string::npos)
+      pragma.replace(disPos, 7, "1");
+
+    auto enPos = pragma.find("enable");
+    if (enPos != std::string::npos)
       pragma.replace(enPos, 6, " ");
 
     code = code.replace(from, to - from, pragma);
@@ -188,20 +202,36 @@ void VisitManager::markIndirectDef(clang::TagDecl const *decl) {
   hasIndirectDef.insert(decl);
 }
 
+void VisitManager::addIfNamespaceAliased(std::string const &namesp) {
+  auto ns = db.getNamespaceAlias(namesp);
+  if (!ns)
+    return;
+  namespaceAliases.insert(ns);
+}
+
 void VisitManager::registerDecl(clang::NamedDecl const *decl) {
   declRefs.push_back(decl);
 }
 
-void VisitManager::registerDecl(clang::CXXRecordDecl const *decl) {
+void VisitManager::registerDecl(clang::VarDecl const *decl) {
+  if (auto tmpVar = llvm::dyn_cast<clang::VarTemplateSpecializationDecl>(decl))
+    declRefs.push_back(tmpVar->getSpecializedTemplate());
+  else
+    declRefs.push_back(decl);
+}
+
+void VisitManager::registerDecl(clang::RecordDecl const *decl) {
   // We should not emit record decls that are part of typedefs as they will be
   // emitted alongside the typedef.
-  if (decl->getTypedefNameForAnonDecl())
+  if (decl->getTypedefNameForAnonDecl() || !decl->isDefinedOutsideFunctionOrMethod())
     return;
 
-  if (auto classtmp = decl->getDescribedClassTemplate())
-    tagDecls.push_back(classtmp);
-  else
-    tagDecls.push_back(decl);
+  if (auto cxxRecordDecl = llvm::dyn_cast<clang::CXXRecordDecl>(decl))
+    if (auto classtmp = cxxRecordDecl->getDescribedClassTemplate()) {
+      tagDecls.push_back(classtmp);
+      return;
+    }
+  tagDecls.push_back(decl);
 }
 
 void VisitManager::registerDecl(clang::TypedefNameDecl const *decl) {
@@ -210,15 +240,16 @@ void VisitManager::registerDecl(clang::TypedefNameDecl const *decl) {
     auto file = helper::locToIncFile(underlyingTag->getLocation(),
                                      underlyingTag->getASTContext());
     // Ugly fix, we don't want to expand typedefs over externals.
-    if (helper::isIncludeExternal(file, db)) {
+    // Also they probably dont depend on project tags so no dependency issues.
+    if (helper::isIncludeExternal(file, db))
       tagDecls.push_back(decl);
-      return;
-    }
-  }
-
-  /// FIXME: Separate typedefs over struct defs, handle them differently.
-  // We always expand this with the full definition of the aliased type.
-  typedefDecls.push_back(decl);
+    /// FIXME: Separate typedefs over struct defs, handle them differently.
+    // We always expand this with the full definition of the aliased type.
+    else
+      typedefDecls.push_back(decl);
+  } else
+    // Save regular typedefs over builtin types separate.
+    typedefDeclsUnexpanded.push_back(decl);
 }
 
 void VisitManager::registerDecl(clang::FunctionDecl const *decl) {
@@ -384,6 +415,16 @@ void VisitManager::emitStandaloneFile(std::string &output, bool emitRR,
   if (emitRRHooks)
     ss << "#include \"RRHooks.h\"\n";
   ss << "\n";
+
+  for (auto &nsAlias : namespaceAliases) {
+    helper::print(ss, nsAlias);
+    ss << "\n\n";
+  }
+
+  for (auto &unexpandedTypedefs : typedefDeclsUnexpanded) {
+    unexpandedTypedefs->print(ss);
+    ss << ";\n\n";
+  }
 
   for (auto &tags : tagDecls) {
     if (hasIndirectDef.find(tags) != hasIndirectDef.end())

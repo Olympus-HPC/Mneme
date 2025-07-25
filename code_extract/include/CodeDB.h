@@ -38,6 +38,8 @@ class CodeDB {
   std::unordered_map<std::string, std::unique_ptr<ObjInfo>> db;
   // qualified names to keys which can be manglings or plain names
   std::unordered_map<std::string, std::unordered_set<std::string>> manglings;
+  std::unordered_map<std::string, clang::NamespaceAliasDecl const *>
+      namespaceAliases;
 
   clang::Decl *getDef(std::string const &keyName) const {
     if (isRegistered(keyName))
@@ -76,6 +78,9 @@ public:
   void registerDecl(clang::ASTUnit const &unit, clang::NamedDecl *decl,
                     clang::NamedDecl *defDecl = nullptr);
 
+  void registerDecl(clang::ASTUnit const &unit, clang::RecordDecl *decl,
+                    clang::RecordDecl *defDecl = nullptr);
+
   void registerDecl(clang::ASTUnit const &unit, clang::FunctionDecl *decl,
                     clang::FunctionDecl *defDecl = nullptr);
 
@@ -110,5 +115,25 @@ public:
   void addDefinitionDecl(std::string const &keyName, clang::Decl *defDecl) {
     if (isRegistered(keyName))
       db.at(keyName)->addDefinitionDecl(defDecl);
+  }
+
+  void addNamespaceAlias(clang::NamespaceAliasDecl const *nsDecl) {
+    auto decl = nsDecl->getAliasedNamespace();
+    /// FIXME: We knowingly do not support namespaces with the same name but
+    /// separate logical namespace i.e. we don't differentiate between A::B and
+    /// C::B. Getting fully qualified names of strings is expensive so try to
+    /// avoid as much as possible.
+    namespaceAliases.try_emplace(decl->getNameAsString(), nsDecl);
+    if (auto nestedDecl = llvm::dyn_cast<clang::NamespaceAliasDecl>(decl))
+      addNamespaceAlias(nestedDecl);
+  }
+
+  clang::NamespaceAliasDecl const *
+  getNamespaceAlias(std::string const &nestedName) const {
+    auto ns = namespaceAliases.find(nestedName);
+    if (ns == namespaceAliases.end())
+      return nullptr;
+
+    return ns->second;
   }
 };

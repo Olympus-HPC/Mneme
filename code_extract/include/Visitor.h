@@ -22,10 +22,12 @@ class CodeExtractVisitor
 public:
   CodeExtractVisitor(CodeDB &db, clang::ASTUnit &astUnit, std::string const& projPath)
       : codedb(db), unit(astUnit), ctx(astUnit.getASTContext()), projPath(projPath) {}
+  bool VisitNamespaceAliasDecl(clang::NamespaceAliasDecl *decl);
   bool VisitVarDecl(clang::VarDecl *decl);
   bool VisitFunctionDecl(clang::FunctionDecl *decl);
   bool VisitRecordDecl(clang::RecordDecl *decl);
   bool VisitTypedefNameDecl(clang::TypedefNameDecl *decl);
+  bool VisitEnumDecl(clang::EnumDecl *decl);
 };
 
 class MatchVisitor : public clang::RecursiveASTVisitor<MatchVisitor> {

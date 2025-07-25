@@ -30,7 +30,11 @@ class VisitManager {
   std::vector<clang::NamedDecl const *> varDeclRefs;
   std::vector<clang::NamedDecl const *> declRefs;
   std::vector<clang::NamedDecl const *> tagDecls;
+  std::vector<clang::NamedDecl const *> typedefDeclsUnexpanded;
   std::vector<clang::NamedDecl const *> typedefDecls;
+  // Unordered maintenance of namespace aliases, if the aliases depend on each
+  // other then we give up :)
+  std::unordered_set<clang::NamespaceAliasDecl const *> namespaceAliases;
   // All named decls whose defs are a part of a different decl (i.e. typedefs)
   // and hence should not be emitted separately, currently only for tag types.
   std::unordered_set<clang::NamedDecl const *> hasIndirectDef;
@@ -68,8 +72,14 @@ public:
   /// tag types.)
   void markIndirectDef(clang::TagDecl const *decl);
 
+  /// @brief Adds the correct alias namespace decl for a given namespace
+  void addIfNamespaceAliased(std::string const &namesp);
+
   /// @brief Adds a declaration to be emitted to code later.
   void registerDecl(clang::NamedDecl const *decl);
+
+  /// @brief Adds a var decl to be emitted to code later.
+  void registerDecl(clang::VarDecl const *decl);
 
   /// @brief Adds a function declaration to be emitted later. DO NOT call this
   /// for the primary function!
@@ -79,7 +89,7 @@ public:
   /// @brief Adds the declaration of an enum/struct/class to be emitted
   /// later.
   /// @param decl Decl of the record type.
-  void registerDecl(clang::CXXRecordDecl const *decl);
+  void registerDecl(clang::RecordDecl const *decl);
 
   /// @brief Adds the declaration of an typedefs to be emitted
   /// later.
