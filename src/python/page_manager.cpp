@@ -19,7 +19,7 @@ extern "C" {
 API_EXPORT(void *)
 MnemePY_initializePageManager(uintptr_t Addr, uint64_t VASize) {
   void *VAddr = reinterpret_cast<void *>(Addr);
-  auto PM = initializePageManager<DeviceVendorTraits>(VAddr, VASize);
+  auto PM = initializePageManager<DeviceVendorTraits>(0, VAddr, VASize);
   if (PM->getVAStart() != VAddr) {
     LOG_FATAL("Could not allocate Device Pages\n Record got : " +
               util::pointerToHexString(VAddr) + " and replay got : " +

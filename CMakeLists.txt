@@ -90,6 +90,7 @@ endif()
 
 add_subdirectory(src)
 add_subdirectory(pass)
+add_subdirectory(tools)
 
 if(MNEME_ENABLE_TESTS)
   enable_testing()

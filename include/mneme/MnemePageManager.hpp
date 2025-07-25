@@ -22,24 +22,23 @@ struct ContiguousAddrBlock {
 class PageManager {
 
 protected:
-  std::multiset<ContiguousAddrBlock> FreeVARanges;
+  std::set<ContiguousAddrBlock> FreeVARanges;
   uintptr_t ReservedVA;
   uint64_t TotalVASize;
   uint64_t PageSize;
   int32_t DeviceID;
 
-  // Erase a block from the multiset
+  // Erase a block from the set
   bool EraseVirtualAddress(uintptr_t addr, size_t size);
   // Function to coalesce contiguous blocks
   void coalesce();
 
   // Find a block that has a size >= requestedSize
-  std::multiset<ContiguousAddrBlock>::iterator
-  findFreeBlock(size_t requestedSize);
+  std::set<ContiguousAddrBlock>::iterator findFreeBlock(size_t requestedSize);
   // Find a block that includes the range [Addr, Addr + size)
 
-  std::multiset<ContiguousAddrBlock>::iterator findInclusivePage(uintptr_t Addr,
-                                                                 size_t Size);
+  std::set<ContiguousAddrBlock>::iterator findInclusivePage(uintptr_t Addr,
+                                                            size_t Size);
 
   std::pair<uintptr_t, uint64_t> reserveBestFitPage(uint64_t VASize);
 
@@ -58,13 +57,23 @@ public:
     return reinterpret_cast<void *>(ReservedVA);
   }
   uint64_t getTotalVASize() const { return TotalVASize; }
+  uint64_t getNumPages() const { return FreeVARanges.size(); }
+  uint64_t getUniqueNumPages() const {
+    std::set<ContiguousAddrBlock> s(FreeVARanges.begin(), FreeVARanges.end());
+    return s.size();
+  }
+  void dump() const {
+    for (auto V : FreeVARanges) {
+      LOG_INFO("Page Manager Start: {} Size {}", (void *)V.PageAddr, V.Size);
+    }
+  }
 };
 
 template <typename MnemeDeviceRT>
-std::unique_ptr<PageManager> initializePageManager(void *ReqAddr = nullptr,
+std::unique_ptr<PageManager> initializePageManager(int DeviceID,
+                                                   void *ReqAddr = nullptr,
                                                    uint64_t ActualSize = -1) {
-  const int MaxTries = 5;
-  int DeviceID = 0;
+  const int MaxTries = 1;
   auto MinPageSize = MnemeDeviceRT::getMinPageSize(DeviceID);
   if (ActualSize == -1)
     ActualSize =

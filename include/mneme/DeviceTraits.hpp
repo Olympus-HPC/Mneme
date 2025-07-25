@@ -225,6 +225,7 @@ template <> struct DeviceTraits<DeviceVendors::HIP> {
     hipMemAllocationProp Prop = {};
     Prop.type = hipMemAllocationTypePinned;
     Prop.location.type = hipMemLocationTypeDevice;
+    Prop.requestedHandleType = hipMemHandleTypeNone;
     Prop.location.id = DeviceID;
     // TODO: I could not find any documentation regarding the compressionType in
     // HIP. I will leave unitialized a.t.m.
@@ -273,7 +274,7 @@ template <> struct DeviceTraits<DeviceVendors::HIP> {
   }
 
   static void unmap(hipMemGenericAllocationHandle_t &MHandle, void *Addr,
-                    uintptr_t Size) {
+                    uint64_t Size) {
     LOG_DEBUG("Unmapping Addr:{} SIZE:{}", Addr, Size);
     hipErrCheck(hipMemUnmap(Addr, Size));
     hipErrCheck(hipMemRelease(MHandle));

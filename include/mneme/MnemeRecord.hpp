@@ -8,6 +8,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <dlfcn.h>
+#include <fstream>
 
 #include "llvm/Support/raw_ostream.h"
 #include <filesystem>
@@ -72,6 +73,7 @@ private:
   RecordDatabase DB;
   std::once_flag ExtractFlag;
   bool ReleaseMemory;
+  std::ofstream MemEventRequestRecord;
 
   DeviceError_t (*origLaunchKernel)(const void *func, dim3 gridDim,
                                     dim3 blockDim, void **args,
@@ -271,21 +273,42 @@ public:
       // NOTE: We need this arch cause internally we initialize the device.
       // FIXME: We need to have a DeviceTrait function to initialize the GPU
       // and call it separately here. Let's do this on a separate PR
-      auto arch = MnemeDeviceRT::GetDeviceArch();
-      LOG_DEBUG("Initializing system {}", arch);
-      PM = initializePageManager<MnemeDeviceRT>();
+      // auto arch = MnemeDeviceRT::GetDeviceArch();
+      // LOG_DEBUG("Initializing system {}", arch);
+      PM = initializePageManager<MnemeDeviceRT>(0);
+
+      MemEventRequestRecord << "ReserveVA:" << PM->getVAStart() << ":"
+                            << PM->getTotalVASize() << "\n";
+      MemEventRequestRecord.flush();
       getGlobalAddresses();
     });
 
-    auto [Addr, ReservedSize] = PM->allocateAddr(size, nullptr);
+    LOG_INFO("Before Malloc");
+    PM->dump();
+    for (auto &KV : AllocatedBlobs) {
+      LOG_INFO("Allocated Addr {} has Actual Size of {} ReqSize: {}", KV.first,
+               KV.second.getActualSize(), KV.second.getSize());
+    }
+    auto tmp = PM->allocateAddr(size, nullptr);
+    auto Addr = tmp.first;
+    auto ReservedSize = tmp.second;
+    MemEventRequestRecord << "deviceMalloc:" << (void *)Addr << ":" << size
+                          << ":" << ReservedSize << "\n";
+    MemEventRequestRecord.flush();
+
     LOG_DEBUG("User requested {} and was rounded up to {}", size, ReservedSize);
     MnemeMemoryBlob<VendorTypes> MemBlob(ReservedSize,
                                          reinterpret_cast<void *>(Addr), size);
+
     auto ret = MemBlob.map(reinterpret_cast<void *>(Addr), ReservedSize, size);
     *ptr = MemBlob.ptr();
     AllocatedBlobs.insert({*ptr, std::move(MemBlob)});
-    LOG_DEBUG("Intercepted Device Malloc PTR:{} SIZE:{} ACTUALSIZE:{}", *ptr,
-              size, ReservedSize);
+    LOG_INFO("Intercepted Device Malloc PTR:{} SIZE:{} ACTUALSIZE:{} PA: {}",
+             *ptr, size, ReservedSize, (void *)Addr);
+    LOG_INFO("After Malloc Num Free VA Blocks are {} Unique Ones {}",
+             PM->getNumPages(), PM->getUniqueNumPages());
+    PM->dump();
+
     return ret;
   };
 
@@ -303,6 +326,13 @@ public:
   }
 
   DeviceError_t rtFree(void *ptr) {
+    return MnemeDeviceRT::DeviceSuccess;
+    MemEventRequestRecord << "deviceFree:" << ptr << "\n";
+    MemEventRequestRecord.flush();
+    LOG_INFO("Before Free Num Free VA Blocks are {} Unique Ones {}",
+             PM->getNumPages(), PM->getUniqueNumPages());
+    PM->dump();
+
     if (ptr == nullptr) {
       LOG_WARN("Mneme was instructed to de-allocate nullptr..., skipping");
       return MnemeDeviceRT::DeviceSuccess;
@@ -315,10 +345,14 @@ public:
     auto ret = AllocatedBlobs[ptr].release();
 
     PM->releaseAddr(AllocatedBlobs[ptr].getActualSize(), ptr);
-    LOG_DEBUG("Intercepted device Free PTR:{} SIZE:{} ACTUALSIZE:{}", ptr,
-              AllocatedBlobs[ptr].getSize(),
-              AllocatedBlobs[ptr].getActualSize());
+    LOG_INFO("Intercepted device Free PTR:{} SIZE:{} ACTUALSIZE:{}", ptr,
+             AllocatedBlobs[ptr].getSize(),
+             AllocatedBlobs[ptr].getActualSize());
     AllocatedBlobs.erase(ptr);
+    LOG_INFO("After Free Num Free VA Blocks are {} Unique Ones {}",
+             PM->getNumPages(), PM->getUniqueNumPages());
+    PM->dump();
+
     return ret;
   };
 
@@ -350,7 +384,7 @@ public:
       // and call it separately here. Let's do this on a separate PR
       auto arch = MnemeDeviceRT::GetDeviceArch();
       LOG_DEBUG("Initializing system {}", arch);
-      PM = initializePageManager<MnemeDeviceRT>();
+      PM = initializePageManager<MnemeDeviceRT>(0);
       getGlobalAddresses();
     });
 
@@ -389,10 +423,12 @@ public:
   }
 
   MnemeRecorder() : ExtractedIR(true), ReleaseMemory(false) {
+    MemEventRequestRecord.open("MnemeMemEventTrace.txt");
     VAStartAddr = nullptr;
     VATotalSize = 0;
     rtLib = MnemeDeviceRT::getRTLib();
     RecordReplayDir = DB.getDir();
+    AllocatedBlobs.reserve(10000);
     // MemManager = nullptr;
 
     // Redirect overloaded device runtime functions.
@@ -452,7 +488,9 @@ public:
     if (ReleaseMemory)
       return;
     LOG_DEBUG("Releasing memory");
-    MnemeDeviceRT::freeVirtualAddress(PM->getVAStart(), PM->getTotalVASize());
+    MemEventRequestRecord.close();
+    if (PM)
+      MnemeDeviceRT::freeVirtualAddress(PM->getVAStart(), PM->getTotalVASize());
     LOG_DEBUG("Done with Releasing memory");
     ReleaseMemory = true;
   }

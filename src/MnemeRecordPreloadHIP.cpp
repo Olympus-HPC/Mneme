@@ -1,4 +1,5 @@
 #include "mneme/DeviceTraits.hpp"
+#include "mneme/MnemeDeviceBinary.hpp"
 #include "mneme/MnemeLLVMUtils.hpp"
 #include "mneme/MnemeLogger.hpp"
 #include "mneme/MnemeRecord.hpp"

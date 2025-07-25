@@ -23,31 +23,29 @@ public:
       typename MnemeDeviceRT::MemoryAllocationHandle_t;
 
 protected:
-  uint64_t ActualSize;
+  size_t ActualSize;
   MemoryAllocationHandle_t MemHandle;
   void *BlobAddr;
-  uint64_t Size;
+  size_t Size;
   int DeviceID;
   std::unique_ptr<uint8_t[]> HostData;
   bool IsMapped;
 
 public:
-  MnemeMemoryBlob(uint64_t ActualSize = 0, void *BlobAddr = nullptr,
-                  uint64_t Size = 0)
-      : ActualSize(ActualSize), BlobAddr(BlobAddr), Size(Size),
-        HostData(new uint8_t[Size]), IsMapped(false) {
+  MnemeMemoryBlob(size_t ASize = 0, void *BlobAddr = nullptr, size_t SSize = 0)
+      : ActualSize(ASize), BlobAddr(BlobAddr), Size(SSize),
+        HostData(new uint8_t[SSize]), IsMapped(false), MemHandle{} {
     auto EC =
         MnemeDeviceRT::DeviceErrorCheck(MnemeDeviceRT::getDevice(DeviceID));
     if (EC)
       LOG_FATAL("Could not set device id on memory blob\nEC:{}", EC.value());
   }
 
-  DeviceError_t map(void *VA, uint64_t ASize, uint64_t Size) {
+  DeviceError_t map(void *VA, size_t ASize, size_t Size) {
     this->Size = Size;
     ActualSize = ASize;
     // We need to pass here "ActualSize". As device allocators depend on page
     // aligned allocations
-    LOG_DEBUG("Going to call map with size {} {}", ActualSize, ActualSize);
     MnemeDeviceRT::mmap(MemHandle, VA, ActualSize, DeviceID);
     this->BlobAddr = VA;
     this->IsMapped = true;
@@ -132,8 +130,8 @@ public:
   operator<<(llvm::raw_ostream &OS, const MnemeMemoryBlob<VendorTypes_> &Blob);
 
   void *getBlobAddr() const { return BlobAddr; }
-  uint64_t getActualSize() const { return ActualSize; }
-  uint64_t getSize() const { return Size; }
+  size_t getActualSize() const { return ActualSize; }
+  size_t getSize() const { return Size; }
   const std::unique_ptr<uint8_t[]> &getHostData() const { return HostData; }
 };
 

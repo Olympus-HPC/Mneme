@@ -8,6 +8,12 @@ using namespace mneme;
 using namespace llvm;
 
 template <>
+void MnemeDeviceLinkedBin::ExtractCodeWithRDC<DeviceVendors::HIP>(
+    llvm::LLVMContext &Ctx,
+    llvm::SmallVector<std::unique_ptr<llvm::Module>> &Modules,
+    llvm::SmallVector<llvm::StringRef> &Blobs) {};
+
+template <>
 void MnemeDeviceLinkedBin::ExtractCodeWithoutRDC<DeviceVendors::HIP>(
     LLVMContext &Ctx, SmallVector<std::unique_ptr<Module>> &Modules) {
   constexpr char OFFLOAD_BUNDLER_MAGIC_STR[] = "__CLANG_OFFLOAD_BUNDLE__";

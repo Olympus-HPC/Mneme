@@ -47,7 +47,7 @@ void PageManager::coalesce() {
 }
 
 // Find a block that has a size >= requestedSize
-std::multiset<ContiguousAddrBlock>::iterator
+std::set<ContiguousAddrBlock>::iterator
 PageManager::findFreeBlock(size_t requestedSize) {
   for (auto it = FreeVARanges.begin(); it != FreeVARanges.end(); ++it) {
     auto size = it->Size;
@@ -90,7 +90,7 @@ PageManager::reserveBestFitPage(uint64_t VASize) {
   return std::make_pair(Ptr, ReqSize);
 }
 
-std::multiset<ContiguousAddrBlock>::iterator
+std::set<ContiguousAddrBlock>::iterator
 PageManager::findInclusivePage(uintptr_t Addr, size_t Size) {
   uintptr_t request_end = Addr + Size;
   for (auto it = FreeVARanges.begin(); it != FreeVARanges.end(); ++it) {
@@ -167,5 +167,7 @@ PageManager::PageManager(uint64_t VASize, uint64_t PageSize, void *VA,
 void PageManager::releaseAddr(uint64_t VASize, void *VA) {
   ContiguousAddrBlock AddrBlock{reinterpret_cast<uint64_t>(VA), VASize};
   FreeVARanges.insert(AddrBlock);
+  LOG_INFO("Before coalesce in release");
+  dump();
   coalesce();
 }
