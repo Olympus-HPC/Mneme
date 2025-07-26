@@ -13,7 +13,7 @@ ffi.lib.ProteusPY_optimize.argtypes = [ffi.LLVMModuleRef, c_char_p, c_char_p, c_
 ffi.lib.ProteusPY_internalize.argtypes = [ffi.LLVMModuleRef, c_char_p]
 ffi.lib.ProteusPY_codeGenObject.argtypes = [ffi.LLVMModuleRef, c_char_p, c_bool, c_uint]
 ffi.lib.ProteusPY_codeGenObject.restype = ffi.LLVMMemBufferRef
-ffi.lib.ProteusPY_linkModules.argtypes = [POINTER(c_char_p), c_int, ffi.LLVMContextRef]
+ffi.lib.ProteusPY_linkModules.argtypes = [POINTER(c_char_p), c_int, ffi.LLVMContextRef, c_bool, c_bool]
 ffi.lib.ProteusPY_linkModules.restype = ffi.LLVMModuleRef
 ffi.lib.ProteusPY_specializeArguments.argtypes = [
     ffi.LLVMModuleRef,  # Module
@@ -98,7 +98,7 @@ def link_llvm_modules(modules: List[str]):
     ArrayType = c_char_p * len(c_strings)
     c_array = ArrayType(*c_strings)
     Mod = ModuleRef(
-        ffi.lib.ProteusPY_linkModules(c_array, len(modules), get_global_context()),
+        ffi.lib.ProteusPY_linkModules(c_array, len(modules), get_global_context(), True, True), 
         get_global_context(),
     )
     return Mod

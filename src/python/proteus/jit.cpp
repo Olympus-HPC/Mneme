@@ -62,7 +62,7 @@ ProteusPY_codeGenObject(LLVMModuleRef Mod, const char *DeviceArch, bool use_rtc,
 
 API_EXPORT(LLVMModuleRef)
 ProteusPY_linkModules(const char **LLVMIRFiles, int size,
-                      LLVMContextRef context) {
+                      LLVMContextRef context, bool prune_flag=true, bool internalize_flag=true) {
   auto Ctx = unwrap(context);
   llvm::SmallVector<std::unique_ptr<llvm::Module>> RecordedModules;
   for (int i = 0; i < size; i++) {
@@ -82,8 +82,18 @@ ProteusPY_linkModules(const char **LLVMIRFiles, int size,
 
     RecordedModules.emplace_back(std::move(ModuleOrErr.get()));
   }
-
+  
+  if(prune_flag) {
+    // Call prune here
+    // loop through recorded modules here?
+  }
   auto Mod = proteus::linkModules(*unwrap(context), RecordedModules);
+
+  if(internalize_flag) {
+    // Call internalize here
+    // loop through recorded modules here? what's the kernelsym arg?
+  }
+
   return wrap(Mod.release());
 }
 
