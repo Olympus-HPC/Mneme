@@ -82,9 +82,7 @@ ProteusPY_linkModules(const char **LLVMIRFiles, int size,
                 llvm::toString(ModuleOrErr.takeError()));
 
     if(prune_flag) {
-      // Call prune here
-      // loop through recorded modules here?
-      ProteusPY_pruneIR(wrap(ModuleOrErr->get()));
+      pruneIR(*ModuleOrErr->get());
     }
 
     RecordedModules.emplace_back(std::move(ModuleOrErr.get()));
@@ -93,9 +91,7 @@ ProteusPY_linkModules(const char **LLVMIRFiles, int size,
   auto Mod = proteus::linkModules(*unwrap(context), RecordedModules);
 
   if(internalize_flag) {
-    // Call internalize here
-    // loop through recorded modules here? what's the kernelsym arg?
-    ProteusPY_internalize(wrap(Mod.get()), KernelSym);
+    internalize(*Mod.get(), KernelSym);
   }
 
   return wrap(Mod.release());

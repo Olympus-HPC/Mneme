@@ -93,12 +93,12 @@ def codegen_object(
     return result
 
 
-def link_llvm_modules(modules: List[str], kernel_name: str):
+def link_llvm_modules(modules: List[str], kernel_name: str, prune: bool , internalize: bool):
     c_strings = [c_char_p(s.encode("utf-8")) for s in modules]
     ArrayType = c_char_p * len(c_strings)
     c_array = ArrayType(*c_strings)
     Mod = ModuleRef(
-        ffi.lib.ProteusPY_linkModules(c_array, len(modules), get_global_context(), kernel_name.encode('utf-8'), True, True), 
+        ffi.lib.ProteusPY_linkModules(c_array, len(modules), get_global_context(), kernel_name.encode('utf-8'), prune, internalize), 
         get_global_context(),
     )
     return Mod

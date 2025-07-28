@@ -202,14 +202,7 @@ class RecordedExecution:
         if self._link_mod is not None:
             return self._link_mod
 
-        self._link_mod = jit.link_llvm_modules(self.llvm_files, self.kernel_name)
-
-        # Comment these, we will call this in the jit.cpp link
-        # if internalize:
-        #     jit.internalize(self._link_mod, self.kernel_name)
-
-        #  if prune:
-        #      jit.pruneIR(self._link_mod)
+        self._link_mod = jit.link_llvm_modules(self.llvm_files, self.kernel_name, prune, internalize)
 
         return self._link_mod
 
