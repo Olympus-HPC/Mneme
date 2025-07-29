@@ -127,7 +127,9 @@ class BaseExecutor:
         print(f"Setting Device ID to {device_id} out of {self.num_devices}")
 
     def open(self):
-        self._page_manager = PageManagerRef(self.records.va_addr, self.records.va_size)
+        self._page_manager = PageManagerRef(
+            self.device_id, self.records.va_addr, self.records.va_size
+        )
         self._prologue = self.kernel_descr.prologue.open()
         self._epilogue = self.kernel_descr.epilogue.open()
         return self

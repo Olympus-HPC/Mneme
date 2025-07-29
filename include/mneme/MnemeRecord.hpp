@@ -57,9 +57,13 @@ protected:
   llvm::DenseSet<const void *> BlackList;
   MnemeDeviceExecutable Executable;
 
-  std::unique_ptr<PageManager> PM;
+  std::unique_ptr<PageManager<VendorTypes>> PM;
   void *VAStartAddr;
   int64_t VATotalSize;
+
+  // NOTE: We only keep track of the first time we set the device id. Once we
+  // create the allocator we assume that the allocations go to the same device
+  int DeviceID;
 
 public:
   using MnemeDeviceRT = DeviceTraits<VendorTypes>;
@@ -71,7 +75,6 @@ private:
   bool ExtractedIR;
   RecordDatabase DB;
   std::once_flag ExtractFlag;
-  bool ReleaseMemory;
 
   DeviceError_t (*origLaunchKernel)(const void *func, dim3 gridDim,
                                     dim3 blockDim, void **args,
@@ -126,11 +129,10 @@ private:
 public:
   void unregisterFatBinEnd(void **ptr) {
     LOG_DEBUG("Unregistering fatbinary");
-    if (!ReleaseMemory) {
+    if (PM) {
       LOG_DEBUG("Releasing memory");
-      MnemeDeviceRT::freeVirtualAddress(PM->getVAStart(), PM->getTotalVASize());
+      PM.release();
       LOG_DEBUG("Done with Releasing memory");
-      ReleaseMemory = true;
     }
     origUnregisterFatBinary(ptr);
   }
@@ -273,7 +275,7 @@ public:
       // and call it separately here. Let's do this on a separate PR
       auto arch = MnemeDeviceRT::GetDeviceArch();
       LOG_DEBUG("Initializing system {}", arch);
-      PM = initializePageManager<MnemeDeviceRT>();
+      PM = initializePageManager<VendorTypes>(DeviceID);
       getGlobalAddresses();
     });
 
@@ -311,6 +313,7 @@ public:
                    ptr);
       LOG_FATAL("Free address that is not being allocated through Mneme\n");
     }
+    PM->releaseAddr(AllocatedBlobs[ptr].getActualSize(), ptr);
     auto ret = AllocatedBlobs[ptr].release();
     LOG_DEBUG("Intercepted device Free PTR:{} SIZE:{} ACTUALSIZE:{}", ptr,
               AllocatedBlobs[ptr].getSize(),
@@ -347,7 +350,7 @@ public:
       // and call it separately here. Let's do this on a separate PR
       auto arch = MnemeDeviceRT::GetDeviceArch();
       LOG_DEBUG("Initializing system {}", arch);
-      PM = initializePageManager<MnemeDeviceRT>();
+      PM = initializePageManager<VendorTypes>(DeviceID);
       getGlobalAddresses();
     });
 
@@ -385,11 +388,12 @@ public:
     return ret;
   }
 
-  MnemeRecorder() : ExtractedIR(true), ReleaseMemory(false) {
+  MnemeRecorder() : ExtractedIR(true) {
     VAStartAddr = nullptr;
     VATotalSize = 0;
     rtLib = MnemeDeviceRT::getRTLib();
     RecordReplayDir = DB.getDir();
+    DeviceID = 0;
     // MemManager = nullptr;
 
     // Redirect overloaded device runtime functions.
@@ -446,12 +450,10 @@ public:
   }
 
   ~MnemeRecorder() {
-    if (ReleaseMemory)
-      return;
+    if (PM)
+      PM.reset();
+    return;
     LOG_DEBUG("Releasing memory");
-    MnemeDeviceRT::freeVirtualAddress(PM->getVAStart(), PM->getTotalVASize());
-    LOG_DEBUG("Done with Releasing memory");
-    ReleaseMemory = true;
   }
 };
 } // namespace mneme

@@ -24,7 +24,6 @@ public:
 
 protected:
   uint64_t ActualSize;
-  MemoryAllocationHandle_t MemHandle;
   void *BlobAddr;
   uint64_t Size;
   int DeviceID;
@@ -47,7 +46,6 @@ public:
     this->Size = Size;
     // We need to pass here "ActualSize". As device allocators depend on page
     // aligned allocations
-    MnemeDeviceRT::mmap(MemHandle, VA, ActualSize, DeviceID);
     this->BlobAddr = VA;
     this->IsMapped = true;
     this->ActualSize = ActualSize;
@@ -71,7 +69,6 @@ public:
       BlobAddr = 0;
       return ret;
     }
-    MnemeDeviceRT::unmap(MemHandle, BlobAddr, ActualSize);
     BlobAddr = 0;
     return MnemeDeviceRT::DeviceSuccess;
   }
@@ -106,7 +103,6 @@ public:
 
   MnemeMemoryBlob &operator=(MnemeMemoryBlob &&other) noexcept {
     if (this != &other) {
-      MemHandle = other.MemHandle;
       BlobAddr = other.BlobAddr;
       Size = other.Size;
       ActualSize = other.ActualSize;
@@ -120,7 +116,7 @@ public:
   }
 
   MnemeMemoryBlob(MnemeMemoryBlob &&other) noexcept
-      : MemHandle(other.MemHandle), BlobAddr(other.BlobAddr), Size(other.Size),
+      : BlobAddr(other.BlobAddr), Size(other.Size),
         ActualSize(other.ActualSize), DeviceID(other.DeviceID),
         HostData(std::move(other.HostData)), IsMapped(other.IsMapped) {
     other.BlobAddr = 0;
