@@ -108,6 +108,9 @@ private:
 
   void (*origUnregisterFatBinary)(void **);
 
+  DeviceError_t (*origSetDeviceID)(int id);
+  DeviceError_t (*origGetDeviceID)(int *id);
+
 private:
   void getGlobalAddresses() {
     for (auto &[Handle, GVars] : HandleToGlobalSymbol) {
@@ -269,15 +272,18 @@ public:
   };
 
   DeviceError_t rtMalloc(void **ptr, size_t size) {
-    std::call_once(ExtractFlag, [this]() {
+    if (!PM) {
       // NOTE: We need this arch cause internally we initialize the device.
       // FIXME: We need to have a DeviceTrait function to initialize the GPU
       // and call it separately here. Let's do this on a separate PR
       auto arch = MnemeDeviceRT::GetDeviceArch();
       LOG_DEBUG("Initializing system {}", arch);
+      if (DeviceID == -1) {
+        origGetDeviceID(&DeviceID);
+      }
       PM = initializePageManager<VendorTypes>(DeviceID);
       getGlobalAddresses();
-    });
+    }
 
     auto [Addr, ReservedSize] = PM->allocateAddr(size, nullptr);
     MnemeMemoryBlob<VendorTypes> MemBlob(ReservedSize,
@@ -344,15 +350,18 @@ public:
     }
 
     auto KInfo = it->second;
-    std::call_once(ExtractFlag, [this]() {
+    if (!PM) {
       // NOTE: We need this arch cause internally we initialize the device.
       // FIXME: We need to have a DeviceTrait function to initialize the GPU
       // and call it separately here. Let's do this on a separate PR
       auto arch = MnemeDeviceRT::GetDeviceArch();
+      if (DeviceID == -1) {
+        origGetDeviceID(&DeviceID);
+      }
       LOG_DEBUG("Initializing system {}", arch);
       PM = initializePageManager<VendorTypes>(DeviceID);
       getGlobalAddresses();
-    });
+    }
 
     auto &LinkedExecutable = KInfo->getExecutable();
     if (LinkedExecutable.ExtractCode<VendorTypes>(Executable.Ctx)) {
@@ -388,13 +397,27 @@ public:
     return ret;
   }
 
+  DeviceError_t rtSetDevice(int deviceID) {
+    auto ret = origSetDeviceID(deviceID);
+    if (DeviceID == -1) {
+      DeviceID = deviceID;
+    } else if (PM == nullptr) {
+      DeviceID = deviceID;
+    } else if (DeviceID != -1 && PM != nullptr)
+      LOG_CRITICAL("Setting Device ID although it already "
+                   "set and memory is "
+                   "allocated");
+    return ret;
+  }
+
+  DeviceError_t rtGetDevice(int *deviceID) { return origGetDeviceID(deviceID); }
+
   MnemeRecorder() : ExtractedIR(true) {
     VAStartAddr = nullptr;
     VATotalSize = 0;
     rtLib = MnemeDeviceRT::getRTLib();
     RecordReplayDir = DB.getDir();
-    DeviceID = 0;
-    // MemManager = nullptr;
+    DeviceID = -1;
 
     // Redirect overloaded device runtime functions.
     reinterpret_cast<void *&>(origLaunchKernel) =
@@ -440,6 +463,18 @@ public:
     reinterpret_cast<void *&>(origUnregisterFatBinary) =
         dlsym(rtLib, MnemeDeviceRT::getUUUnRegisterFatBinaryFnName());
     assert(origUnregisterFatBinary && "Expected non-null unregister fatbinary");
+
+    reinterpret_cast<void *&>(origUnregisterFatBinary) =
+        dlsym(rtLib, MnemeDeviceRT::getUUUnRegisterFatBinaryFnName());
+    assert(origUnregisterFatBinary && "Expected non-null unregister fatbinary");
+
+    reinterpret_cast<void *&>(origSetDeviceID) =
+        dlsym(rtLib, MnemeDeviceRT::getDeviceSetIDFnName());
+    assert(origSetDeviceID && "Expected non-null set device id fn name");
+
+    reinterpret_cast<void *&>(origGetDeviceID) =
+        dlsym(rtLib, MnemeDeviceRT::getDeviceGetIDFnName());
+    assert(origGetDeviceID && "Expected non-null get device id fn name");
 
     if (MnemeDeviceRT::hasFatBinEnd) {
       reinterpret_cast<void *&>(origRegisterFatBinaryEnd) =

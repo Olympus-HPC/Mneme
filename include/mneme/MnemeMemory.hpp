@@ -26,7 +26,6 @@ protected:
   uint64_t ActualSize;
   void *BlobAddr;
   uint64_t Size;
-  int DeviceID;
   std::unique_ptr<uint8_t[]> HostData;
   bool IsMapped;
 
@@ -34,13 +33,7 @@ public:
   MnemeMemoryBlob(uint64_t ActualSize = 0, void *BlobAddr = nullptr,
                   uint64_t Size = 0)
       : ActualSize(ActualSize), BlobAddr(BlobAddr), Size(Size),
-        HostData(new uint8_t[Size]), IsMapped(false) {
-    auto EC =
-        MnemeDeviceRT::DeviceErrorCheck(MnemeDeviceRT::getDevice(DeviceID));
-    if (EC)
-      LOG_FATAL("Could not set device id on memory blob\nEC:{}", EC.value());
-    LOG_INFO("Setting Device ID for Blob to {}", DeviceID);
-  }
+        HostData(new uint8_t[Size]), IsMapped(false) {}
 
   DeviceError_t map(void *VA, uint64_t ActualSize, uint64_t Size) {
     this->Size = Size;
@@ -106,7 +99,6 @@ public:
       BlobAddr = other.BlobAddr;
       Size = other.Size;
       ActualSize = other.ActualSize;
-      DeviceID = other.DeviceID;
       HostData = std::move(other.HostData);
       IsMapped = other.IsMapped;
       other.BlobAddr = 0;
@@ -117,8 +109,8 @@ public:
 
   MnemeMemoryBlob(MnemeMemoryBlob &&other) noexcept
       : BlobAddr(other.BlobAddr), Size(other.Size),
-        ActualSize(other.ActualSize), DeviceID(other.DeviceID),
-        HostData(std::move(other.HostData)), IsMapped(other.IsMapped) {
+        ActualSize(other.ActualSize), HostData(std::move(other.HostData)),
+        IsMapped(other.IsMapped) {
     other.BlobAddr = 0;
     other.HostData = nullptr;
   }
