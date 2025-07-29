@@ -57,9 +57,13 @@ protected:
   llvm::DenseSet<const void *> BlackList;
   MnemeDeviceExecutable Executable;
 
-  std::unique_ptr<PageManager> PM;
+  std::unique_ptr<PageManager<VendorTypes>> PM;
   void *VAStartAddr;
   int64_t VATotalSize;
+
+  // NOTE: We only keep track of the first time we set the device id. Once we
+  // create the allocator we assume that the allocations go to the same device
+  int DeviceID;
 
 public:
   using MnemeDeviceRT = DeviceTraits<VendorTypes>;
@@ -71,7 +75,6 @@ private:
   bool ExtractedIR;
   RecordDatabase DB;
   std::once_flag ExtractFlag;
-  bool ReleaseMemory;
 
   DeviceError_t (*origLaunchKernel)(const void *func, dim3 gridDim,
                                     dim3 blockDim, void **args,
@@ -105,6 +108,9 @@ private:
 
   void (*origUnregisterFatBinary)(void **);
 
+  DeviceError_t (*origSetDeviceID)(int id);
+  DeviceError_t (*origGetDeviceID)(int *id);
+
 private:
   void getGlobalAddresses() {
     for (auto &[Handle, GVars] : HandleToGlobalSymbol) {
@@ -126,11 +132,10 @@ private:
 public:
   void unregisterFatBinEnd(void **ptr) {
     LOG_DEBUG("Unregistering fatbinary");
-    if (!ReleaseMemory) {
+    if (PM) {
       LOG_DEBUG("Releasing memory");
-      MnemeDeviceRT::freeVirtualAddress(PM->getVAStart(), PM->getTotalVASize());
+      PM.release();
       LOG_DEBUG("Done with Releasing memory");
-      ReleaseMemory = true;
     }
     origUnregisterFatBinary(ptr);
   }
@@ -267,15 +272,18 @@ public:
   };
 
   DeviceError_t rtMalloc(void **ptr, size_t size) {
-    std::call_once(ExtractFlag, [this]() {
+    if (!PM) {
       // NOTE: We need this arch cause internally we initialize the device.
       // FIXME: We need to have a DeviceTrait function to initialize the GPU
       // and call it separately here. Let's do this on a separate PR
       auto arch = MnemeDeviceRT::GetDeviceArch();
       LOG_DEBUG("Initializing system {}", arch);
-      PM = initializePageManager<MnemeDeviceRT>();
+      if (DeviceID == -1) {
+        origGetDeviceID(&DeviceID);
+      }
+      PM = initializePageManager<VendorTypes>(DeviceID);
       getGlobalAddresses();
-    });
+    }
 
     auto [Addr, ReservedSize] = PM->allocateAddr(size, nullptr);
     MnemeMemoryBlob<VendorTypes> MemBlob(ReservedSize,
@@ -311,6 +319,7 @@ public:
                    ptr);
       LOG_FATAL("Free address that is not being allocated through Mneme\n");
     }
+    PM->releaseAddr(AllocatedBlobs[ptr].getActualSize(), ptr);
     auto ret = AllocatedBlobs[ptr].release();
     LOG_DEBUG("Intercepted device Free PTR:{} SIZE:{} ACTUALSIZE:{}", ptr,
               AllocatedBlobs[ptr].getSize(),
@@ -341,15 +350,18 @@ public:
     }
 
     auto KInfo = it->second;
-    std::call_once(ExtractFlag, [this]() {
+    if (!PM) {
       // NOTE: We need this arch cause internally we initialize the device.
       // FIXME: We need to have a DeviceTrait function to initialize the GPU
       // and call it separately here. Let's do this on a separate PR
       auto arch = MnemeDeviceRT::GetDeviceArch();
+      if (DeviceID == -1) {
+        origGetDeviceID(&DeviceID);
+      }
       LOG_DEBUG("Initializing system {}", arch);
-      PM = initializePageManager<MnemeDeviceRT>();
+      PM = initializePageManager<VendorTypes>(DeviceID);
       getGlobalAddresses();
-    });
+    }
 
     auto &LinkedExecutable = KInfo->getExecutable();
     if (LinkedExecutable.ExtractCode<VendorTypes>(Executable.Ctx)) {
@@ -385,12 +397,27 @@ public:
     return ret;
   }
 
-  MnemeRecorder() : ExtractedIR(true), ReleaseMemory(false) {
+  DeviceError_t rtSetDevice(int deviceID) {
+    auto ret = origSetDeviceID(deviceID);
+    if (DeviceID == -1) {
+      DeviceID = deviceID;
+    } else if (PM == nullptr) {
+      DeviceID = deviceID;
+    } else if (DeviceID != -1 && PM != nullptr)
+      LOG_CRITICAL("Setting Device ID although it already "
+                   "set and memory is "
+                   "allocated");
+    return ret;
+  }
+
+  DeviceError_t rtGetDevice(int *deviceID) { return origGetDeviceID(deviceID); }
+
+  MnemeRecorder() : ExtractedIR(true) {
     VAStartAddr = nullptr;
     VATotalSize = 0;
     rtLib = MnemeDeviceRT::getRTLib();
     RecordReplayDir = DB.getDir();
-    // MemManager = nullptr;
+    DeviceID = -1;
 
     // Redirect overloaded device runtime functions.
     reinterpret_cast<void *&>(origLaunchKernel) =
@@ -437,6 +464,18 @@ public:
         dlsym(rtLib, MnemeDeviceRT::getUUUnRegisterFatBinaryFnName());
     assert(origUnregisterFatBinary && "Expected non-null unregister fatbinary");
 
+    reinterpret_cast<void *&>(origUnregisterFatBinary) =
+        dlsym(rtLib, MnemeDeviceRT::getUUUnRegisterFatBinaryFnName());
+    assert(origUnregisterFatBinary && "Expected non-null unregister fatbinary");
+
+    reinterpret_cast<void *&>(origSetDeviceID) =
+        dlsym(rtLib, MnemeDeviceRT::getDeviceSetIDFnName());
+    assert(origSetDeviceID && "Expected non-null set device id fn name");
+
+    reinterpret_cast<void *&>(origGetDeviceID) =
+        dlsym(rtLib, MnemeDeviceRT::getDeviceGetIDFnName());
+    assert(origGetDeviceID && "Expected non-null get device id fn name");
+
     if (MnemeDeviceRT::hasFatBinEnd) {
       reinterpret_cast<void *&>(origRegisterFatBinaryEnd) =
           dlsym(rtLib, MnemeDeviceRT::getUURegisterFatbinEndFnName());
@@ -446,12 +485,10 @@ public:
   }
 
   ~MnemeRecorder() {
-    if (ReleaseMemory)
-      return;
+    if (PM)
+      PM.reset();
+    return;
     LOG_DEBUG("Releasing memory");
-    MnemeDeviceRT::freeVirtualAddress(PM->getVAStart(), PM->getTotalVASize());
-    LOG_DEBUG("Done with Releasing memory");
-    ReleaseMemory = true;
   }
 };
 } // namespace mneme

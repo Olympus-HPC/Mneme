@@ -136,4 +136,16 @@ cudaError_t cudaLaunchKernel(const void *func, dim3 gridDim, dim3 blockDim,
   LOG_DEBUG("Entering Mneme to Launch Kernel");
   return mneme.rtLaunchKernel(func, gridDim, blockDim, args, sharedMem, stream);
 }
+
+cudaError_t cudaSetDevice(int deviceID) {
+  LOG_DEBUG("Entering Mneme to set Device");
+  auto &mneme = MnemeRecorderCUDAPreload::instance();
+  return mneme.rtSetDevice(deviceID);
+}
+
+cudaError_t cudaGetDevice(int *deviceID) {
+  LOG_DEBUG("Entering Mneme to set Device");
+  auto &mneme = MnemeRecorderCUDAPreload::instance();
+  return mneme.rtGetDevice(deviceID);
+}
 }

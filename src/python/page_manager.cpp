@@ -17,9 +17,9 @@ constexpr DeviceVendors Vendor = DeviceVendors::HIP;
 extern "C" {
 
 API_EXPORT(void *)
-MnemePY_initializePageManager(uintptr_t Addr, uint64_t VASize) {
+MnemePY_initializePageManager(int DeviceID, uintptr_t Addr, uint64_t VASize) {
   void *VAddr = reinterpret_cast<void *>(Addr);
-  auto PM = initializePageManager<DeviceVendorTraits>(VAddr, VASize);
+  auto PM = initializePageManager<Vendor>(DeviceID, VAddr, VASize);
   if (PM->getVAStart() != VAddr) {
     LOG_FATAL("Could not allocate Device Pages\n Record got : " +
               util::pointerToHexString(VAddr) + " and replay got : " +
@@ -30,7 +30,7 @@ MnemePY_initializePageManager(uintptr_t Addr, uint64_t VASize) {
 }
 
 API_EXPORT(void) MnemePY_DisposePageManager(void *PMPtr) {
-  PageManager *PM = reinterpret_cast<PageManager *>(PMPtr);
+  PageManager<Vendor> *PM = reinterpret_cast<PageManager<Vendor> *>(PMPtr);
   if (!PM) {
     LOG_FATAL("Calling Dispose of page manager with a null pointer");
   }

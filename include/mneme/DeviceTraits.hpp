@@ -106,6 +106,9 @@ template <> struct DeviceTraits<DeviceVendors::HIP> {
     return "__hipUnregisterFatBinary";
   }
 
+  static const char *getDeviceGetIDFnName() { return "hipGetDevice"; }
+  static const char *getDeviceSetIDFnName() { return "hipSetDevice"; }
+
   static constexpr bool hasFatBinEnd = false;
 
   static inline std::optional<std::string>
@@ -243,7 +246,7 @@ template <> struct DeviceTraits<DeviceVendors::HIP> {
   }
 
   static void mmap(hipMemGenericAllocationHandle_t &MHandle, void *Addr,
-                   uintptr_t Size, int DeviceID) {
+                   uint64_t Size, int DeviceID) {
     hipMemAllocationProp Prop = {};
     Prop.type = hipMemAllocationTypePinned;
     Prop.location.type = hipMemLocationTypeDevice;
@@ -393,6 +396,9 @@ template <> struct DeviceTraits<DeviceVendors::CUDA> {
   static const char *getUUUnRegisterFatBinaryFnName() {
     return "__cudaUnregisterFatBinary";
   }
+
+  static const char *getDeviceGetIDFnName() { return "cudaGetDevice"; }
+  static const char *getDeviceSetIDFnName() { return "cudaSetDevice"; }
 
   static constexpr bool hasFatBinEnd = true;
 

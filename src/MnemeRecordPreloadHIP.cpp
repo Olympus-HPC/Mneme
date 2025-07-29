@@ -120,4 +120,16 @@ hipError_t hipLaunchKernel(const void *func, dim3 gridDim, dim3 blockDim,
   auto &mneme = MnemeRecorderHIPPreload::instance();
   return mneme.rtLaunchKernel(func, gridDim, blockDim, args, sharedMem, stream);
 }
+
+hipError_t hipSetDevice(int deviceID) {
+  LOG_DEBUG("Entering Mneme to set Device");
+  auto &mneme = MnemeRecorderHIPPreload::instance();
+  return mneme.rtSetDevice(deviceID);
+}
+
+hipError_t hipGetDevice(int *deviceID) {
+  LOG_DEBUG("Entering Mneme to set Device");
+  auto &mneme = MnemeRecorderHIPPreload::instance();
+  return mneme.rtGetDevice(deviceID);
+}
 }

@@ -24,10 +24,8 @@ public:
 
 protected:
   uint64_t ActualSize;
-  MemoryAllocationHandle_t MemHandle;
   void *BlobAddr;
   uint64_t Size;
-  int DeviceID;
   std::unique_ptr<uint8_t[]> HostData;
   bool IsMapped;
 
@@ -35,19 +33,12 @@ public:
   MnemeMemoryBlob(uint64_t ActualSize = 0, void *BlobAddr = nullptr,
                   uint64_t Size = 0)
       : ActualSize(ActualSize), BlobAddr(BlobAddr), Size(Size),
-        HostData(new uint8_t[Size]), IsMapped(false) {
-    auto EC =
-        MnemeDeviceRT::DeviceErrorCheck(MnemeDeviceRT::getDevice(DeviceID));
-    if (EC)
-      LOG_FATAL("Could not set device id on memory blob\nEC:{}", EC.value());
-    LOG_INFO("Setting Device ID for Blob to {}", DeviceID);
-  }
+        HostData(new uint8_t[Size]), IsMapped(false) {}
 
   DeviceError_t map(void *VA, uint64_t ActualSize, uint64_t Size) {
     this->Size = Size;
     // We need to pass here "ActualSize". As device allocators depend on page
     // aligned allocations
-    MnemeDeviceRT::mmap(MemHandle, VA, ActualSize, DeviceID);
     this->BlobAddr = VA;
     this->IsMapped = true;
     this->ActualSize = ActualSize;
@@ -71,7 +62,6 @@ public:
       BlobAddr = 0;
       return ret;
     }
-    MnemeDeviceRT::unmap(MemHandle, BlobAddr, ActualSize);
     BlobAddr = 0;
     return MnemeDeviceRT::DeviceSuccess;
   }
@@ -106,11 +96,9 @@ public:
 
   MnemeMemoryBlob &operator=(MnemeMemoryBlob &&other) noexcept {
     if (this != &other) {
-      MemHandle = other.MemHandle;
       BlobAddr = other.BlobAddr;
       Size = other.Size;
       ActualSize = other.ActualSize;
-      DeviceID = other.DeviceID;
       HostData = std::move(other.HostData);
       IsMapped = other.IsMapped;
       other.BlobAddr = 0;
@@ -120,9 +108,9 @@ public:
   }
 
   MnemeMemoryBlob(MnemeMemoryBlob &&other) noexcept
-      : MemHandle(other.MemHandle), BlobAddr(other.BlobAddr), Size(other.Size),
-        ActualSize(other.ActualSize), DeviceID(other.DeviceID),
-        HostData(std::move(other.HostData)), IsMapped(other.IsMapped) {
+      : BlobAddr(other.BlobAddr), Size(other.Size),
+        ActualSize(other.ActualSize), HostData(std::move(other.HostData)),
+        IsMapped(other.IsMapped) {
     other.BlobAddr = 0;
     other.HostData = nullptr;
   }

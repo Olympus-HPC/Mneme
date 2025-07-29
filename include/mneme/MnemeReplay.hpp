@@ -251,7 +251,7 @@ class ReplayInstance : public mneme::KernelInstance {
   DeviceMemState PrologueState;
   DeviceMemState EpilogueState;
   llvm::SmallVector<std::string> ModuleFileNames;
-  std::unique_ptr<PageManager> PM;
+  std::unique_ptr<PageManager<VendorTypes>> PM;
 
 private:
   static dim3 getDim3(llvm::json::Object &Info, std::string key) {
@@ -306,7 +306,7 @@ public:
       LOG_WARN("Expected VASize ({}) and ActualSize ({}) to match\n", VASize,
                ActualSize);
 
-    PM = initializePageManager<MnemeDeviceRT>(VAddr, ActualSize);
+    PM = initializePageManager<VendorTypes>(DeviceID, VAddr, ActualSize);
     if (PM->getVAStart() != VAddr) {
       LOG_FATAL("Could not allocate Device Pages\n Record got : " +
                 util::pointerToHexString(VAddr) + " and replay got : " +
@@ -348,9 +348,9 @@ public:
   }
 
   ~ReplayInstance() {
+    PM.release();
     PrologueState.release();
     EpilogueState.release();
-    MnemeDeviceRT::freeVirtualAddress(PM->getVAStart(), PM->getTotalVASize());
   }
 
   llvm::ArrayRef<std::string> getModules() const { return ModuleFileNames; }
