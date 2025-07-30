@@ -407,6 +407,9 @@ public:
   }
 
   void initializeDeviceMemory() {
+    if (!PM) {
+      LOG_CRITICAL("Memory Manager is not initialized");
+    }
     PrologueState.load();
     EpilogueState.load();
   }
