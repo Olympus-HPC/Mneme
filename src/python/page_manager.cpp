@@ -18,6 +18,7 @@ extern "C" {
 
 API_EXPORT(void *)
 MnemePY_initializePageManager(int DeviceID, uintptr_t Addr, uint64_t VASize) {
+  LOG_DEBUG("Initializing page manager for Device {}", DeviceID);
   void *VAddr = reinterpret_cast<void *>(Addr);
   auto PM = initializePageManager<Vendor>(DeviceID, VAddr, VASize);
   if (PM->getVAStart() != VAddr) {

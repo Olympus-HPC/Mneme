@@ -245,5 +245,5 @@ initializePageManager(int DeviceID, void *ReqAddr = nullptr,
   }
   LOG_INFO("... Reserved successfully Virtual Address {}", VA);
   return std::make_unique<PageManager<VendorTypes>>(ActualSize, MinPageSize, VA,
-                                                    0);
+                                                    DeviceID);
 }
