@@ -1,4 +1,5 @@
 import argparse
+import os
 import time
 from datetime import datetime
 from multiprocessing import Queue
@@ -477,6 +478,11 @@ class TuneWorker(BaseExecutor):
         suffix: str,
     ):
         # We need this to actually run things...
+        fd_out = os.open(
+            f"{db_dir}/Worker-{device_id}.log", os.O_WRONLY | os.O_CREAT | os.O_APPEND
+        )
+        os.dup2(fd_out, 1)  # 1 = stdout
+        os.dup2(fd_out, 2)  # 2 = stderr
         worker = TuneWorker(
             db=db,
             record_id=record_id,
