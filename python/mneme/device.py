@@ -41,12 +41,41 @@ ffi.lib.MnemePy_profile.argtypes = [
 ]
 
 
+ffi.lib.MnemePy_getRegisterUsage.argtypes = [c_void_p]
+ffi.lib.MnemePy_getRegisterUsage.restype = c_int
+ffi.lib.MnemePy_getLocalMemUsage.argtypes = [c_void_p]
+ffi.lib.MnemePy_getLocalMemUsage.restype = c_int
+ffi.lib.MnemePy_getConstMemUsage.argtypes = [c_void_p]
+ffi.lib.MnemePy_getConstMemUsage.restype = c_int
+
+
 class DeviceFunction(ffi.ObjectRef):
     def __init__(self, func_ptr, module_ref, kernel_name):
         super(DeviceFunction, self).__init__(func_ptr)
         self._module_ref = weakref.ref(module_ref)
         self._kernel_name = kernel_name
         self.valid = True
+        self._local_mem = None
+        self._reg_usage = None
+        self._const_mem = None
+
+    @property
+    def local_mem(self):
+        if self._local_mem is None:
+            self._local_mem = ffi.lib.MnemePy_getLocalMemUsage(self)
+        return self._local_mem
+
+    @property
+    def const_mem(self):
+        if self._const_mem is None:
+            self._const_mem = ffi.lib.MnemePy_getConstMemUsage(self)
+        return self._const_mem
+
+    @property
+    def reg_usage(self):
+        if self._reg_usage is None:
+            self._reg_usage = ffi.lib.MnemePy_getRegisterUsage(self)
+        return self._reg_usage
 
     def invalidate(self):
         """Marks the function as invalid if the module is unloaded."""

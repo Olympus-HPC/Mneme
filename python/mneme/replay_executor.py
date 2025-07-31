@@ -194,6 +194,9 @@ class BaseExecutor:
 
         with DeviceModule.from_MemBuffer(mem_buffer) as DeviceObj:
             device_func = DeviceObj.get_function(self.kernel_descr.kernel_name)
+            exp.reg_usage = device_func.reg_usage
+            exp.const_mem = device_func.const_mem
+            exp.local_mem = device_func.local_mem
             exp.exec_time = device_func.profile(
                 self.kernel_descr.grid_dim,
                 self.kernel_descr.block_dim,

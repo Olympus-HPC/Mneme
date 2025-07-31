@@ -61,6 +61,8 @@
 namespace mneme {
 enum DeviceVendors { HIP, CUDA };
 
+enum FuncAttributes { REGISTER_USAGE, LOCALMEM_USAGE, CONSTMEM_USAGE };
+
 template <DeviceVendors Type> struct DeviceTraits;
 
 #if defined(MNEME_ENABLE_HIP)
@@ -343,6 +345,26 @@ template <> struct DeviceTraits<DeviceVendors::HIP> {
   static hipError_t deviceEventElapsedTime(float *ms, hipEvent_t start,
                                            hipEvent_t stop) {
     return hipEventElapsedTime(ms, start, stop);
+  }
+
+  static hipError_t deviceGetAttribute(hipFunction_t &Func,
+                                       FuncAttributes Attribute, int &Value) {
+    LOG_DEBUG("Going to request attributes of {}", (void *)Func);
+
+    switch (Attribute) {
+    case REGISTER_USAGE:
+      return hipFuncGetAttribute(&Value, HIP_FUNC_ATTRIBUTE_NUM_REGS, Func);
+    case LOCALMEM_USAGE:
+      return hipFuncGetAttribute(&Value, HIP_FUNC_ATTRIBUTE_LOCAL_SIZE_BYTES,
+                                 Func);
+    case CONSTMEM_USAGE:
+      return hipFuncGetAttribute(&Value, HIP_FUNC_ATTRIBUTE_CONST_SIZE_BYTES,
+                                 Func);
+    default:
+      LOG_FATAL("Request unknown attribute");
+      break;
+    }
+    return hipSuccess;
   }
 };
 #elif defined(MNEME_ENABLE_CUDA)

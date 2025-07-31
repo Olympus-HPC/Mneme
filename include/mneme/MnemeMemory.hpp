@@ -46,7 +46,10 @@ public:
   };
 
   DeviceError_t allocate(size_t Size) {
+    int _device;
     auto ret = MnemeDeviceRT::DeviceMalloc(&(this->BlobAddr), Size);
+    MnemeDeviceRT::getDevice(_device);
+    LOG_DEBUG("Loading epilogue for device {}", _device);
     this->ActualSize = Size;
     this->Size = Size;
     this->IsMapped = false;

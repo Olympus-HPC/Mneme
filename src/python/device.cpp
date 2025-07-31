@@ -37,7 +37,44 @@ MnemePY_getKernelFunctionFromImage(void *WrappedModule,
   // NOTE: HIP modules are effectively a  pointer to some structure.
   // so we can do this. We need to check also what happens in cuda.
   auto DevFunc = reinterpret_cast<void *>(Func);
+  LOG_DEBUG("Device Function pointer is {}", DevFunc);
   return DevFunc;
+}
+
+API_EXPORT(int)
+MnemePy_getRegisterUsage(void *Func) {
+  int UsedRegisters = -1;
+  auto DevFunc = reinterpret_cast<DeviceVendorTraits::DeviceFunction_t>(Func);
+  auto EC = DeviceVendorTraits::DeviceErrorCheck(
+      DeviceVendorTraits::deviceGetAttribute(
+          DevFunc, FuncAttributes::REGISTER_USAGE, UsedRegisters));
+  if (EC)
+    LOG_FATAL("Error when reading register usage: " + EC.value());
+  return UsedRegisters;
+}
+
+API_EXPORT(int)
+MnemePy_getLocalMemUsage(void *Func) {
+  int LocalMemUsage = -1;
+  auto DevFunc = reinterpret_cast<DeviceVendorTraits::DeviceFunction_t>(Func);
+  auto EC = DeviceVendorTraits::DeviceErrorCheck(
+      DeviceVendorTraits::deviceGetAttribute(
+          DevFunc, FuncAttributes::LOCALMEM_USAGE, LocalMemUsage));
+  if (EC)
+    LOG_FATAL("Error when reading register usage: " + EC.value());
+  return LocalMemUsage;
+}
+
+API_EXPORT(int)
+MnemePy_getConstMemUsage(void *Func) {
+  int ConstMemUsage = -1;
+  auto DevFunc = reinterpret_cast<DeviceVendorTraits::DeviceFunction_t>(Func);
+  auto EC = DeviceVendorTraits::DeviceErrorCheck(
+      DeviceVendorTraits::deviceGetAttribute(
+          DevFunc, FuncAttributes::CONSTMEM_USAGE, ConstMemUsage));
+  if (EC)
+    LOG_FATAL("Error when reading register usage: " + EC.value());
+  return ConstMemUsage;
 }
 
 API_EXPORT(void)

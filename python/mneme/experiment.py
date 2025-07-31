@@ -29,6 +29,33 @@ class Experiment:
         self._start_time = kwargs.pop("start_time", 0)
         self._end_time = kwargs.pop("end_time", 0)
         self._gpu_id = kwargs.pop("gpu_id", 0)
+        self._const_mem = kwargs.pop("const_mem", -1)
+        self._local_mem = kwargs.pop("local_mem", -1)
+        self._reg_usage = kwargs.pop("reg_usage", -1)
+
+    @property
+    def const_mem(self):
+        return self._const_mem
+
+    @const_mem.setter
+    def const_mem(self, value):
+        self._const_mem = value
+
+    @property
+    def local_mem(self):
+        return self._local_mem
+
+    @local_mem.setter
+    def local_mem(self, value):
+        self._local_mem = value
+
+    @property
+    def reg_usage(self):
+        return self._reg_usage
+
+    @reg_usage.setter
+    def reg_usage(self, value):
+        self._reg_usage = value
 
     @property
     def gpu_id(self):
@@ -198,6 +225,9 @@ class Experiment:
         data["exec_time_std"] = self._exec_time_std
         data["executed"] = self._executed
         data["hash"] = self.hash()
+        data["reg_usage"] = self._reg_usage
+        data["const_mem"] = self._const_mem
+        data["local_mem"] = self._local_mem
         return data
 
     def dump(self):
