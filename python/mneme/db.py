@@ -48,6 +48,9 @@ class MnemeDB:
             "start_id",
             "commit_id",
             "gpu_id",
+            "reg_usage",
+            "const_mem",
+            "local_mem",
         ]
 
     @property
