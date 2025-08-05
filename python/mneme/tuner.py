@@ -4,7 +4,7 @@ import json
 import math
 import sys
 import threading
-from multiprocessing import Process, Queue
+from multiprocessing import Event, Process, Queue
 
 from mneme.db import MnemeDB
 from mneme.device import (
@@ -61,6 +61,7 @@ class TuneWorkerHandle:
         self.suffix = suffix
 
         # Start the subprocess and its monitor thread
+        self._state = None
         self._spawn_process()
         self.monitor_thread = threading.Thread(target=self._monitor)
         self.monitor_thread.start()
@@ -68,6 +69,7 @@ class TuneWorkerHandle:
 
     def _spawn_process(self):
         # Launch a fresh replay subprocess
+        self._state = Event()
         self.process = Process(
             target=TuneWorker.run,
             args=(
@@ -83,6 +85,7 @@ class TuneWorkerHandle:
                 self.iterations,
                 self.db_dir,
                 self.suffix,
+                self._state,
             ),
             daemon=False,
         )
@@ -93,6 +96,20 @@ class TuneWorkerHandle:
         while True:
             # Wait for subprocess to exit
             self.process.join()
+            if not self._state.is_set():
+                print("Event has not been set")
+                if self.current is not None:
+                    req = self.current
+                    req["payload"] = "exit"
+                    req["llvm_ir"] = ""
+                    req["exp_id"] = self.current["exp_id"]
+                    self.response_q.put(req)
+                else:
+                    req = dict()
+                    req["payload"] = "exit"
+                    self.response_q.put(req)
+                return
+
             exitcode = self.process.exitcode
 
             ## If shutdown requested, exit monitor
@@ -251,25 +268,29 @@ class ReplayTuner(BaseExecutor):
         )
         self.LLVMPassManager = PipelineManager()
 
-    def create_experiments(self, pipeline):
+    def create_experiments(self, pipeline, db):
         # NOTE: Some of the fields of the experiment are misguiding.
         # For example, the 'internalize' field is ignored, cause this
         # happens earlier regardless of the value of the field itself.
         # it jus exists to setup properly tracking of experiments.
-        experiments = [
-            Experiment(
-                specialize=self.specialize,
+        experiments = []
+        for spec in [True, False]:
+            exp = Experiment(
+                specialize=spec,
                 max_threads=0,
                 min_blocks_per_sm=0,
                 specialize_dims=self.specialize,
-                passes=self.LLVMPassManager.to_string(pipeline),
+                passes=pipeline,
                 prune=self.prune,
                 internalize=self.internalize,
                 codegen_opt=self.codegen_opt,
                 rtc=self.rtc,
                 device_arch=self.device_arch,
             )
-        ]
+            if not db.should_execute(exp):
+                print(f"Skippipng experiment {exp.hash()}")
+                continue
+            experiments.append(exp)
 
         max_threads = int(
             self.kernel_descr.block_dim.x
@@ -278,25 +299,28 @@ class ReplayTuner(BaseExecutor):
         )
 
         min_blocks_per_sm = [
-            i for i in range(0, int(math.ceil(1024 / max_threads)) + 1)
+            i for i in range(0, int(math.floor(1024 / max_threads)) + 1)
         ]
 
         # 0 indicates do not set launch bounds
         for mb in min_blocks_per_sm:
-            experiments.append(
-                Experiment(
-                    specialize=self.specialize,
+            for spec in [True, False]:
+                exp = Experiment(
+                    specialize=spec,
                     max_threads=max_threads,
                     min_blocks_per_sm=mb,
                     specialize_dims=self.specialize,
-                    passes=self.LLVMPassManager.to_string(pipeline),
+                    passes=pipeline,
                     prune=self.prune,
                     internalize=self.internalize,
                     codegen_opt=self.codegen_opt,
                     rtc=self.rtc,
                     device_arch=self.device_arch,
                 )
-            )
+                if not db.should_execute(exp):
+                    print(f"Skippipng experiment {exp.hash()}")
+                    continue
+                experiments.append(exp)
 
         return experiments
 
@@ -309,9 +333,9 @@ class ReplayTuner(BaseExecutor):
         executor = ReplayTuner(**kwargs)
         if tuner == "random":
             kwargs.pop("sampler")
-            ReplayTuner.run_random(executor)
+            return ReplayTuner.run_random(executor)
         elif tuner == "optuna":
-            ReplayTuner.run_optuna(executor)
+            return ReplayTuner.run_optuna(executor)
 
     @staticmethod
     def run_optuna(executor):
@@ -361,6 +385,8 @@ class ReplayTuner(BaseExecutor):
         for w in workers:
             w.join_monitor()
 
+        return 0
+
     @staticmethod
     def execute_list_of_experiments(
         orig, total_experiments, workers, completed_jobs_q, db, exp_id, start_id=0
@@ -409,7 +435,7 @@ class ReplayTuner(BaseExecutor):
                         raise RuntimeError(
                             "Expected llvm ir to exist on non failed experiment"
                         )
-                    db.add(orig, res["llvm_ir"], exp2)
+                db.add(orig, res["llvm_ir"], exp2)
                 print(
                     f"Worker {worker.idx} Done with {done_exp_id} had {exp2.failed} and took {exp2.exec_time}"
                 )
@@ -421,9 +447,15 @@ class ReplayTuner(BaseExecutor):
 
                     exp, exp_id = vals[0], vals[1]
                     in_flight[exp_id] = (exp, worker)
+            elif res["payload"] == "exit":
+                print("Return exit")
+                return -1
             else:
                 print("Unknown payload")
+                return -1
+
             sys.stdout.flush()
+        return 0
 
     @staticmethod
     def run_random(executor):
@@ -455,11 +487,13 @@ class ReplayTuner(BaseExecutor):
         )
 
         total_experiments = []
-
-        for p in passes:
-            experiments = executor.create_experiments(p)
-            for e in experiments:
-                total_experiments.append(e)
+        default_pipelines = [
+            "default<O1>",
+            "default<O2>",
+            "default<O3>",
+            "default<Os>",
+            "default<Oz>",
+        ]
 
         db = MnemeDB(
             executor.db_dir,
@@ -468,14 +502,28 @@ class ReplayTuner(BaseExecutor):
             executor.suffix,
         ).open()
 
-        root_ir = executor.link_ir()
-        orig = db.save_ir(str(root_ir), "orig")
+        print(f"Performed experiments {len(db)}")
 
-        ReplayTuner.execute_list_of_experiments(
+        for p in default_pipelines:
+            total_experiments += executor.create_experiments(p, db)
+
+        for p in passes:
+            total_experiments += executor.create_experiments(
+                executor.LLVMPassManager.to_string(p), db
+            )
+
+        root_ir = executor.link_ir()
+        orig = db.save_ir(root_ir, "orig")
+
+        ret = ReplayTuner.execute_list_of_experiments(
             orig, total_experiments, workers, completed_jobs_q, db, 0
         )
+
+        print(f"Mneme is done with code {ret}")
 
         for w in workers:
             w.shutdown_process()
         for w in workers:
             w.join_monitor()
+
+        return ret

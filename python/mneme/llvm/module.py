@@ -1,17 +1,17 @@
 from ctypes import (
-    c_char_p,
-    byref,
     POINTER,
+    byref,
     c_bool,
-    create_string_buffer,
+    c_char_p,
     c_size_t,
+    create_string_buffer,
     string_at,
 )
 
 from . import ffi
 from .common import _decode_string, _encode_string
-from .value import ValueRef, TypeRef
 from .context import get_global_context
+from .value import TypeRef, ValueRef
 
 
 def parse_assembly(llvmir, context=None):
@@ -201,6 +201,9 @@ class ModuleRef(ffi.ObjectRef):
     def clone(self):
         return ModuleRef(ffi.lib.LLVMPY_CloneModule(self), self._context)
 
+    def to_bitcode(self, fn: str):
+        ffi.lib.LLVMPY_WriteBitcode(self, _encode_string(fn))
+
 
 class _Iterator(ffi.ObjectRef):
     kind = None
@@ -372,3 +375,5 @@ ffi.lib.LLVMPY_SetModuleName.argtypes = [ffi.LLVMModuleRef, c_char_p]
 
 ffi.lib.LLVMPY_GetModuleSourceFileName.argtypes = [ffi.LLVMModuleRef]
 ffi.lib.LLVMPY_GetModuleSourceFileName.restype = c_char_p
+
+ffi.lib.LLVMPY_WriteBitcode.argtypes = [ffi.LLVMModuleRef, c_char_p]

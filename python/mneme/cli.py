@@ -48,7 +48,7 @@ def main():
     ReplayTuner.set_cli_args(p_tune)
 
     args = parser.parse_args()
-    args.func(args)
+    return args.func(args)
 
 
 if __name__ == "__main__":

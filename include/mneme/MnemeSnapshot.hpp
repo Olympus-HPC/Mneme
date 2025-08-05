@@ -191,6 +191,8 @@ class KernelInstancesCollection {
   void *VAddr;
   uint64_t VASize;
   llvm::DenseMap<uint64_t, KernelInstance> Instances;
+  uint64_t NumRecords;
+  int MaxRecordings;
 
 public:
   llvm::json::Object toJSON(uint64_t StaticHash) const {
@@ -221,8 +223,10 @@ public:
   }
 
   KernelInstancesCollection(void *VAddr, uint64_t VASize,
-                            std::shared_ptr<KernelInfo> KInfo)
-      : VAddr(VAddr), VASize(VASize), KInfo(KInfo) {
+                            std::shared_ptr<KernelInfo> KInfo,
+                            int MaxRecordings)
+      : VAddr(VAddr), VASize(VASize), KInfo(KInfo),
+        MaxRecordings(MaxRecordings), NumRecords(0) {
     // Here I need to extract information regarding the kernel
     auto Func = KInfo->getExecutable().getKernelFunction(KInfo->Name);
     if (!Func)
@@ -268,6 +272,10 @@ public:
       dim3 &GridDim, dim3 &BlockDim, void **Args, size_t SharedMem,
       typename DeviceTraits<VendorTypes>::DeviceStream_t Stream,
       uint64_t StaticHash) {
+
+    if (NumRecords >= MaxRecordings)
+      return std::nullopt;
+
     auto DynamicHash = computeHash(GridDim, BlockDim, SharedMem, Args);
 
     if (Instances.contains(DynamicHash)) {
@@ -277,6 +285,8 @@ public:
           KInfo->getName(), DynamicHash);
       return std::nullopt;
     }
+
+    NumRecords++;
 
     LOG_DEBUG("First Instance of Kernel {} with DynamicHash {}, recording ...",
               KInfo->getName(), DynamicHash);
@@ -324,10 +334,10 @@ class RecordDatabase {
   std::string RegexStr;
   bool HasRegex;
   llvm::DenseMap<uint64_t, KernelInstancesCollection> KernelRecords;
+  uint64_t MaxRecordings;
 
 public:
   RecordDatabase() : KernelWhiteList(""), HasRegex(false) {
-    auto Dir = std::getenv("MNEME_DATA_DIR");
     auto WhiteList = std::getenv("MNEME_RR_KERNELS");
     if (WhiteList) {
       HasRegex = true;
@@ -335,6 +345,7 @@ public:
       KernelWhiteList = std::string(WhiteList);
     }
 
+    auto Dir = std::getenv("MNEME_DATA_DIR");
     MnemeDirectory =
         (Dir ? std::string(Dir) : std::filesystem::current_path().string());
 
@@ -343,6 +354,11 @@ public:
                                " does not exist.\n");
     }
     MnemeDirectory = std::filesystem::absolute(MnemeDirectory);
+    MaxRecordings = 4;
+    auto UMaxRecordings = std::getenv("MNEME_MAX_RECORDINGS");
+    if (UMaxRecordings) {
+      MaxRecordings = std::atoi(UMaxRecordings);
+    }
   }
 
   ~RecordDatabase() {
@@ -389,7 +405,7 @@ public:
 
     auto IT = KernelRecords.try_emplace(
         KInfo->getStaticHash(),
-        KernelInstancesCollection(VAddr, VASize, KInfo));
+        KernelInstancesCollection(VAddr, VASize, KInfo, MaxRecordings));
     return IT.first->second.takeSnapshot<VendorTypes>(
         MnemeDirectory, GlobalVars, DeviceMemory, GridDim, BlockDim, Args,
         SharedMem, Stream, KInfo->getStaticHash());

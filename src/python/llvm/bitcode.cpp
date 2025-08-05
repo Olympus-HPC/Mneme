@@ -1,6 +1,7 @@
 #include "llvm-c/BitReader.h"
 #include <iostream>
 #include <llvm/IR/Module.h>
+#include <mneme/MnemeLogger.hpp>
 
 #include "core.h"
 

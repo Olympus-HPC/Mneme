@@ -1,6 +1,6 @@
 // clang-format off
 // RUN: rm -rf *.json Recorded*.bc DeviceState*.mneme
-// RUN: LD_PRELOAD=MNEME_PRELOAD_LIB MNEME_LOG_LEVEL=debug MNEME_PAGE_SIZE=%PG ./test_block_grid_3d%ext | %FILECHECK %s --check-prefixes=CHECK
+// RUN: MNEME_MAX_RECORDINGS=100 LD_PRELOAD=MNEME_PRELOAD_LIB MNEME_LOG_LEVEL=debug MNEME_PAGE_SIZE=%PG ./test_block_grid_3d%ext | %FILECHECK %s --check-prefixes=CHECK
 // RUN: %RR | %FILECHECK %s --check-prefix=CHECK-RR
 // RUN: rm -rf *.json Recorded*.bc DeviceState*.mneme
 // clang-format on

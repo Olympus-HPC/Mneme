@@ -312,7 +312,7 @@ template <> struct DeviceTraits<DeviceVendors::HIP> {
     return hipStreamDestroy(Stream);
   }
 
-  static constexpr uintptr_t getSuggestedAddr() { return 0x1538c7e00000; }
+  static constexpr uintptr_t getSuggestedAddr() { return 0x1534f7e00000; }
 
   static hipError_t deviceLaunchKernel(const void *function_address,
                                        dim3 numBlocks, dim3 dimBlocks,

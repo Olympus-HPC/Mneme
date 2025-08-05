@@ -3,7 +3,6 @@
 #include <hip/hip_runtime_api.h>
 #include <llvm/Support/CBindingWrapping.h>
 #include <llvm/Support/MemoryBuffer.h>
-#include <mneme/MnemeLogger.hpp>
 #include <mneme/MnemePython.hpp>
 
 using namespace mneme;

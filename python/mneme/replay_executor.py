@@ -2,7 +2,7 @@ import argparse
 import os
 import time
 from datetime import datetime
-from multiprocessing import Queue
+from multiprocessing import Event, Queue
 from typing import Tuple
 
 from mneme.db import MnemeDB
@@ -363,7 +363,7 @@ class CLIExecutor(BaseExecutor):
             exp.dump()
             exp, generated_ir = super()._execute(exp, ir_module, self.pipeline)
             if self._db is not None:
-                final = self._db.save_ir(str(generated_ir), exp.hash())
+                final = self._db.save_ir(generated_ir, exp.hash())
                 self._db.add(orig, final, exp)
             exp.dump()
             return
@@ -378,7 +378,7 @@ class CLIExecutor(BaseExecutor):
             exp, generated_ir = super()._execute(exp, ir_module.clone(), passes)
             if self._db is not None:
                 print(f"Hash of code is {exp.hash()}")
-                final = self._db.save_ir(str(generated_ir), exp.hash())
+                final = self._db.save_ir(generated_ir, exp.hash())
                 self._db.add(orig, final, exp)
             exp.dump()
 
@@ -401,7 +401,7 @@ class CLIExecutor(BaseExecutor):
                 executor.kernel_descr.dynamic_hash,
                 executor.db_suffix,
             ).open()
-            orig = executor._db.save_ir(str(root_ir), "orig")
+            orig = executor._db.save_ir(root_ir, "orig")
 
         with executor as Memory:
             exp = executor.get_experiment(executor.pipeline)
@@ -479,6 +479,7 @@ class TuneWorker(BaseExecutor):
         iterations: int,
         db_dir: str,
         suffix: str,
+        state: Event,
     ):
         # We need this to actually run things...
         fd_out = os.open(
@@ -507,6 +508,7 @@ class TuneWorker(BaseExecutor):
         ).open()
 
         with worker as Memory:
+            state.set()
             print("Starting busy loop")
             while True:
                 msg = request_q.get()
@@ -519,7 +521,7 @@ class TuneWorker(BaseExecutor):
                         msg["exp_id"],
                     )
                     exp, ir = worker.process_payload(root_ir.clone(), msg["data"])
-                    final = resdb.save_ir(str(ir), exp.hash())
+                    final = resdb.save_ir(ir, exp.hash())
                     response_q.put(
                         {
                             "exp_id": msg["exp_id"],

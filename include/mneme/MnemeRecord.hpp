@@ -281,7 +281,8 @@ public:
       if (DeviceID == -1) {
         origGetDeviceID(&DeviceID);
       }
-      PM = initializePageManager<VendorTypes>(DeviceID);
+      PM = initializePageManager<VendorTypes>(
+          DeviceID, (void *)MnemeDeviceRT::getSuggestedAddr());
       getGlobalAddresses();
     }
 
@@ -359,7 +360,8 @@ public:
         origGetDeviceID(&DeviceID);
       }
       LOG_DEBUG("Initializing system {}", arch);
-      PM = initializePageManager<VendorTypes>(DeviceID);
+      PM = initializePageManager<VendorTypes>(
+          DeviceID, (void *)MnemeDeviceRT::getSuggestedAddr());
       getGlobalAddresses();
     }
 
