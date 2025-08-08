@@ -221,7 +221,7 @@ template <mneme::DeviceVendors VendorTypes>
 std::unique_ptr<PageManager<VendorTypes>>
 initializePageManager(int DeviceID, void *ReqAddr = nullptr,
                       uint64_t ActualSize = -1) {
-  const int MaxTries = 1;
+  const int MaxTries = 5;
   auto MinPageSize = mneme::DeviceTraits<VendorTypes>::getMinPageSize(DeviceID);
   if (ActualSize == -1)
     ActualSize = mneme::util::roundUp(
@@ -243,7 +243,7 @@ initializePageManager(int DeviceID, void *ReqAddr = nullptr,
         ActualSize, reinterpret_cast<void *>(ReqAddr), MinPageSize);
     Try++;
   }
-  LOG_INFO("... Reserved successfully Virtual Address {}", VA);
+  LOG_INFO("... Reserved Virtual Address {}", VA);
   return std::make_unique<PageManager<VendorTypes>>(ActualSize, MinPageSize, VA,
                                                     DeviceID);
 }

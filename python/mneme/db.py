@@ -65,6 +65,9 @@ class MnemeDB:
     def is_open(self):
         return self._open
 
+    def __len__(self):
+        return len(self._experiments)
+
     def open(self):
         if not self._dir.exists():
             self._dir.mkdir(parents=True, exist_ok=True)
@@ -102,8 +105,7 @@ class MnemeDB:
     def should_execute(self, exp: Experiment):
         _hash = exp.hash()
         if _hash in self._experiments:
-            return not self._experiments[_hash]
-
+            return False
         return True
 
     def suggest_ir_fn_name(self, exp: Experiment):
@@ -127,7 +129,6 @@ class MnemeDB:
         self._experiments[_hash] = exp.executed
 
     def save_ir(self, ir, _id):
-        fn = f"{str(self._dir)}/{self._static_hash}.{self._dynamic_hash}.{_id}.ll"
-        with open(fn, "w") as fd:
-            fd.write(ir)
+        fn = f"{str(self._dir)}/{self._static_hash}.{self._dynamic_hash}.{_id}.bc"
+        ir.to_bitcode(fn)
         return fn
