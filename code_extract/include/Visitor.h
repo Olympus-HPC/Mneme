@@ -40,7 +40,5 @@ public:
   bool VisitCallExpr(clang::CallExpr *decl);
   bool VisitDeclRefExpr(clang::DeclRefExpr *decl);
   bool VisitCXXConstructExpr(clang::CXXConstructExpr *expr);
-  // Custom Defined
-  void VisitParams(clang::FunctionDecl const *defDecl, bool isRecordMember);
-  void VisitTemplateParams(clang::FunctionDecl const* defDecl);
+  bool VisitTypeLoc(clang::TypeLoc typ);
 };

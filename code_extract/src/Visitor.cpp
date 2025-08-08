@@ -118,7 +118,8 @@ bool isGlobalVar(clang::VarDecl const *decl) {
   return !decl->isStaticLocal() && decl->hasGlobalStorage();
 }
 
-clang::QualType getUnderlyingType(clang::QualType const &type) {
+clang::QualType getUnderlyingType(clang::QualType const &qualType) {
+  auto type = qualType.getLocalUnqualifiedType();
   clang::QualType qt;
   if (auto pointerType = type->getAs<clang::PointerType>())
     qt = pointerType->getPointeeType();
@@ -137,8 +138,8 @@ bool isPotentialBuiltinByName(std::string const &name) {
   return name.size() > 2 && '_' == name[0] && '_' == name[1];
 }
 
-void handleVarDecl(clang::QualType qt, VisitManager &vm, CodeDB const &codedb,
-                   bool isWithinTypedef = false);
+void typeVisitorHelper(clang::QualType qt, VisitManager &vm,
+                       CodeDB const &codedb, bool isWithinTypedef = false);
 void handleRecordDecl(clang::RecordDecl const *recordDecl, VisitManager &vm,
                       CodeDB const &codedb, bool dontEmitDecl = false) {
   // If externally defined (or built-in), do not include def as we will include
@@ -149,7 +150,7 @@ void handleRecordDecl(clang::RecordDecl const *recordDecl, VisitManager &vm,
 
   // First visit all field types
   for (auto field : recordDecl->fields())
-    handleVarDecl(field->getType(), vm, codedb);
+    typeVisitorHelper(field->getType(), vm, codedb);
 
   // We will typically not find RecordDecls within function bodies or init
   // expressions. Hence, we need to visit them when we encounter either their
@@ -163,8 +164,8 @@ void handleRecordDecl(clang::RecordDecl const *recordDecl, VisitManager &vm,
   // function calls separately
 }
 
-void handleVarDecl(clang::QualType qt, VisitManager &vm, CodeDB const &codedb,
-                   bool isWithinTypedef) {
+void typeVisitorHelper(clang::QualType qt, VisitManager &vm,
+                       CodeDB const &codedb, bool isWithinTypedef) {
   if (!qt.getTypePtrOrNull())
     return;
 
@@ -178,7 +179,7 @@ void handleVarDecl(clang::QualType qt, VisitManager &vm, CodeDB const &codedb,
     if (isPotentialBuiltinByName(typDecl->getNameAsString()))
       return;
 
-    handleVarDecl(typDecl->getUnderlyingType(), vm, codedb, true);
+    typeVisitorHelper(typDecl->getUnderlyingType(), vm, codedb, true);
     auto [defDecl, doVisit] = visit(typDecl, vm, codedb);
 
     if (doVisit && defDecl->isDefinedOutsideFunctionOrMethod())
@@ -235,10 +236,12 @@ bool MatchVisitor::VisitCXXConstructExpr(clang::CXXConstructExpr *expr) {
   return true;
 }
 
-bool MatchVisitor::VisitDeclRefExpr(clang::DeclRefExpr *declRef) {
-  // Even if the vardecls are not interesting, visit their type.
-  helper::handleVarDecl(declRef->getType(), vm, codedb);
+bool MatchVisitor::VisitTypeLoc(clang::TypeLoc typ) {
+  helper::typeVisitorHelper(typ.getType(), vm, codedb);
+  return true;
+}
 
+bool MatchVisitor::VisitDeclRefExpr(clang::DeclRefExpr *declRef) {
   // Need to filter out global varDeclRef...
   auto varDecl = llvm::dyn_cast<clang::VarDecl>(declRef->getDecl());
   if (!varDecl)
@@ -259,6 +262,8 @@ bool MatchVisitor::VisitDeclRefExpr(clang::DeclRefExpr *declRef) {
   auto defDecl = static_cast<clang::VarDecl const *>(decl);
   if (!visitBody)
     return true;
+
+  TraverseVarDecl(const_cast<clang::VarDecl *>(defDecl));
 
   // If this vardecl is locally but extern'd we don't visit its init or emit it.
   if (defDecl->isLocalExternDecl())
@@ -317,41 +322,11 @@ bool MatchVisitor::VisitCallExpr(clang::CallExpr *callExpr) {
     return true;
 
   // First visit dependent calls
-  TraverseStmt(defDecl->getBody());
+  // Only internal state is modified, so we can cast away the const-ness here.
+  TraverseFunctionDecl(const_cast<clang::FunctionDecl *>(defDecl));
 
   // Then register
   vm.registerDecl(defDecl);
 
-  // Handle function param var decls
-  // Also, dont visit the parent decl here, we either have visited it or will
-  // eventually...
-  VisitParams(defDecl, false);
-
-  if (parentDecl && decl->isStatic())
-    helper::handleRecordDecl(parentDecl, vm, codedb);
-
   return true;
-}
-
-void MatchVisitor::VisitParams(clang::FunctionDecl const *defDecl,
-                               bool isRecordMember) {
-  // If function is a record member, visit its record.
-  if (isRecordMember)
-    helper::handleRecordDecl(
-        static_cast<clang::CXXMethodDecl const *>(defDecl)->getParent(), vm,
-        codedb);
-
-  for (auto param_it : defDecl->parameters())
-    helper::handleVarDecl(param_it->getType(), vm, codedb);
-}
-
-void MatchVisitor::VisitTemplateParams(clang::FunctionDecl const *defDecl) {
-  auto tmpSpec = defDecl->getTemplateSpecializationInfo();
-  if (tmpSpec) {
-    auto tmpArgs = tmpSpec->TemplateArguments->asArray();
-    for (auto &arg : tmpArgs) {
-      if (arg.getKind() == clang::TemplateArgument::ArgKind::Type)
-        helper::handleVarDecl(arg.getAsType(), vm, codedb);
-    }
-  }
 }

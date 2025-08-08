@@ -126,10 +126,7 @@ void buildCallExpr(clang::ArrayRef<clang::ParmVarDecl *> const &parameters,
 // Clang's print forcibly does not print attributes for function
 // templates, we need to override this behaviour and manually print them
 // ourselves.
-void print(llvm::raw_ostream &ss, clang::Decl const *decl, bool terse = false) {
-  clang::PrintingPolicy pp(decl->getLangOpts());
-  pp.TerseOutput = terse;
-  pp.PolishForDeclaration = terse;
+void print(llvm::raw_ostream &ss, clang::Decl const *decl, clang::PrintingPolicy const& pp) {
   std::string outString;
   llvm::raw_string_ostream out(outString);
 
@@ -155,11 +152,11 @@ void print(llvm::raw_ostream &ss, clang::Decl const *decl, bool terse = false) {
   ss << outString;
 }
 
-void print(llvm::raw_ostream &ss, clang::NamespaceAliasDecl const *decl) {
+void print(llvm::raw_ostream &ss, clang::NamespaceAliasDecl const *decl, clang::PrintingPolicy const& pp) {
   if (auto nestedNSAlias = llvm::dyn_cast<clang::NamespaceAliasDecl>(
           decl->getAliasedNamespace()))
-    print(ss, nestedNSAlias);
-  decl->print(ss);
+    print(ss, nestedNSAlias, pp);
+  decl->print(ss, pp);
   ss << ";\n";
 }
 
@@ -416,41 +413,48 @@ void VisitManager::emitStandaloneFile(std::string &output, bool emitRR,
     ss << "#include \"RRHooks.h\"\n";
   ss << "\n";
 
+  clang::PrintingPolicy funcPP(body->getLangOpts());
+  funcPP.Bool = true;
+
   for (auto &nsAlias : namespaceAliases) {
-    helper::print(ss, nsAlias);
+    helper::print(ss, nsAlias, funcPP);
     ss << "\n\n";
   }
 
   for (auto &unexpandedTypedefs : typedefDeclsUnexpanded) {
-    unexpandedTypedefs->print(ss);
+    unexpandedTypedefs->print(ss, funcPP);
     ss << ";\n\n";
   }
 
   for (auto &tags : tagDecls) {
     if (hasIndirectDef.find(tags) != hasIndirectDef.end())
       continue;
-    tags->print(ss);
+    tags->print(ss, funcPP);
     ss << ";\n\n";
   }
 
-  clang::PrintingPolicy tagPolicy(body->getLangOpts());
-  tagPolicy.IncludeTagDefinition = true;
+  funcPP.IncludeTagDefinition = true;
   for (auto &tags : typedefDecls) {
-    tags->print(ss, tagPolicy);
+    tags->print(ss, funcPP);
     ss << ";\n\n";
   }
+  funcPP.IncludeTagDefinition = false;
 
   // Emit all forward decls
+  funcPP.TerseOutput = true;
+  funcPP.PolishForDeclaration = true;
   for (auto &decl : fwdDecls) {
-    helper::print(ss, decl, true);
+    helper::print(ss, decl, funcPP);
     // Since these are just fwd decls, add a semicolon
     ss << ";\n\n";
   }
+  funcPP.TerseOutput = false;
+  funcPP.PolishForDeclaration = false;
   ss << '\n';
 
   // Emit all other declrefs
   for (auto decl : declRefs) {
-    helper::print(ss, decl);
+    helper::print(ss, decl, funcPP);
     ss << "\n\n";
   }
 
@@ -536,9 +540,7 @@ void VisitManager::pullPrimaryFnContext() {
 
   MatchVisitor mv(*this, db);
 
-  mv.VisitParams(primaryDecl, isMemberFn);
   registerParameterPrologue(mv, &primaryFn);
-  mv.VisitTemplateParams(primaryDecl);
 
   auto incFile = helper::locToIncFile(primaryDecl->getLocation(),
                                       primaryDecl->getASTContext());
@@ -548,7 +550,7 @@ void VisitManager::pullPrimaryFnContext() {
       registerInclude(
           helper::locToIncFile(primaryDecl->getPointOfInstantiation(),
                                primaryDecl->getASTContext()));
-    mv.TraverseStmt(primaryDecl->getBody());
+    mv.TraverseFunctionDecl(primaryDecl);
     registerDecl(primaryDecl);
     registerInclude(incFile);
   } else {
