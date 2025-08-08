@@ -126,25 +126,53 @@ void buildCallExpr(clang::ArrayRef<clang::ParmVarDecl *> const &parameters,
 // Clang's print forcibly does not print attributes for function
 // templates, we need to override this behaviour and manually print them
 // ourselves.
-void print(llvm::raw_ostream &ss, clang::Decl const *decl, clang::PrintingPolicy const& pp) {
+void print(llvm::raw_ostream &ss, clang::Decl const *decl,
+           clang::PrintingPolicy const &pp,
+           bool doNotEmitDefaultParams = false) {
   std::string outString;
   llvm::raw_string_ostream out(outString);
 
   decl->print(out, pp);
-  auto fnDecl = decl->getAsFunction();
-  if (fnDecl && (fnDecl->getDescribedFunctionTemplate() ||
-                 fnDecl->isFunctionTemplateSpecialization())) {
-    std::string attrs;
-    llvm::raw_string_ostream attrsStream(attrs);
-    auto &Attrs = fnDecl->getAttrs();
-    for (auto *A : Attrs) {
-      if (A->isInherited() || A->isImplicit())
-        continue;
-      A->printPretty(attrsStream, pp);
-      attrsStream << ' ';
+  if (auto fnDecl = decl->getAsFunction()) {
+    bool isTemplate = fnDecl->getDescribedFunctionTemplate() ||
+                      fnDecl->isFunctionTemplateSpecialization();
+    bool isDefinition = !pp.TerseOutput;
+    if (isTemplate) {
+      std::string attrs;
+      llvm::raw_string_ostream attrsStream(attrs);
+      auto &Attrs = fnDecl->getAttrs();
+      for (auto *A : Attrs) {
+        if (A->isInherited() || A->isImplicit())
+          continue;
+
+        A->printPretty(attrsStream, pp);
+        attrsStream << ' ';
+      }
+
+      auto insertPos = outString.find(fnDecl->getName());
+      outString.insert(insertPos, attrs);
     }
-    auto fnName = fnDecl->getName();
-    outString.insert(outString.find(fnName), attrs);
+
+    // We need to reprint params if there is even a single default arg.
+    if (doNotEmitDefaultParams &&
+        fnDecl->getMinRequiredArguments() != fnDecl->getNumParams()) {
+      std::string params;
+      llvm::raw_string_ostream paramsStream(params);
+      paramsStream << "(";
+      for (auto param : fnDecl->parameters()) {
+        param->print(paramsStream, pp);
+        auto defaultArg = params.find('=');
+        if (defaultArg != std::string::npos)
+          params.erase(defaultArg, params.size() - defaultArg);
+        paramsStream << ",";
+      }
+      params.back() = ')';
+      auto name = fnDecl->getName();
+      auto insertPos = outString.find(name) + name.size();
+      auto funcBodyPos = outString.find('{');
+      outString = outString.substr(0, insertPos) + params +
+                  outString.substr(funcBodyPos);
+    }
   } else if (llvm::isa<clang::VarDecl>(decl) ||
              llvm::isa<clang::VarTemplateDecl>(decl))
     out << ";";
@@ -152,7 +180,8 @@ void print(llvm::raw_ostream &ss, clang::Decl const *decl, clang::PrintingPolicy
   ss << outString;
 }
 
-void print(llvm::raw_ostream &ss, clang::NamespaceAliasDecl const *decl, clang::PrintingPolicy const& pp) {
+void print(llvm::raw_ostream &ss, clang::NamespaceAliasDecl const *decl,
+           clang::PrintingPolicy const &pp) {
   if (auto nestedNSAlias = llvm::dyn_cast<clang::NamespaceAliasDecl>(
           decl->getAliasedNamespace()))
     print(ss, nestedNSAlias, pp);
@@ -220,7 +249,8 @@ void VisitManager::registerDecl(clang::VarDecl const *decl) {
 void VisitManager::registerDecl(clang::RecordDecl const *decl) {
   // We should not emit record decls that are part of typedefs as they will be
   // emitted alongside the typedef.
-  if (decl->getTypedefNameForAnonDecl() || !decl->isDefinedOutsideFunctionOrMethod())
+  if (decl->getTypedefNameForAnonDecl() ||
+      !decl->isDefinedOutsideFunctionOrMethod())
     return;
 
   if (auto cxxRecordDecl = llvm::dyn_cast<clang::CXXRecordDecl>(decl))
@@ -442,19 +472,17 @@ void VisitManager::emitStandaloneFile(std::string &output, bool emitRR,
 
   // Emit all forward decls
   funcPP.TerseOutput = true;
-  funcPP.PolishForDeclaration = true;
   for (auto &decl : fwdDecls) {
     helper::print(ss, decl, funcPP);
     // Since these are just fwd decls, add a semicolon
     ss << ";\n\n";
   }
   funcPP.TerseOutput = false;
-  funcPP.PolishForDeclaration = false;
   ss << '\n';
 
   // Emit all other declrefs
   for (auto decl : declRefs) {
-    helper::print(ss, decl, funcPP);
+    helper::print(ss, decl, funcPP, fwdDecls.find(decl) != fwdDecls.end());
     ss << "\n\n";
   }
 
