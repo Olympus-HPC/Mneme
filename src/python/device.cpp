@@ -1,6 +1,12 @@
 #include "llvm/core.h"
 #include <cstring>
+
+#ifdef MNEME_ENABLE_CUDA
+#include <cuda_runtime_api.h>
+#elif defined(MNEME_ENABLE_HIP)
 #include <hip/hip_runtime_api.h>
+#endif
+
 #include <llvm/Support/CBindingWrapping.h>
 #include <llvm/Support/MemoryBuffer.h>
 #include <mneme/MnemePython.hpp>

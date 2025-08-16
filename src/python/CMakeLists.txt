@@ -6,6 +6,8 @@ file(GLOB LLVM_SRC "llvm/*.cpp")
 file(GLOB PROTEUS_SRC "proteus/*.cpp")
 file(GLOB MNEME_SRC "./*.cpp")
 
+# Needed because rpath to zstd was being messed up in a conda env
+SET(CMAKE_SKIP_BUILD_RPATH TRUE)
 
 add_library(mneme SHARED ${LLVM_SRC} ${PROTEUS_SRC} ${MNEME_SRC} ${MnemeCoreSrcDir}/MnemePageManager.cpp ${MnemeCoreSrcDir}/MnemeDeviceCode.cpp)
 
@@ -17,9 +19,8 @@ target_include_directories(mneme SYSTEM PRIVATE ${LLVM_INCLUDE_DIRS} ${CMAKE_SOU
 target_link_libraries(mneme PRIVATE proteusCore)
 
 if (MNEME_ENABLE_LOGGER)
-target_link_libraries(mneme PRIVATE spdlog::spdlog_header_only)
-target_compile_definitions(mneme PRIVATE MNEME_ENABLE_LOGGER)
+  target_link_libraries(mneme PRIVATE spdlog::spdlog_header_only)
+  target_compile_definitions(mneme PRIVATE MNEME_ENABLE_LOGGER)
 endif()
-
 
 target_link_libraries(mneme PRIVATE ${LLVM_AVAILABLE_LIBS})

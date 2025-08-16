@@ -47,6 +47,8 @@ class CMakeBuild(build_ext):
         self.has_nvidia = "On" if has_nvidia_gpu() else "Off"
         self.has_amd = "On" if has_amd_gpu() else "Off"
         self.llvm_dir = os.getenv("LLVM_INSTALL_DIR", None)
+        if self.has_amd == "On" and not self.llvm_dir:
+            self.llvm_dir = os.getenv("ROCM_PATH", None)
         if self.has_amd == "On":
             self.cxx = f"{self.llvm_dir}/bin/amdclang++"
             self.cc = f"{self.llvm_dir}/bin/amdclang"
@@ -60,6 +62,16 @@ class CMakeBuild(build_ext):
             raise RuntimeError(
                 "Error: LLVM_INSTALL_DIR is not set. Please export it before running setup.py."
             )
+
+        # TODO: Here we assume that NVIDIA based system use Conda LLVM
+        #       and that ROCm-based system use system LLVM (from ROCm).
+        # FIXME: Might be better to manage that with environnement variables
+        self.shared_llvm = "ON" if has_nvidia_gpu() else "OFF"
+
+        # TODO: find that code programtically or ask users to set 
+        #       an environnement variable CUDA_ARCH
+        # FIXME: we could also use CUDA_ARCHITECTURES=native in the CMake
+        self.cuda_arch = "70" if has_nvidia_gpu() else None
 
     def run(self):
         if not os.path.exists("third_party"):
@@ -118,7 +130,8 @@ class CMakeBuild(build_ext):
             "-DENABLE_TESTS=Off",
             f"-DCMAKE_C_COMPILER={self.cc}",
             f"-DCMAKE_CXX_COMPILER={self.cxx}",
-            "..",
+            f"-DPROTEUS_LINK_SHARED_LLVM={self.shared_llvm}",
+            ".."
         ]
 
         run_command(
@@ -174,16 +187,31 @@ class CMakeBuild(build_ext):
             f"-DCMAKE_CXX_COMPILER={self.cxx}",
             f"-DLLVM_INSTALL_DIR={self.llvm_dir}",
             f"-DMNEME_ENABLE_HIP={self.has_amd}",
+            f"-DMNEME_ENABLE_CUDA={self.has_nvidia}",
             "-DMNEME_ENABLE_TESTS=On",
             "-DMNEME_ENABLE_AUTOTUNE=On",
             f"-Dproteus_DIR={self.install_dir}",
             f"-Dspdlog_DIR={self.install_dir}",
+            f"-DMNEME_LINK_SHARED_LLVM={self.shared_llvm}"
         ]
 
-        run_command(["cmake", ".."] + cmake_options, cwd=build_dir)
-        run_command(["make", "-j4"], cwd=build_dir)
-        run_command(["make", "-j4", "install"], cwd=build_dir)
+        if self.cuda_arch:
+            cmake_options.append(f"-DCMAKE_CUDA_ARCHITECTURES={self.cuda_arch}")
 
+        if self.has_nvidia == "On":
+            cmake_options.append(f"-DCMAKE_CUDA_COMPILER={self.cxx}")
+            lib_dir = os.path.join(self.llvm_dir, "lib")
+            # This is needed when using llvm installed by conda, sometimes llvm cannot find zstd
+            cmake_options.append(f"-DCMAKE_PREFIX_PATH={lib_dir}")
+            
+
+        cmake_options.append("..")
+        run_command(
+            ["cmake"] + cmake_options,
+            cwd=build_dir,
+        )
+        run_command(["make", "-j4"], cwd=build_dir)
+        run_command(["make", "install"], cwd=build_dir)
         built_module = glob.glob(
             os.path.join(build_dir, "src", "python", "libmneme*.so")
         )

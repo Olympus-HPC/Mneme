@@ -44,8 +44,14 @@ ProteusPY_codeGenObject(LLVMModuleRef Mod, const char *DeviceArch, bool use_rtc,
   llvm::SmallPtrSet<void *, 8> GlobalLinkedBinaries;
   auto *M = llvm::unwrap(Mod);
   auto start = std::chrono::high_resolution_clock::now();
+  // FIXME: Proteus should have a uniform API for codegenObject
+#ifdef MNEME_ENABLE_CUDA
+  auto DeviceObject = proteus::codegenObject(
+      *M, DeviceArch, GlobalLinkedBinaries, use_rtc);
+#elif defined(MNEME_ENABLE_HIP)
   auto DeviceObject = proteus::codegenObject(
       *M, DeviceArch, GlobalLinkedBinaries, use_rtc, CodegenOptLevel);
+#endif
   auto end = std::chrono::high_resolution_clock::now();
 
   // Calculate duration and convert to seconds as float
