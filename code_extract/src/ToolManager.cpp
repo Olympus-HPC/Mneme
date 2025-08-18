@@ -30,6 +30,9 @@ getCompilationFlags(std::vector<std::string> const &cli,
       flags += command + " ";
       canBeArg = isFlag;
     } else {
+      // If current flag is arg, remove the previous flag too
+      if (canBeArg && !isFlag)
+        flags = flags.substr(0, flags.find_last_of(' ', flags.size() - 2));
       canBeArg = false;
     }
   }
@@ -142,6 +145,8 @@ void ToolManager::getStandaloneFnContext(std::string const &fnName,
   auto fnSrcFile = ctx.getSourceManager().getFilename(
       primaryFn->getDefinition()->getLocation());
   bool isCuda = ctx.getLangOpts().CUDA;
+  bool isHip = ctx.getLangOpts().HIP;
+  bool isGPU = isCuda || isHip;
 
   std::string basename;
   if (!outFileName.empty())
@@ -150,7 +155,7 @@ void ToolManager::getStandaloneFnContext(std::string const &fnName,
     basename = fnName;
   basename = std::regex_replace(basename, std::regex("[^\\w]"), "_");
   std::string objname = basename + ".o";
-  std::string filename = basename + (isCuda ? ".cu" : ".cpp");
+  std::string filename = basename + (isGPU ? ".cu" : ".cpp");
 
   VisitManager mv(*primaryFn, *db.get());
 
@@ -186,12 +191,25 @@ void ToolManager::getStandaloneFnContext(std::string const &fnName,
   auto cli = compDb->getCompileCommands(fnSrcFile)[0].CommandLine;
   // Remove warning for use of uninitialized vars, eventually make this optional
   std::string defaultOpts = "-Wno-uninitialized";
-  command =
-      helper::getCompilationFlags(cli, {"-triple", "-filetype", "-main-file-name", "-target-cpu", "-mrelocation-model", "-cc1as", "-c", "-o", "--driver-mode=g++", "--"});
+  std::unordered_set<std::string> blacklistFlags = {"-triple",
+                                                    "-filetype",
+                                                    "-main-file-name",
+                                                    "-target-cpu",
+                                                    "-mrelocation-model",
+                                                    "-cc1as",
+                                                    "-c",
+                                                    "-o",
+                                                    "--driver-mode=g++",
+                                                    "--"};
+  if (isGPU)
+    blacklistFlags.insert("c++-header");
+  command = helper::getCompilationFlags(cli, blacklistFlags);
   command += " " + defaultOpts;
   // If its cuda, we will do 2 phase compilation + linking
-  if (isCuda)
+  if (isGPU)
     command += " -c";
+  if (isHip)
+    command += " -x hip ";
   command += " -o " + objname + " " + filename;
   std::cout << "Compiling " << fnName << " with command:\n"
             << command << std::endl;
@@ -201,15 +219,20 @@ void ToolManager::getStandaloneFnContext(std::string const &fnName,
     std::cout << "Compilation successful!" << std::endl;
     // For now, only link against basic libs for cuda, ideally we want to pull
     // all link flags from CC
-    if (isCuda) {
-      std::string linkCommand =
-          "clang++ " + objname +
-          " -Wl,-rpath,${CUDA_LIBS} -L${CUDA_LIBS} -lcuda -lcudadevrt "
-          "-lcudart_static -lrt -lpthread -ldl -o " +
-          basename;
+    if (isGPU) {
+      std::string linkCommand;
+      if (isCuda)
+        linkCommand =
+            "clang++ " + objname +
+            " -Wl,-rpath,${CUDA_LIBS} -L${CUDA_LIBS} -lcuda -lcudadevrt "
+            "-lcudart_static -lrt -lpthread -ldl -o " +
+            basename;
+      else
+        linkCommand = "clang++ --hip-link " + objname + " -o " + basename;
       if (system(linkCommand.c_str()) != 0) {
-        if (!std::getenv("CUDA_LIBS"))
-          std::cout << "Point CUDA_LIBS to your cuda libraries, otherwise "
+        if (isCuda && !std::getenv("CUDA_LIBS"))
+          std::cout << "Point CUDA_LIBS to your driver "
+                       "libraries, otherwise "
                        "linking WILL fail.";
         std::cout << "Linking failed!" << std::endl;
       } else

@@ -25,6 +25,11 @@ bool isIncludeExternal(std::string const &incFile, CodeDB const &codedb) {
   return incFile.find(codedb.projPath) == std::string::npos;
 }
 
+bool isIncludeExternal(clang::Decl const *decl, CodeDB const &codedb) {
+  return isIncludeExternal(
+      locToIncFile(decl->getLocation(), decl->getASTContext()), codedb);
+}
+
 template <typename T>
 void storeDecl(T *decl, clang::ASTUnit const &unit, CodeDB &cdb) {
   constexpr bool isFunctionDecl = std::is_same_v<T, clang::FunctionDecl>;
@@ -134,8 +139,13 @@ clang::QualType getUnderlyingType(clang::QualType const &qualType) {
 }
 
 // Use the fact that builtin functions are typically prepended with "__"
-bool isPotentialBuiltinByName(std::string const &name) {
+bool isPotentialBuiltinByName(llvm::StringRef const &name) {
   return name.size() > 2 && '_' == name[0] && '_' == name[1];
+}
+
+bool isPotentialBuiltin(clang::NamedDecl const *decl, CodeDB const &cdb) {
+  return decl->getIdentifier() && isPotentialBuiltinByName(decl->getName()) &&
+         isIncludeExternal(decl, cdb);
 }
 
 void typeVisitorHelper(clang::QualType qt, VisitManager &vm,
@@ -144,8 +154,7 @@ void handleRecordDecl(clang::RecordDecl const *recordDecl, VisitManager &vm,
                       CodeDB const &codedb, bool dontEmitDecl = false) {
   // If externally defined (or built-in), do not include def as we will include
   // the file itself.
-  if (isPotentialBuiltinByName(recordDecl->getNameAsString()) ||
-      recordDecl->isImplicit())
+  if (isPotentialBuiltin(recordDecl, codedb) || recordDecl->isImplicit())
     return;
 
   // First visit all field types
@@ -176,7 +185,7 @@ void typeVisitorHelper(clang::QualType qt, VisitManager &vm,
     // revisit typedef chains again if visited before.
     auto typDecl = typedefType->getDecl();
 
-    if (isPotentialBuiltinByName(typDecl->getNameAsString()))
+    if (isPotentialBuiltin(typDecl, codedb))
       return;
 
     typeVisitorHelper(typDecl->getUnderlyingType(), vm, codedb, true);
@@ -230,7 +239,7 @@ bool CodeExtractVisitor::VisitEnumDecl(clang::EnumDecl *decl) {
 
 bool MatchVisitor::VisitCXXConstructExpr(clang::CXXConstructExpr *expr) {
   auto ctor = expr->getConstructor();
-  if (helper::isPotentialBuiltinByName(ctor->getNameAsString()))
+  if (helper::isPotentialBuiltin(ctor, codedb))
     return true;
   helper::handleRecordDecl(ctor->getParent(), vm, codedb);
   return true;
@@ -251,7 +260,7 @@ bool MatchVisitor::VisitDeclRefExpr(clang::DeclRefExpr *declRef) {
   // name or variable type name is potentially builtin. OR if the variable decl
   // itself has a builtin attribute.
   bool isPotentialBuiltin =
-      helper::isPotentialBuiltinByName(varDecl->getNameAsString()) ||
+      helper::isPotentialBuiltin(varDecl, codedb) ||
       helper::isPotentialBuiltinByName(
           varDecl->getType().getUnqualifiedType().getAsString()) ||
       varDecl->hasAttr<clang::BuiltinAttr>();
@@ -276,6 +285,7 @@ bool MatchVisitor::VisitDeclRefExpr(clang::DeclRefExpr *declRef) {
   auto varInit = const_cast<clang::VarDecl *>(defDecl)->getInit();
   // If the init expression is not a literal, we should visit it to resolve
   // dependencies. Obviously this list of literals is not exhaustive.
+  /// FIXME: Replace with llvm::isa
   if (varInit &&
       !helper::isOneOf<clang::CXXBoolLiteralExpr, clang::CharacterLiteral,
                        clang::FixedPointLiteral, clang::FloatingLiteral,
@@ -288,19 +298,22 @@ bool MatchVisitor::VisitDeclRefExpr(clang::DeclRefExpr *declRef) {
 
 bool MatchVisitor::VisitCallExpr(clang::CallExpr *callExpr) {
   auto decl = callExpr->getDirectCallee();
-  auto incFile =
-      helper::locToIncFile(decl->getLocation(), decl->getASTContext());
-  if (!decl || (helper::isPotentialBuiltinByName(decl->getNameAsString()) &&
-                helper::isIncludeExternal(incFile, codedb)))
+  if (!decl || helper::isPotentialBuiltin(decl, codedb))
     return true;
 
   clang::CXXRecordDecl *parentDecl = nullptr;
-  /// FIXME: Make more generic to handle other record types.
-  if (decl->isCXXClassMember()) {
-    parentDecl = static_cast<clang::CXXMethodDecl *>(decl)->getParent();
-    // If parent decl is implicit, do not visit as callexpr maybe lambda
+  if (auto cxxMem = llvm::dyn_cast<clang::CXXMethodDecl>(decl)) {
+    parentDecl = cxxMem->getParent();
+
+    // If parent decl is lambda, do not visit
+    if (parentDecl->isLambda()) return true;
+
+    // Sometimes some structs may not be picked up by the TypeLoc visitors, so
+    // visit them explicitly.
+    helper::handleRecordDecl(parentDecl, vm, codedb);
+
     // Or if function is default, do not visit
-    if (parentDecl->isImplicit() || decl->isDefaulted())
+    if (decl->isDefaulted())
       return true;
   }
 
@@ -316,7 +329,8 @@ bool MatchVisitor::VisitCallExpr(clang::CallExpr *callExpr) {
   // If function is a call to a template instantiation, we need to save the
   // includes for it at the point of instantiation (as well).
   if (decl->isFunctionTemplateSpecialization())
-    vm.registerInclude(incFile);
+    vm.registerInclude(
+        helper::locToIncFile(decl->getLocation(), decl->getASTContext()));
 
   if (!visitBody || !defDecl->hasBody())
     return true;
