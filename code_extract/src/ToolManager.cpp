@@ -12,18 +12,20 @@
 #include <ostream>
 #include <regex>
 #include <string>
+#include <tuple>
 #include <unordered_set>
 #include <vector>
 
 namespace ct = clang::tooling;
 
 namespace helper {
-std::string
+std::tuple<std::string, std::string>
 getCompilationFlags(std::vector<std::string> const &cli,
                     std::unordered_set<std::string> const &blacklistedFlags) {
   std::string flags;
   bool canBeArg = true;
-  for (auto &command : cli) {
+  for (int i = 1; i < cli.size(); i++) {
+    auto command = cli[i];
     bool isFlag = command[0] == '-';
     if ((canBeArg || isFlag) &&
         blacklistedFlags.find(command) == blacklistedFlags.end()) {
@@ -36,7 +38,7 @@ getCompilationFlags(std::vector<std::string> const &cli,
       canBeArg = false;
     }
   }
-  return flags;
+  return {cli[0], flags};
 }
 } // namespace helper
 
@@ -144,8 +146,8 @@ void ToolManager::getStandaloneFnContext(std::string const &fnName,
   auto &ctx = primaryFn->getDefinition()->getASTContext();
   auto fnSrcFile = ctx.getSourceManager().getFilename(
       primaryFn->getDefinition()->getLocation());
-  bool isCuda = ctx.getLangOpts().CUDA;
   bool isHip = ctx.getLangOpts().HIP;
+  bool isCuda = ctx.getLangOpts().CUDA && !isHip;
   bool isGPU = isCuda || isHip;
 
   std::string basename;
@@ -180,13 +182,6 @@ void ToolManager::getStandaloneFnContext(std::string const &fnName,
   if (system(command.c_str()) != 0)
     std::cerr << "Formatting failed!" << std::endl;
 
-  // Then remove unused includes
-  command = "clang-tidy --quiet --checks='-*,misc-include-cleaner' -fix " +
-            filename + " > /dev/null";
-  if (system(command.c_str()) != 0)
-    std::cerr << "Removing unused headers failed!" << std::endl;
-
-  // Then compile
   // For now only get one compilation command
   auto cli = compDb->getCompileCommands(fnSrcFile)[0].CommandLine;
   // Remove warning for use of uninitialized vars, eventually make this optional
@@ -197,20 +192,25 @@ void ToolManager::getStandaloneFnContext(std::string const &fnName,
                                                     "-target-cpu",
                                                     "-mrelocation-model",
                                                     "-cc1as",
-                                                    "-c",
                                                     "-o",
                                                     "--driver-mode=g++",
                                                     "--"};
   if (isGPU)
     blacklistFlags.insert("c++-header");
-  command = helper::getCompilationFlags(cli, blacklistFlags);
-  command += " " + defaultOpts;
+  auto [compiler, flags] = helper::getCompilationFlags(cli, blacklistFlags);
   // If its cuda, we will do 2 phase compilation + linking
-  if (isGPU)
-    command += " -c";
   if (isHip)
-    command += " -x hip ";
-  command += " -o " + objname + " " + filename;
+    flags += " -x hip ";
+
+  // Then remove unused includes
+  command = "clang-tidy --quiet --checks='-*,misc-include-cleaner' -fix " +
+            filename + " -- " + flags + " > /dev/null";
+  if (system(command.c_str()) != 0)
+    std::cerr << "Removing unused headers failed!" << std::endl;
+
+  // Then compile
+  command = compiler + " " + flags + " " + defaultOpts + " -o " + objname +
+            " " + filename;
   std::cout << "Compiling " << fnName << " with command:\n"
             << command << std::endl;
   if (system(command.c_str()) != 0) {
@@ -221,14 +221,14 @@ void ToolManager::getStandaloneFnContext(std::string const &fnName,
     // all link flags from CC
     if (isGPU) {
       std::string linkCommand;
-      if (isCuda)
+      if (isHip)
+        linkCommand = "clang++ --hip-link " + objname + " -o " + basename;
+      else 
         linkCommand =
             "clang++ " + objname +
             " -Wl,-rpath,${CUDA_LIBS} -L${CUDA_LIBS} -lcuda -lcudadevrt "
             "-lcudart_static -lrt -lpthread -ldl -o " +
             basename;
-      else
-        linkCommand = "clang++ --hip-link " + objname + " -o " + basename;
       if (system(linkCommand.c_str()) != 0) {
         if (isCuda && !std::getenv("CUDA_LIBS"))
           std::cout << "Point CUDA_LIBS to your driver "
