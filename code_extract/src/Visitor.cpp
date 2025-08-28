@@ -65,9 +65,8 @@ void visitNamespaceChain(clang::Decl const *decl, VisitManager &vm) {
   auto *ctx = decl->getDeclContext();
   while (ctx) {
     if (auto const *ns = llvm::dyn_cast<clang::NamespaceDecl>(ctx)) {
-      if (ns->isAnonymousNamespace())
-        continue;
-      vm.addIfNamespaceAliased(ns->getNameAsString());
+      if (!ns->isAnonymousNamespace())
+        vm.addIfNamespaceAliased(ns->getNameAsString());
     }
     ctx = ctx->getParent();
   }

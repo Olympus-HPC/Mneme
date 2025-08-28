@@ -429,9 +429,6 @@ void VisitManager::emitStandaloneFile(std::string &output, bool emitRR,
 
   for (auto &incID : includes) {
     auto inc = db.includes.getFileFromID(incID);
-    // For now we do not support hip
-    if (inc.find("hip_runtime") != std::string::npos)
-      continue;
     ss << "#include ";
     if (inc.find('.') == std::string::npos)
       ss << "<" << inc << ">";
