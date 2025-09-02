@@ -9,6 +9,7 @@ class IncludeManager {
   using FileID = std::size_t;
   std::unordered_map<FileID, std::unordered_set<FileID>> source_includes;
   std::unordered_map<FileID, std::unordered_set<FileID>> header_includes;
+  std::unordered_map<FileID, FileID> transitive_includes;
 
   std::vector<std::string> id_to_path;
   std::vector<std::pair<bool, std::string>> id_to_isExternal;
@@ -24,6 +25,12 @@ class IncludeManager {
   void resolve(FileID file, std::unordered_set<FileID> &includes);
 
   void resolve();
+  
+  void resolve_transitivity(FileID id, std::unordered_set<FileID>* include_to, std::vector<bool>& visited);
+
+  void resolve_transitivity(FileID file, std::vector<bool>& visited);
+
+  void resolve_transitivity();
 
   void processDirectory(std::string const &directory);
 
