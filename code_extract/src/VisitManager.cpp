@@ -4,6 +4,7 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+#include <iostream>
 
 #include "clang/AST/Attrs.inc"
 #include "clang/AST/Decl.h"
@@ -311,6 +312,7 @@ void VisitManager::fwdDeclFuncDecl(clang::FunctionDecl const *decl) {
 
 void VisitManager::registerInclude(std::string const &includePath) {
   auto [id, needsExplicitInclude] = db.includes.getIDFromFile(includePath);
+  std::cout << includePath << " " << id << std::endl;
   if (needsExplicitInclude)
     db.includes.getIncludes(id, includes);
 }

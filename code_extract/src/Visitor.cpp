@@ -75,6 +75,7 @@ void visitNamespaceChain(clang::Decl const *decl, VisitManager &vm) {
 std::tuple<clang::Decl const *, bool>
 visit(clang::NamedDecl const *decl, VisitManager &vm, CodeDB const &cdb) {
   std::string keyName = CodeDB::getKeyName(decl);
+  llvm::outs() << decl->getNameAsString() << "\n";
 
   if (vm.isVisited(keyName))
     return {vm.getVisitedObj(keyName)->getDefinition(), false};
@@ -156,15 +157,18 @@ void handleRecordDecl(clang::RecordDecl const *recordDecl, VisitManager &vm,
   if (isPotentialBuiltin(recordDecl, codedb) || recordDecl->isImplicit())
     return;
 
-  // First visit all field types
-  for (auto field : recordDecl->fields())
-    typeVisitorHelper(field->getType(), vm, codedb);
-
   // We will typically not find RecordDecls within function bodies or init
   // expressions. Hence, we need to visit them when we encounter either their
   // var decl or static function call (unsupported as of yet).
   auto [defDecl, doVisit] = helper::visit(recordDecl, vm, codedb);
-  if (doVisit && !dontEmitDecl) {
+
+  if (!doVisit) return;
+
+  // First visit all field types
+  for (auto field : recordDecl->fields())
+    typeVisitorHelper(field->getType(), vm, codedb);
+
+  if (!dontEmitDecl) {
     vm.registerDecl(static_cast<clang::RecordDecl const *>(defDecl));
   }
 
@@ -187,10 +191,13 @@ void typeVisitorHelper(clang::QualType qt, VisitManager &vm,
     if (isPotentialBuiltin(typDecl, codedb))
       return;
 
-    typeVisitorHelper(typDecl->getUnderlyingType(), vm, codedb, true);
     auto [defDecl, doVisit] = visit(typDecl, vm, codedb);
+    
+    if (!doVisit) return;
 
-    if (doVisit && defDecl->isDefinedOutsideFunctionOrMethod())
+    typeVisitorHelper(typDecl->getUnderlyingType(), vm, codedb, true);
+
+    if (defDecl->isDefinedOutsideFunctionOrMethod())
       vm.registerDecl(static_cast<clang::TypedefNameDecl const *>(defDecl));
   } else if (auto decl = cannonType->getAsCXXRecordDecl()) {
     if (isWithinTypedef || !decl->isDefinedOutsideFunctionOrMethod())

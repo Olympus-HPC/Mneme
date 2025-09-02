@@ -221,8 +221,11 @@ void ToolManager::getStandaloneFnContext(std::string const &fnName,
     // all link flags from CC
     if (isGPU) {
       std::string linkCommand;
+      std::string link_flags;
+      if (flags.find("-fopenmp") != std::string::npos)
+        link_flags += "-fopenmp ";
       if (isHip)
-        linkCommand = "clang++ --hip-link " + objname + " -o " + basename;
+        linkCommand = "clang++ --hip-link " + link_flags + objname + " -o " + basename;
       else 
         linkCommand =
             "clang++ " + objname +
