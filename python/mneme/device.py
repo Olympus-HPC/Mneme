@@ -37,7 +37,6 @@ ffi.lib.MnemePy_profile.argtypes = [
     MnemeRecordStateRef,
     c_int,
     c_int,
-    POINTER(c_float),
 ]
 
 
@@ -110,7 +109,6 @@ class DeviceFunction(ffi.ObjectRef):
         shared_mem_size: int,
         iterations=5,
     ):
-        arr = (c_float * iterations)()
         # Set argument types
         DevMod = self._module_ref()
         if DevMod is None:
@@ -125,9 +123,8 @@ class DeviceFunction(ffi.ObjectRef):
             epilogue_state,
             shared_mem_size,
             iterations,
-            arr,
         )
-        return [float(v) for v in arr]
+        return
 
 
 class DeviceModule(ffi.ObjectRef):

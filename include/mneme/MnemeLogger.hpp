@@ -113,7 +113,8 @@ public:
 #define LOG_INFO(...) ((void)0)
 #define LOG_WARN(...) ((void)0)
 #define LOG_CRITICAL(...) ((void)0)
-#define LOG_FATAL(x)                                                           \
-  std::cerr << std::string(__FILE__) << ":" << __LINE__ << x << "\n"
+#define LOG_FATAL(...)                                                         \
+  std::cerr << "Error in file" << std::string(__FILE__) << ":" << __LINE__     \
+            << "\n"
 
 #endif // ENABLE_LOGGING

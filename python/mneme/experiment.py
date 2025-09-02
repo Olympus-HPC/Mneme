@@ -2,6 +2,40 @@ import hashlib
 import json
 import math
 
+import numpy as np
+
+
+def _analyze_measurements(times):
+    """
+    times: list or array of measurements (after dropping warm-ups)
+    """
+    arr = np.array(times, dtype=float)
+    N = len(arr)
+
+    # 1. Standard deviation
+    std_val = np.std(arr, ddof=1)  # sample std (ddof=1)
+
+    # 2. Arithmetic average (mean)
+    avg_val = np.mean(arr)
+
+    # 3. Median (robust "mean value")
+    median_val = np.median(arr)
+
+    # 4. R = ratio x_(N-1) / x_(2) where x are sorted samples
+    sorted_arr = np.sort(arr)
+    if N >= 4:
+        R = sorted_arr[-2] / sorted_arr[1]
+        R_percent = (R - 1.0) * 100.0
+    else:
+        R = None
+        R_percent = None
+
+    q1 = np.percentile(arr, 25)
+    q3 = np.percentile(arr, 75)
+    iqr = q3 - q1
+
+    return (std_val, avg_val, median_val, R, R_percent, iqr, iqr / median_val, q1, q3)
+
 
 class Experiment:
     def __init__(self, **kwargs):
@@ -20,8 +54,15 @@ class Experiment:
         self._codegen_time = kwargs.pop("codegen_time", None)
         self._verified = kwargs.pop("verified", None)
         self._obj_size = kwargs.pop("obj_size", None)
-        self._exec_time_mean = kwargs.pop("exec_time_mean", None)
         self._exec_time_std = kwargs.pop("exec_time_std", None)
+        self._exec_time_avg = kwargs.pop("exec_time_avg", None)
+        self._exec_time_median = kwargs.pop("exec_time_median", None)
+        self._exec_time_r = kwargs.pop("exec_time_r", None)
+        self._exec_time_rp = kwargs.pop("exec_time_rp", None)
+        self._exec_time_iqr = kwargs.pop("exec_time_iqr", None)
+        self._exec_time_iqrp = kwargs.pop("exec_time_iqrp", None)
+        self._exec_time_q25 = kwargs.pop("exec_time_q25", None)
+        self._exec_time_q75 = kwargs.pop("exec_time_q75", None)
         self._executed = kwargs.pop("executed", False)
         self._failed = kwargs.pop("failed", False)
         self._start_id = kwargs.pop("start_id", -1)
@@ -83,7 +124,7 @@ class Experiment:
 
     @property
     def exec_time(self):
-        return self._exec_time_mean
+        return self._exec_time_avg
 
     @exec_time.setter
     def exec_time(self, value):
@@ -91,10 +132,17 @@ class Experiment:
             raise TypeError(
                 f"Optimization time expects a list of values {value}, {type(value)}"
             )
-
-        self._exec_time_mean = sum(value) / len(value)
-        var = sum((x - self._exec_time_mean) ** 2 for x in value) / len(value)
-        self._exec_time_std = math.sqrt(var)
+        (
+            self._exec_time_std,
+            self._exec_time_avg,
+            self._exec_time_median,
+            self._exec_time_r,
+            self._exec_time_rp,
+            self._exec_time_iqr,
+            self._exec_time_iqrp,
+            self._exec_time_q25,
+            self._exec_time_q75,
+        ) = _analyze_measurements(value[2:])
 
     @property
     def start_time(self):
@@ -221,8 +269,15 @@ class Experiment:
         data["codegen_time"] = self._codegen_time
         data["verified"] = self._verified
         data["obj_size"] = self._obj_size
-        data["exec_time_mean"] = self._exec_time_mean
         data["exec_time_std"] = self._exec_time_std
+        data["exec_time_avg"] = self._exec_time_avg
+        data["exec_time_median"] = self._exec_time_median
+        data["exec_time_r"] = self._exec_time_r
+        data["exec_time_rp"] = self._exec_time_rp
+        data["exec_time_iqr"] = self._exec_time_iqr
+        data["exec_time_iqrp"] = self._exec_time_iqrp
+        data["exec_time_q25"] = self._exec_time_q25
+        data["exec_time_q75"] = self._exec_time_q75
         data["executed"] = self._executed
         data["hash"] = self.hash()
         data["reg_usage"] = self._reg_usage

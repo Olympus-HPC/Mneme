@@ -104,8 +104,8 @@ API_EXPORT(const char *) MnemePy_getDeviceArch() {
 API_EXPORT(void)
 MnemePy_profile(void *WrappedModule, void *Func, dim3 Grid, dim3 Block,
                 MnemeDeviceMemStateRef Prologue,
-                MnemeDeviceMemStateRef Epilogue, int SharedMemSize, int repeats,
-                float *time) {
+                MnemeDeviceMemStateRef Epilogue, int SharedMemSize,
+                int repeats) {
   auto VendorModule =
       reinterpret_cast<DeviceVendorTraits::DeviceModule_t>(WrappedModule);
 
@@ -114,10 +114,10 @@ MnemePy_profile(void *WrappedModule, void *Func, dim3 Grid, dim3 Block,
       DeviceVendorTraits::getDevice(DeviceId));
   if (EC)
     LOG_FATAL("Error when requesting active device\n", EC.value());
-  LOG_INFO("Executing replay on device {}", DeviceId);
+
+  LOG_INFO("Executing replay run on device {}", DeviceId);
 
   DeviceVendorTraits::DeviceStream_t ReplayStream;
-  DeviceVendorTraits::DeviceEvent_t StartEvent, EndEvent;
   auto DevFunc = reinterpret_cast<DeviceVendorTraits::DeviceFunction_t>(Func);
   auto PrologueState = unwrap(Prologue);
   auto EpilogueState = unwrap(Epilogue);
@@ -126,22 +126,9 @@ MnemePy_profile(void *WrappedModule, void *Func, dim3 Grid, dim3 Block,
   if (EC)
     LOG_FATAL("Error when creating a stream for replay\n" + EC.value());
 
-  EC = DeviceVendorTraits::DeviceErrorCheck(
-      DeviceVendorTraits::deviceEventCreate(&StartEvent));
-
-  if (EC)
-    LOG_FATAL("Error when creating start event for replay\n" + EC.value());
-
-  EC = DeviceVendorTraits::DeviceErrorCheck(
-      DeviceVendorTraits::deviceEventCreate(&EndEvent));
-
-  if (EC)
-    LOG_FATAL("Error when creating end event for replay\n" + EC.value());
-
   PrologueState->initializeGlobals(VendorModule);
 
   for (int i = 0; i < repeats; i++) {
-    float elapsedTime;
     LOG_DEBUG("Run {}/{}", i + 1, repeats);
 
     PrologueState->reset();
@@ -153,42 +140,14 @@ MnemePy_profile(void *WrappedModule, void *Func, dim3 Grid, dim3 Block,
     if (EC)
       LOG_FATAL("Error when synchronizing device stream " + EC.value());
 
-    DeviceVendorTraits::DeviceErrorCheck(
-        DeviceVendorTraits::deviceEventRecord(StartEvent, ReplayStream));
-    if (EC)
-      LOG_FATAL("Error when recording event " + EC.value());
-
     EC = DeviceVendorTraits::DeviceErrorCheck(
         DeviceVendorTraits::launchKernelFunction(DevFunc, Grid, Block, Args,
                                                  SharedMemSize, ReplayStream));
     if (EC)
       LOG_FATAL("Error When Launching Kernel: " + EC.value());
 
-    DeviceVendorTraits::DeviceErrorCheck(
-        DeviceVendorTraits::deviceEventRecord(EndEvent, ReplayStream));
-    if (EC)
-      LOG_FATAL("Error when recording event " + EC.value());
-
-    EC = DeviceVendorTraits::DeviceErrorCheck(
-        DeviceVendorTraits::deviceEventSynchronize(EndEvent));
-    if (EC)
-      LOG_FATAL("Error when synchronizing event " + EC.value());
-
-    EC = DeviceVendorTraits::DeviceErrorCheck(
-        DeviceVendorTraits::deviceEventElapsedTime(&elapsedTime, StartEvent,
-                                                   EndEvent));
-    if (EC)
-      LOG_FATAL("Error when recording event " + EC.value());
-
-    time[i] = elapsedTime;
-    LOG_INFO("Iteration: {} executed on {} took {} ms", i, DeviceId,
-             elapsedTime);
-
     EC = DeviceVendorTraits::DeviceErrorCheck(
         DeviceVendorTraits::DeviceStreamSynchronize(ReplayStream));
-
-    // LOG_INFO("The results at iteration {} were {} verified", i,
-    //         (*PrologueState == *EpilogueState) ? "" : "NOT");
 
     if (EC)
       LOG_FATAL("Error When synchronizing with kernel stream: " + EC.value());

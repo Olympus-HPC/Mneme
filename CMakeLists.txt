@@ -109,8 +109,13 @@ write_basic_package_version_file(
   VERSION ${PROJECT_VERSION}
   COMPATIBILITY AnyNewerVersion)
 
+set(MNEME_TARGETS record regdeviceir mneme_shallow )
+if(MNEME_ENABLE_AUTOTUNE)
+list(APPEND MNEME_TARGETS mneme_profile mneme)
+endif()
+
 install(
-  TARGETS record regdeviceir mneme_shallow 
+  TARGETS ${MNEME_TARGETS} 
   EXPORT mnemeTargets
   RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
   LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}"

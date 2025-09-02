@@ -504,13 +504,14 @@ class ReplayTuner(BaseExecutor):
 
         print(f"Performed experiments {len(db)}")
 
-        for p in default_pipelines:
-            total_experiments += executor.create_experiments(p, db)
-
         for p in passes:
             total_experiments += executor.create_experiments(
-                executor.LLVMPassManager.to_string(p), db
+                executor.LLVMPassManager.to_string(p) + ",globaldce", db
             )
+
+        # Schedule happens in reverse order (pop) thus we want default pipelines to rin first.
+        for p in default_pipelines:
+            total_experiments += executor.create_experiments(p + ",globaldce", db)
 
         root_ir = executor.link_ir()
         orig = db.save_ir(root_ir, "orig")
