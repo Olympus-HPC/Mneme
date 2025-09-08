@@ -166,7 +166,7 @@ def run_optuna_tune(
     Configure = BuildConfigWrapper(executor.LLVMPassManager, executor.kernel_descr)
 
     root_ir = executor.link_ir()
-    orig = custom_db.save_ir(str(root_ir), "orig")
+    orig = custom_db.save_ir(root_ir, "orig")
 
     in_flight = {}
 
