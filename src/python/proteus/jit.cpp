@@ -62,8 +62,8 @@ ProteusPY_codeGenObject(LLVMModuleRef Mod, const char *DeviceArch, bool use_rtc,
 
 API_EXPORT(LLVMModuleRef)
 ProteusPY_linkModules(const char **LLVMIRFiles, int size,
-                      LLVMContextRef context, const char *KernelSym, 
-                      bool prune_flag=true, bool internalize_flag=true) {
+                      LLVMContextRef context, const char *KernelSym,
+                      bool prune_flag = true, bool internalize_flag = true) {
   auto Ctx = unwrap(context);
   llvm::SmallVector<std::unique_ptr<llvm::Module>> RecordedModules;
   for (int i = 0; i < size; i++) {
@@ -81,16 +81,16 @@ ProteusPY_linkModules(const char **LLVMIRFiles, int size,
       LOG_FATAL("Error parsing bitcode: {}",
                 llvm::toString(ModuleOrErr.takeError()));
 
-    if(prune_flag) {
+    if (prune_flag) {
       pruneIR(*ModuleOrErr->get());
     }
 
     RecordedModules.emplace_back(std::move(ModuleOrErr.get()));
   }
-  
+
   auto Mod = proteus::linkModules(*unwrap(context), RecordedModules);
 
-  if(internalize_flag) {
+  if (internalize_flag) {
     internalize(*Mod.get(), KernelSym);
   }
 
@@ -138,6 +138,7 @@ ProteusPY_setLaunchBounds(LLVMModuleRef Mod, uint64_t CurrentHash,
   auto *M = llvm::unwrap(Mod);
   auto *F = M->getFunction(KernelName);
   auto Hash = hash(CurrentHash, MaxThreadsPerBlock, MinBlocksPerSM);
+  LOG_INFO("Was called with {} and {}", MaxThreadsPerBlock, MinBlocksPerSM);
   proteus::setLaunchBoundsForKernel(*F, MaxThreadsPerBlock, MinBlocksPerSM);
   return Hash.getValue();
 }

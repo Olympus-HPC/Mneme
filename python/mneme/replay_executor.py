@@ -14,11 +14,14 @@ from mneme.device import (
     set_device,
 )
 from mneme.experiment import Experiment
+from mneme.llvm.buffer import MemBufferRef
 from mneme.llvm.module import ModuleRef
 from mneme.page_manager import PageManagerRef
 from mneme.pipeline import PipelineManager
 from mneme.proteus import jit
 from mneme.recorded_execution import MemStateRef, RecordedExecution
+from mneme.transforms import transform
+from mneme.utils import cond_gpu_time, cond_time
 
 
 class BaseExecutor:
@@ -166,49 +169,73 @@ class BaseExecutor:
             prune=self.prune, internalize=self.internalize
         )
 
+    @cond_time("opt_time")
+    def _optimize(self, exp, ir_module, middle_end_opt):
+        jit.optimize(ir_module, self.device_arch, middle_end_opt, self.codegen_opt)
+
+    @cond_time("codegen_time")
+    def _codegen(self, exp, ir_module):
+        return jit.codegen_object(
+            ir_module, self.device_arch, self.rtc, self.codegen_opt
+        )
+
+    @cond_gpu_time("exec_time")
+    def _run_kernel(self, exp, kernel_name, device_func, iterations):
+        return device_func.profile(
+            self.kernel_descr.grid_dim,
+            self.kernel_descr.block_dim,
+            self._prologue._state,
+            self._epilogue._state,
+            self.kernel_descr.shared_mem,
+            iterations,
+        )
+
+    def _build(
+        self, exp: Experiment, ir_module: ModuleRef, middle_end_opt: str, track: bool
+    ) -> MemBufferRef:
+        self._optimize(exp, ir_module, middle_end_opt, profile=track)
+        mem_buffer = self._codegen(exp, ir_module, profile=track)
+        if track:
+            exp.obj_size = mem_buffer.get_size()
+        return mem_buffer
+
+    def _run(self, exp: Experiment, mem_buffer: MemBufferRef, track: bool, iterations):
+        with DeviceModule.from_MemBuffer(mem_buffer) as DeviceObj:
+            device_func = DeviceObj.get_function(self.kernel_descr.kernel_name)
+            self._run_kernel(
+                exp,
+                self.kernel_descr.kernel_name,
+                device_func,
+                iterations,
+                profile=track,
+            )
+            if track:
+                exp.reg_usage = device_func.reg_usage
+                exp.const_mem = device_func.const_mem
+                exp.local_mem = device_func.local_mem
+
     def _execute(
         self, exp: Experiment, ir_module: ModuleRef, middle_end_opt: str
     ) -> Tuple[Experiment, ModuleRef]:
-        m_start = time.perf_counter()
-        jit.optimize(
-            ir_module,
-            self.device_arch,
-            middle_end_opt,
-            self.codegen_opt,
-        )
-
-        m_end = time.perf_counter()
-        exp.opt_time = m_end - m_start
-        opt_file = ir_module
-
-        c_start = time.perf_counter()
-        mem_buffer = jit.codegen_object(
-            opt_file, self.device_arch, self.rtc, self.codegen_opt
-        )
-        c_end = time.perf_counter()
-        exp.codegen_time = c_end - c_start
-        exp.obj_size = mem_buffer.get_size()
-
         if self._prologue._state is None or self._epilogue._state is None:
             raise RuntimeError("States should never be none when executing a kernel")
 
-        with DeviceModule.from_MemBuffer(mem_buffer) as DeviceObj:
-            device_func = DeviceObj.get_function(self.kernel_descr.kernel_name)
-            exp.reg_usage = device_func.reg_usage
-            exp.const_mem = device_func.const_mem
-            exp.local_mem = device_func.local_mem
-            exp.exec_time = device_func.profile(
-                self.kernel_descr.grid_dim,
-                self.kernel_descr.block_dim,
-                self._prologue._state,
-                self._epilogue._state,
-                self.kernel_descr.shared_mem,
-                self._iterations,
-            )
-            exp.verified = self.prologue == self.epilogue
-            exp.executed = True
+        # NOTE: 1. First we need to verify.
+        ver_mod = ir_module.clone()
+        mem_buffer = self._build(exp, ver_mod, middle_end_opt, False)
+        self._run(exp, mem_buffer, False, 1)
+        exp.verified = self.prologue == self.epilogue
 
-            return exp, opt_file
+        # NOTE: 2. We apply a custom pass to delete all clang insered code.
+        # It is hard to identify these cases, So we delete only things that have been attributed by clang
+        ir_module = transform.remove_auto_initialize(ir_module)
+        # Done with verification. Moving to next stage
+
+        mem_buffer = self._build(exp, ir_module, middle_end_opt, True)
+        self._run(exp, mem_buffer, True, self._iterations + 2)
+        exp.executed = True
+
+        return exp, ir_module
 
 
 class CLIExecutor(BaseExecutor):
@@ -330,7 +357,17 @@ class CLIExecutor(BaseExecutor):
         self.db_suffix = kwargs.pop("suffix", None)
         super().__init__(*args, **kwargs)
         self.pass_manager = PipelineManager()
-        self.passes = self.pass_manager.from_string(self.pipeline)
+        if self.pipeline not in (
+            "default<O3>",
+            "default<O2>",
+            "default<O1>",
+            "default<O0>",
+            "default<Os",
+            "default<Oz>",
+        ):
+            self.passes = self.pass_manager.from_string(self.pipeline)
+        else:
+            self.passes = self.pipeline
         self._db = None
 
     def get_experiment(self, pipeline):
@@ -522,6 +559,9 @@ class TuneWorker(BaseExecutor):
                     )
                     exp, ir = worker.process_payload(root_ir.clone(), msg["data"])
                     final = resdb.save_ir(ir, exp.hash())
+                    print(
+                        f"Received experiment with {exp.min_blocks_per_sm} saved at {final}"
+                    )
                     response_q.put(
                         {
                             "exp_id": msg["exp_id"],

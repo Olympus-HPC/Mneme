@@ -6,7 +6,6 @@
 #include <llvm/Support/JSON.h>
 #include <llvm/Support/MemoryBuffer.h>
 #include <memory>
-#include <proteus/Utils.h>
 
 #include "mneme/DeviceTraits.hpp"
 #include "mneme/MnemeDeviceBinary.hpp"
