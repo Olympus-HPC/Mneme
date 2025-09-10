@@ -75,7 +75,7 @@ stages:
     include:
       - local: '.gitlab/custom-jobs-and-variables.yml'
       - project: 'radiuss/radiuss-shared-ci'
-        ref: 'v2024.07.0'
+        ref: 'v2025.06.0'
         file: 'pipelines/${CI_MACHINE}.yml'
       # Add your jobs
       # you can use a local file
@@ -94,7 +94,7 @@ stages:
     include:
       - local: '.gitlab/custom-jobs-and-variables.yml'
       - project: 'radiuss/radiuss-shared-ci'
-        ref: 'v2024.07.0'
+        ref: 'v2025.06.0'
         file: 'pipelines/${CI_MACHINE}.yml'
       - local: '.gitlab/jobs/${CI_MACHINE}-integration.yml'
     strategy: depend
@@ -107,7 +107,7 @@ stages:
     include:
       - local: '.gitlab/custom-jobs-and-variables.yml'
       - project: 'radiuss/radiuss-shared-ci'
-        ref: 'v2024.07.0'
+        ref: 'v2025.06.0'
         file: 'pipelines/${CI_MACHINE}.yml'
       # Add your jobs
       # you can use a local file
@@ -122,7 +122,7 @@ include:
     file: 'id_tokens.yml'
   # [Optional] checks preliminary to running the actual CI test
   - project: 'radiuss/radiuss-shared-ci'
-    ref: 'v2024.07.0'
+    ref: 'v2025.06.0'
     file: 'utilities/preliminary-ignore-draft-pr.yml'
   # pipelines subscribed by the project
   - local: '.gitlab/subscribed-pipelines.yml'
