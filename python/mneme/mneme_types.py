@@ -9,3 +9,6 @@ class dim3(Structure):
 
     def __repr__(self):
         return f"dim3({self.x}, {self.y}, {self.z})"
+
+    def to_dict(self):
+        return {"x": int(self.x), "y": int(self.y), "z": int(self.z)}

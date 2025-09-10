@@ -33,6 +33,23 @@ class SnapshotType(Enum):
     EPILOGUE = 2
 
 
+def find_non_jsonables(obj, where="$"):
+    if isinstance(obj, (str, int, float, bool)) or obj is None:
+        return
+    if isinstance(obj, Path):
+        print("Non-JSON type:", where, "->", obj, type(obj))
+        return
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            find_non_jsonables(v, f"{where}.{k}")
+    elif isinstance(obj, (list, tuple, set)):
+        for i, v in enumerate(obj):
+            find_non_jsonables(v, f"{where}[{i}]")
+    else:
+        # add other allowed conversions here if you plan to support them
+        print("Non-JSON type:", where, "->", type(obj))
+
+
 class MemStateRef:
     def __init__(self, fn: str, kernel_name: str, snap_type: SnapshotType):
         if not Path(fn).exists():
@@ -119,7 +136,7 @@ class RecordedExecution:
             shared_mem: int,
             block_dim: dim3,
             grid_dim: dim3,
-            available_specializations: List[bool],
+            specializations: List[bool],
             occ: int,
             prologue_fn: str,
             epilogue_fn: str,
@@ -132,7 +149,8 @@ class RecordedExecution:
             self.block_dim = block_dim
             self.grid_dim = grid_dim
             self.available_specializations = []
-            for i, v in enumerate(available_specializations):
+            self.specializations = specializations
+            for i, v in enumerate(specializations):
                 if v:
                     self.available_specializations.append(i)
             self.occ = occ
@@ -145,6 +163,18 @@ class RecordedExecution:
         def __str__(self):
             return f"Grid:{self.grid_dim}, BlockDim: {self.block_dim}, Shared Memory {self.shared_mem}"
 
+        def to_dict(self):
+            res = {}
+            res["Args"] = self.specializations
+            res["BlockDims"] = self.block_dim.to_dict()
+            res["GridDims"] = self.grid_dim.to_dict()
+            res["Occurrences"] = self.occ
+            res["SharedMem"] = self.shared_mem
+            res["Epilogue"] = self.epilogue.fn
+            res["Prologue"] = self.prologue.fn
+
+            return res
+
     def __init__(
         self,
         static_hash: str,
@@ -152,7 +182,7 @@ class RecordedExecution:
         demangled_name: str,
         llvm_files: List[str],
         arg_names: List[str],
-        available_specializations: List[bool],
+        specializations: List[bool],
         va_addr: str,
         va_size: int,
         kernel_instances: Dict[str, KernelInstance],
@@ -162,7 +192,7 @@ class RecordedExecution:
         self.demangled_name = demangled_name
         self.llvm_files = llvm_files
         self.arg_names = arg_names
-        self.available_specializations = available_specializations
+        self.specializations = specializations
         self.va_addr = va_addr
         self.va_size = va_size
         self.kernel_instances = kernel_instances
@@ -202,9 +232,32 @@ class RecordedExecution:
         if self._link_mod is not None:
             return self._link_mod
 
-        self._link_mod = jit.link_llvm_modules(self.llvm_files, self.kernel_name, prune, internalize)
+        self._link_mod = jit.link_llvm_modules(
+            self.llvm_files, self.kernel_name, prune, internalize
+        )
 
         return self._link_mod
+
+    def to_dict(self):
+        res = {}
+        res["ArgNames"] = self.arg_names
+        res["BinaryBlobs"] = []
+        res["DemangledName"] = self.demangled_name
+        res["KernelName"] = self.kernel_name
+        res["Modules"] = self.llvm_files
+        res["Specializations"] = self.specializations
+        res["StaticHash"] = self.static_hash
+        res["VASize"] = self.va_size
+        res["VAddr"] = self.va_addr
+        res["instances"] = {}
+        for k, v in self.items():
+            res["instances"][k] = v.to_dict()
+        return res
+
+    def to_json(self, fn: str):
+        find_non_jsonables(self.to_dict())
+        with open(fn, "w") as fd:
+            json.dump(self.to_dict(), fd, indent=2)
 
     @classmethod
     def from_json(cls, fn: str):
