@@ -70,3 +70,17 @@ lassen-build-and-test:
 #  #needs: [lassen-up-check, generate-job-lists]
 #
 
+# TUOLUMNE
+tuolumne-up-check:
+  variables:
+    CI_MACHINE: "tuolumne"
+  extends: [.machine-check]
+
+tuolumne-build-and-test:
+  variables:
+    CI_MACHINE: "tuolumne"
+  needs: [tuolumne-up-check]
+  ## [Shared jobs scenario]
+  ## (See Umpire CI setup for an example).
+  #needs: [tuolumne-up-check, generate-job-lists]
+  extends: [.build-and-test]

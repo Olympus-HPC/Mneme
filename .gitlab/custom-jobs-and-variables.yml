@@ -14,9 +14,9 @@ variables:
 
 # Ruby
 # Arguments for top level allocation
-  RUBY_SHARED_ALLOC: "--exclusive --reservation=ci --time=10 --nodes=1"
+#  RUBY_SHARED_ALLOC: "--exclusive --reservation=ci --time=10 --nodes=1"
 # Arguments for job level allocation
-  RUBY_JOB_ALLOC: "--reservation=ci --nodes=1"
+#  RUBY_JOB_ALLOC: "--reservation=ci --nodes=1"
 # Add variables that should apply to all the jobs on a machine:
 #  RUBY_MY_VAR: "..."
 
@@ -52,6 +52,14 @@ variables:
 # Add variables that should apply to all the jobs on a machine:
 #  LASSEN_MY_VAR: "..."
 
+# Tuo
+# Arguments for top level allocation
+# OPTIONAL: "-o per-resource.count=2" allows to get 2 jobs running on each node.
+  TUOLUMNE_SHARED_ALLOC: "--queue=pci --exclusive --time-limit=15m --nodes=1"
+# Arguments for job level allocation
+  TUOLUMNE_JOB_ALLOC: "--nodes=1 --begin-time=+5s"
+# Add variables that should apply to all the jobs on a machine:
+#  TUOLUMNE_MY_VAR: "..."
 
 # Configuration shared by build and test jobs specific to this project.
 # Not all configuration can be shared. Here projects can fine tune the
