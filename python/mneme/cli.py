@@ -2,6 +2,7 @@ import argparse
 import csv
 import hashlib
 import json
+import logging
 import math
 import multiprocessing
 
@@ -13,11 +14,12 @@ except RuntimeError:
 import os
 import sys
 import time
-from typing import Tuple
+from typing import Tuple, Union
 
 from mneme.commands import Clean, Copy, Move
 from mneme.device import DeviceModule, dim3, get_device_arch
 from mneme.llvm.module import ModuleRef
+from mneme.logging import logger as replay_logger
 from mneme.page_manager import PageManagerRef
 from mneme.pipeline import PipelineManager
 from mneme.proteus import jit
@@ -25,9 +27,42 @@ from mneme.recorded_execution import MemStateRef, RecordedExecution
 from mneme.replay_executor import BaseExecutor, CLIExecutor
 from mneme.tuner import ReplayTuner
 
+_LEVELS = {
+    "critical": logging.CRITICAL,
+    "warn": logging.WARNING,  # accept 'warn' per your spec
+    "info": logging.INFO,
+    "debug": logging.DEBUG,
+}
+
+
+def configure_replay_logging(level_name: Union[str, None]) -> None:
+    """Attach a real handler only when -v is provided."""
+    if not level_name:
+        # Stay silent: leave only the NullHandler in place
+        return
+
+    level = _LEVELS[level_name.lower()]
+    # Avoid double-adding if called twice
+    if not any(isinstance(h, logging.StreamHandler) for h in replay_logger.handlers):
+        h = logging.StreamHandler()  # stderr by default
+        # Short, friendly format; tweak as you like
+        fmt = logging.Formatter("[mneme:%(levelname).1s] %(message)s")
+        h.setFormatter(fmt)
+        replay_logger.addHandler(h)
+
+    replay_logger.setLevel(level)
+
 
 def main():
-    parser = argparse.ArgumentParser(prog="mneme", description="Mneme Tool")
+    parser = argparse.ArgumentParser(
+        prog="mneme", description="Mneme Tool for Autotuning GPU kernels"
+    )
+    parser.add_argument(
+        "-v",
+        "--verbosity",
+        choices=["critical", "warn", "info", "debug"],
+        help="Set replay logger level (default: silent)",
+    )
     parent_executor_parser = BaseExecutor.get_base_parser()
 
     subparsers = parser.add_subparsers(
@@ -70,6 +105,8 @@ def main():
     Move.set_cli_args(p_move)
 
     args = parser.parse_args()
+    configure_replay_logging(vars(args).pop("verbosity", None))
+
     return args.func(args)
 
 

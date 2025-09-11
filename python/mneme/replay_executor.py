@@ -16,6 +16,7 @@ from mneme.device import (
 from mneme.experiment import Experiment
 from mneme.llvm.buffer import MemBufferRef
 from mneme.llvm.module import ModuleRef
+from mneme.logging import logger
 from mneme.page_manager import PageManagerRef
 from mneme.pipeline import PipelineManager
 from mneme.proteus import jit
@@ -113,7 +114,9 @@ class BaseExecutor:
     ):
         self.db = db
         self.record_id = record_id
-        print(f"Got {db} and {record_id} for gpu {device_id}")
+        logger.debug(
+            f"BaseExecutor Got {db} and {record_id} and will run on device:{device_id}"
+        )
         self.records = RecordedExecution.from_json(db)
         self.kernel_descr = self.records[record_id]
         self.device_arch = get_device_arch()
@@ -128,7 +131,9 @@ class BaseExecutor:
         self._iterations = iterations
         self.num_devices = get_device_count()
         set_device(device_id)
-        print(f"Setting Device ID to {device_id} out of {self.num_devices}")
+        logger.debug(
+            f"GPU Affinity of process was set to device:{device_id} out of {self.num_devices}"
+        )
 
     def open(self):
         self._page_manager = PageManagerRef(
@@ -396,7 +401,6 @@ class CLIExecutor(BaseExecutor):
 
     def execute(self, exp, ir_module, clone=False, orig=""):
         if not self.increamental:
-            print("Starting to execute")
             exp.dump()
             exp, generated_ir = super()._execute(exp, ir_module, self.pipeline)
             if self._db is not None:
@@ -409,12 +413,13 @@ class CLIExecutor(BaseExecutor):
         for i, _ in enumerate(self.passes):
             passes = self.pass_manager.to_string(self.passes[: i + 1])
             if self._db is not None and not self._db.should_execute(exp):
-                print("Skipping")
+                logger.debug(
+                    f"Skipping experiment {str(exp.hash())}, already in replayed"
+                )
                 continue
 
             exp, generated_ir = super()._execute(exp, ir_module.clone(), passes)
             if self._db is not None:
-                print(f"Hash of code is {exp.hash()}")
                 final = self._db.save_ir(generated_ir, exp.hash())
                 self._db.add(orig, final, exp)
             exp.dump()
@@ -546,22 +551,24 @@ class TuneWorker(BaseExecutor):
 
         with worker as Memory:
             state.set()
-            print("Starting busy loop")
+            logger.debug("Worker running on {worker.device_id} starts busy loop")
             while True:
                 msg = request_q.get()
                 if msg["payload"] == "terminate":
-                    print("Instructed to terminate normally, doing so...")
+                    logger.debug(
+                        "Worker {worker.device_id} received terminate request, exiting ..."
+                    )
                     break
                 elif msg["payload"] == "process":
-                    print(
-                        f"Worker {worker.device_id} Received message to start processing request",
-                        msg["exp_id"],
+                    logger.debug(
+                        f"Worker {worker.device_id} received processing request {msg['exp_id']}"
                     )
                     exp, ir = worker.process_payload(root_ir.clone(), msg["data"])
                     final = resdb.save_ir(ir, exp.hash())
-                    print(
-                        f"Received experiment with {exp.min_blocks_per_sm} saved at {final}"
+                    logger.debug(
+                        f"Worker {worker.device_id} finalized processing request {msg['exp_id']}"
                     )
+
                     response_q.put(
                         {
                             "exp_id": msg["exp_id"],
@@ -571,6 +578,6 @@ class TuneWorker(BaseExecutor):
                         }
                     )
                 else:
-                    print(f"Received uknown message {msg}")
+                    logger.warning(f"Received unknown message {msg}")
 
         return

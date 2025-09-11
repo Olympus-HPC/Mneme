@@ -5,6 +5,7 @@ import sys
 import time
 from pathlib import Path
 
+from mneme.logging import logger
 from mneme.recorded_execution import RecordedExecution
 
 
@@ -59,8 +60,8 @@ class Clean:
         dbs = args.dbs
         for db in dbs:
             if not Path(db).exists():
-                print(f"{db} does not exist")
-                sys.exit(-1)
+                raise FileNotFoundError(f"Mneme Database '{db}' does not exist")
+
         ir_records = set()
         mneme_db_files = set()
         for db in dbs:
@@ -94,16 +95,18 @@ class Copy:
     def run(args):
         paths = args.dbs
         if len(paths) < 2:
-            raise RuntimeError(
+            raise ValueError(
                 f"Please provide both source and destination directories {paths}"
             )
 
         *_sources, _dest = paths
         dest = Path(_dest).absolute()
         if not dest.exists():
-            raise RuntimeError("Destination directory does not exist")
+            raise RuntimeError(f"Destination target '{str(dest)}' does not exist")
         if not dest.is_dir():
-            raise RuntimeError("Expected Destination to be a directory")
+            raise NotADirectoryError(
+                f"Destination target '{str(dest)}' is not a directory"
+            )
 
         sources = [Path(s) for s in _sources]
         _copy_or_move(sources, dest)
@@ -123,14 +126,19 @@ class Move:
     def run(args):
         paths = args.dbs
         if len(paths) < 2:
-            raise RuntimeError("Please provide both source and destination directories")
+            raise ValueError(
+                f"Please provide both source and destination directories {paths}"
+            )
 
         *_sources, _dest = paths
         dest = Path(_dest).absolute()
         if not dest.exists():
-            raise RuntimeError("Destination directory does not exist")
+            raise RuntimeError(f"Destination target '{str(dest)}' does not exist")
         if not dest.is_dir():
-            raise RuntimeError("Expected Destination to be a directory")
+            raise NotADirectoryError(
+                f"Destination target '{str(dest)}' is not a directory"
+            )
 
         sources = [Path(s) for s in _sources]
+
         _copy_or_move(sources, dest, move=True)
