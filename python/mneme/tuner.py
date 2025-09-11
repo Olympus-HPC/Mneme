@@ -15,6 +15,7 @@ from mneme.device import (
     set_device,
 )
 from mneme.experiment import Experiment
+from mneme.logging import logger
 from mneme.pipeline import PipelineManager
 from mneme.replay_executor import BaseExecutor, TuneWorker
 from mneme.tuner_optuna import run_optuna_tune
@@ -90,14 +91,14 @@ class TuneWorkerHandle:
             daemon=False,
         )
         self.process.start()
-        print(f"[i] Worker {self.idx} started (pid {self.process.pid})")
+        logger.debug(f"Worker {self.idx} started (pid {self.process.pid})")
 
     def _monitor(self):
         while True:
             # Wait for subprocess to exit
             self.process.join()
             if not self._state.is_set():
-                print("Event has not been set")
+                logger.debug("[TuneWorkerHandle] Event has not been set")
                 if self.current is not None:
                     req = self.current
                     req["payload"] = "exit"
@@ -114,14 +115,16 @@ class TuneWorkerHandle:
 
             ## If shutdown requested, exit monitor
             if self.shutdown_event.is_set():
-                print(f"[i] Monitor for worker {self.idx} shutting down.")
+                logger.debug(
+                    f"[TuneWorkerHandle] Monitor for worker {self.idx} shutting down."
+                )
                 break
 
             with self._lock:
                 # Non-zero exit = crash
                 if exitcode != 0:
-                    print(
-                        f"[!] Worker {self.idx} crashed with exit code {exitcode}. Respawning..."
+                    logger.warning(
+                        f"[TuneWorkerHandle] Worker {self.idx} crashed with exit code {exitcode}. Respawning..."
                     )
 
                     if self.current is not None:
@@ -130,34 +133,35 @@ class TuneWorkerHandle:
                         req["payload"] = "result"
                         req["llvm_ir"] = ""
                         req["exp_id"] = self.current["exp_id"]
-                        print(
-                            f"{self.idx} Failed Compiler pipeline, received {exitcode} for experiment {req['exp_id']}"
+                        logger.warning(
+                            f"[TuneWorkerHandle]: {self.idx} An experiment failed received {exitcode} for experiment {req['exp_id']}"
                         )
+
                         self.current = None
                         self.response_q.put(req)
-                    else:
-                        print("Current is None")
                     self._spawn_process()
                     continue
 
-        print(f"[i] Monitor thread for worker {self.idx} ended.")
+        logger.debug(f"[TuneWorkerHandle]: {self.idx} Monitor thread ended.")
 
     def assign(self, experiment):
         with self._lock:
             # Track and send config
             self.current = copy.deepcopy(experiment)
-            print(f"{self.idx} Was assigned experiment with {self.current['exp_id']}")
+            logger.debug(
+                f"[TuneWorkerHandle]:{self.idx} Responsible for experiment with id: {self.current['exp_id']}"
+            )
             self.request_q.put(experiment)
 
     def shutdown_process(self):  # Signal monitor thread
         self.shutdown_event.set()
         # Tell worker to exit cleanly
-        print("Sending shutwdown to Q")
+        logger.debug(f"[TuneWorkerHandle]:{self.idx} Shutting down Tuner")
         self.request_q.put({"payload": "terminate"})
 
     def join_monitor(self):
         self.monitor_thread.join()
-        print(f"[i] Worker {self.idx} fully shut down.")
+        logger.debug(f"[TuneWorkerHandle]:{self.idx} Worker shutdown")
 
 
 class ReplayTuner(BaseExecutor):
@@ -263,8 +267,8 @@ class ReplayTuner(BaseExecutor):
         if self.num_workers is None or self.num_workers > self.num_devices:
             self.num_workers = self.num_devices
         super().__init__(**kwargs)
-        print(
-            f"Num devices are {self.num_devices} we will use {self.num_workers} workers"
+        logger.debug(
+            f"Detected {self.num_devices} gpu devices, we will use {self.num_workers} workers"
         )
         self.LLVMPassManager = PipelineManager()
 
@@ -288,7 +292,10 @@ class ReplayTuner(BaseExecutor):
                 device_arch=self.device_arch,
             )
             if not db.should_execute(exp):
-                print(f"Skippipng experiment {exp.hash()}")
+                logger.debug(
+                    f"Skipping experiment {str(exp.hash())}, already in replayed"
+                )
+
                 continue
             experiments.append(exp)
 
@@ -318,7 +325,10 @@ class ReplayTuner(BaseExecutor):
                     device_arch=self.device_arch,
                 )
                 if not db.should_execute(exp):
-                    print(f"Skippipng experiment {exp.hash()}")
+                    logger.debug(
+                        f"Skipping experiment {str(exp.hash())}, already in replayed"
+                    )
+
                     continue
                 experiments.append(exp)
 
@@ -408,13 +418,12 @@ class ReplayTuner(BaseExecutor):
 
         count = start_id
         in_flight = {}
-        print(f"Total experiments are {len(total_experiments)}")
+        print(f"Pending experiments are: {len(total_experiments)}")
         for w in workers:
             vals = schedule_job(db, total_experiments, exp_id, w)
             if vals is None:
                 continue
             exp, exp_id = vals[0], vals[1]
-            print("Experiment id is", exp_id)
             in_flight[exp_id] = (exp, w)
 
         while len(in_flight) != 0:
@@ -448,10 +457,10 @@ class ReplayTuner(BaseExecutor):
                     exp, exp_id = vals[0], vals[1]
                     in_flight[exp_id] = (exp, worker)
             elif res["payload"] == "exit":
-                print("Return exit")
+                logger.debug("Exiting cause we received exit request")
                 return -1
             else:
-                print("Unknown payload")
+                logger.debug("Exiting cause we received 'unknown payload' request")
                 return -1
 
             sys.stdout.flush()
@@ -502,7 +511,7 @@ class ReplayTuner(BaseExecutor):
             executor.suffix,
         ).open()
 
-        print(f"Performed experiments {len(db)}")
+        logger.info(f"Database contains {len(db)} experiments")
 
         for p in passes:
             total_experiments += executor.create_experiments(
@@ -515,15 +524,19 @@ class ReplayTuner(BaseExecutor):
 
         root_ir = executor.link_ir()
         orig = db.save_ir(root_ir, "orig")
+        logger.info(f"Original IR is at: {orig}")
 
         ret = ReplayTuner.execute_list_of_experiments(
             orig, total_experiments, workers, completed_jobs_q, db, 0
         )
 
-        print(f"Mneme is done with code {ret}")
+        logger.debug(f"Mneme is done with code {ret}")
 
+        logger.debug("Requesting workers to shutdown")
         for w in workers:
             w.shutdown_process()
+
+        logger.debug("Waiting for shadow monitors to terminate")
         for w in workers:
             w.join_monitor()
 

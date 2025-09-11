@@ -2,6 +2,7 @@ import csv
 import pathlib
 
 from mneme.experiment import Experiment
+from mneme.logging import logger
 
 
 class MnemeDB:
@@ -76,12 +77,15 @@ class MnemeDB:
         return len(self._experiments)
 
     def open(self):
+        logger.debug(f"Opening database under directory: '{str(self._dir)}'")
         if not self._dir.exists():
+            logger.debug(f"Making directory: '{str(self._dir)}'")
             self._dir.mkdir(parents=True, exist_ok=True)
         self._dir = self._dir.resolve()
         self._open = True
 
         self._filename = self._dir / pathlib.Path(self._filename)
+        logger.debug(f"Database file is {str(self._filename)}")
         if not self._filename.exists():
             with open(self._filename, mode="w", newline="") as csvfile:
                 writer = csv.DictWriter(csvfile, fieldnames=self._columns)
@@ -119,6 +123,9 @@ class MnemeDB:
         return f"{self._dir}/{exp.hash()}.ll"
 
     def add(self, src_ir: str, dst_ir: str, exp: Experiment):
+        logger.debug(
+            f"Adding to database experiment 'Hash: {str(exp.hash())} IID: {exp._start_id} CID: {exp._commit_id}' with SRC {src_ir} and dest {dst_ir}"
+        )
         if not self._open:
             raise RuntimeError("Expected database to be open")
 

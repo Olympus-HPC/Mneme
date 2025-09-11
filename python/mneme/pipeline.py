@@ -7,6 +7,8 @@ import sys
 from enum import IntEnum
 from typing import Dict, List, Tuple, Union
 
+from mneme.logging import logger
+
 __all_passes__ = """Module passes:
   always-inline
   annotation2metadata
@@ -776,7 +778,7 @@ class PipelineManager:
     def __init__(self):
         self._passes = PipelineManager.__parse_llvm_pipeline__(__all_passes__)
         self._kw_passes = {k.pass_name: k for k in self._passes}
-        print(f"LLVM Has in total {len(self._passes)} total passes")
+        logger.debug(f"Total LLVM exposed pipeline passes are: {len(self._passes)}")
 
     def split_pipeline(self, pipeline):
         return __flatten_passes__(__split_top_level__(pipeline))

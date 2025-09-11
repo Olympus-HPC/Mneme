@@ -4,6 +4,7 @@ import random
 import time
 
 from mneme.experiment import Experiment
+from mneme.logging import logger
 from optuna.samplers import (
     GPSampler,
     NSGAIISampler,
@@ -155,7 +156,7 @@ def run_optuna_tune(
         direction="minimize",
         load_if_exists=True,
     )
-    print(f"Existing trial count: {len(study.trials)}")
+    logger.debug(f"Database contains {len(study.trials)} trials")
     performed_experiments = len(study.trials)
     num_in_process = 0
     exp_id = performed_experiments
@@ -184,7 +185,6 @@ def run_optuna_tune(
         if vals is None:
             continue
         exp, trial, exp_id = vals[0], vals[1], vals[2]
-        print("Experiment id is", exp_id)
         in_flight[exp_id] = (exp, w, trial)
         num_in_process += 1
 
@@ -208,8 +208,9 @@ def run_optuna_tune(
             num_in_process -= 1
             performed_experiments += 1
             if exp1.hash() != exp2.hash():
-                exp1.dump()
-                exp2.dump()
+                logger.critical(
+                    f"Experiment hash differs, should be the same {json.dumps(exp1.to_dict())} vs {json.dumps(exp2.to_dict())}"
+                )
                 raise RuntimeError(
                     f"Received experiment should have same hash with workers experiment {exp1.hash()} {exp2.hash()}"
                 )
@@ -249,6 +250,9 @@ def run_optuna_tune(
             exp, trial, exp_id = vals[0], vals[1], vals[2]
             in_flight[exp_id] = (exp, worker, trial)
             num_in_process += 1
+        elif res["payload"] == "exit":
+            logger.debug("Exiting cause we received exit request")
+            return -1
         else:
             print(json.dumps(res, indent=6))
             raise RuntimeError("Unknown payload")
