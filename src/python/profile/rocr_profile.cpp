@@ -25,8 +25,10 @@ using u64 = unsigned long long;
   do {                                                                         \
     auto _st = (x);                                                            \
     if (_st != ROCPROFILER_STATUS_SUCCESS) {                                   \
-      fprintf(stderr, "rocprof err %d at %s:%d: %s\n", (int)_st, __FILE__,     \
-              __LINE__, #x);                                                   \
+      const char *msg = rocprofiler_get_status_name(_st);                      \
+      const char *str = rocprofiler_get_status_string(_st);                    \
+      fprintf(stderr, "rocprof err %d status:'%s' string:'%s' at %s:%d: %s\n", \
+              (int)_st, msg, str, __FILE__, __LINE__, #x);                     \
       std::abort();                                                            \
     }                                                                          \
   } while (0)
