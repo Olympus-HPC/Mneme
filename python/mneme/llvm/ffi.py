@@ -1,7 +1,7 @@
-import sys
 import ctypes
-import threading
 import importlib.resources as _impres
+import sys
+import threading
 
 from .common import _decode_string, _is_shutting_down
 from .utils import get_library_name
@@ -171,23 +171,22 @@ _importlib_resources_path = (
 )
 
 
-_lib_name = get_library_name()
+def load_library_so(lib_name):
+    pkgname = ".".join(__name__.split(".")[0:-1])
+    try:
+        _lib_handle = _importlib_resources_path(pkgname, lib_name)
+        lib = ctypes.CDLL(str(_lib_handle.__enter__()))
+        # on windows file handles to the dll file remain open after
+        # loading, therefore we can not exit the context manager
+        # which might delete the file
+    except OSError as e:
+        msg = f"""Could not find/load shared object file: {lib_name}
+        Error was: {e}"""
+        raise OSError(msg)
+    return _lib_wrapper(lib)
 
 
-pkgname = ".".join(__name__.split(".")[0:-1])
-try:
-    _lib_handle = _importlib_resources_path(pkgname, _lib_name)
-    lib = ctypes.CDLL(str(_lib_handle.__enter__()))
-    # on windows file handles to the dll file remain open after
-    # loading, therefore we can not exit the context manager
-    # which might delete the file
-except OSError as e:
-    msg = f"""Could not find/load shared object file: {_lib_name}
- Error was: {e}"""
-    raise OSError(msg)
-
-
-lib = _lib_wrapper(lib)
+lib = load_library_so(get_library_name())
 
 
 def register_lock_callback(acq_fn, rel_fn):

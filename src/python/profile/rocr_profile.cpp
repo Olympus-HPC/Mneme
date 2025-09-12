@@ -16,17 +16,33 @@
 #include <rocprofiler-sdk/registration.h>
 #include <rocprofiler-sdk/rocprofiler.h>
 
-#include "../llvm/core.h"
 #include "mneme/MnemeLogger.hpp"
-#include "mneme/MnemePython.hpp"
+#include <mneme/DeviceTraits.hpp>
+
+#ifdef MNEME_ENABLE_HIP
+using DeviceVendorTraits = mneme::DeviceTraits<mneme::DeviceVendors::HIP>;
+constexpr mneme::DeviceVendors Vendor = mneme::DeviceVendors::HIP;
+#endif
+
+#if defined(_MSC_VER)
+#define HAVE_DECLSPEC_DLL
+#endif
+
+#if defined(HAVE_DECLSPEC_DLL)
+#define API_EXPORT(RTYPE) __declspec(dllexport) RTYPE
+#else
+#define API_EXPORT(RTYPE) RTYPE
+#endif
 
 using u64 = unsigned long long;
 #define CHECK_ROCP(x)                                                          \
   do {                                                                         \
     auto _st = (x);                                                            \
     if (_st != ROCPROFILER_STATUS_SUCCESS) {                                   \
-      fprintf(stderr, "rocprof err %d at %s:%d: %s\n", (int)_st, __FILE__,     \
-              __LINE__, #x);                                                   \
+      const char *msg = rocprofiler_get_status_name(_st);                      \
+      const char *str = rocprofiler_get_status_string(_st);                    \
+      fprintf(stderr, "rocprof err %d status:'%s' string:'%s' at %s:%d: %s\n", \
+              (int)_st, msg, str, __FILE__, __LINE__, #x);                     \
       std::abort();                                                            \
     }                                                                          \
   } while (0)
@@ -127,21 +143,20 @@ public:
       profilesByToken.erase(
           tok); // just in case a previous run crashed mid-stop
     }
+    LOG_DEBUG("Kernel {} matched with token {} assigned to thread id {}",
+              KernelName, tok, tid);
     return tok;
   }
 
   u64 numRecords(u64 Token) {
     rocprofiler_thread_id_t tid{};
     CHECK_ROCP(rocprofiler_get_thread_id(&tid));
-    rocprofiler_user_data_t popped{};
-    CHECK_ROCP(rocprofiler_pop_external_correlation_id(rocrCtx, tid, &popped));
 
+    CHECK_ROCP(rocprofiler_flush_buffer(rocrGBuf));
     auto EC = DeviceVendorTraits::DeviceErrorCheck(
         DeviceVendorTraits::DeviceSynchronize());
     if (EC)
       LOG_FATAL("Error When Launching Kernel: " + EC.value());
-
-    CHECK_ROCP(rocprofiler_flush_buffer(rocrGBuf));
 
     {
       std::lock_guard<std::mutex> lk(rocrMutex);
@@ -149,6 +164,11 @@ public:
         return it->second.size();
       }
     }
+
+    LOG_DEBUG("Error Num Records could not be found Token {} assigned to "
+              "thread id {}",
+              Token, tid);
+
     return -1;
   }
 
@@ -189,6 +209,7 @@ static void buffer_cb(rocprofiler_context_id_t, rocprofiler_buffer_id_t,
                       void *, uint64_t) {
 
   auto &instance = mneme::MnemeRocProfiler::instance();
+  LOG_DEBUG("Logging duration");
   instance.logDuration(headers, n);
 }
 
@@ -203,6 +224,7 @@ struct ToolData {};
 
 int tool_init(rocprofiler_client_finalize_t /*fini*/, void *data_v) {
   // Create context/buffer/services during the configuration window
+  LOG_DEBUG("Initializer ROCPrrofiler");
   auto &instance = mneme::MnemeRocProfiler::instance();
   CHECK_ROCP(rocprofiler_create_context(&instance.getContext()));
   CHECK_ROCP(rocprofiler_create_buffer(
@@ -226,6 +248,7 @@ int tool_init(rocprofiler_client_finalize_t /*fini*/, void *data_v) {
 }
 
 void tool_fini(void * /*data_v*/) {
+  LOG_DEBUG("Finalize ROCprofiler");
   auto &instance = mneme::MnemeRocProfiler::instance();
   (void)rocprofiler_stop_context(instance.getContext());
   (void)rocprofiler_flush_buffer(instance.getBuffer());
@@ -238,6 +261,7 @@ rocprofiler_tool_configure_result_t *
 rocprofiler_configure(uint32_t version, const char *runtime_version,
                       uint32_t priority, rocprofiler_client_id_t *client_id) {
   static ToolData tool{};
+  LOG_DEBUG("Configuring ROCPrrofiler");
   static rocprofiler_tool_configure_result_t result{};
   result.initialize = &tool_init; // creates context/buffer and starts it
   result.finalize = &tool_fini;   // cleanup at exit (or explicit finalize)
@@ -246,12 +270,14 @@ rocprofiler_configure(uint32_t version, const char *runtime_version,
 }
 
 API_EXPORT(u64) MnemePy_startProfile(const char *KernelName) {
+  LOG_DEBUG("Requested to start profile {}", KernelName);
   auto &instance = mneme::MnemeRocProfiler::instance();
   return instance.start(KernelName);
 }
 
 API_EXPORT(void)
 MnemePy_stopProfile(u64 Token, u64 *ProfileData, u64 Size) {
+  LOG_DEBUG("Requested to stop profile {}", Token);
   auto &instance = mneme::MnemeRocProfiler::instance();
   auto prof = instance.stop(Token);
 
@@ -267,9 +293,15 @@ MnemePy_stopProfile(u64 Token, u64 *ProfileData, u64 Size) {
 }
 
 API_EXPORT(u64) MnemePy_getNumRecords(u64 token) {
+  LOG_DEBUG("Requested to get number of profile records {}", token);
   auto &instance = mneme::MnemeRocProfiler::instance();
   auto records = instance.numRecords(token);
   LOG_DEBUG("Record contains {} elements", records);
   return records;
+}
+
+API_EXPORT(void) MnemePy_initProfiler() {
+  // Triggers rocprofiler to collect all rocprofiler_configure() symbols
+  //  CHECK_ROCP(rocprofiler_force_configure(rocprofiler_configure));
 }
 }
