@@ -19,6 +19,7 @@ from mneme.llvm.module import ModuleRef
 from mneme.logging import logger
 from mneme.page_manager import PageManagerRef
 from mneme.pipeline import PipelineManager
+from mneme.profile import init_profiler
 from mneme.proteus import jit
 from mneme.recorded_execution import MemStateRef, RecordedExecution
 from mneme.transforms import transform
@@ -352,6 +353,7 @@ class CLIExecutor(BaseExecutor):
         return code_hash, llvm_ir
 
     def __init__(self, *args, **kwargs):
+        init_profiler()
         self.pipeline = kwargs.pop("pipeline", None)
         self.increamental = kwargs.pop("increamental", False)
         self.specialize = kwargs.pop("specialize", False)
@@ -489,6 +491,7 @@ class TuneWorker(BaseExecutor):
         return code_hash, llvm_ir
 
     def __init__(self, *args, **kwargs):
+        init_profiler()
         super().__init__(*args, **kwargs)
         self.pass_manager = PipelineManager()
 

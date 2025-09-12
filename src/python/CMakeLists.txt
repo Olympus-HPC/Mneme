@@ -17,7 +17,7 @@ if (MNEME_ENABLE_HIP)
 endif()
 
 target_include_directories(mneme SYSTEM PRIVATE ${LLVM_INCLUDE_DIRS} ${CMAKE_SOURCE_DIR}/include)
-target_link_libraries(mneme PRIVATE proteusCore mneme::profile)
+target_link_libraries(mneme PRIVATE proteusCore)
 
 if (MNEME_ENABLE_LOGGER)
 target_link_libraries(mneme PRIVATE spdlog::spdlog_header_only)

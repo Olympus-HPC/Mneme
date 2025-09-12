@@ -2,6 +2,7 @@ import argparse
 import copy
 import json
 import math
+import os
 import sys
 import threading
 from multiprocessing import Event, Process, Queue
@@ -15,6 +16,7 @@ from mneme.device import (
     set_device,
 )
 from mneme.experiment import Experiment
+from mneme.llvm.utils import get_profile_library
 from mneme.logging import logger
 from mneme.pipeline import PipelineManager
 from mneme.replay_executor import BaseExecutor, TuneWorker
@@ -341,6 +343,9 @@ class ReplayTuner(BaseExecutor):
         kwargs.pop("command")
         kwargs.pop("func")
         executor = ReplayTuner(**kwargs)
+        os.environ["ROCP_TOOL_LIBRARIES"] = (
+            get_profile_library()
+        )  # /path/to/libmneme_profile.so
         if tuner == "random":
             kwargs.pop("sampler")
             return ReplayTuner.run_random(executor)

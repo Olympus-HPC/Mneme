@@ -35,7 +35,7 @@ ProteusPY_optimize(LLVMModuleRef Mod, const char *DeviceArch,
   auto end = std::chrono::high_resolution_clock::now();
   std::chrono::duration<float> duration = end - start;
   float seconds = duration.count();
-  LOG_DEBUG("Middle end compilation took {} \n", seconds);
+  LOG_DEBUG("Middle end compilation took {}", seconds);
 }
 
 API_EXPORT(LLVMMemoryBufferRef)
@@ -51,9 +51,9 @@ ProteusPY_codeGenObject(LLVMModuleRef Mod, const char *DeviceArch, bool use_rtc,
   // Calculate duration and convert to seconds as float
   std::chrono::duration<float> duration = end - start;
   float seconds = duration.count();
-  LOG_DEBUG("Backend compilation took {} \n", seconds);
+  LOG_DEBUG("Backend compilation took {}", seconds);
   if (!DeviceObject) {
-    std::cout << "Device Object is nullptr\n";
+    LOG_WARN("Device Object is nullptr");
     return nullptr;
   }
   auto *ptr = DeviceObject.release();

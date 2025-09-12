@@ -176,6 +176,7 @@ class CMakeBuild(build_ext):
             f"-DMNEME_ENABLE_HIP={self.has_amd}",
             "-DMNEME_ENABLE_TESTS=On",
             "-DMNEME_ENABLE_AUTOTUNE=On",
+            "-DCMAKE_INSTALL_RPATH_USE_LINK_PATH=On",
             f"-Dproteus_DIR={self.install_dir}",
             f"-Dspdlog_DIR={self.install_dir}",
         ]
@@ -184,20 +185,27 @@ class CMakeBuild(build_ext):
         run_command(["make", "-j4"], cwd=build_dir)
         run_command(["make", "-j4", "install"], cwd=build_dir)
 
-        built_module = glob.glob(
-            os.path.join(build_dir, "src", "python", "libmneme*.so")
-        )
-        if not built_module:
+        build_module = [
+            p
+            for p in glob.glob(os.path.join(self.install_dir, "lib64", "libmneme*.so"))
+        ]
+        build_module += [
+            p
+            for p in glob.glob(
+                os.path.join(self.install_dir, "lib64", "libmneme_profile*.so")
+            )
+        ]
+
+        if not build_module:
             raise RuntimeError(
-                "Error: coreJIT shared library not found in build output!"
+                "Error: mneme shared libraries not found in build output!"
             )
 
-        built_module = built_module[0]  # Get the first match
         python_package_dir = os.path.join(self.build_lib, "mneme")
-        sys.stderr.write(f"Writting package to {python_package_dir}")
-        os.makedirs(python_package_dir, exist_ok=True)
-
-        shutil.copy(built_module, python_package_dir)
+        for built_module in build_module:
+            sys.stderr.write(f"Writting package to {python_package_dir}")
+            os.makedirs(python_package_dir, exist_ok=True)
+            shutil.copy(built_module, python_package_dir)
 
 
 class CustomBuildPy(build_py):
