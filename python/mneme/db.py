@@ -1,7 +1,10 @@
 import csv
+import json
 import pathlib
+import sys
 
 from mneme.experiment import Experiment
+from mneme.fancy_out import print_experiment_status
 from mneme.logging import logger
 
 
@@ -13,6 +16,8 @@ class MnemeDB:
         self._experiments = {}
         self._open = False
         self._suffix = suffix
+        self._best = sys.float_info.max
+        self._o3 = None
         if suffix is not None:
             self._prefix = (
                 f"mneme.{self._static_hash}.{self._dynamic_hash}.{self._suffix}"
@@ -97,10 +102,23 @@ class MnemeDB:
             values = []
             for row in reader:
                 values.append((row["hash"], row["executed"]))
+                if row["failed"].lower() == "false":
+                    exp = Experiment.from_dict(**row)
+                    if self._is_baseline(exp):
+                        self._o3 = float(row["exec_time_median"])
+                        logger.debug(f"Set baseline from csv baseline {self._o3}")
+
+                    if self._best > float(row["exec_time_median"]):
+                        self._best = float(row["exec_time_median"])
+                        logger.debug(f"Set BEST from csv baseline {self._best}")
 
             for v in values:
                 if v[1]:
                     self._experiments[v[0]] = v[1]
+
+        if self._o3 is not None and self._best != sys.float_info.max:
+            print(f"Optimal is {self._best} while O3 is {self._o3}")
+
         return self
 
     def close(self):
@@ -122,14 +140,31 @@ class MnemeDB:
     def suggest_ir_fn_name(self, exp: Experiment):
         return f"{self._dir}/{exp.hash()}.ll"
 
-    def add(self, src_ir: str, dst_ir: str, exp: Experiment):
+    def _is_baseline(self, exp):
         logger.debug(
-            f"Adding to database experiment 'Hash: {str(exp.hash())} IID: {exp._start_id} CID: {exp._commit_id}' with SRC {src_ir} and dest {dst_ir}"
+            f"Testing whether this is a baseline {json.dumps(exp.to_dict(), indent=2)}"
         )
+        if exp.passes != "default<O3>" and exp.passes != "default<O3>,globaldce":
+            return False
+        if exp.specialize != False:
+            return False
+        if exp.specialize_dims != 0:
+            return False
+        if exp.max_threads != 0:
+            return False
+        if exp.min_blocks_per_sm != 0:
+            return False
+
+        return True
+
+    def add(self, src_ir: str, dst_ir: str, exp: Experiment):
         if not self._open:
             raise RuntimeError("Expected database to be open")
 
         _hash = exp.hash()
+
+        if self._is_baseline(exp):
+            self._o3 = exp.exec_time
 
         with open(self._filename, mode="a", newline="") as csvfile:
             writer = csv.DictWriter(csvfile, fieldnames=self._columns)
@@ -139,6 +174,21 @@ class MnemeDB:
             _exp["orig_ir"] = src_ir
             _exp["compiled_ir"] = dst_ir
             writer.writerow(_exp)
+
+        if self._o3 is not None:
+            speedup = self._o3 / exp.exec_time
+            best_speedup = self._o3 / self._best
+
+            print_experiment_status(
+                _hash,
+                not exp.failed,
+                exp.verified,
+                speedup,
+                best_speedup,
+            )
+
+        if self._best > exp.exec_time:
+            self._best = exp.exec_time
 
         self._experiments[_hash] = exp.executed
 

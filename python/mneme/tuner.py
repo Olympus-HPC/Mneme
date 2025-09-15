@@ -423,7 +423,6 @@ class ReplayTuner(BaseExecutor):
 
         count = start_id
         in_flight = {}
-        print(f"Pending experiments are: {len(total_experiments)}")
         for w in workers:
             vals = schedule_job(db, total_experiments, exp_id, w)
             if vals is None:
@@ -450,7 +449,7 @@ class ReplayTuner(BaseExecutor):
                             "Expected llvm ir to exist on non failed experiment"
                         )
                 db.add(orig, res["llvm_ir"], exp2)
-                print(
+                logger.debug(
                     f"Worker {worker.idx} Done with {done_exp_id} had {exp2.failed} and took {exp2.exec_time}"
                 )
 
@@ -502,9 +501,9 @@ class ReplayTuner(BaseExecutor):
 
         total_experiments = []
         default_pipelines = [
-            "default<O1>",
-            "default<O2>",
             "default<O3>",
+            "default<O2>",
+            "default<O1>",
             "default<Os>",
             "default<Oz>",
         ]

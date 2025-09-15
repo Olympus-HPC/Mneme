@@ -39,15 +39,15 @@ def _analyze_measurements(times):
 
 class Experiment:
     def __init__(self, **kwargs):
-        self._specialize = kwargs.pop("specialize")
-        self._max_threads = kwargs.pop("max_threads")
-        self._min_blocks_per_sm = kwargs.pop("min_blocks_per_sm")
-        self._specialize_dims = kwargs.pop("specialize_dims")
-        self._passes = kwargs.pop("passes")
-        self._prune = kwargs.pop("prune")
-        self._internalize = kwargs.pop("internalize")
-        self._codegen_opt = kwargs.pop("codegen_opt")
-        self._rtc = kwargs.pop("rtc")
+        self.specialize = kwargs.pop("specialize")
+        self.max_threads = kwargs.pop("max_threads")
+        self.min_blocks_per_sm = kwargs.pop("min_blocks_per_sm")
+        self.specialize_dims = kwargs.pop("specialize_dims")
+        self.passes = kwargs.pop("passes")
+        self.prune = kwargs.pop("prune")
+        self.internalize = kwargs.pop("internalize")
+        self.codegen_opt = kwargs.pop("codegen_opt")
+        self.rtc = kwargs.pop("rtc")
         self._device_arch = kwargs.pop("device_arch")
 
         self._opt_time = kwargs.pop("opt_time", None)
@@ -124,7 +124,7 @@ class Experiment:
 
     @property
     def exec_time(self):
-        return self._exec_time_avg
+        return self._exec_time_median
 
     @exec_time.setter
     def exec_time(self, value):
@@ -212,21 +212,112 @@ class Experiment:
     def passes(self) -> str:
         return self._passes
 
+    @passes.setter
+    def passes(self, value):
+        self._passes = value
+
     @property
     def specialize(self):
         return self._specialize
+
+    @specialize.setter
+    def specialize(self, value):
+        if isinstance(value, str):
+            if value.lower() == "true":
+                self._specialize = True
+            else:
+                self._specialize = False
+        else:
+            self._specialize = bool(value)
 
     @property
     def specialize_dims(self):
         return self._specialize_dims
 
+    @specialize_dims.setter
+    def specialize_dims(self, value):
+        if isinstance(value, str):
+            if value.lower() == "true":
+                self._specialize_dims = True
+            else:
+                self._specialize_dims = False
+        else:
+            self._specialize_dims = bool(value)
+
     @property
     def max_threads(self):
         return self._max_threads
 
+    @max_threads.setter
+    def max_threads(self, value):
+        if value is None:
+            self._max_threads = None
+        else:
+            self._max_threads = int(value)
+
     @property
     def min_blocks_per_sm(self):
         return self._min_blocks_per_sm
+
+    @min_blocks_per_sm.setter
+    def min_blocks_per_sm(self, value):
+        if value is None:
+            self._min_blocks_per_sm = None
+        else:
+            self._min_blocks_per_sm = int(value)
+
+    @property
+    def prune(self):
+        return self._prune
+
+    @prune.setter
+    def prune(self, value):
+        if isinstance(value, str):
+            if value.lower() == "true":
+                self._prune = True
+            else:
+                self._prune = False
+        else:
+            self._prune = bool(value)
+
+    @property
+    def internalize(self):
+        return self._internalize
+
+    @internalize.setter
+    def internalize(self, value):
+        if isinstance(value, str):
+            if value.lower() == "true":
+                self._internalize = True
+            else:
+                self._internalize = False
+        else:
+            self._internalize = bool(value)
+
+    @property
+    def codegen_opt(self):
+        return self._codegen_opt
+
+    @codegen_opt.setter
+    def codegen_opt(self, value):
+        if value is None:
+            self._codegen_opt = None
+        else:
+            self._codegen_opt = int(value)
+
+    @property
+    def rtc(self):
+        return self.rtc
+
+    @rtc.setter
+    def rtc(self, value):
+        if isinstance(value, str):
+            if value.lower() == "true":
+                self._rtc = True
+            else:
+                self._rtc = False
+        else:
+            self._rtc = bool(value)
 
     def hash(self):
         hasher = hashlib.sha256()
