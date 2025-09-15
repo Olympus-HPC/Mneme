@@ -449,7 +449,7 @@ class ReplayTuner(BaseExecutor):
                             "Expected llvm ir to exist on non failed experiment"
                         )
                 db.add(orig, res["llvm_ir"], exp2)
-                print(
+                logger.debug(
                     f"Worker {worker.idx} Done with {done_exp_id} had {exp2.failed} and took {exp2.exec_time}"
                 )
 
@@ -501,9 +501,9 @@ class ReplayTuner(BaseExecutor):
 
         total_experiments = []
         default_pipelines = [
-            "default<O1>",
-            "default<O2>",
             "default<O3>",
+            "default<O2>",
+            "default<O1>",
             "default<Os>",
             "default<Oz>",
         ]

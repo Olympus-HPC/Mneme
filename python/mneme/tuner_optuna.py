@@ -172,9 +172,9 @@ def run_optuna_tune(
     orig = custom_db.save_ir(root_ir, "orig")
 
     default_pipelines = [
-        "default<O1>",
-        "default<O2>",
         "default<O3>",
+        "default<O2>",
+        "default<O1>",
         "default<Os>",
         "default<Oz>",
     ]
@@ -230,7 +230,7 @@ def run_optuna_tune(
                 raise RuntimeError(
                     f"Received experiment should have same hash with workers experiment {exp1.hash()} {exp2.hash()}"
                 )
-            print(
+            logger.debug(
                 f"Worker {worker.idx} Done with {done_exp_id} had {exp2.failed} and took {exp2.exec_time}"
             )
             if not exp2.failed:
@@ -245,9 +245,6 @@ def run_optuna_tune(
             else:
                 custom_db.add(orig, "Error", exp2)
                 study.tell(trial, state=TrialState.FAIL)
-            print(
-                f"Worker {worker.idx} Done with {done_exp_id} had {exp2.failed} and took {exp2.exec_time}"
-            )
 
             update_end = time.time()
             update_duration += update_end - update_start
