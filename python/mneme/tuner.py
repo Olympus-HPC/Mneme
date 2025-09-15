@@ -423,7 +423,6 @@ class ReplayTuner(BaseExecutor):
 
         count = start_id
         in_flight = {}
-        print(f"Pending experiments are: {len(total_experiments)}")
         for w in workers:
             vals = schedule_job(db, total_experiments, exp_id, w)
             if vals is None:

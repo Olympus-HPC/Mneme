@@ -139,6 +139,8 @@ def run_optuna_tune(
     seed,
 ):
     import optuna
+
+    optuna.logging.disable_default_handler()
     from optuna.trial import TrialState
 
     if not custom_db.is_open:
@@ -168,6 +170,20 @@ def run_optuna_tune(
 
     root_ir = executor.link_ir()
     orig = custom_db.save_ir(root_ir, "orig")
+
+    default_pipelines = [
+        "default<O1>",
+        "default<O2>",
+        "default<O3>",
+        "default<Os>",
+        "default<Oz>",
+    ]
+
+    experiments = []
+    for p in default_pipelines:
+        experiments += Configure.create_experiments(executor, p)
+
+    runner(orig, experiments, workers, completed_jobs_q, custom_db, exp_id, count)
 
     in_flight = {}
 
@@ -229,6 +245,10 @@ def run_optuna_tune(
             else:
                 custom_db.add(orig, "Error", exp2)
                 study.tell(trial, state=TrialState.FAIL)
+            print(
+                f"Worker {worker.idx} Done with {done_exp_id} had {exp2.failed} and took {exp2.exec_time}"
+            )
+
             update_end = time.time()
             update_duration += update_end - update_start
 
@@ -256,20 +276,6 @@ def run_optuna_tune(
         else:
             print(json.dumps(res, indent=6))
             raise RuntimeError("Unknown payload")
-
-    default_pipelines = [
-        "default<O1>",
-        "default<O2>",
-        "default<O3>",
-        "default<Os>",
-        "default<Oz>",
-    ]
-
-    experiments = []
-    for p in default_pipelines:
-        experiments += Configure.create_experiments(executor, p)
-
-    runner(orig, experiments, workers, completed_jobs_q, custom_db, exp_id, count)
 
     total_end = time.time()
     with open(f"{custom_db.db_dir}/{custom_db.prefix}.prof.json", "w") as fd:
