@@ -378,7 +378,8 @@ public:
       return true;
 
     try {
-      return std::regex_search(KernelName, KernelWhiteList);
+      return std::regex_search(KernelName, KernelWhiteList) ||
+             std::regex_search(llvm::demangle(KernelName), KernelWhiteList);
     } catch (const std::regex_error &e) {
       LOG_WARN("Invalid regex: {}, ... falling back and recording everything");
     }
