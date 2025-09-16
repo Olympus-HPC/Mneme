@@ -356,8 +356,6 @@ class ReplayTuner(BaseExecutor):
     def run_optuna(executor):
         completed_jobs_q = Queue()
 
-        suffix = f"{executor.specialize}.{executor.prune}.{executor.internalize}.{executor.rtc}.{executor.codegen_opt}.{executor.sampler}.{executor.seed}"
-
         workers = [
             TuneWorkerHandle(
                 i,
@@ -372,7 +370,7 @@ class ReplayTuner(BaseExecutor):
                 executor.rtc,
                 executor._iterations,
                 executor.db_dir,
-                suffix,
+                executor.suffix,
             )
             for i in range(executor.num_workers)
         ]
@@ -381,7 +379,7 @@ class ReplayTuner(BaseExecutor):
             executor.db_dir,
             executor.kernel_descr.static_hash,
             executor.kernel_descr.dynamic_hash,
-            suffix,
+            executor.suffix,
         ).open()
 
         run_optuna_tune(
@@ -475,7 +473,6 @@ class ReplayTuner(BaseExecutor):
         completed_jobs_q = Queue()
         exp_id = 0
 
-        suffix = f"{executor.specialize}.{executor.prune}.{executor.internalize}.{executor.rtc}.{executor.codegen_opt}.{executor.seed}"
         workers = [
             TuneWorkerHandle(
                 i,
@@ -490,7 +487,7 @@ class ReplayTuner(BaseExecutor):
                 executor.rtc,
                 executor._iterations,
                 executor.db_dir,
-                suffix,
+                executor.suffix,
             )
             for i in range(executor.num_workers)
         ]
