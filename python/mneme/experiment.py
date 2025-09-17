@@ -54,15 +54,15 @@ class Experiment:
         self._codegen_time = kwargs.pop("codegen_time", None)
         self._verified = kwargs.pop("verified", None)
         self._obj_size = kwargs.pop("obj_size", None)
-        self._exec_time_std = kwargs.pop("exec_time_std", None)
-        self._exec_time_avg = kwargs.pop("exec_time_avg", None)
-        self._exec_time_median = kwargs.pop("exec_time_median", None)
-        self._exec_time_r = kwargs.pop("exec_time_r", None)
-        self._exec_time_rp = kwargs.pop("exec_time_rp", None)
-        self._exec_time_iqr = kwargs.pop("exec_time_iqr", None)
-        self._exec_time_iqrp = kwargs.pop("exec_time_iqrp", None)
-        self._exec_time_q25 = kwargs.pop("exec_time_q25", None)
-        self._exec_time_q75 = kwargs.pop("exec_time_q75", None)
+        self.exec_time_std = kwargs.pop("exec_time_std", None)
+        self.exec_time_avg = kwargs.pop("exec_time_avg", None)
+        self.exec_time_median = kwargs.pop("exec_time_median", None)
+        self.exec_time_r = kwargs.pop("exec_time_r", None)
+        self.exec_time_rp = kwargs.pop("exec_time_rp", None)
+        self.exec_time_iqr = kwargs.pop("exec_time_iqr", None)
+        self.exec_time_iqrp = kwargs.pop("exec_time_iqrp", None)
+        self.exec_time_q25 = kwargs.pop("exec_time_q25", None)
+        self.exec_time_q75 = kwargs.pop("exec_time_q75", None)
         self._executed = kwargs.pop("executed", False)
         self._failed = kwargs.pop("failed", False)
         self._start_id = kwargs.pop("start_id", -1)
@@ -73,6 +73,105 @@ class Experiment:
         self._const_mem = kwargs.pop("const_mem", -1)
         self._local_mem = kwargs.pop("local_mem", -1)
         self._reg_usage = kwargs.pop("reg_usage", -1)
+
+    @property
+    def exec_time_std(self):
+        return self._exec_time_std
+
+    @exec_time_std.setter
+    def exec_time_std(self, value):
+        if value is None or value == "":
+            self._exec_time_std = -1.0
+        else:
+            self._exec_time_std = float(value)
+
+    @property
+    def exec_time_avg(self):
+        return self._exec_time_avg
+
+    @exec_time_avg.setter
+    def exec_time_avg(self, value):
+        if value is None or value == "":
+            self._exec_time_avg = -1.0
+        else:
+            self._exec_time_avg = float(value)
+
+    @property
+    def exec_time_median(self):
+        return self._exec_time_median
+
+    @exec_time_median.setter
+    def exec_time_median(self, value):
+        if value is None or value == "":
+            self._exec_time_median = -1.0
+        else:
+            self._exec_time_median = float(value)
+
+    @property
+    def exec_time_r(self):
+        return self._exec_time_r
+
+    @exec_time_r.setter
+    def exec_time_r(self, value):
+        if value is None or value == "":
+            self._exec_time_r = -1.0
+        else:
+            self._exec_time_r = float(value)
+
+    @property
+    def exec_time_rp(self):
+        return self._exec_time_rp
+
+    @exec_time_rp.setter
+    def exec_time_rp(self, value):
+        if value is None or value == "":
+            self._exec_time_rp = -1.0
+        else:
+            self._exec_time_rp = float(value)
+
+    @property
+    def exec_time_iqr(self):
+        return self._exec_time_iqr
+
+    @exec_time_iqr.setter
+    def exec_time_iqr(self, value):
+        if value is None or value == "":
+            self._exec_time_iqr = -1.0
+        else:
+            self._exec_time_iqr = float(value)
+
+    @property
+    def exec_time_iqrp(self):
+        return self._exec_time_iqrp
+
+    @exec_time_iqrp.setter
+    def exec_time_iqrp(self, value):
+        if value is None or value == "":
+            self._exec_time_iqrp = -1.0
+        else:
+            self._exec_time_iqrp = float(value)
+
+    @property
+    def exec_time_q25(self):
+        return self._exec_time_q25
+
+    @exec_time_q25.setter
+    def exec_time_q25(self, value):
+        if value is None or value == "":
+            self._exec_time_q25 = -1.0
+        else:
+            self._exec_time_q25 = float(value)
+
+    @property
+    def exec_time_q75(self):
+        return self._exec_time_q75
+
+    @exec_time_q75.setter
+    def exec_time_q75(self, value):
+        if value is None or value == "":
+            self._exec_time_q75 = -1.0
+        else:
+            self._exec_time_q75 = float(value)
 
     @property
     def const_mem(self):
@@ -360,15 +459,15 @@ class Experiment:
         data["codegen_time"] = self._codegen_time
         data["verified"] = self._verified
         data["obj_size"] = self._obj_size
-        data["exec_time_std"] = self._exec_time_std
-        data["exec_time_avg"] = self._exec_time_avg
-        data["exec_time_median"] = self._exec_time_median
-        data["exec_time_r"] = self._exec_time_r
-        data["exec_time_rp"] = self._exec_time_rp
-        data["exec_time_iqr"] = self._exec_time_iqr
-        data["exec_time_iqrp"] = self._exec_time_iqrp
-        data["exec_time_q25"] = self._exec_time_q25
-        data["exec_time_q75"] = self._exec_time_q75
+        data["exec_time_std"] = self.exec_time_std
+        data["exec_time_avg"] = self.exec_time_avg
+        data["exec_time_median"] = self.exec_time_median
+        data["exec_time_r"] = self.exec_time_r
+        data["exec_time_rp"] = self.exec_time_rp
+        data["exec_time_iqr"] = self.exec_time_iqr
+        data["exec_time_iqrp"] = self.exec_time_iqrp
+        data["exec_time_q25"] = self.exec_time_q25
+        data["exec_time_q75"] = self.exec_time_q75
         data["executed"] = self._executed
         data["hash"] = self.hash()
         data["reg_usage"] = self._reg_usage
