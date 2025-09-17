@@ -6,6 +6,7 @@ from ..llvm.buffer import MemBufferRef
 from ..llvm.common import _decode_string, _encode_string
 from ..llvm.context import get_global_context
 from ..llvm.module import ModuleRef
+from ..logging import logger
 from ..mneme_types import dim3
 
 ffi.lib.ProteusPY_pruneIR.argtypes = [ffi.LLVMModuleRef]
@@ -167,7 +168,7 @@ def set_launch_bounds(
 ):
     if max_threads_per_block > 1024:
         raise RuntimeError("Max threads cannot be larger than 1024")
-    print(
+    logger.debug(
         f"Called to put launchbounds equal to {max_threads_per_block} and {min_blocks_per_sm}"
     )
     return int(

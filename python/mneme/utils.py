@@ -26,13 +26,10 @@ def cond_gpu_time(attr_name):
         @wraps(func)
         def wrapper(self, exp, kernel_name, *args, profile: bool = False, **kwargs):
             if not profile:
-                print("Selected to not profile, skipping")
                 return func(self, exp, kernel_name, *args, **kwargs)
-            print("Profiling")
             correlation_id = gpu_profile_start(kernel_name + ".kd")
             result = func(self, exp, kernel_name, *args, **kwargs)
             measurements = gpu_profile_stop(correlation_id)
-            print(f"Profile returned following measurements {measurements}")
             setattr(exp, attr_name, measurements)
             return result
 
