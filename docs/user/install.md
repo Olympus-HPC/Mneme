@@ -1,24 +1,44 @@
-# Installation
-
-Currently, Mneme is distributed using its git repo to build and install it.
-We recommend using the **latest develop** branch version, which is well tested and
+# Installation and Usage 
+<!-- Currently, Mneme is distributed using its git repo to build and install it.  -->
+Mneme is open-source and available on GitHub. We recommend using the **latest develop** branch version, which is well tested and
 robust while including the most recent features.
 
-Mneme builds and installs three components: the LLVM plugin pass, the Recording library,
-and the Mneme replay tool.
-The user must integrate only the LLVM pass in their build system and use the recording library when running executables.
+Mneme builds and installs the following key components: 
+- A LLVM plugin pass, `libregdeviceir.so`, which is used in the first phase to generate a _recordable_ executable.
+- A recording library, `librecord.so`, which is used in the second phase to facilitate the actual recording of device and host memory data from the recordable executable generated in phase 1.
+- A user-friendly command-line tool, `mneme replay|tune`, that allows users to replay and tune the recorded traces. This tool utilizes the `libmneme.so` library. 
+
+Further, Mneme also build the following two libraries that are utilized internally: 
+- A profiling library, `libmneme_profile.so` , for collection of peformance profiles on for HIP kernels (ROCm profiling), and,  
+- A stub library, `libmneme_shallow.so` , that enables building of binaries with and without recording, reducing user's build effort
+
+A user must integrate the LLVM pass in their build system and utilize the recording library to generate the traces. They can then leverage the `mneme` command-line tool for replay and tuning. 
 We provide information on how to integrate Mneme with your application in the
-[Integration](integration.md) section.
+[Integration](integration.md) section, along with an example of replay and tuning.
+
+
+## Quick Start
+```
+# HIP installation set up 
+module load rocm/6.3.1
+export LLVM_INSTALL_DIR=${ROCM_PATH}
+
+# CUDA installation set up
+TBD. 
+
+# Clone and install
+git clone https://github.com/Olympus-HPC/Mneme.git
+pip install ./
+```
+
 
 ## Building
-
+The `Quick Start` section provides instructions for a user-friendly build with `pip`. Advanced users can utilize the `cmake` build instead of the `pip`build if desired, which is detailed below.
 
 ### Dependencies
+Mneme depends on LLVM (ROCm@6.2 or ROCm@6.3), [spdlog](https://github.com/gabime/spdlog.git), and [Proteus](https://github.com/Olympus-HPC/proteus/). 
 
-Mneme depends on LLVM (ROCm@6.2 or ROCm@6.3) on [Proteus](https://github.com/Olympus-HPC/proteus/). 
-
-The project uses `cmake` for building and depends on an LLVM installation (CI
-tests cover 18 and AMD ROCm versions 6.2.1, 6.3).  The top-level
+Internally, the project uses `cmake` for building and depends on an LLVM installation.  The top-level
 `CMakeLists.txt` has the following (binary) build options:
 
 * `MNEME_ENABLE_TESTS`: builds Mneme tests.
@@ -27,14 +47,12 @@ tests cover 18 and AMD ROCm versions 6.2.1, 6.3).  The top-level
 * `MNEME_ENABLE_DEBUG`: logs debugging information (for developers).
 * `MNEME_ENABLE_LOGGER`: Enalbes Mneme logging.
 
+The script clones `proteus` and `spdlog`, builds and installs them,  and then installs Mneme.
 
-Please check the build process of our CI [here](https://github.com/Olympus-HPC/Mneme/blob/features/amd-refactor/scripts/gitlab/ci-build-test.sh). 
+Please check the build process of our CI [here](scripts/gitlab/ci-build-test.sh). 
 
-The script clones proteus and spdlog builds and installs them and then installs Mneme.
-
-## Testing
-
-It is advised to enable tests when deploying Proteus on a machine for the first
+### Testing
+If using a `cmake` setup, it is advised to enable tests when deploying Mneme on a machine for the first
 time and run them:
 ```shell
 cd build
