@@ -23,9 +23,6 @@ We provide information on how to integrate Mneme with your application in the
 module load rocm/6.3.1
 export LLVM_INSTALL_DIR=${ROCM_PATH}
 
-# CUDA installation set up
-TBD. 
-
 # Clone and install
 git clone https://github.com/Olympus-HPC/Mneme.git
 pip install ./
@@ -33,7 +30,9 @@ pip install ./
 
 
 ## Building
-The `Quick Start` section provides instructions for a user-friendly build with `pip`. Advanced users can utilize the `cmake` build instead of the `pip`build if desired, which is detailed below.
+The `Quick Start` section provides instructions for a user-friendly build with `pip` on AMD GPUs. Advanced users can utilize the `cmake` build instead of the `pip`build if desired, which is detailed below. 
+
+Please note that currently, NVIDIA GPUs (CUDA builds) are only supported through `cmake`. 
 
 ### Dependencies
 Mneme depends on LLVM (ROCm@6.2 or ROCm@6.3), [spdlog](https://github.com/gabime/spdlog.git), and [Proteus](https://github.com/Olympus-HPC/proteus/). 
@@ -50,6 +49,8 @@ Internally, the project uses `cmake` for building and depends on an LLVM install
 The script clones `proteus` and `spdlog`, builds and installs them,  and then installs Mneme.
 
 Please check the build process of our CI [here](scripts/gitlab/ci-build-test.sh). 
+
+### CMake Build Steps (CUDA example)
 
 ### Testing
 If using a `cmake` setup, it is advised to enable tests when deploying Mneme on a machine for the first
