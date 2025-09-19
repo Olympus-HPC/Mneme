@@ -92,7 +92,7 @@ int main(int argc, char *argv[]) {
   ReplayInstance<Vendor> RInstance(MnemeJson, MnemeKernelHash);
   llvm::LLVMContext Ctx;
   auto Modules = RInstance.loadModules(Ctx);
-  auto Mod = proteus::linkModules(Ctx, Modules);
+  auto Mod = proteus::linkModules(Ctx, std::move(Modules));
   proteus::pruneIR(*Mod, false);
   pruneMnemeGlobals(*Mod);
   auto ReplayKernelFunc = Mod->getFunction(RInstance.getKernelName());

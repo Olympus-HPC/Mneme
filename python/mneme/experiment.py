@@ -47,7 +47,7 @@ class Experiment:
         self.prune = kwargs.pop("prune")
         self.internalize = kwargs.pop("internalize")
         self.codegen_opt = kwargs.pop("codegen_opt")
-        self.rtc = kwargs.pop("rtc")
+        self.codegen_method = kwargs.pop("codegen_method")
         self._device_arch = kwargs.pop("device_arch")
 
         self._opt_time = kwargs.pop("opt_time", None)
@@ -306,18 +306,12 @@ class Experiment:
             self._codegen_opt = int(value)
 
     @property
-    def rtc(self):
-        return self.rtc
+    def codegen_method(self):
+        return self._codegen_method
 
-    @rtc.setter
-    def rtc(self, value):
-        if isinstance(value, str):
-            if value.lower() == "true":
-                self._rtc = True
-            else:
-                self._rtc = False
-        else:
-            self._rtc = bool(value)
+    @codegen_method.setter
+    def codegen_method(self, value):
+        self._codegen_method = value
 
     def hash(self):
         hasher = hashlib.sha256()
@@ -329,7 +323,7 @@ class Experiment:
         hasher.update(str(self._prune).encode("utf-8"))
         hasher.update(str(self._internalize).encode("utf-8"))
         hasher.update(str(self._codegen_opt).encode("utf-8"))
-        hasher.update(str(self._rtc).encode("utf-8"))
+        hasher.update(str(self._codegen_method).encode("utf-8"))
         hasher.update(str(self._device_arch).encode("utf-8"))
         return hasher.hexdigest()
 
@@ -347,7 +341,7 @@ class Experiment:
         data["prune"] = self._prune
         data["internalize"] = self._internalize
         data["codegen_opt"] = self._codegen_opt
-        data["rtc"] = self._rtc
+        data["codegen_method"] = self._codegen_method
         data["device_arch"] = self._device_arch
         data["failed"] = self.failed
         data["start_time"] = self._start_time

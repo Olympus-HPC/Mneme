@@ -11,7 +11,12 @@ from ..mneme_types import dim3
 ffi.lib.ProteusPY_pruneIR.argtypes = [ffi.LLVMModuleRef]
 ffi.lib.ProteusPY_optimize.argtypes = [ffi.LLVMModuleRef, c_char_p, c_char_p, c_uint]
 ffi.lib.ProteusPY_internalize.argtypes = [ffi.LLVMModuleRef, c_char_p]
-ffi.lib.ProteusPY_codeGenObject.argtypes = [ffi.LLVMModuleRef, c_char_p, c_bool, c_uint]
+ffi.lib.ProteusPY_codeGenObject.argtypes = [
+    ffi.LLVMModuleRef,
+    c_char_p,
+    c_char_p,
+    c_uint,
+]
 ffi.lib.ProteusPY_codeGenObject.restype = ffi.LLVMMemBufferRef
 ffi.lib.ProteusPY_linkModules.argtypes = [
     POINTER(c_char_p),
@@ -83,7 +88,7 @@ def internalize(mod: ModuleRef, kernel_name: str):
 
 
 def codegen_object(
-    mod: ModuleRef, device_arch, use_rtc=False, codegen_opt_level: int = 3
+    mod: ModuleRef, device_arch, codegen_type="serial", codegen_opt_level: int = 3
 ):
     if not isinstance(mod, ModuleRef):
         raise TypeError(f"Expecting type of ModuleRef instead got {type(mod)}")
@@ -94,7 +99,10 @@ def codegen_object(
         )
     result = MemBufferRef(
         ffi.lib.ProteusPY_codeGenObject(
-            mod, _encode_string(device_arch), use_rtc, codegen_opt_level
+            mod,
+            _encode_string(device_arch),
+            _encode_string(codegen_type),
+            codegen_opt_level,
         )
     )
     return result

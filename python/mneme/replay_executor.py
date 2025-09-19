@@ -63,11 +63,13 @@ class BaseExecutor:
         )
 
         parser.add_argument(
-            "--rtc",
-            dest="rtc",
-            default=False,
+            "-cm",
+            "--codegen-method",
+            dest="codegen_method",
+            choices=["rtc", "serial", "parallel"],
+            default="serial",
             action=argparse.BooleanOptionalAction,
-            help="Use Vendor RTC when lowering to device object file instead of default Proteus Infrastructure",
+            help="Technology to use to lower to LLVM IR to a device object file instead of default Proteus Infrastructure",
         )
 
         parser.add_argument(
@@ -98,7 +100,7 @@ class BaseExecutor:
             default=0,
         )
 
-        parser.set_defaults(prune=True, internalize=False, rtc=False)
+        parser.set_defaults(prune=True, internalize=False, codegen_method="serial")
 
         return parser
 
@@ -109,7 +111,7 @@ class BaseExecutor:
         prune: bool = True,
         internalize: bool = False,
         iterations: int = 3,
-        rtc: bool = False,
+        codegen_method: str = "serial",
         codegen_opt: int = 3,
         device_id: int = 0,
     ):
@@ -125,7 +127,7 @@ class BaseExecutor:
         self.prune = prune
         self.internalize = internalize
         self.codegen_opt = codegen_opt
-        self.rtc = rtc
+        self.codegen_method = codegen_method
         self._epilogue = None
         self._prologue = None
         self._page_manager = None
@@ -182,7 +184,7 @@ class BaseExecutor:
     @cond_time("codegen_time")
     def _codegen(self, exp, ir_module):
         return jit.codegen_object(
-            ir_module, self.device_arch, self.rtc, self.codegen_opt
+            ir_module, self.device_arch, self.codegen_method, self.codegen_opt
         )
 
     @cond_gpu_time("exec_time")
@@ -394,7 +396,7 @@ class CLIExecutor(BaseExecutor):
             prune=self.prune,
             internalize=self.internalize,
             codegen_opt=self.codegen_opt,
-            rtc=self.rtc,
+            codegen_method=self.codegen_method,
             device_arch=self.device_arch,
         )
 
@@ -520,7 +522,7 @@ class TuneWorker(BaseExecutor):
         prune: bool,
         internalize: bool,
         codegen_opt: int,
-        rtc: bool,
+        codegen_method: str,
         iterations: int,
         db_dir: str,
         suffix: str,
@@ -539,7 +541,7 @@ class TuneWorker(BaseExecutor):
             prune=prune,
             internalize=internalize,
             codegen_opt=codegen_opt,
-            rtc=rtc,
+            codegen_method=codegen_method,
             iterations=iterations,
         )
         # Open GPU memory, setup prologue epilogue and create a single

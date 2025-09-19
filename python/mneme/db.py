@@ -39,7 +39,7 @@ class MnemeDB:
             "prune",
             "internalize",
             "codegen_opt",
-            "rtc",
+            "codegen_method",
             "device_arch",
             "opt_time",
             "codegen_time",

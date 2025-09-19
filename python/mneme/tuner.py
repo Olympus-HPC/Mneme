@@ -36,7 +36,7 @@ class TuneWorkerHandle:
         prune: bool,
         internalize: bool,
         codegen_opt: int,
-        rtc: bool,
+        codegen_method: bool,
         iterations: int,
         db_dir: str,
         suffix: str,
@@ -58,7 +58,7 @@ class TuneWorkerHandle:
         self.prune = prune
         self.internalize = internalize
         self.codegen_opt = codegen_opt
-        self.rtc = rtc
+        self.codegen_method = codegen_method
         self.iterations = iterations
         self.db_dir = db_dir
         self.suffix = suffix
@@ -84,7 +84,7 @@ class TuneWorkerHandle:
                 self.prune,
                 self.internalize,
                 self.codegen_opt,
-                self.rtc,
+                self.codegen_method,
                 self.iterations,
                 self.db_dir,
                 self.suffix,
@@ -290,7 +290,7 @@ class ReplayTuner(BaseExecutor):
                 prune=self.prune,
                 internalize=self.internalize,
                 codegen_opt=self.codegen_opt,
-                rtc=self.rtc,
+                codegen_method=self.codegen_method,
                 device_arch=self.device_arch,
             )
             if not db.should_execute(exp):
@@ -323,7 +323,7 @@ class ReplayTuner(BaseExecutor):
                     prune=self.prune,
                     internalize=self.internalize,
                     codegen_opt=self.codegen_opt,
-                    rtc=self.rtc,
+                    codegen_method=self.codegen_method,
                     device_arch=self.device_arch,
                 )
                 if not db.should_execute(exp):
@@ -367,7 +367,7 @@ class ReplayTuner(BaseExecutor):
                 executor.prune,
                 executor.internalize,
                 executor.codegen_opt,
-                executor.rtc,
+                executor.codegen_method,
                 executor._iterations,
                 executor.db_dir,
                 executor.suffix,
@@ -484,7 +484,7 @@ class ReplayTuner(BaseExecutor):
                 executor.prune,
                 executor.internalize,
                 executor.codegen_opt,
-                executor.rtc,
+                executor.codegen_method,
                 executor._iterations,
                 executor.db_dir,
                 executor.suffix,
