@@ -6,6 +6,17 @@
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/Support/CommandLine.h>
 
+#include <proteus/CoreLLVM.hpp>
+#include <proteus/CoreLLVMDevice.hpp>
+
+#include <llvm/Support/InitLLVM.h>
+#ifdef MNEME_ENABLE_HIP
+#include <proteus/CoreLLVMHIP.hpp>
+#elif defined(MNEME_ENABLE_CUDA)
+#else
+#error "Please define MNEME_ENABLE_HIP or MNEME_ENABLE_CUDA"
+#endif
+
 #include "mneme/DeviceTraits.hpp"
 #include "mneme/MnemeJITProteus.hpp"
 #include "mneme/MnemeLLVMUtils.hpp"
@@ -105,7 +116,7 @@ int main(int argc, char *argv[]) {
 
   LOG_INFO("Optimizing Kernel with Middle-OptLevel {} and BackEnd-OptLevel {}",
            MnemeMiddleOptLevel.getValue(), MnemeBackendOptLevel.getValue());
-  proteus::optimizeIR(*Mod, Arch, &MnemeMiddleOptLevel.getValue(),
+  proteus::optimizeIR(*Mod, Arch, MnemeMiddleOptLevel.getValue(),
                       MnemeBackendOptLevel.getValue());
 
   auto RecordedGrid = RInstance.getRecordedGrid();
