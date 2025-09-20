@@ -13,7 +13,7 @@ installDir="/dev/shm/install"
 
 build_proteus() {
   echo "Building PROTEUS"
-  git clone --depth 1 --branch "features/mneme-integrations" git@github.com:Olympus-HPC/proteus.git
+  git clone --depth 1 git@github.com:Olympus-HPC/proteus.git
   pushd proteus 
   git checkout features/mneme-integrations
   PROTEUS_ENABLE_HIP=$1
