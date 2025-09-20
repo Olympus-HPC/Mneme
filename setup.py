@@ -64,44 +64,31 @@ class CMakeBuild(build_ext):
     def run(self):
         if not os.path.exists("third_party"):
             os.mkdir("third_party")
+        if "PROTEUS_DIR" in os.environ:
+            proteus_dir = os.environ["PROTEUS_DIR"]
+        else:
+            proteus_dir = self.clone_and_build_proteus()
 
-        self.clone_and_build_proteus()
-        self.clone_and_build_spdlog()
-        self.build_mneme()
+        spdlog_dir = self.clone_and_build_spdlog()
+        self.build_mneme(proteus_dir, spdlog_dir)
 
     def clone_and_build_proteus(self):
-        proteus_path = os.path.abspath("third_party/proteus")
-        if not os.path.exists(proteus_path):
-            run_command(
-                [
-                    "git",
-                    "clone",
-                    "--depth",
-                    "1",
-                    "--branch",
-                    "features/mneme-integrations",
-                    self.PROTEUS_REPO,
-                    proteus_path,
-                ],
-                cwd="third_party",
-            )
-
-            # Ensure commands are run inside the Proteus directory
-            # run_command(
-            #    [
-            #        "git",
-            #        "fetch",
-            #        "--depth",
-            #        "1",
-            #        "origin",
-            #        "30f766dbbff8599479739450eee3fdb9bdd3c118",
-            #    ],
-            #    cwd=proteus_path,
-            # )
-            # run_command(
-            #    ["git", "checkout", "30f766dbbff8599479739450eee3fdb9bdd3c118"],
-            #    cwd=proteus_path,
-            # )
+        if "PROTEUS_SRC" in os.environ:
+            proteus_path = os.environ["PROTEUS_SRC"]
+        else:
+            proteus_path = os.path.abspath("third_party/proteus")
+            if not os.path.exists(proteus_path):
+                run_command(
+                    [
+                        "git",
+                        "clone",
+                        "--depth",
+                        "1",
+                        self.PROTEUS_REPO,
+                        proteus_path,
+                    ],
+                    cwd="third_party",
+                )
 
         build_dir = os.path.join(proteus_path, "build")
         os.makedirs(build_dir, exist_ok=True)
@@ -127,6 +114,7 @@ class CMakeBuild(build_ext):
         )
         run_command(["make", "-j4"], cwd=build_dir)
         run_command(["make", "install"], cwd=build_dir)
+        return self.install_dir
 
     def clone_and_build_spdlog(self):
         spdlog_path = os.path.abspath("third_party/spdlog")
@@ -161,8 +149,9 @@ class CMakeBuild(build_ext):
 
         run_command(["make", "-j4"], cwd=build_dir)
         run_command(["make", "install"], cwd=build_dir)
+        return self.install_dir
 
-    def build_mneme(self):
+    def build_mneme(self, proteus_dir, spdlog_dir):
         mneme_path = self.root_dir
         build_dir = os.path.join(mneme_path, "build")
         os.makedirs(build_dir, exist_ok=True)
@@ -177,8 +166,8 @@ class CMakeBuild(build_ext):
             "-DMNEME_ENABLE_TESTS=On",
             "-DMNEME_ENABLE_AUTOTUNE=On",
             "-DCMAKE_INSTALL_RPATH_USE_LINK_PATH=On",
-            f"-Dproteus_DIR={self.install_dir}",
-            f"-Dspdlog_DIR={self.install_dir}",
+            f"-Dproteus_DIR={proteus_dir}",
+            f"-Dspdlog_DIR={spdlog_dir}",
         ]
 
         run_command(["cmake", ".."] + cmake_options, cwd=build_dir)

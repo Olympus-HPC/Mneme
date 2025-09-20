@@ -13,9 +13,8 @@ installDir="/dev/shm/install"
 
 build_proteus() {
   echo "Building PROTEUS"
-  git clone --depth 1 --branch "features/mneme-integrations" git@github.com:Olympus-HPC/proteus.git
+  git clone --depth 1 git@github.com:Olympus-HPC/proteus.git
   pushd proteus 
-  git checkout features/mneme-integrations
   PROTEUS_ENABLE_HIP=$1
   PROTEUS_ENABLE_CUDA=$2
   PROTEUS_INSTALL_DIR=$3
@@ -27,6 +26,7 @@ build_proteus() {
   -DBUILD_SHARED=Off \
   -DLLVM_INSTALL_DIR=${LLVM_INSTALL_DIR} \
   -DCMAKE_C_COMPILER=${LLVM_INSTALL_DIR}/bin/clang \
+  -DCMAKE_PREFIX_PATH="$CONDA_PREFIX;$CONDA_PREFIX/lib/cmake" \
   -DCMAKE_CXX_COMPILER=${LLVM_INSTALL_DIR}/bin/clang++ \
   -DPROTEUS_ENABLE_HIP=${PROTEUS_ENABLE_HIP} \
   -DPROTEUS_LINK_SHARED_LLVM=${LINK_SHARED_LLVM} \
@@ -73,7 +73,7 @@ bash ./${MINICONDA_DIR}/miniconda.sh -b -u -p ./${MINICONDA_DIR}
 rm ./${MINICONDA_DIR}/miniconda.sh
 source ./${MINICONDA_DIR}/bin/activate
 conda create -y -n mneme -c conda-forge \
-    python=3.10 clang=18.1.8 clangxx=18.1.8 llvmdev=18.1.8 lit=18.1.8
+    python=3.10 clang=18.1.8 clangxx=18.1.8 llvmdev=18.1.8 lit=18.1.8 clangdev=18.1.8
 else
 source ./${MINICONDA_DIR}/bin/activate
 fi
@@ -94,6 +94,7 @@ pushd $build_dir
 echo "Current dir is $(pwd)"
 cmake \
 -DCMAKE_BUILD_TYPE=Debug \
+-DCMAKE_PREFIX_PATH="$CONDA_PREFIX;$CONDA_PREFIX/lib/cmake" \
 -Dproteus_DIR=$installDir \
 -DCMAKE_INSTALL_PREFIX=$installDir \
 -DCMAKE_CXX_COMPILER=${cpp} \

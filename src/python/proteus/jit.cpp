@@ -8,12 +8,27 @@
 #include <llvm/Bitcode/BitcodeReader.h>
 #include <llvm/IR/Module.h>
 #include <mneme/MnemeLogger.hpp>
+#include <proteus/CompilerInterfaceRuntimeConstantInfo.h>
 #include <proteus/CompilerInterfaceTypes.h>
 #include <proteus/CoreLLVM.hpp>
 #include <proteus/CoreLLVMDevice.hpp>
 #include <proteus/Hashing.hpp>
 
 using namespace proteus;
+
+namespace {
+inline std::optional<CodegenOption> fromString(std::string str) {
+  if (str.compare("rtc") == 0) {
+    return CodegenOption::RTC;
+  } else if (str.compare("serial") == 0) {
+    return CodegenOption::Serial;
+  } else if (str.compare("parallel") == 0) {
+    return CodegenOption::Parallel;
+  }
+  return std::nullopt;
+}
+
+} // namespace
 
 extern "C" {
 API_EXPORT(void) ProteusPY_pruneIR(LLVMModuleRef Mod) {
@@ -39,13 +54,17 @@ ProteusPY_optimize(LLVMModuleRef Mod, const char *DeviceArch,
 }
 
 API_EXPORT(LLVMMemoryBufferRef)
-ProteusPY_codeGenObject(LLVMModuleRef Mod, const char *DeviceArch, bool use_rtc,
-                        unsigned CodegenOptLevel) {
+ProteusPY_codeGenObject(LLVMModuleRef Mod, const char *DeviceArch,
+                        const char *rtc, unsigned CodegenOptLevel) {
+  auto proteus_rtc = fromString(rtc);
+  if (!proteus_rtc)
+    LOG_FATAL("Unknown RTC value of {}", rtc);
+
   llvm::SmallPtrSet<void *, 8> GlobalLinkedBinaries;
   auto *M = llvm::unwrap(Mod);
   auto start = std::chrono::high_resolution_clock::now();
   auto DeviceObject = proteus::codegenObject(
-      *M, DeviceArch, GlobalLinkedBinaries, use_rtc, CodegenOptLevel);
+      *M, DeviceArch, GlobalLinkedBinaries, proteus_rtc.value());
   auto end = std::chrono::high_resolution_clock::now();
 
   // Calculate duration and convert to seconds as float
@@ -88,7 +107,7 @@ ProteusPY_linkModules(const char **LLVMIRFiles, int size,
     RecordedModules.emplace_back(std::move(ModuleOrErr.get()));
   }
 
-  auto Mod = proteus::linkModules(*unwrap(context), RecordedModules);
+  auto Mod = proteus::linkModules(*unwrap(context), std::move(RecordedModules));
 
   if (internalize_flag) {
     internalize(*Mod.get(), KernelSym);
@@ -105,16 +124,27 @@ ProteusPY_specializeArguments(LLVMModuleRef Mod, const uint64_t StaticHash,
   auto *M = llvm::unwrap(Mod);
   auto *F = M->getFunction(KernelName);
   SmallVector<int32_t> RCTypes(NumSpecializations);
-  SmallVector<proteus::RuntimeConstant> RCVec;
-  const ArrayRef<int32_t> RCIndices(SpecializeIndexes, NumSpecializations);
+  SmallVector<std::unique_ptr<RuntimeConstantInfo>, 64> RCStorage;
 
   for (int i = 0; i < NumSpecializations; i++) {
-    RCTypes[i] = proteus::convertTypeToRuntimeConstantType(
-        F->getArg(SpecializeIndexes[i])->getType());
+    RCStorage.emplace_back(std::make_unique<RuntimeConstantInfo>(
+        proteus::convertTypeToRuntimeConstantType(
+            F->getArg(SpecializeIndexes[i])->getType()),
+        SpecializeIndexes[i]));
   }
-  proteus::getRuntimeConstantValues(KernelArgs, RCIndices, RCTypes, RCVec);
 
-  TransformArgumentSpecialization::transform(*M, *F, RCIndices, RCVec);
+  SmallVector<RuntimeConstant> RCVec;
+  RCVec.reserve(RCStorage.size());
+
+  for (const auto &RCInfo : RCStorage) {
+    PROTEUS_DBG(Logger::logs("proteus")
+                << "RC Index " << RCInfo->ArgInfo.Pos << " Type "
+                << toString(RCInfo->ArgInfo.Type) << " ");
+
+    RCVec.emplace_back(dispatchGetRuntimeConstantValue(KernelArgs, *RCInfo));
+  }
+
+  TransformArgumentSpecialization::transform(*M, *F, RCVec);
 
   auto Hash = hash(StaticHash, StringRef(KernelName), RCVec);
   return Hash.getValue();

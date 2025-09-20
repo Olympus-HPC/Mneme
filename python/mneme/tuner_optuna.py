@@ -53,7 +53,7 @@ class BuildConfigWrapper:
             prune=executor.prune,
             internalize=executor.internalize,
             codegen_opt=executor.codegen_opt,
-            rtc=executor.rtc,
+            codegen_method=executor.codegen_method,
             device_arch=executor.device_arch,
         )
 
@@ -74,7 +74,7 @@ class BuildConfigWrapper:
                     prune=executor.prune,
                     internalize=executor.internalize,
                     codegen_opt=executor.codegen_opt,
-                    rtc=executor.rtc,
+                    codegen_method=executor.codegen_method,
                     device_arch=executor.device_arch,
                 )
             )
