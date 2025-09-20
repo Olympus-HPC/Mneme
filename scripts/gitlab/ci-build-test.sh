@@ -26,6 +26,7 @@ build_proteus() {
   -DBUILD_SHARED=Off \
   -DLLVM_INSTALL_DIR=${LLVM_INSTALL_DIR} \
   -DCMAKE_C_COMPILER=${LLVM_INSTALL_DIR}/bin/clang \
+  -DCMAKE_PREFIX_PATH="$CONDA_PREFIX;$CONDA_PREFIX/lib/cmake" \
   -DCMAKE_CXX_COMPILER=${LLVM_INSTALL_DIR}/bin/clang++ \
   -DPROTEUS_ENABLE_HIP=${PROTEUS_ENABLE_HIP} \
   -DPROTEUS_LINK_SHARED_LLVM=${LINK_SHARED_LLVM} \
@@ -93,6 +94,7 @@ pushd $build_dir
 echo "Current dir is $(pwd)"
 cmake \
 -DCMAKE_BUILD_TYPE=Debug \
+-DCMAKE_PREFIX_PATH="$CONDA_PREFIX;$CONDA_PREFIX/lib/cmake" \
 -Dproteus_DIR=$installDir \
 -DCMAKE_INSTALL_PREFIX=$installDir \
 -DCMAKE_CXX_COMPILER=${cpp} \
