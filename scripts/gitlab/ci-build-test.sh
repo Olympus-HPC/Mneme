@@ -15,7 +15,6 @@ build_proteus() {
   echo "Building PROTEUS"
   git clone --depth 1 git@github.com:Olympus-HPC/proteus.git
   pushd proteus 
-  git checkout features/mneme-integrations
   PROTEUS_ENABLE_HIP=$1
   PROTEUS_ENABLE_CUDA=$2
   PROTEUS_INSTALL_DIR=$3
