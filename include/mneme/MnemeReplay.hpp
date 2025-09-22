@@ -347,7 +347,6 @@ public:
   }
 
   ~ReplayInstance() {
-    PM.release();
     PrologueState.release();
     EpilogueState.release();
   }
@@ -413,7 +412,11 @@ public:
     EpilogueState.load();
   }
 
-  void releaseMemory() { PrologueState.release(); }
+  void releaseMemory() {
+    PrologueState.release();
+    EpilogueState.release();
+    PM.reset();
+  }
 
   void reset() { PrologueState.reset(); }
 
