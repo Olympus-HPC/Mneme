@@ -10,6 +10,10 @@
 
 // the following is needed for WriteGraph()
 #include "llvm/Analysis/DOTGraphTraitsPass.h"
+#include "llvm/IR/Attributes.h"
+#include "llvm/IR/GlobalObject.h"
+#include "llvm/IR/GlobalVariable.h"
+#include "llvm/IR/Value.h"
 
 /* An iterator around a function's blocks, including the stop condition */
 struct BlocksIterator {
