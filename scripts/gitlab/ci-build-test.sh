@@ -302,7 +302,7 @@ fi
 
 make -j 10
 echo "### TESTING ###"
-# ctest --output-on-failure
+ctest --output-on-failure
 echo "### TESTING  ###"
 
 make -j 10 install
