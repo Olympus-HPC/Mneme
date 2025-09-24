@@ -29,18 +29,6 @@
 # Comment the jobs for machines you don’t need.
 ###
 
-      ## RUBY
-      #ruby-up-check:
-      #  variables:
-      #    CI_MACHINE: "ruby"
-      #  extends: [.machine-check]
-      #
-      #ruby-build-and-test:
-      #  variables:
-      #    CI_MACHINE: "ruby"
-      #  needs: [ruby-up-check]
-      #  ## [Shared jobs scenario]
-
 # TIOGA
 tioga-up-check:
   variables:

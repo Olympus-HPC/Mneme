@@ -50,6 +50,8 @@ variables:
   after_script:
     - rm -rf ${CI_BUILDS_DIR}
     - echo "=== End CI Build and Test==="
+  variables:
+    MNEME_CI_TEST_LAGHOS: "on"
 
 .build-variants:
   parallel:
