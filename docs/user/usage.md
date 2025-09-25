@@ -1,23 +1,11 @@
-# User Interface
+# Replaying, Optimizing and Tuning with Mneme
 
-Mneme operates in 3 phases:
-1. Build an executable using the mneme pass as discussed in [integration](./integration.md), 
-2. Record the execution of some executable.
-3. Replay the execution of the said executable.
+As described previously, Mneme operates in 3 phases:
+1. Phase 1: Build an _recordable_ executable using an LLVM pass, 
+2. Phase 2: Recording the trace of the application a user application, and, 
+3. Phase 3: Replaying as well as optimizing and tuning the execution of the said application.
 
-## Record an execution with Mneme
-
-To record a binary execution (e.g. `hpc-application`) instrumented with the mneme pass you can execute:
-
-```
-LD_PRELOAD=<MNEME-INSTALL-PATH>/lib64/librecord.so hpc-application <args>
-```
-
-When running this command Mneme will record all kernel invocations of the applicatios and will store their memory and application code
-under the current directory. 
-
-To modify the storage directory check the [environment variables](config.md).
-
+Phases 1 and 2 are described in detail on the [Integration with User Codebases](integration.md) page. This page describes Phase 3 in detail. 
 
 ## Replay an execution with Mneme
 
@@ -49,3 +37,12 @@ Mneme CLI options.
 
 To replay please provide a path to the json file describing a kernel execution as an argument of the `--mneme-replay-json` and specify which runtime instantiation of the kernel you would like to run by specifying the
 `mneme-replay-hash` value.
+
+## Optimize and Tune an execution with Mneme
+
+### Tuning example
+
+### Understanding various tuning paramaters
+#### `--specialize`
+#### `--prune`
+#### `--internalize`
