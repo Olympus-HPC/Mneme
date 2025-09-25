@@ -29,34 +29,34 @@
 # Comment the jobs for machines you don’t need.
 ###
 
-# # TIOGA
-# tioga-up-check:
-#   variables:
-#     CI_MACHINE: "tioga"
-#   extends: [.machine-check]
+# TIOGA
+tioga-up-check:
+  variables:
+    CI_MACHINE: "tioga"
+  extends: [.machine-check]
 
-# tioga-build-and-test:
-#   variables:
-#     CI_MACHINE: "tioga"
-#   needs: [tioga-up-check]
-#   ## [Shared jobs scenario]
-#   ## (See Umpire CI setup for an example).
-#   #needs: [tioga-up-check, generate-job-lists]
-#   extends: [.build-and-test]
+tioga-build-and-test:
+  variables:
+    CI_MACHINE: "tioga"
+  needs: [tioga-up-check]
+  ## [Shared jobs scenario]
+  ## (See Umpire CI setup for an example).
+  #needs: [tioga-up-check, generate-job-lists]
+  extends: [.build-and-test]
 
-# # LASSEN
-# lassen-up-check:
-#   variables:
-#     CI_MACHINE: "lassen"
-#   extends: [.machine-check]
+# LASSEN
+lassen-up-check:
+  variables:
+    CI_MACHINE: "lassen"
+  extends: [.machine-check]
 
-# lassen-build-and-test:
-#   variables:
-#     CI_MACHINE: "lassen"
-#   needs: [lassen-up-check]
-#   extends: [.build-and-test]
-# #  #needs: [lassen-up-check, generate-job-lists]
-# #
+lassen-build-and-test:
+  variables:
+    CI_MACHINE: "lassen"
+  needs: [lassen-up-check]
+  extends: [.build-and-test]
+#  #needs: [lassen-up-check, generate-job-lists]
+#
 
 # TUOLUMNE
 tuolumne-up-check:
