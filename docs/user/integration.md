@@ -3,12 +3,10 @@
 Mneme has three phases, which are detailed below. 
 
 ## Phase 1: Building a _recordable_ executable
-To integrate MNeme into your application, you must modify your build to include the Mneme LLVM plugin pass.
+First, to integrate Mneme in your application, you must modify your build to include the Mneme LLVM plugin pass. This can be done as follows with a Clang-based compiler framework:
 
-This is done by adding Mneme's plugin pass to Clang compilation and its
-include directory:
 ```shell
-CXXFLAGS += -fpass-plugin=<install-path>/lib64/libregdeviceir.so 
+CXXFLAGS += -Xclang -disable-O0-optnone -fpass-plugin=<install-path>/lib64/libregdeviceir.so -fno-discard-value-names -ftrivial-auto-var-init=zero
 ```
 
 Further, `libmneme_shallow` needs to be linked as such:
@@ -17,23 +15,17 @@ Further, `libmneme_shallow` needs to be linked as such:
 LDFLAGS += -lmneme_shallow -Wl,-rpath,${MNEME_PREFIX}/lib64/ -L ${MNEME_PREFIX}/lib64/
 ```
 
-
-```
-## Using CMake
-
 To use Mneme with CMake, make sure the Mneme install directory is in
-`CMAKE_PREFIX_PATH`, or pass it as `-Dmneme_DIR=<install-path>`.
-Then, in your project's `CMakeLists.txt` simply add the following two lines:
+`CMAKE_PREFIX_PATH`, or pass it as `-Dmneme_DIR=<install-path>`. Then, in your project's `CMakeLists.txt` simply add the following two lines, where `target` is the name of your library or executable target:
 
 ```cmake
-find_package(mneme REQUIRED)
+## Using CMake
 
+find_package(mneme REQUIRED)
 add_mneme(<target>)
 ```
 
-Where `target` is the name of your library or executable target.
-
-## Phase 2: Recording a trace from the device and host 
+## Phase 2: Recording a trace from the GPU device 
 
 ```shell 
 LD_PRELOAD=<path-to-Mneme>/build/lib/lib64/librecord.so \
@@ -41,7 +33,7 @@ MNEME_PAGE_SIZE=16 \
 ./application
 ```
 
-## Phase 3: Replaying and Tuning with `mneme replay|tune`
+## Phase 3: Replaying and Tuning with `mneme execute|tune`
 
 
 ### Replay example
@@ -53,6 +45,5 @@ MNEME_PAGE_SIZE=16 \
 #### `--prune`
 #### `--internalize`
 
-### Debugging tips and Gotchas
 
 

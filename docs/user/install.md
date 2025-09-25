@@ -6,11 +6,12 @@ robust while including the most recent features.
 Mneme builds and installs the following key components: 
 - A LLVM plugin pass, `libregdeviceir.so`, which is used in the first phase to generate a _recordable_ executable.
 - A recording library, `librecord.so`, which is used in the second phase to facilitate the actual recording of device and host memory data from the recordable executable generated in phase 1.
-- A user-friendly command-line tool, `mneme replay|tune`, that allows users to replay and tune the recorded traces. This tool utilizes the `libmneme.so` library. 
+- A user-friendly command-line tool, `mneme execute|tune`, that allows users to execute, optimize, and tune the recorded traces. This tool utilizes the `libmneme.so` library. 
 
 Further, Mneme also build the following two libraries that are utilized internally: 
 - A profiling library, `libmneme_profile.so` , for collection of peformance profiles on for HIP kernels (ROCm profiling), and,  
 - A stub library, `libmneme_shallow.so` , that enables building of binaries with and without recording, reducing user's build effort
+- A command-line tool, `replay`, that allows users to replay the recorded traces. 
 
 A user must integrate the LLVM pass in their build system and utilize the recording library to generate the traces. They can then leverage the `mneme` command-line tool for replay and tuning. 
 We provide information on how to integrate Mneme with your application in the
@@ -25,9 +26,10 @@ export LLVM_INSTALL_DIR=${ROCM_PATH}
 
 # Clone and install
 git clone https://github.com/Olympus-HPC/Mneme.git
-pip install ./
+pip3 install ./
 ```
 
+The above steps install the `mneme` package in the relevant install directory. It also creates a `build` folder and a `third_party` folder. The `build` folder contains the libraries mention in the previous subsection. 
 
 ## Building
 The `Quick Start` section provides instructions for a user-friendly build with `pip` on AMD GPUs. Advanced users can utilize the `cmake` build instead of the `pip`build if desired, which is detailed below. 
@@ -51,6 +53,8 @@ The script clones `proteus` and `spdlog`, builds and installs them,  and then in
 Please check the build process of our CI [here](scripts/gitlab/ci-build-test.sh). 
 
 ### CMake Build Steps (CUDA example)
+
+TBD.
 
 ### Testing
 If using a `cmake` setup, it is advised to enable tests when deploying Mneme on a machine for the first

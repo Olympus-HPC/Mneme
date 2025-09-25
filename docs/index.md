@@ -11,7 +11,7 @@ and functions on the GPU device, and stores this information with the respective
 
 The second phase involves running the _recordable_ executable with a desired input and using `LD_PRELOAD` to enable recording. When recording, before invoking a device kernel, 
 the pre-loaded library stores device memory in persistent storage and associates the memory with the device kernel and an LLVM IR file. At the end of the recorded execution,
-the pre-loaded library generates a database in the form of a `json` file containing information regarding the LLVM-IR files and the snapshots of device memory. 
+the pre-loaded library generates a database in the form of a collection of `json` files, each containing information regarding the LLVM-IR files and the snapshots of device memory for a single GPU kernel.
 
 During the third and last phase, the user can replay the execution of a kernel as a separate independent executable. In addition to executing the kernel, the user can also modify the LLVM IR file and
 auto-tune parameters such as kernel launch-bounds or kernel runtime execution parameters (e.g. Kernel Block and Grid Dimensions).
