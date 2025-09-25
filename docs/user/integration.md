@@ -41,7 +41,39 @@ The `MNEME_PAGE_SIZE` variable, specifies the page size in GB, and can be utiliz
 
  Mneme will record all kernel invocations of the application and will store their memory and application code under the current directory. 
 
-TBD. Describe the JSON DB files as and the device, host files being generated here....
+After a successful recording, multiple types of files are created by Mneme. These include: 
+
+1. Byte code files (`.bc`) files, for the LLVM Intermediate Representation (IR), as well as device and host byte code;
+2. Database file(s) (`.json`) (one per kernel); and, 
+3. `DeviceState` prologue and epilogue files (per kernel and per instance) 
+
+For example, with an application source code such as `main.cu`, Mneme generates the byte code files, along with a `json` file per kernel (`<kernelID>.json`), and prologue and epilogue files for each instance within each kernel (`DeviceState.<pro/epi>logue.<kernelID>.<instanceID>.mneme`), as shown below (one kernel and four instances in this example below):
+
+```shell
+# Byte Code files
+RecordedIR_0.bc
+
+main.cu.device.before-mneme.bc
+main.cu.device.after-mneme.bc
+
+main.cu.host.before-mneme.bc
+main.cu.host.after-mneme.bc
+
+# JSON Database, one per kernel
+9514882329168884076.json
+
+# Device State prologue and epilogue files 
+# (per-kernel and per-instance)
+DeviceState.prologue.9514882329168884076.10443259602472714527.mneme
+DeviceState.prologue.9514882329168884076.12087102663418562806.mneme
+DeviceState.prologue.9514882329168884076.17278026974892218468.mneme
+DeviceState.prologue.9514882329168884076.5712225406468051486.mneme
+
+DeviceState.epilogue.9514882329168884076.10443259602472714527.mneme
+DeviceState.epilogue.9514882329168884076.12087102663418562806.mneme
+DeviceState.epilogue.9514882329168884076.17278026974892218468.mneme
+DeviceState.epilogue.9514882329168884076.5712225406468051486.mneme
+```
 
 ## Phase 3: Replaying and Tuning with Mneme
 

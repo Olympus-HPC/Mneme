@@ -9,7 +9,7 @@ Phases 1 and 2 are described in detail on the [Integration with User Codebases](
 
 ## Replay an execution with Mneme
 
-To replay the execution with Mneme you can use the replay tool under `<MNEME-INSTALL-PATH>/bin/replay`. 
+To replay the execution with Mneme you can use the `replay` tool under `<MNEME-INSTALL-PATH>/bin/replay`. 
 The replay tool has the following options that can viewed by passing the `--help` parameter:
 
 ```
