@@ -10,6 +10,8 @@ build_dir=${temp_dir}/build-${host}
 mkdir -p ${build_dir}
 installDir="/dev/shm/install"
 
+start_test=$(date +'%s')
+
 build_hypre(){
   LOCAL_DIR=$1
   hypre_version=$2
@@ -346,3 +348,6 @@ if [[ "${MNEME_CI_TEST_LAGHOS}" == "on" || "${MNEME_CI_TEST_LAGHOS}" == "On" || 
   DB_STORE="mneme-result"
   run_mneme_laghos ${OUTPUT_DIR}/${JSON_RECORD} ${KERNEL_ID} ${DB_STORE}
 fi
+
+end_test=$(($(date +'%s') - $start_test))
+echo "Build and test took $end_test seconds"
