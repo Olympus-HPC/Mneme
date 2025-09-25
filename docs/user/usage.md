@@ -7,7 +7,7 @@ As described previously, Mneme operates in 3 phases:
 
 Phases 1 and 2 are described in detail on the [Integration with User Codebases](integration.md) page. This page describes Phase 3 in detail. 
 
-## Replay an execution with Mneme
+## Replaying with Mneme
 
 To replay the execution with Mneme you can use the `replay` tool under `<MNEME-INSTALL-PATH>/bin/replay`. 
 The replay tool has the following options that can viewed by passing the `--help` parameter:
@@ -42,7 +42,7 @@ To replay, please provide a path to the `json` file describing a kernel executio
 TBD replay example
 ```
 
-## Optimize and tune an execution with Mneme
+## Optimizing and tuning with Mneme
 
 ### Execution example
 ```shell
