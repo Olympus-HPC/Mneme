@@ -35,14 +35,44 @@ Mneme CLI options.
   --repeats=<int>              - The number of repeat executions for every kernel
 ```
 
-To replay please provide a path to the json file describing a kernel execution as an argument of the `--mneme-replay-json` and specify which runtime instantiation of the kernel you would like to run by specifying the
-`mneme-replay-hash` value.
+To replay, please provide a path to the `json` file describing a kernel execution as an argument of the `--mneme-replay-json` and specify which runtime instantiation of the kernel you would like to run by specifying the
+`mneme-replay-hash` value. An example of this is shown below: 
 
-## Optimize and Tune an execution with Mneme
+```
+TBD replay example
+```
+
+## Optimize and tune an execution with Mneme
+
+### Execution example
+```shell
+mneme execute -db <db-dir> -rid <dynamic-id> \
+--db-dir <some-directory> --suffix="some-string" \
+--num-trials 1000 -it 2
+```
 
 ### Tuning example
 
-### Understanding various tuning paramaters
+```shell
+# ENABLE JIT:
+mneme tune -db <db-dir> -rid <dynamic-id> \
+--db-dir <some-directory> --suffix="some-string" \
+--num-trials 1000 -it 2 \
+--tuner-type optuna \
+--search-sampler QMCSampler \
+--specialize --prune --internalize
+
+
+#DISABLE JIT:
+mneme tune -db <db-dir> -rid <dynamic-id> \
+--db-dir <some-directory> --suffix="some-string" \
+--num-trials 1000 -it 2 \
+--tuner-type optuna \
+--search-sampler QMCSampler \
+--prune --internalize
+```
+
+### Understanding tuning paramaters
 #### `--specialize`
 #### `--prune`
 #### `--internalize`
