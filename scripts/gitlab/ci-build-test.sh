@@ -23,7 +23,7 @@ build_hypre(){
   rocm_mpi_path=$(realpath $(dirname $(which mpicc))/../)
   make distclean 2>/dev/null || true
   CUFLAGS="-fpass-plugin=${LOCAL_DIR}/lib64/libregdeviceir.so -O3 -std=c++14 -x hip --offload-arch=${ROCM_ARCH}" CC=mpicc CXX=mpicxx CXXFLAGS="std=c++17 -fPIC" CFLAGS="-fPIC" ./configure \
-    --prefix=$LOCAL_DIR \
+    --prefix=${LOCAL_DIR} \
     --with-extra-ldpath="${LOCAL_DIR}/lib64/" \
     --with-MPI-libs="mpi mpich mneme_shallow" \
     --with-MPI-lib-dirs=${rocm_mpi_path}/lib \
@@ -109,7 +109,7 @@ run_laghos() {
   TF=0.0033
   CMD="${INSTALL_DIR}/laghos -p 1 -dim 2 -pa -tf ${TF} -d hip -rs ${RS}"
 
-  export MNEME_LOG_LEVEL=debug
+  export MNEME_LOG_LEVEL=critical
   export MNEME_PAGE_SIZE=16
   # export AMD_LOG_LEVEL=4
 
@@ -141,7 +141,7 @@ run_mneme_laghos() {
     --prune \
     --internalize \
     --num-trials 2 \
-    --iterations 3 \
+    --iterations 2 \
     --seed 0 \
     --no-specialize
 
@@ -156,7 +156,7 @@ run_mneme_laghos() {
     --prune \
     --internalize \
     --num-trials 2 \
-    --iterations 3 \
+    --iterations 4 \
     --seed 0 \
     --no-specialize
 
@@ -340,8 +340,9 @@ if [[ "${MNEME_CI_TEST_LAGHOS}" == "on" || "${MNEME_CI_TEST_LAGHOS}" == "On" || 
   run_laghos ${installDir} ${OUTPUT_DIR}
   echo "### TESTING Laghos ###"
   # Find the JSON file containing the kernel
-  JSON_RECORD="10242537283821721753.json"
-  KERNEL_ID="15099428936510216301"
+  # We select one JSON file
+  JSON_RECORD=$(find run-mneme/ -maxdepth 1 -name '*.json' -printf '%f' -quit)
+  KERNEL_ID=$(jq -r '.instances | keys[]' ${OUTPUT_DIR}/${JSON_RECORD} | head -n 1)
   DB_STORE="mneme-result"
   run_mneme_laghos ${OUTPUT_DIR}/${JSON_RECORD} ${KERNEL_ID} ${DB_STORE}
 fi
