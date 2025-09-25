@@ -271,7 +271,7 @@ elif [[ "$SYS_TYPE" == "toss_4_x86_64_ib_cray" ]]; then
 ml load rocm/${MNEME_CI_ROCM_VERSION}
 export LLVM_INSTALL_DIR=${ROCM_PATH}/llvm
 echo "LLVM INSTALL DIR is ${LLVM_INSTALL_DIR}"
-export ROCM_ARCH=$(rocm_agent_enumerator | sed -n 1p)
+export ROCM_ARCH=$(rocm_agent_enumerator | sed -n 2p)
 
 if [ -z "${ROCM_ARCH}" ]; then
   echo "ROCM_ARCH is not set or is empty"

@@ -29,20 +29,20 @@
 # Comment the jobs for machines you don’t need.
 ###
 
-# TIOGA
-tioga-up-check:
-  variables:
-    CI_MACHINE: "tioga"
-  extends: [.machine-check]
+# # TIOGA
+# tioga-up-check:
+#   variables:
+#     CI_MACHINE: "tioga"
+#   extends: [.machine-check]
 
-tioga-build-and-test:
-  variables:
-    CI_MACHINE: "tioga"
-  needs: [tioga-up-check]
-  ## [Shared jobs scenario]
-  ## (See Umpire CI setup for an example).
-  #needs: [tioga-up-check, generate-job-lists]
-  extends: [.build-and-test]
+# tioga-build-and-test:
+#   variables:
+#     CI_MACHINE: "tioga"
+#   needs: [tioga-up-check]
+#   ## [Shared jobs scenario]
+#   ## (See Umpire CI setup for an example).
+#   #needs: [tioga-up-check, generate-job-lists]
+#   extends: [.build-and-test]
 
 # # LASSEN
 # lassen-up-check:
