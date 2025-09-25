@@ -62,7 +62,6 @@ mneme tune -db <db-dir> -rid <dynamic-id> \
 --search-sampler QMCSampler \
 --specialize --prune --internalize
 
-
 #DISABLE JIT:
 mneme tune -db <db-dir> -rid <dynamic-id> \
 --db-dir <some-directory> --suffix="some-string" \
@@ -72,7 +71,8 @@ mneme tune -db <db-dir> -rid <dynamic-id> \
 --prune --internalize
 ```
 
-### Understanding tuning paramaters
-#### `--specialize`
-#### `--prune`
-#### `--internalize`
+### Tuning paramaters
+The following three flags allow for tuning and optimization of different application kernels in Mneme. 
+1. `--specialize`: This flag helps with enabling and disabling just-in-time compilation (JIT). 
+2. `--prune`: Focus on one kernel's tuning by deleting the other kernels from the LLVM Intermediate Representation (IR).  
+3. `--internalize`: Make symbols internal. 
