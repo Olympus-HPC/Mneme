@@ -1,0 +1,27 @@
+###############################################################################
+# Copyright (c) 2022-23, Lawrence Livermore National Security, LLC and RADIUSS
+# project contributors. See the COPYRIGHT file for details.
+#
+# SPDX-License-Identifier: (MIT)
+###############################################################################
+
+.tioga_reproducer_vars:
+  script:
+    - echo -e "Running on tioga\n"
+
+.base-job:
+  extends: .job_on_tioga
+  before_script:
+    - echo "=== Start CI Build and Test==="
+  after_script:
+    - rm -rf ${CI_BUILDS_DIR}
+    - echo "=== End CI Build and Test==="
+
+.build-variants:
+  parallel:
+    matrix:
+      - MNEME_CI_ENABLE_DEBUG: ["on", "off"]
+        MNEME_CI_ROCM_VERSION: ["6.2.1", "6.3.1", "6.4.2"]
+
+integration-laghos-tioga:
+  extends: [.base-job, .build-variants]
