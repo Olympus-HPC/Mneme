@@ -76,6 +76,8 @@ cmake \
 -DMNEME_ENABLE_DEBUG=${MNEME_CI_ENABLE_DEBUG} \
 -DMNEME_ENABLE_TESTS=On \
 -DCMAKE_EXPORT_COMPILE_COMMANDS=on ${mneme_src}
+
+make && make install 
 ```
 
 
