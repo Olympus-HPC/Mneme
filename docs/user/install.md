@@ -54,7 +54,30 @@ Please check the build process of our CI [here](scripts/gitlab/ci-build-test.sh)
 
 ### CMake Build Steps (CUDA example)
 
-TBD.
+We now show an example of a CUDA build with CMake. 
+This build depends on Clang/LLVM 18 and CUDA 12. 
+Steps below show an example of this build. 
+
+```shell 
+conda create -y -n mneme -c conda-forge \
+    python=3.10 clang=18.1.8 clangxx=18.1.8 llvmdev=18.1.8 lit=18.1.8 clangdev=18.1.8
+conda activate mneme 
+export LLVM_INSTALL_DIR=$(llvm-config --prefix)
+
+cmake \
+-Dproteus_DIR=$installDir \
+-DCMAKE_INSTALL_PREFIX=$installDir \
+-DMNEME_LINK_SHARED_LLVM=ON \
+-DCMAKE_CUDA_COMPILER=${cpp} \
+-DCMAKE_CUDA_ARCHITECTURES=70 \
+-DLLVM_INSTALL_DIR=${LLVM_INSTALL_DIR} \
+-DMNEME_ENABLE_HIP=Off \
+-DMNEME_ENABLE_CUDA=On \
+-DMNEME_ENABLE_DEBUG=${MNEME_CI_ENABLE_DEBUG} \
+-DMNEME_ENABLE_TESTS=On \
+-DCMAKE_EXPORT_COMPILE_COMMANDS=on ${mneme_src}
+```
+
 
 ### Testing
 If using a `cmake` setup, it is advised to enable tests when deploying Mneme on a machine for the first

@@ -22,8 +22,6 @@ To use Mneme with CMake, make sure the Mneme install directory is in
 `CMAKE_PREFIX_PATH`, or pass it as `-Dmneme_DIR=<install-path>`. Then, in your project's `CMakeLists.txt` simply add the following two lines, where `target` is the name of your library or executable target:
 
 ```cmake
-## Using CMake
-
 find_package(mneme REQUIRED)
 add_mneme(<target>)
 ```
