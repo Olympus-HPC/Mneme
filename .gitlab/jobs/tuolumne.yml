@@ -63,7 +63,7 @@ variables:
   parallel:
     matrix:
       - MNEME_CI_ENABLE_DEBUG: ["on", "off"]
-        MNEME_CI_ROCM_VERSION: ["6.3.1"]
+        MNEME_CI_ROCM_VERSION: ["6.2.1", "6.3.1"]
 
 build-and-test-tuolumne:
   extends: [.base-job, .build-variants]
