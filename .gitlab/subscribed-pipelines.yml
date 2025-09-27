@@ -56,22 +56,6 @@ tioga-integration-laghos:
   needs: [tioga-up-check]
   extends: [.integration-laghos]
 
-# # LASSEN
-# lassen-up-check:
-#   variables:
-#     CI_MACHINE: "lassen"
-#   extends: [.machine-check]
-
-# lassen-build-and-test:
-#   variables:
-#     CI_MACHINE: "lassen"
-#     JOB_CMD:
-#       value: "scripts/gitlab/ci-build-test.sh"
-#       expand: false
-#   needs: [lassen-up-check]
-#   extends: [.build-and-test]
-# #  #needs: [lassen-up-check, generate-job-lists]
-
 # TUOLUMNE
 tuolumne-up-check:
   variables:
