@@ -17,7 +17,6 @@ LLVMPY_ParseBitcode(LLVMContextRef context, const char *bitcode,
 
   LLVMParseBitcodeInContext(context, mem, &ref, outmsg);
   LLVMDisposeMemoryBuffer(mem);
-  std::cout << "Reading module file at address " << llvm::unwrap(ref) << "\n";
   return ref;
 }
 

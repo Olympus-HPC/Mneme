@@ -37,6 +37,7 @@ class BaseExecutor:
             required=True,
             help="Path to Mneme JSON/db file",
         )
+
         parser.add_argument(
             "-record-id",
             "-rid",
@@ -257,13 +258,6 @@ class CLIExecutor(BaseExecutor):
         )
 
         parser.add_argument(
-            "--suffix",
-            required=False,
-            default=None,
-            help="Suffix of the database file (e.g. <args.db_dir><static_hash><dynamic_hash><suffix>.csv)",
-        )
-
-        parser.add_argument(
             "--apply-increamentally",
             required=False,
             action=argparse.BooleanOptionalAction,
@@ -363,7 +357,6 @@ class CLIExecutor(BaseExecutor):
         self.min_blocks_per_sm = kwargs.pop("min_blocks_per_sm", 0)
         self.dims = kwargs.pop("dims", False)
         self.db_dir = kwargs.pop("db_dir", None)
-        self.db_suffix = kwargs.pop("suffix", None)
         super().__init__(*args, **kwargs)
         self.pass_manager = PipelineManager()
         if self.pipeline not in (
@@ -445,7 +438,6 @@ class CLIExecutor(BaseExecutor):
                 executor.db_dir,
                 executor.kernel_descr.static_hash,
                 executor.kernel_descr.dynamic_hash,
-                executor.db_suffix,
             ).open()
             orig = executor._db.save_ir(root_ir, "orig")
 
@@ -525,7 +517,6 @@ class TuneWorker(BaseExecutor):
         codegen_method: str,
         iterations: int,
         db_dir: str,
-        suffix: str,
         state: Event,
     ):
         # We need this to actually run things...
@@ -548,10 +539,7 @@ class TuneWorker(BaseExecutor):
         # LLVM IR file to start working on optimizations
         root_ir = worker.link_ir()
         resdb = MnemeDB(
-            db_dir,
-            worker.kernel_descr.static_hash,
-            worker.kernel_descr.dynamic_hash,
-            suffix,
+            db_dir, worker.kernel_descr.static_hash, worker.kernel_descr.dynamic_hash
         ).open()
 
         with worker as Memory:

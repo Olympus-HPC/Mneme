@@ -11,6 +11,7 @@
 // the following is needed for WriteGraph()
 #include "llvm/Analysis/DOTGraphTraitsPass.h"
 #include "llvm/IR/Attributes.h"
+#include "llvm/IR/DebugInfoMetadata.h"
 #include "llvm/IR/GlobalObject.h"
 #include "llvm/IR/GlobalVariable.h"
 #include "llvm/IR/Value.h"
@@ -533,6 +534,20 @@ LLVMPY_TypeOfMemory(LLVMValueRef Val) {
     return LLVMTypeRef(F->getFunctionType());
   }
   return NULL;
+}
+
+API_EXPORT(int)
+LLVMPY_GetFunctionLineLoc(LLVMValueRef Val) {
+  using namespace llvm;
+  Function *F = unwrap<Function>(Val);
+  if (!F)
+    return -1;
+  const llvm::DISubprogram *SP = F->getSubprogram();
+  if (!SP)
+    return -1;
+  const llvm::DIFile *File = SP->getFile();
+  unsigned line = SP->getLine();
+  return line;
 }
 
 } // end extern "C"
