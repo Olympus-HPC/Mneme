@@ -175,7 +175,7 @@ class MnemeDB:
             _exp["compiled_ir"] = dst_ir
             writer.writerow(_exp)
 
-        if self._o3 is not None:
+        if self._o3 is not None and exp.exec_time is not None:
             speedup = self._o3 / exp.exec_time
             best_speedup = self._o3 / self._best
 
