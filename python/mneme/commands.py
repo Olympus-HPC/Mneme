@@ -1,4 +1,5 @@
 import argparse
+import json
 import os
 import shutil
 import sys
@@ -172,7 +173,15 @@ class Summary:
             help="CSV database containing the performance data of the tuning runs",
         )
 
-        parser.set_defaults(func=Summary.analyze)
+        parser.add_argument(
+            "--json",
+            dest="json",
+            help="Emit to stdout as a json file",
+            action=argparse.BooleanOptionalAction,
+            required=False,
+        )
+
+        parser.set_defaults(json=False, func=Summary.analyze)
 
     @staticmethod
     def compute_speedups(df: pd.DataFrame):
@@ -324,7 +333,7 @@ class Summary:
             "Spec+TuneLB": speedup(tune_time),
             "Spec+TuneLB+TunePipeline": speedup(pipeline_withspec_with_tunelb_time),
         }
-        return speedups
+        return True, speedups
 
     @staticmethod
     def measure_width(console, renderable, max_width=None):
@@ -390,7 +399,8 @@ class Summary:
             kernel_descr.llvm_files, kernel_descr.kernel_name, False, False
         )
         mod = None
-        src = "[Unknown]"
+        src = None
+        root = None
         loc = -1
         for ll in kernel_descr.llvm_files:
             with open(ll, "rb") as fd:
@@ -404,13 +414,30 @@ class Summary:
                     )
                     continue
 
-                src, loc = mod.source_file, Func.get_function_location()
+                root, src, loc = Func.get_function_location()
                 break
 
         if not MnemeDB.verify_db(args.results):
             print("Missing DB fields, exiting")
 
+        fsrc = "[Unknown]-no-dbg-info."
+        if src is not None:
+            fsrc = (Path(root) / Path(src)).resolve()
+
         df = pd.read_csv(str(args.results))
         console = Console()
-        data = Summary.compute_speedups(df)
-        Summary.render_report(console, kernel_descr.demangled_name, src, loc, data)
+        verified, data = Summary.compute_speedups(df)
+        if args.json:
+            baseline = data.pop("Baseline")
+            json_data = {}
+            json_data["speedup"] = data
+            json_data["Root directory"] = root
+            json_data["filename"] = src
+            json_data["Baseline Time (ns)"] = baseline
+            json_data["Kernel Name"] = kernel_descr.demangled_name
+            json_data["line"] = loc
+            print(json.dumps(json_data, indent=2))
+            return
+        Summary.render_report(
+            console, kernel_descr.demangled_name, str(fsrc), loc, data
+        )

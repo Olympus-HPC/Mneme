@@ -259,7 +259,11 @@ class ValueRef(ffi.ObjectRef):
     def get_function_location(self):
         if not self.is_function:
             raise ValueError("expected function value, got %s" % (self._kind,))
-        return int(ffi.lib.LLVMPY_GetFunctionLineLoc(self))
+        return (
+            _decode_string(ffi.lib.LLVMPY_GetFunctionDefinitionRoot(self)),
+            _decode_string(ffi.lib.LLVMPY_GetFunctionDefinitionFileName(self)),
+            int(ffi.lib.LLVMPY_GetFunctionLineLoc(self)),
+        )
 
     @property
     def type(self):
@@ -764,6 +768,13 @@ ffi.lib.LLVMPY_GetConstantSequenceNumElements.restype = c_size_t
 
 ffi.lib.LLVMPY_GetFunctionLineLoc.argtypes = [ffi.LLVMValueRef]
 ffi.lib.LLVMPY_GetFunctionLineLoc.restype = c_int
+
+ffi.lib.LLVMPY_GetFunctionDefinitionFileName.argtypes = [ffi.LLVMValueRef]
+ffi.lib.LLVMPY_GetFunctionDefinitionFileName.restype = c_char_p
+
+ffi.lib.LLVMPY_GetFunctionDefinitionRoot.argtypes = [ffi.LLVMValueRef]
+ffi.lib.LLVMPY_GetFunctionDefinitionRoot.restype = c_char_p
+
 
 # ffi.lib.LLVMPY_ExtractBasicBlock.argtypes = [ffi.LLVMValueRef, ffi.LLVMValueRef]
 # ffi.lib.LLVMPY_ExtractBasicBlock.restype = ffi.LLVMValueRef

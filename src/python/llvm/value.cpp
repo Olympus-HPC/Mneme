@@ -536,6 +536,33 @@ LLVMPY_TypeOfMemory(LLVMValueRef Val) {
   return NULL;
 }
 
+API_EXPORT(const char *)
+LLVMPY_GetFunctionDefinitionFileName(LLVMValueRef Val) {
+  using namespace llvm;
+  Function *F = unwrap<Function>(Val);
+  if (!F)
+    return "[Non-Existing-Function]";
+  const llvm::DISubprogram *SP = F->getSubprogram();
+  if (!SP)
+    return F->getParent()->getSourceFileName().c_str();
+  const llvm::DIFile *File = SP->getFile();
+  llvm::StringRef path = File->getFilename();
+  return path.begin();
+}
+
+API_EXPORT(const char *) LLVMPY_GetFunctionDefinitionRoot(LLVMValueRef Val) {
+  using namespace llvm;
+  Function *F = unwrap<Function>(Val);
+  if (!F)
+    return "[Non-Existing-Function]";
+  const llvm::DISubprogram *SP = F->getSubprogram();
+  if (!SP)
+    return F->getParent()->getSourceFileName().c_str();
+  const llvm::DIFile *File = SP->getFile();
+  llvm::StringRef path = File->getDirectory();
+  return path.begin();
+}
+
 API_EXPORT(int)
 LLVMPY_GetFunctionLineLoc(LLVMValueRef Val) {
   using namespace llvm;
