@@ -39,7 +39,6 @@ class TuneWorkerHandle:
         codegen_method: bool,
         iterations: int,
         db_dir: str,
-        suffix: str,
     ):
 
         self.idx = idx
@@ -61,7 +60,6 @@ class TuneWorkerHandle:
         self.codegen_method = codegen_method
         self.iterations = iterations
         self.db_dir = db_dir
-        self.suffix = suffix
 
         # Start the subprocess and its monitor thread
         self._state = None
@@ -87,7 +85,6 @@ class TuneWorkerHandle:
                 self.codegen_method,
                 self.iterations,
                 self.db_dir,
-                self.suffix,
                 self._state,
             ),
             daemon=False,
@@ -177,13 +174,6 @@ class ReplayTuner(BaseExecutor):
         )
 
         parser.add_argument(
-            "--suffix",
-            required=True,
-            default=None,
-            help="Suffix of the database file (e.g. <args.db_dir><static_hash><dynamic_hash><suffix>.csv)",
-        )
-
-        parser.add_argument(
             "--specialize",
             default=False,
             required=False,
@@ -259,7 +249,6 @@ class ReplayTuner(BaseExecutor):
     def __init__(self, *args, **kwargs):
         self.specialize = kwargs.pop("specialize", False)
         self.db_dir = kwargs.pop("db_dir")
-        self.suffix = kwargs.pop("suffix")
         self.num_trials = kwargs.pop("num_trials")
         self.seed = kwargs.pop("seed", 0)
         self.mean_size = kwargs.pop("average_pipeline_length", 50)
@@ -370,7 +359,6 @@ class ReplayTuner(BaseExecutor):
                 executor.codegen_method,
                 executor._iterations,
                 executor.db_dir,
-                executor.suffix,
             )
             for i in range(executor.num_workers)
         ]
@@ -379,7 +367,6 @@ class ReplayTuner(BaseExecutor):
             executor.db_dir,
             executor.kernel_descr.static_hash,
             executor.kernel_descr.dynamic_hash,
-            executor.suffix,
         ).open()
 
         run_optuna_tune(
@@ -487,7 +474,6 @@ class ReplayTuner(BaseExecutor):
                 executor.codegen_method,
                 executor._iterations,
                 executor.db_dir,
-                executor.suffix,
             )
             for i in range(executor.num_workers)
         ]
@@ -509,7 +495,6 @@ class ReplayTuner(BaseExecutor):
             executor.db_dir,
             executor.kernel_descr.static_hash,
             executor.kernel_descr.dynamic_hash,
-            executor.suffix,
         ).open()
 
         logger.info(f"Database contains {len(db)} experiments")

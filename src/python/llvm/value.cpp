@@ -11,6 +11,7 @@
 // the following is needed for WriteGraph()
 #include "llvm/Analysis/DOTGraphTraitsPass.h"
 #include "llvm/IR/Attributes.h"
+#include "llvm/IR/DebugInfoMetadata.h"
 #include "llvm/IR/GlobalObject.h"
 #include "llvm/IR/GlobalVariable.h"
 #include "llvm/IR/Value.h"
@@ -533,6 +534,47 @@ LLVMPY_TypeOfMemory(LLVMValueRef Val) {
     return LLVMTypeRef(F->getFunctionType());
   }
   return NULL;
+}
+
+API_EXPORT(const char *)
+LLVMPY_GetFunctionDefinitionFileName(LLVMValueRef Val) {
+  using namespace llvm;
+  Function *F = unwrap<Function>(Val);
+  if (!F)
+    return "[Non-Existing-Function]";
+  const llvm::DISubprogram *SP = F->getSubprogram();
+  if (!SP)
+    return F->getParent()->getSourceFileName().c_str();
+  const llvm::DIFile *File = SP->getFile();
+  llvm::StringRef path = File->getFilename();
+  return path.begin();
+}
+
+API_EXPORT(const char *) LLVMPY_GetFunctionDefinitionRoot(LLVMValueRef Val) {
+  using namespace llvm;
+  Function *F = unwrap<Function>(Val);
+  if (!F)
+    return "[Non-Existing-Function]";
+  const llvm::DISubprogram *SP = F->getSubprogram();
+  if (!SP)
+    return F->getParent()->getSourceFileName().c_str();
+  const llvm::DIFile *File = SP->getFile();
+  llvm::StringRef path = File->getDirectory();
+  return path.begin();
+}
+
+API_EXPORT(int)
+LLVMPY_GetFunctionLineLoc(LLVMValueRef Val) {
+  using namespace llvm;
+  Function *F = unwrap<Function>(Val);
+  if (!F)
+    return -1;
+  const llvm::DISubprogram *SP = F->getSubprogram();
+  if (!SP)
+    return -1;
+  const llvm::DIFile *File = SP->getFile();
+  unsigned line = SP->getLine();
+  return line;
 }
 
 } // end extern "C"

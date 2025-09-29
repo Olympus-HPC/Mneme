@@ -1,7 +1,8 @@
+import enum
 from ctypes import (
     POINTER,
     byref,
-    cast,
+    c_bool,
     c_char_p,
     c_double,
     c_int,
@@ -10,15 +11,14 @@ from ctypes import (
     c_uint,
     c_uint8,
     c_uint64,
-    c_bool,
     c_void_p,
+    cast,
 )
-import enum
 
 from . import ffi
+from .attribute import AttributeRef
 from .common import _decode_string, _encode_string
 from .typeref import TypeRef
-from .attribute import AttributeRef
 
 
 class Linkage(enum.IntEnum):
@@ -254,6 +254,15 @@ class ValueRef(ffi.ObjectRef):
 
         ffi.lib.LLVMPY_AddFunctionKeyValueAttr(
             self, _encode_string(key), len(key), _encode_string(value), len(value)
+        )
+
+    def get_function_location(self):
+        if not self.is_function:
+            raise ValueError("expected function value, got %s" % (self._kind,))
+        return (
+            _decode_string(ffi.lib.LLVMPY_GetFunctionDefinitionRoot(self)),
+            _decode_string(ffi.lib.LLVMPY_GetFunctionDefinitionFileName(self)),
+            int(ffi.lib.LLVMPY_GetFunctionLineLoc(self)),
         )
 
     @property
@@ -756,6 +765,16 @@ ffi.lib.LLVMPY_GetConstantSequenceElement.restype = ffi.LLVMValueRef
 
 ffi.lib.LLVMPY_GetConstantSequenceNumElements.argtypes = [ffi.LLVMValueRef]
 ffi.lib.LLVMPY_GetConstantSequenceNumElements.restype = c_size_t
+
+ffi.lib.LLVMPY_GetFunctionLineLoc.argtypes = [ffi.LLVMValueRef]
+ffi.lib.LLVMPY_GetFunctionLineLoc.restype = c_int
+
+ffi.lib.LLVMPY_GetFunctionDefinitionFileName.argtypes = [ffi.LLVMValueRef]
+ffi.lib.LLVMPY_GetFunctionDefinitionFileName.restype = c_char_p
+
+ffi.lib.LLVMPY_GetFunctionDefinitionRoot.argtypes = [ffi.LLVMValueRef]
+ffi.lib.LLVMPY_GetFunctionDefinitionRoot.restype = c_char_p
+
 
 # ffi.lib.LLVMPY_ExtractBasicBlock.argtypes = [ffi.LLVMValueRef, ffi.LLVMValueRef]
 # ffi.lib.LLVMPY_ExtractBasicBlock.restype = ffi.LLVMValueRef

@@ -16,7 +16,7 @@ import sys
 import time
 from typing import Tuple, Union
 
-from mneme.commands import Clean, Copy, Move
+from mneme.commands import Clean, Copy, Move, Summary
 from mneme.device import DeviceModule, dim3, get_device_arch
 from mneme.llvm.module import ModuleRef
 from mneme.logging import logger as replay_logger
@@ -83,7 +83,7 @@ def main():
     )
 
     p_clean = subparsers.add_parser(
-        "Clean", parents=[], help="Clean mneme generated files"
+        "Clean", parents=[], help="clean mneme generated files"
     )
 
     p_copy = subparsers.add_parser(
@@ -98,11 +98,18 @@ def main():
         help="Move mneme generated files and update database accordingly",
     )
 
+    p_summary = subparsers.add_parser(
+        "summary",
+        parents=[],
+        help="summarize the best run of a tune campaign",
+    )
+
     CLIExecutor.set_cli_args(p_exec)
     ReplayTuner.set_cli_args(p_tune)
     Clean.set_cli_args(p_clean)
     Copy.set_cli_args(p_copy)
     Move.set_cli_args(p_move)
+    Summary.set_cli_args(p_summary)
 
     args = parser.parse_args()
     configure_replay_logging(vars(args).pop("verbosity", None))

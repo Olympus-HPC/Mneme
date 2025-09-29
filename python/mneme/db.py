@@ -9,62 +9,54 @@ from mneme.logging import logger
 
 
 class MnemeDB:
-    def __init__(self, dir, static_hash, dynamic_hash, suffix=None):
+    _columns = [
+        "hash",
+        "orig_ir",
+        "compiled_ir",
+        "specialize",
+        "max_threads",
+        "min_blocks_per_sm",
+        "specialize_dims",
+        "passes",
+        "prune",
+        "internalize",
+        "codegen_opt",
+        "codegen_method",
+        "device_arch",
+        "opt_time",
+        "codegen_time",
+        "verified",
+        "obj_size",
+        "exec_time_std",
+        "exec_time_avg",
+        "exec_time_median",
+        "exec_time_r",
+        "exec_time_rp",
+        "exec_time_iqr",
+        "exec_time_iqrp",
+        "exec_time_q25",
+        "exec_time_q75",
+        "executed",
+        "failed",
+        "start_time",
+        "end_time",
+        "start_id",
+        "commit_id",
+        "gpu_id",
+        "reg_usage",
+        "const_mem",
+        "local_mem",
+    ]
+
+    def __init__(self, dir, static_hash, dynamic_hash):
         self._dir = pathlib.Path(dir)
         self._static_hash = static_hash
         self._dynamic_hash = dynamic_hash
         self._experiments = {}
         self._open = False
-        self._suffix = suffix
         self._best = sys.float_info.max
         self._o3 = None
-        if suffix is not None:
-            self._prefix = (
-                f"mneme.{self._static_hash}.{self._dynamic_hash}.{self._suffix}"
-            )
-        else:
-            self._prefix = f"mneme.{self._static_hash}.{self._dynamic_hash}"
-
-        self._filename = f"{self._prefix}.csv"
-
-        self._columns = [
-            "hash",
-            "orig_ir",
-            "compiled_ir",
-            "specialize",
-            "max_threads",
-            "min_blocks_per_sm",
-            "specialize_dims",
-            "passes",
-            "prune",
-            "internalize",
-            "codegen_opt",
-            "codegen_method",
-            "device_arch",
-            "opt_time",
-            "codegen_time",
-            "verified",
-            "obj_size",
-            "exec_time_std",
-            "exec_time_avg",
-            "exec_time_median",
-            "exec_time_r",
-            "exec_time_rp",
-            "exec_time_iqr",
-            "exec_time_iqrp",
-            "exec_time_q25",
-            "exec_time_q75",
-            "executed",
-            "failed",
-            "start_time",
-            "end_time",
-            "start_id",
-            "commit_id",
-            "gpu_id",
-            "reg_usage",
-            "const_mem",
-            "local_mem",
-        ]
+        self._filename = dir / pathlib.Path("results.csv")
 
     @property
     def prefix(self):
@@ -89,11 +81,10 @@ class MnemeDB:
         self._dir = self._dir.resolve()
         self._open = True
 
-        self._filename = self._dir / pathlib.Path(self._filename)
         logger.debug(f"Database file is {str(self._filename)}")
         if not self._filename.exists():
             with open(self._filename, mode="w", newline="") as csvfile:
-                writer = csv.DictWriter(csvfile, fieldnames=self._columns)
+                writer = csv.DictWriter(csvfile, fieldnames=MnemeDB._columns)
                 writer.writeheader()
             return self
 
@@ -167,7 +158,7 @@ class MnemeDB:
             self._o3 = exp.exec_time
 
         with open(self._filename, mode="a", newline="") as csvfile:
-            writer = csv.DictWriter(csvfile, fieldnames=self._columns)
+            writer = csv.DictWriter(csvfile, fieldnames=MnemeDB._columns)
             values = [str(_hash), src_ir, dst_ir]
             _exp = exp.to_dict()
             _exp["hash"] = str(_hash)
@@ -196,3 +187,18 @@ class MnemeDB:
         fn = f"{str(self._dir)}/{self._static_hash}.{self._dynamic_hash}.{_id}.bc"
         ir.to_bitcode(fn)
         return fn
+
+    @staticmethod
+    def verify_db(fn: str):
+        if not pathlib.Path(fn).exists():
+            raise RuntimeError(f"Replay tuning database does not exist")
+
+        with open(fn, "r") as fd:
+            reader = csv.DictReader(fd)
+            headers = set(reader.fieldnames)
+
+        missing = set(MnemeDB._columns) - headers
+        if missing:
+            logger.warn(f"Missing fields: {missing}")
+            return False
+        return True
