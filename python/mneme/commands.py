@@ -169,7 +169,7 @@ class Summary:
 
         parser.add_argument(
             "results",
-            help="CSV database containing the perfomance data of the tuning runs",
+            help="CSV database containing the performance data of the tuning runs",
         )
 
         parser.set_defaults(func=Summary.analyze)
