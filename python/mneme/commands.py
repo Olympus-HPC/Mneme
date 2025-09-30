@@ -651,35 +651,13 @@ class Serve:
             with open(jsFn, "r") as fd:
                 data = json.load(fd)
 
-        mod = None
-        src = None
-        root = None
-        loc = -1
-        for ll in kernel_descr.llvm_files:
-            with open(ll, "rb") as fd:
-                ir = fd.read()
-                mod = module.parse_bitcode(ir)
-                try:
-                    Func = mod.get_function(kernel_descr.kernel_name)
-                except NameError:
-                    logger.debug(
-                        f"Could not find function in {kernel_descr.kernel_name} in file {ll}"
-                    )
-                    continue
-
-                root, src, loc = Func.get_function_location()
-                break
-
         df = pd.read_csv(str(args.results))
 
         # Filter verified=True and failed=False
         filtered = df[(df["verified"]) & (~df["failed"])]
         best_row = filtered.loc[filtered["exec_time_median"].idxmin()]
         best_row = best_row.to_dict()
-
         res = {}
-        res["TunedMaxThreads"] = best_row["max_threads"]
-        res["BlocksPerExecUnit"] = best_row["min_blocks_per_sm"]
         res["Pipeline"] = best_row["passes"]
         res["CodeGen"] = best_row["codegen_method"]
         res["SpecializeArgs"] = best_row["specialize"]
