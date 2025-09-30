@@ -441,3 +441,57 @@ class Summary:
         Summary.render_report(
             console, kernel_descr.demangled_name, str(fsrc), loc, data
         )
+
+
+class Serve:
+    @staticmethod
+    def set_cli_args(parser):
+        parser.add_argument(
+            "-db",
+            "--record-database",
+            dest="db",
+            required=True,
+            help="Path to Mneme JSON/db file",
+        )
+
+        parser.add_argument(
+            "--results",
+            dest="results",
+            required=True,
+            help="CSV database containing the performance data of the tuning runs",
+        )
+
+        parser.add_argument(
+            "json",
+            help="json file to store proteus configuration, if the file exists we append the configuration",
+        )
+
+        parser.set_defaults(func=Serve.serve)
+
+    @staticmethod
+    def serve(args):
+        kernel_descr = RecordedExecution.from_json(args.db)
+        jsFn = args.json
+        data = {}
+        if Path(jsFn).exists():
+            with open(jsFn, "r") as fd:
+                data = json.load(fd)
+
+        df = pd.read_csv(str(args.results))
+
+        # Filter verified=True and failed=False
+        filtered = df[(df["verified"]) & (~df["failed"])]
+        best_row = filtered.loc[filtered["exec_time_median"].idxmin()]
+        best_row = best_row.to_dict()
+        res = {}
+        res["Pipeline"] = best_row["passes"]
+        res["CodeGen"] = best_row["codegen_method"]
+        res["SpecializeArgs"] = best_row["specialize"]
+        res["SpecializeDims"] = best_row["specialize_dims"]
+        res["SpecializeDimsAssume"] = True
+        res["LaunchBounds"] = best_row["max_threads"] != 0
+        res["OptLevel"] = str(3)
+        res["CodeGenOptLevel"] = best_row["codegen_opt"]
+        data[kernel_descr.kernel_name] = res
+        with open(jsFn, "w") as fd:
+            json.dump(data, fd, indent=2)
