@@ -139,7 +139,6 @@ run_mneme_laghos() {
     --db-dir ${DB_STORE} \
     --tuner-type optuna \
     --search-sampler QMCSampler \
-    --suffix "ci" \
     --prune \
     --internalize \
     --num-trials 2 \
@@ -148,19 +147,20 @@ run_mneme_laghos() {
     --no-specialize
 
   # Useful to start another run of Mneme to test more features (Mneme reuses previous runs etc)
+  # Run with --specialize
+  echo "Running Mneme with --specialize: $JSON_RECORD / $KERNEL_ID"
   mneme tune \
     -db ${JSON_RECORD} \
     -rid ${KERNEL_ID} \
     --db-dir ${DB_STORE} \
     --tuner-type optuna \
     --search-sampler QMCSampler \
-    --suffix "ci" \
     --prune \
     --internalize \
     --num-trials 2 \
-    --iterations 4 \
+    --iterations 3 \
     --seed 0 \
-    --no-specialize
+    --specialize
 
   duration=$SECONDS
   echo "Mneme optimization: $((duration / 60)) minutes and $((duration % 60)) seconds elapsed."
@@ -183,8 +183,8 @@ if [[ "$SYS_TYPE" == "toss_4_x86_64_ib_cray" ]]; then
     export LLVM_INSTALL_DIR=${ROCM_PATH}
     # Instll Mneme python bindings
     if [[ ! -d "${installDir}/mneme-env" || ! -f "${installDir}/mneme-env/bin/activate" ]]; then
-        python3 -m venv ${installDir}/mneme-env
-        echo "Created virtual env ${installDir}/mneme-env"
+      python3 -m venv ${installDir}/mneme-env
+      echo "Created virtual env ${installDir}/mneme-env"
     fi
     source ${installDir}/mneme-env/bin/activate
     echo "activated virtual env ${installDir}/mneme-env"

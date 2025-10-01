@@ -78,7 +78,7 @@ tuolumne-integration-laghos:
   variables:
     CI_MACHINE: "tuolumne"
     JOB_CMD:
-      value: "scripts/gitlab/ci-integration-laghos.sh"
+      value: "scripts/gitlab/ci-integration-tests.sh"
       expand: false
   needs: [tuolumne-up-check]
   extends: [.integration-laghos]
