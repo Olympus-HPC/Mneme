@@ -13,6 +13,7 @@ from mneme.device import (
     dim3,
     get_device_arch,
     get_device_count,
+    get_max_blocks_per_sm,
     set_device,
 )
 from mneme.experiment import Experiment
@@ -296,9 +297,7 @@ class ReplayTuner(BaseExecutor):
             * self.kernel_descr.block_dim.z
         )
 
-        min_blocks_per_sm = [
-            i for i in range(0, int(math.floor(1024 / max_threads)) + 1)
-        ]
+        min_blocks_per_sm = [i for i in range(0, get_max_blocks_per_sm() + 1)]
 
         # 0 indicates do not set launch bounds
         for mb in min_blocks_per_sm:
@@ -505,12 +504,20 @@ class ReplayTuner(BaseExecutor):
             )
 
         # Schedule happens in reverse order (pop) thus we want default pipelines to rin first.
+        requested_num_exp = len(total_experiments)
         for p in default_pipelines:
             total_experiments += executor.create_experiments(p + ",globaldce", db)
 
         root_ir = executor.link_ir()
         orig = db.save_ir(root_ir, "orig")
         logger.info(f"Original IR is at: {orig}")
+
+        print(
+            f"Will execute {len(total_experiments) - requested_num_exp} corresponding to possible baselines"
+        )
+        print(
+            f"Will execute {requested_num_exp} to explore pipelines and several options"
+        )
 
         ret = ReplayTuner.execute_list_of_experiments(
             orig, total_experiments, workers, completed_jobs_q, db, 0

@@ -191,6 +191,17 @@ class Summary:
 
     @staticmethod
     def compute_speedups(df: pd.DataFrame):
+        def min_time_and_hash(df, mask):
+            # Restrict to rows where the mask is True
+            subset = df.loc[mask, ["exec_time_median", "hash"]]
+            # Drop NaNs/inf in the metric column
+            s = subset["exec_time_median"].astype(float)
+            s = s[np.isfinite(s)]
+            if s.empty:
+                return np.nan, None  # nothing matched
+            idx = s.idxmin()  # index (row label) of the minimum time
+            return df.at[idx, "exec_time_median"], df.at[idx, "hash"]
+
         if (
             "specialize" not in df.columns
             or "max_threads" not in df.columns
@@ -204,16 +215,15 @@ class Summary:
         spec = df["specialize"]
         max_threads = df["max_threads"]
         min_blocks_per_sm = df["min_blocks_per_sm"]
-        exec_time = df["exec_time_median"]
+        roi = df[["exec_time_median", "hash"]]
         passes = df["passes"]
+        exp_hash = df["hash"]
 
         # ---- Baseline: specialize == False AND max_threads == 0
         baseline_mask = (
             (spec == False) & (max_threads == 0) & (passes == "default<O3>,globaldce")
         )
-        baseline_candidates = exec_time.where(baseline_mask)
-        # If multiple rows match baseline, use the minimum time as the baseline
-        baseline_time = baseline_candidates.min(skipna=True)
+        baseline_time, baseline_hash = min_time_and_hash(roi, baseline_mask)
 
         if not np.isfinite(baseline_time):
             return False, None
@@ -225,7 +235,7 @@ class Summary:
             & (spec == False)
             & (passes == "default<O3>,globaldce")
         )
-        lb_time = exec_time.where(lb_mask).min(skipna=True)
+        lb_time = min_time_and_hash(roi, lb_mask)
 
         # ---- Spec: max_threads != 0 AND min_blocks_per_sm == 0 AND specialize == True
         spec_mask = (
@@ -234,7 +244,7 @@ class Summary:
             & (spec == True)
             & (passes == "default<O3>,globaldce")
         )
-        spec_time = exec_time.where(spec_mask).min(skipna=True)
+        spec_time = min_time_and_hash(roi, spec_mask)
 
         spec_tunepipeline_mask = (
             (max_threads == 0)
@@ -242,9 +252,7 @@ class Summary:
             & (spec == True)
             & (passes != "default<O3>,globaldce")
         )
-        spec_tunepipeline_time = exec_time.where(spec_tunepipeline_mask).min(
-            skipna=True
-        )
+        spec_tunepipeline_time = min_time_and_hash(roi, spec_tunepipeline_mask)
 
         spec_lb_mask = (
             (max_threads != 0)
@@ -252,7 +260,7 @@ class Summary:
             & (spec == True)
             & (passes == "default<O3>,globaldce")
         )
-        spec_lb_time = exec_time.where(spec_lb_mask).min(skipna=True)
+        spec_lb_time = min_time_and_hash(roi, spec_lb_mask)
 
         # ---- Tune: max_threads != 0 AND min_blocks_per_sm != 0 AND specialize == True
         tune_mask = (
@@ -261,7 +269,7 @@ class Summary:
             & (spec == True)
             & (passes == "default<O3>,globaldce")
         )
-        tune_time = exec_time.where(tune_mask).min(skipna=True)
+        tune_time = min_time_and_hash(roi, tune_mask)
 
         # ---- Tune: max_threads != 0 AND min_blocks_per_sm != 0 AND specialize == True
         tune_mask_nospec = (
@@ -270,14 +278,12 @@ class Summary:
             & (spec == False)
             & (passes == "default<O3>,globaldce")
         )
-        tune_time_nospec = exec_time.where(tune_mask_nospec).min(skipna=True)
+        tune_time_nospec = min_time_and_hash(roi, tune_mask_nospec)
 
         pipeline_nospec_no_lb = (
             (max_threads == 0) & (spec == False) & (passes != "default<O3>,globaldce")
         )
-        pipeline_nospec_no_lb_time = exec_time.where(pipeline_nospec_no_lb).min(
-            skipna=True
-        )
+        pipeline_nospec_no_lb_time = min_time_and_hash(roi, pipeline_nospec_no_lb)
 
         pipeline_nospec_with_lb = (
             (max_threads != 0)
@@ -285,9 +291,7 @@ class Summary:
             & (spec == False)
             & (passes != "default<O3>,globaldce")
         )
-        pipeline_nospec_with_lb_time = exec_time.where(pipeline_nospec_with_lb).min(
-            skipna=True
-        )
+        pipeline_nospec_with_lb_time = min_time_and_hash(roi, pipeline_nospec_with_lb)
 
         pipeline_nospec_with_tunelb = (
             (max_threads != 0)
@@ -295,9 +299,9 @@ class Summary:
             & (spec == False)
             & (passes != "default<O3>,globaldce")
         )
-        pipeline_nospec_with_tunelb_time = exec_time.where(
-            pipeline_nospec_with_tunelb
-        ).min(skipna=True)
+        pipeline_nospec_with_tunelb_time = min_time_and_hash(
+            roi, pipeline_nospec_with_tunelb
+        )
 
         pipeline_withspec_with_lb = (
             (max_threads != 0)
@@ -305,8 +309,8 @@ class Summary:
             & (spec == True)
             & (passes != "default<O3>,globaldce")
         )
-        pipeline_withspec_with_lb_time = exec_time.where(pipeline_withspec_with_lb).min(
-            skipna=True
+        pipeline_withspec_with_lb_time = min_time_and_hash(
+            roi, pipeline_withspec_with_lb
         )
 
         pipeline_withspec_with_tunelb = (
@@ -315,9 +319,9 @@ class Summary:
             & (spec == True)
             & (passes != "default<O3>,globaldce")
         )
-        pipeline_withspec_with_tunelb_time = exec_time.where(
-            pipeline_withspec_with_tunelb
-        ).min(skipna=True)
+        pipeline_withspec_with_tunelb_time = min_time_and_hash(
+            roi, pipeline_withspec_with_tunelb
+        )
 
         def speedup(candidate_time):
             # speedup = baseline / candidate (higher is better)
@@ -326,18 +330,36 @@ class Summary:
             return baseline_time / candidate_time
 
         speedups = {
-            "Baseline": baseline_time,
-            "TunePipeline": speedup(pipeline_nospec_no_lb_time),
-            "LB": speedup(lb_time),
-            "LB+TunePipeline": speedup(pipeline_nospec_with_lb_time),
-            "TuneLB": speedup(tune_time_nospec),
-            "TuneLB+TunePipeline": speedup(pipeline_nospec_with_tunelb_time),
-            "Spec": speedup(spec_time),
-            "Spec+TunePipeline": speedup(spec_tunepipeline_time),
-            "Spec+LB": speedup(spec_lb_time),
-            "Spec+LB+TunePipeline": speedup(pipeline_withspec_with_lb_time),
-            "Spec+TuneLB": speedup(tune_time),
-            "Spec+TuneLB+TunePipeline": speedup(pipeline_withspec_with_tunelb_time),
+            "Baseline": [baseline_time, baseline_hash],
+            "TunePipeline": [
+                speedup(pipeline_nospec_no_lb_time[0]),
+                pipeline_nospec_no_lb_time[1],
+            ],
+            "LB": [speedup(lb_time[0]), lb_time[1]],
+            "LB+TunePipeline": [
+                speedup(pipeline_nospec_with_lb_time[0]),
+                pipeline_nospec_with_lb_time[1],
+            ],
+            "TuneLB": [speedup(tune_time_nospec[0]), tune_time_nospec[1]],
+            "TuneLB+TunePipeline": [
+                speedup(pipeline_nospec_with_tunelb_time[0]),
+                pipeline_nospec_with_tunelb_time[1],
+            ],
+            "Spec": [speedup(spec_time[0]), spec_time[1]],
+            "Spec+TunePipeline": [
+                speedup(spec_tunepipeline_time[0]),
+                spec_tunepipeline_time[1],
+            ],
+            "Spec+LB": [speedup(spec_lb_time[0]), spec_lb_time[1]],
+            "Spec+LB+TunePipeline": [
+                speedup(pipeline_withspec_with_lb_time[0]),
+                pipeline_withspec_with_lb_time[1],
+            ],
+            "Spec+TuneLB": [speedup(tune_time[0]), tune_time[1]],
+            "Spec+TuneLB+TunePipeline": [
+                speedup(pipeline_withspec_with_tunelb_time[0]),
+                pipeline_withspec_with_tunelb_time[1],
+            ],
         }
         return True, speedups
 
@@ -365,7 +387,7 @@ class Summary:
     def build_summary_table(console, data: dict):
         table = Table(
             title=f"[bold magenta]Mneme Summary[/bold magenta] "
-            f"([bold yellow]Baseline Execution Time (ns): {data['Baseline']}[/bold yellow])",
+            f"([bold yellow]Baseline Execution Time (ns): {data['Baseline'][0]}, Hash:{data['Baseline'][1]} [/bold yellow])",
             box=box.ROUNDED,
             header_style="bold magenta",
             show_lines=True,
@@ -373,10 +395,11 @@ class Summary:
         )
         table.add_column("Config", justify="left", no_wrap=True, overflow="fold")
         table.add_column("Speedup (×)", justify="right", overflow="fold")
+        table.add_column("Hash", justify="right", overflow="fold")
         table.add_section()
         for k, v in data.items():
             if k != "Baseline":
-                table.add_row(k, f"{v:.3f}")
+                table.add_row(k, f"{v[0]:.3f}", f"{v[1]}")
         return table
 
     @staticmethod
@@ -439,7 +462,7 @@ class Summary:
             json_data["speedup"] = data
             json_data["Root directory"] = root
             json_data["filename"] = src
-            json_data["Baseline Time (ns)"] = baseline
+            json_data["Baseline Time (ns)"] = baseline[0]
             json_data["Kernel Name"] = kernel_descr.demangled_name
             json_data["line"] = loc
             print(json.dumps(json_data, indent=2))
@@ -639,6 +662,12 @@ class Serve:
             help="json file to store proteus configuration, if the file exists we append the configuration",
         )
 
+        parser.add_argument(
+            "--hash",
+            required=False,
+            help="Experiment hash identifier, to be used to serve specific experiment to proteus",
+        )
+
         parser.set_defaults(func=Serve.serve)
 
     @staticmethod
@@ -671,15 +700,22 @@ class Serve:
                 break
 
         df = pd.read_csv(str(args.results))
+        df = df.dropna()
+        df["verified"] = df["verified"].astype(bool)
+        df["failed"] = df["failed"].astype(bool)
 
         # Filter verified=True and failed=False
-        filtered = df[(df["verified"]) & (~df["failed"])]
+        filtered = df[(df["verified"])]
+        # print(filtered)
         best_row = filtered.loc[filtered["exec_time_median"].idxmin()]
+        if args.hash is not None:
+            best_row = df.loc[df["hash"] == args.hash].iloc[0]
+            print(best_row)
         best_row = best_row.to_dict()
 
         res = {}
         res["TunedMaxThreads"] = best_row["max_threads"]
-        res["BlocksPerExecUnit"] = best_row["min_blocks_per_sm"]
+        res["MinBlocksPerSM"] = best_row["min_blocks_per_sm"]
         res["Pipeline"] = best_row["passes"]
         res["CodeGen"] = best_row["codegen_method"]
         res["SpecializeArgs"] = best_row["specialize"]
@@ -707,3 +743,29 @@ class Serve:
             [i + 1 for i, v in enumerate(kernel_descr.specializations) if v],
             False,
         )
+
+
+class Detail:
+    @staticmethod
+    def set_cli_args(parser):
+        parser.add_argument(
+            "--results",
+            dest="results",
+            required=True,
+            help="CSV database containing the performance data of the tuning runs",
+        )
+
+        parser.add_argument(
+            "hash",
+            help="Hash code to detail information for",
+        )
+
+        parser.set_defaults(func=Detail.detail)
+
+    @staticmethod
+    def detail(args):
+        df = pd.read_csv(str(args.results))
+
+        # Filter verified=True and failed=False
+        filtered = df[(df["hash"]) == args.hash]
+        print(json.dumps(filtered.iloc[0].to_dict(), indent=2))
