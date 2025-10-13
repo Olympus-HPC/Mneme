@@ -56,15 +56,16 @@ class MnemeDB:
         self._open = False
         self._best = sys.float_info.max
         self._o3 = None
-        self._filename = dir / pathlib.Path("results.csv")
-
-    @property
-    def prefix(self):
-        return self._prefix
+        self._default_name = "results"
+        self._filename = dir / pathlib.Path(f"{self._default_name}.csv")
 
     @property
     def db_dir(self):
         return self._dir
+
+    @property
+    def default_name(self):
+        return self._default_name
 
     @property
     def is_open(self):
