@@ -5,6 +5,7 @@ import shutil
 import sys
 import time
 from pathlib import Path
+from typing import Any, Dict, Iterable, Optional
 
 import numpy as np
 import pandas as pd
@@ -14,12 +15,17 @@ from mneme.logging import logger
 from mneme.proteus import jit
 from mneme.recorded_execution import RecordedExecution
 from rich import box
-from rich.console import Console
+from rich.columns import Columns
+from rich.console import Console, Group
 from rich.measure import Measurement
+from rich.padding import Padding
 from rich.panel import Panel
+from rich.rule import Rule
 from rich.syntax import Syntax
 from rich.table import Table
 from rich.text import Text
+from rich.theme import Theme
+from rich.tree import Tree
 
 
 def _copy_or_move(sources, dest, move=False):
@@ -444,6 +450,173 @@ class Summary:
 
 
 class Serve:
+    theme = Theme(
+        {
+            "ok": "bold green",
+            "warn": "bold yellow",
+            "bad": "bold red",
+            "title": "bold cyan",
+            "dim": "grey62",
+            "hint": "italic dim",
+        }
+    )
+
+    @staticmethod
+    def _make_path_link(path: Path, line: Optional[int], style: str = "bold") -> Text:
+        """
+        Rich supports true hyperlinks. Different editors understand different URL schemes.
+        We'll include several in priority order; terminals/editors that support them will
+        make them clickable. Others will still see a readable path:line.
+        """
+        text = Text(f"{path}:{line if line else ''}".rstrip(":"), style=style)
+        # VS Code deep link
+        try:
+            vsc_url = f"vscode://file/{path}:{line or 1}"
+            text.stylize(f"link {vsc_url}", 0, len(text))
+        except Exception:
+            pass
+        # Fallback file:// (many terminals make file:// clickable)
+        try:
+            file_url = f"file://{path}"
+            text.append(" ", style="")
+            t2 = Text("(open file)", style=f"link {file_url} dim")
+            text += t2
+        except Exception:
+            pass
+        return text
+
+    @staticmethod
+    def _render_json_tree(data: Any, label: str = "result") -> Tree:
+        tree = Tree(Text(label, style="title"))
+
+        def add_branch(node: Any, parent: Tree, key: Optional[str] = None):
+            if isinstance(node, dict):
+                branch = parent.add(f"[bold]{key}[/]" if key else "[bold]{label}[/]")
+                for k, v in node.items():
+                    add_branch(v, branch, k)
+            elif isinstance(node, list):
+                branch = parent.add(
+                    f"[bold]{key}[/] [dim](list, {len(node)} items)[/]"
+                    if key
+                    else "[bold]list[/]"
+                )
+                for i, v in enumerate(node):
+                    add_branch(v, branch, f"[{i}]")
+            else:
+                parent.add(f"[dim]{key}[/]: {node!r}" if key else f"{node!r}")
+
+        add_branch(data, tree)
+        return tree
+
+    @staticmethod
+    def _attribute_line(params: Iterable[int]) -> str:
+        # e.g. __attribute__((annotate("jit", 16,17,...)))
+        parts = ",".join(str(p) for p in params)
+        return f'__attribute__((annotate("jit", {parts})))'
+
+    @staticmethod
+    def _cmake_snippet():
+        return "find_package(proteus CONFIG REQUIRED)\nadd_proteus(<target>)\n"
+
+    @staticmethod
+    def _makefile_snippet(install_path):
+        return (
+            f"CXXFLAGS += -I{install_path}/include \\\n"
+            f"    -fpass-plugin={install_path}/lib64/libProteusPass.so\n\n"
+            f"LDFLAGS += -L {install_path}/lib64 \\\n"
+            f"    -Wl,-rpath,{install_path}/lib64 \\\n"
+            f"    -lproteus $(llvm-config --libs) -lclang-cpp\n"
+        )
+
+    @staticmethod
+    def render_proteus_build_integration(
+        console: Console, install_path="<install_path>"
+    ):
+        cmake_code = Serve._cmake_snippet()
+        make_code = Serve._makefile_snippet(install_path)
+
+        cmake_view = Syntax(cmake_code, "cmake", word_wrap=False, line_numbers=False)
+        make_view = Syntax(make_code, "make", word_wrap=False, line_numbers=False)
+
+        # Minimal, copy-first layout
+        console.print(
+            Text("Install Proteus and point your build system at it.\n"),
+            style="bold cyan",
+        )
+        console.print(
+            Text(
+                "• CMake: ensure proteus is on CMAKE_PREFIX_PATH (or pass -Dproteus_DIR=…)\n"
+                "• Make : extend CXXFLAGS/LDFLAGS as shown.",
+            )
+        )
+        console.print()
+        console.print(Text("CMake — paste into CMakeLists.txt", style="bold cyan"))
+        console.print(cmake_view)
+        console.print()
+        console.print(Text("Make — paste into your Makefile", style="bold cyan"))
+        console.print(make_view)
+        return
+
+    @staticmethod
+    def render_output(
+        mneme_config,
+        exec_time,
+        console,
+        func,
+        file_path,
+        line,
+        params,
+        show_raw: bool = False,
+    ) -> None:
+        """
+        Render the 'mneme serve' optimal result payload with a clean, guided UI.
+        Expected shape (extend as needed):
+        {
+            "function": "my_kernel",
+            "file": "/path/to/source.cu",
+            "line": 123,
+            "annotation_params": [16,17,18, ...],
+            "speedup": 1.42,                # optional
+            "baseline_time_ms": 10.2,       # optional
+            "optimized_time_ms": 7.2,       # optional
+            "notes": "tuned on A100",       # optional
+            "extra": {...}                  # optional nested data
+        }
+        """
+
+        console.print(Text("Analyzed Function", style="bold cyan"))
+        console.print(Syntax(func, "c", word_wrap=True, line_numbers=False))
+        console.print(Text("Defined in file: ", style="bold cyan"))
+        console.print(Serve._make_path_link(file_path, line, style=""))
+
+        console.print()
+        Serve.render_proteus_build_integration(console)
+
+        # What to change in the source
+        console.print()
+        attr_line = Serve._attribute_line(params or [])
+        console.print(
+            Text(
+                "To specialize the kernel, add this attribute to the function definition:",
+                style="bold cyan",
+            ),
+        )
+
+        console.print(Syntax(attr_line, "c", word_wrap=True, line_numbers=False))
+
+        console.print()
+        console.print(
+            Text(
+                "After building the application expose the mneme identified optimal parameters to proteus by",
+                style="bold cyan",
+            )
+        )
+        console.print(Syntax(f"export PROTEUS_TUNED_KERNELS={mneme_config}", "bash"))
+
+        console.print(
+            Text(f"\nExpected execution time is {exec_time} ns", style="bold red")
+        )
+
     @staticmethod
     def set_cli_args(parser):
         parser.add_argument(
@@ -470,6 +643,7 @@ class Serve:
 
     @staticmethod
     def serve(args):
+        console = Console(theme=Serve.theme, soft_wrap=False)
         kernel_descr = RecordedExecution.from_json(args.db)
         jsFn = args.json
         data = {}
@@ -477,13 +651,35 @@ class Serve:
             with open(jsFn, "r") as fd:
                 data = json.load(fd)
 
+        mod = None
+        src = None
+        root = None
+        loc = -1
+        for ll in kernel_descr.llvm_files:
+            with open(ll, "rb") as fd:
+                ir = fd.read()
+                mod = module.parse_bitcode(ir)
+                try:
+                    Func = mod.get_function(kernel_descr.kernel_name)
+                except NameError:
+                    logger.debug(
+                        f"Could not find function in {kernel_descr.kernel_name} in file {ll}"
+                    )
+                    continue
+
+                root, src, loc = Func.get_function_location()
+                break
+
         df = pd.read_csv(str(args.results))
 
         # Filter verified=True and failed=False
         filtered = df[(df["verified"]) & (~df["failed"])]
         best_row = filtered.loc[filtered["exec_time_median"].idxmin()]
         best_row = best_row.to_dict()
+
         res = {}
+        res["TunedMaxThreads"] = best_row["max_threads"]
+        res["BlocksPerExecUnit"] = best_row["min_blocks_per_sm"]
         res["Pipeline"] = best_row["passes"]
         res["CodeGen"] = best_row["codegen_method"]
         res["SpecializeArgs"] = best_row["specialize"]
@@ -493,5 +689,21 @@ class Serve:
         res["OptLevel"] = str(3)
         res["CodeGenOptLevel"] = best_row["codegen_opt"]
         data[kernel_descr.kernel_name] = res
+
+        fsrc = "[Unknown]-no-dbg-info."
+        if src is not None and root is not None:
+            fsrc = (Path(root) / Path(src)).resolve()
+
         with open(jsFn, "w") as fd:
             json.dump(data, fd, indent=2)
+
+        Serve.render_output(
+            str(Path(jsFn).resolve()),
+            best_row["exec_time_median"],
+            console,
+            kernel_descr.demangled_name,
+            fsrc,
+            loc,
+            [i + 1 for i, v in enumerate(kernel_descr.specializations) if v],
+            False,
+        )
