@@ -36,11 +36,7 @@ Mneme CLI options.
 ```
 
 To replay, please provide a path to the `json` file describing a kernel execution as an argument of the `--mneme-replay-json` and specify which runtime instantiation of the kernel you would like to run by specifying the
-`mneme-replay-hash` value. An example of this is shown below: 
-
-```
-TBD replay example
-```
+`mneme-replay-hash` value.
 
 ## Optimizing and tuning with Mneme
 
