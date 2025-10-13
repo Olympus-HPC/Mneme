@@ -16,7 +16,7 @@ import sys
 import time
 from typing import Tuple, Union
 
-from mneme.commands import Clean, Copy, Move, Summary
+from mneme.commands import Clean, Copy, Move, Serve, Summary
 from mneme.device import DeviceModule, dim3, get_device_arch
 from mneme.llvm.module import ModuleRef
 from mneme.logging import logger as replay_logger
@@ -83,7 +83,7 @@ def main():
     )
 
     p_clean = subparsers.add_parser(
-        "Clean", parents=[], help="clean mneme generated files"
+        "clean", parents=[], help="clean mneme generated files"
     )
 
     p_copy = subparsers.add_parser(
@@ -104,12 +104,19 @@ def main():
         help="summarize the best run of a tune campaign",
     )
 
+    p_serve = subparsers.add_parser(
+        "serve",
+        parents=[],
+        help="Export optimal configuration to some json file for Proteus to digest and use",
+    )
+
     CLIExecutor.set_cli_args(p_exec)
     ReplayTuner.set_cli_args(p_tune)
     Clean.set_cli_args(p_clean)
     Copy.set_cli_args(p_copy)
     Move.set_cli_args(p_move)
     Summary.set_cli_args(p_summary)
+    Serve.set_cli_args(p_serve)
 
     args = parser.parse_args()
     configure_replay_logging(vars(args).pop("verbosity", None))
