@@ -56,19 +56,19 @@ tioga-build-and-test:
   #needs: [tioga-up-check, generate-job-lists]
   extends: [.build-and-test]
 
-# LASSEN
-lassen-up-check:
-  variables:
-    CI_MACHINE: "lassen"
-  extends: [.machine-check]
+# # LASSEN
+# lassen-up-check:
+#   variables:
+#     CI_MACHINE: "lassen"
+#   extends: [.machine-check]
 
-lassen-build-and-test:
-  variables:
-    CI_MACHINE: "lassen"
-  needs: [lassen-up-check]
-  extends: [.build-and-test]
-#  #needs: [lassen-up-check, generate-job-lists]
-#
+# lassen-build-and-test:
+#   variables:
+#     CI_MACHINE: "lassen"
+#   needs: [lassen-up-check]
+#   extends: [.build-and-test]
+# #  #needs: [lassen-up-check, generate-job-lists]
+# #
 
 # TUOLUMNE
 tuolumne-up-check:
