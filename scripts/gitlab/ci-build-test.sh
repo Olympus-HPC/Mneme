@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 set -e
 
@@ -6,21 +6,24 @@ temp_dir=$(pwd) #$(mktemp -d)
 echo "Temporary directory created at: $temp_dir"
 host=$(hostname)
 host=${host//[0-9]/}
-mkdir -p ${temp_dir}/build-${host};
 build_dir=${temp_dir}/build-${host}
+mkdir -p ${build_dir}
 installDir="/dev/shm/install"
 
+start_test=$(date +'%s')
 
 build_proteus() {
   echo "Building PROTEUS"
-  git clone --depth 1 git@github.com:Olympus-HPC/proteus.git
+  if [[ ! -d "proteus" ]]; then
+    git clone --depth 1 https://github.com/Olympus-HPC/proteus.git
+  fi
   pushd proteus 
   PROTEUS_ENABLE_HIP=$1
   PROTEUS_ENABLE_CUDA=$2
   PROTEUS_INSTALL_DIR=$3
   LINK_SHARED_LLVM=$4
   echo "Proteus: ENABLE_HIP: $PROTEUS_ENABLE_HIP ENABLE_CUDA: $PROTEUS_ENABLE_CUDA"
-  mkdir build-proteus-${host}
+  mkdir -p build-proteus-${host}
   pushd build-proteus-${host}
   cmake .. \
   -DBUILD_SHARED=Off \
@@ -42,10 +45,12 @@ build_proteus() {
 
 build_spdlog() {
   echo "Building SPDLOG"
-  git clone --depth 1 --branch v1.15.0  --single-branch https://github.com/gabime/spdlog.git
+  if [[ ! -d "spdlog" ]]; then
+    git clone --depth 1 --branch v1.15.0  --single-branch https://github.com/gabime/spdlog.git
+  fi
   pushd spdlog
   SPDLOG_INSTALL_DIR=$1
-  mkdir build-spdlog-${host}
+  mkdir -p build-spdlog-${host}
   pushd build-spdlog-${host}
   cmake \
   -DCMAKE_C_COMPILER=${LLVM_INSTALL_DIR}/bin/clang \
@@ -114,6 +119,14 @@ elif [[ "$SYS_TYPE" == "toss_4_x86_64_ib_cray" ]]; then
 ml load rocm/${MNEME_CI_ROCM_VERSION}
 export LLVM_INSTALL_DIR=${ROCM_PATH}/llvm
 echo "LLVM INSTALL DIR is ${LLVM_INSTALL_DIR}"
+export ROCM_ARCH=$(rocm_agent_enumerator | sed -n 2p)
+
+if [ -z "${ROCM_ARCH}" ]; then
+  echo "ROCM_ARCH is not set or is empty"
+  exit
+else
+  echo "ROCM_ARCH = ${ROCM_ARCH}"
+fi
 
 build_proteus "ON" "OFF" $installDir OFF
 echo "After proteus Current directory is $(pwd)"

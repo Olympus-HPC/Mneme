@@ -12,14 +12,6 @@ variables:
 # named so that we are sure to retrieve it and avoid collisions.
   ALLOC_NAME: ${CI_PROJECT_NAME}_ci_${CI_PIPELINE_ID}
 
-# Ruby
-# Arguments for top level allocation
-#  RUBY_SHARED_ALLOC: "--exclusive --reservation=ci --time=10 --nodes=1"
-# Arguments for job level allocation
-#  RUBY_JOB_ALLOC: "--reservation=ci --nodes=1"
-# Add variables that should apply to all the jobs on a machine:
-#  RUBY_MY_VAR: "..."
-
 # Poodle
 # Arguments for top level allocation
   POODLE_SHARED_ALLOC: "--exclusive --partition=pdebug --time=10 --nodes=1"
@@ -40,22 +32,16 @@ variables:
 # Tioga
 # Arguments for top level allocation
 # OPTIONAL: "-o per-resource.count=2" allows to get 2 jobs running on each node.
-  TIOGA_SHARED_ALLOC: "--queue=pci --exclusive --time-limit=15m --nodes=1"
+  TIOGA_SHARED_ALLOC: "--queue=pci --exclusive --time-limit=90m --nodes=1"
 # Arguments for job level allocation
   TIOGA_JOB_ALLOC: "--nodes=1 --begin-time=+5s"
 # Add variables that should apply to all the jobs on a machine:
 #  TIOGA_MY_VAR: "..."
 
-# Lassen uses a different job scheduler (spectrum lsf) that does not allow
-# pre-allocation the same way slurm does. Arguments for job level allocation
-  LASSEN_JOB_ALLOC: "1 -W 60 -q pci"
-# Add variables that should apply to all the jobs on a machine:
-#  LASSEN_MY_VAR: "..."
-
 # Tuo
 # Arguments for top level allocation
 # OPTIONAL: "-o per-resource.count=2" allows to get 2 jobs running on each node.
-  TUOLUMNE_SHARED_ALLOC: "--queue=pci --exclusive --time-limit=15m --nodes=1"
+  TUOLUMNE_SHARED_ALLOC: "--queue=pci --exclusive --time-limit=90m --nodes=1"
 # Arguments for job level allocation
   TUOLUMNE_JOB_ALLOC: "--nodes=1 --begin-time=+5s"
 # Add variables that should apply to all the jobs on a machine:

@@ -179,7 +179,7 @@ class MnemeDB:
                 best_speedup,
             )
 
-        if self._best > exp.exec_time:
+        if exp.exec_time is not None and self._best > exp.exec_time:
             self._best = exp.exec_time
 
         self._experiments[_hash] = exp.executed

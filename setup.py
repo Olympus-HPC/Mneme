@@ -47,6 +47,9 @@ class CMakeBuild(build_ext):
         self.has_nvidia = "On" if has_nvidia_gpu() else "Off"
         self.has_amd = "On" if has_amd_gpu() else "Off"
         self.llvm_dir = os.getenv("LLVM_INSTALL_DIR", None)
+        
+        self.mneme_enable_debug = os.getenv("MNEME_ENABLE_DEBUG", "Off")
+
         if self.has_amd == "On":
             self.cxx = f"{self.llvm_dir}/bin/amdclang++"
             self.cc = f"{self.llvm_dir}/bin/amdclang"
@@ -164,6 +167,7 @@ class CMakeBuild(build_ext):
             f"-DLLVM_INSTALL_DIR={self.llvm_dir}",
             f"-DMNEME_ENABLE_HIP={self.has_amd}",
             "-DMNEME_ENABLE_TESTS=On",
+            f"-DMNEME_ENABLE_DEBUG={self.mneme_enable_debug}",
             "-DMNEME_ENABLE_AUTOTUNE=On",
             "-DCMAKE_INSTALL_RPATH_USE_LINK_PATH=On",
             f"-Dproteus_DIR={proteus_dir}",

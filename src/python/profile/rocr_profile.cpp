@@ -236,7 +236,7 @@ int tool_init(rocprofiler_client_finalize_t /*fini*/, void *data_v) {
       nullptr, 0, instance.getBuffer()));
 
   // Service to pick up kernel name -> kernel id and use it when profiling
-  const rocprofiler_tracing_operation_t ops[] = {
+  rocprofiler_tracing_operation_t ops[] = {
       ROCPROFILER_CODE_OBJECT_DEVICE_KERNEL_SYMBOL_REGISTER,
       ROCPROFILER_CODE_OBJECT_LOAD};
   CHECK_ROCP(rocprofiler_configure_callback_tracing_service(

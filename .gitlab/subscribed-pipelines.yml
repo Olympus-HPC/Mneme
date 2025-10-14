@@ -29,18 +29,6 @@
 # Comment the jobs for machines you don’t need.
 ###
 
-      ## RUBY
-      #ruby-up-check:
-      #  variables:
-      #    CI_MACHINE: "ruby"
-      #  extends: [.machine-check]
-      #
-      #ruby-build-and-test:
-      #  variables:
-      #    CI_MACHINE: "ruby"
-      #  needs: [ruby-up-check]
-      #  ## [Shared jobs scenario]
-
 # TIOGA
 tioga-up-check:
   variables:
@@ -50,25 +38,23 @@ tioga-up-check:
 tioga-build-and-test:
   variables:
     CI_MACHINE: "tioga"
+    JOB_CMD:
+      value: "scripts/gitlab/ci-build-test.sh"
+      expand: false
   needs: [tioga-up-check]
   ## [Shared jobs scenario]
   ## (See Umpire CI setup for an example).
   #needs: [tioga-up-check, generate-job-lists]
   extends: [.build-and-test]
 
-# # LASSEN
-# lassen-up-check:
-#   variables:
-#     CI_MACHINE: "lassen"
-#   extends: [.machine-check]
-
-# lassen-build-and-test:
-#   variables:
-#     CI_MACHINE: "lassen"
-#   needs: [lassen-up-check]
-#   extends: [.build-and-test]
-# #  #needs: [lassen-up-check, generate-job-lists]
-# #
+tioga-integration-laghos:
+  variables:
+    CI_MACHINE: "tioga"
+    JOB_CMD:
+      value: "scripts/gitlab/ci-integration-laghos.sh"
+      expand: false
+  needs: [tioga-up-check]
+  extends: [.integration-laghos]
 
 # TUOLUMNE
 tuolumne-up-check:
@@ -79,8 +65,20 @@ tuolumne-up-check:
 tuolumne-build-and-test:
   variables:
     CI_MACHINE: "tuolumne"
+    JOB_CMD:
+      value: "scripts/gitlab/ci-build-test.sh"
+      expand: false
   needs: [tuolumne-up-check]
   ## [Shared jobs scenario]
   ## (See Umpire CI setup for an example).
   #needs: [tuolumne-up-check, generate-job-lists]
   extends: [.build-and-test]
+
+tuolumne-integration-laghos:
+  variables:
+    CI_MACHINE: "tuolumne"
+    JOB_CMD:
+      value: "scripts/gitlab/ci-integration-tests.sh"
+      expand: false
+  needs: [tuolumne-up-check]
+  extends: [.integration-laghos]
