@@ -72,6 +72,9 @@ def optimize(mod: ModuleRef, device_arch: str, opt_level: str, codegen_opt_level
         raise ValueError(
             f"Expected the codegen_opt_level to be between 0-3 instead got {codegen_opt_level}"
         )
+    if len(opt_level) == 0:
+        return
+
     ffi.lib.ProteusPY_optimize(
         mod,
         _encode_string(device_arch),
@@ -175,9 +178,7 @@ def set_launch_bounds(
 ):
     if max_threads_per_block > 1024:
         raise RuntimeError("Max threads cannot be larger than 1024")
-    print(
-        f"Called to put launchbounds equal to {max_threads_per_block} and {min_blocks_per_sm}"
-    )
+
     return int(
         ffi.lib.ProteusPY_setLaunchBounds(
             mod,

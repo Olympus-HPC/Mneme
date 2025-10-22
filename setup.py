@@ -84,6 +84,8 @@ class CMakeBuild(build_ext):
                         "clone",
                         "--depth",
                         "1",
+                        # "--branch",
+                        # "features/blocks-per-eu",
                         self.PROTEUS_REPO,
                         proteus_path,
                     ],

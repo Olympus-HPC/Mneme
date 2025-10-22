@@ -14,6 +14,7 @@ from mneme.device import (
     set_device,
 )
 from mneme.experiment import Experiment
+from mneme.fancy_out import PrettyTablePrinter
 from mneme.llvm.buffer import MemBufferRef
 from mneme.llvm.module import ModuleRef
 from mneme.logging import logger
@@ -263,7 +264,7 @@ class CLIExecutor(BaseExecutor):
             action=argparse.BooleanOptionalAction,
             dest="increamental",
             default=False,
-            help="Apply passes one by one and incrementally build the pipelines. Useful for debugging",
+            help="Apply passes one by one and increamentally build the pipelines. Useful for debugging",
         )
 
         parser.add_argument(
@@ -398,28 +399,36 @@ class CLIExecutor(BaseExecutor):
 
     def execute(self, exp, ir_module, clone=False, orig=""):
         if not self.increamental:
-            exp.dump()
             exp, generated_ir = super()._execute(exp, ir_module, self.pipeline)
             if self._db is not None:
                 final = self._db.save_ir(generated_ir, exp.hash())
                 self._db.add(orig, final, exp)
-            exp.dump()
             return
 
         results = []
+        passes = [("", "")]
         for i, _ in enumerate(self.passes):
-            passes = self.pass_manager.to_string(self.passes[: i + 1])
-            if self._db is not None and not self._db.should_execute(exp):
-                logger.debug(
-                    f"Skipping experiment {str(exp.hash())}, already in replayed"
+            passes.append(
+                (
+                    self.pass_manager.to_string(self.passes[: i + 1]),
+                    self.pass_manager.to_string(self.passes[i : i + 1]),
                 )
-                continue
+            )
 
-            exp, generated_ir = super()._execute(exp, ir_module.clone(), passes)
-            if self._db is not None:
-                final = self._db.save_ir(generated_ir, exp.hash())
-                self._db.add(orig, final, exp)
-            exp.dump()
+        with PrettyTablePrinter() as printer:
+            for pipeline, pass_name in passes:
+                exp.passes = pipeline
+                if self._db is not None and not self._db.should_execute(exp):
+                    logger.debug(
+                        f"Skipping experiment {str(exp.hash())}, already in replayed"
+                    )
+                    continue
+
+                exp, generated_ir = super()._execute(exp, ir_module.clone(), pipeline)
+                if self._db is not None:
+                    final = self._db.save_ir(generated_ir, exp.hash())
+                    self._db.add(orig, final, exp)
+                printer.print_pass_result(pass_name, exp.exec_time, exp.verified)
 
     @staticmethod
     def run(args):

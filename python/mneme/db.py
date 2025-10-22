@@ -172,6 +172,7 @@ class MnemeDB:
             best_speedup = self._o3 / self._best
 
             print_experiment_status(
+                exp.start_id,
                 _hash,
                 not exp.failed,
                 exp.verified,
@@ -179,7 +180,7 @@ class MnemeDB:
                 best_speedup,
             )
 
-        if self._best > exp.exec_time:
+        if exp.executed and self._best > exp.exec_time:
             self._best = exp.exec_time
 
         self._experiments[_hash] = exp.executed

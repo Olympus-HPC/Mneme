@@ -167,3 +167,7 @@ def get_device_count():
 
 def set_device(dev_id: int):
     ffi.lib.MnemePy_setDevice(dev_id)
+
+
+def get_max_blocks_per_sm():
+    return 8

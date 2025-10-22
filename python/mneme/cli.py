@@ -16,7 +16,7 @@ import sys
 import time
 from typing import Tuple, Union
 
-from mneme.commands import Clean, Copy, Move, Serve, Summary
+from mneme.commands import Clean, Copy, Detail, Move, Serve, Summary
 from mneme.device import DeviceModule, dim3, get_device_arch
 from mneme.llvm.module import ModuleRef
 from mneme.logging import logger as replay_logger
@@ -110,6 +110,12 @@ def main():
         help="Export optimal configuration to some json file for Proteus to digest and use",
     )
 
+    p_detail = subparsers.add_parser(
+        "detail",
+        parents=[],
+        help="Provide details of a specific experiment",
+    )
+
     CLIExecutor.set_cli_args(p_exec)
     ReplayTuner.set_cli_args(p_tune)
     Clean.set_cli_args(p_clean)
@@ -117,6 +123,7 @@ def main():
     Move.set_cli_args(p_move)
     Summary.set_cli_args(p_summary)
     Serve.set_cli_args(p_serve)
+    Detail.set_cli_args(p_detail)
 
     args = parser.parse_args()
     configure_replay_logging(vars(args).pop("verbosity", None))
