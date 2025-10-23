@@ -93,21 +93,6 @@ private:
 
   DeviceError_t (*origFreeHost)(void *ptr);
 
-  void (*origRegisterDeviceVar)(void **fatbinHandle, char *hostVar,
-                                char *deviceAddress, const char *deviceName,
-                                int ext, size_t size, int constant, int global);
-
-  void (*origRegisterFunction)(void **fatbinHandle, const char *hostFun,
-                               char *deviceFun, const char *deviceName,
-                               int thread_limit, uint3 *tid, uint3 *bid,
-                               dim3 *bDim, dim3 *gDim, int *wSize);
-
-  void **(*origRegisterFatBinary)(void *fatDevbin);
-
-  void (*origRegisterFatBinaryEnd)(void *);
-
-  void (*origUnregisterFatBinary)(void **);
-
   DeviceError_t (*origSetDeviceID)(int id);
   DeviceError_t (*origGetDeviceID)(int *id);
 
@@ -130,147 +115,6 @@ private:
   }
 
 public:
-  void unregisterFatBinEnd(void **ptr) {
-    LOG_DEBUG("Unregistering fatbinary");
-    if (PM) {
-      LOG_DEBUG("Releasing memory");
-      PM.release();
-      LOG_DEBUG("Done with Releasing memory");
-    }
-    origUnregisterFatBinary(ptr);
-  }
-
-  void registerFatBinEnd(void *ptr) {
-    LOG_DEBUG("Marking end of fat binary");
-    origRegisterFatBinaryEnd(ptr);
-  }
-
-  void **registerFatBin(FatBinaryWrapper_t *fatbin) {
-    void **Handle = origRegisterFatBinary(fatbin);
-    LOG_DEBUG("Register Fatbin Returned handle {}", (void *)Handle);
-
-    return Handle;
-  }
-
-  void explicitRegisterPreLinkedBinary(FatBinaryWrapper_t *FatbinWrapper,
-                                       const char *ModuleId) {
-    LOG_DEBUG("Received prelinked binary with the following fields {} {} {} {}",
-              FatbinWrapper->Magic, FatbinWrapper->Version,
-              (void *)FatbinWrapper->Binary,
-              (void *)FatbinWrapper->PrelinkedFatBins);
-    Executable.PendingRegistrations.insert(
-        {(void *)FatbinWrapper->Binary, ModuleId});
-  }
-
-  void explicitRegisterFatBin(DeviceHandle Handle,
-                              FatBinaryWrapper_t *FatbinWrapper,
-                              const char *ModuleId) {
-    if (Executable.CurrHandle == nullptr)
-      Executable.CurrHandle = Handle;
-    if (Executable.CurrHandle != Handle) {
-#ifdef MNEME_ENABLE_CUDA
-      LOG_FATAL("Current Handle is still open and we received a new one");
-#endif
-      Executable.CurrHandle = Handle;
-    }
-
-    if (Executable.LinkedBinaries.contains(Handle)) {
-      LOG_FATAL("Received a new Handle but we already have a fatbinary for "
-                "this handle");
-    }
-
-    auto [LinkedIt, inserted] = Executable.LinkedBinaries.insert(std::make_pair(
-        Handle, std::make_unique<MnemeDeviceLinkedBin>(Handle, FatbinWrapper)));
-    auto &Linked = *LinkedIt->second;
-    // TODO: Do we need this for HIP?
-    if (FatbinWrapper->Version == 1) {
-      Linked.ModuleIds.push_back(ModuleId);
-    } else if (FatbinWrapper->Version == 2) {
-      // NOTE: On version 2 binaries, we should not pushs the module-id of this
-      // Fatbinary. Instead we inherit the module ids from the internal
-      // fat-binaries.
-      for (int I = 0; FatbinWrapper->PrelinkedFatBins[I] != nullptr; I++) {
-        auto it = Executable.PendingRegistrations.find(
-            FatbinWrapper->PrelinkedFatBins[I]);
-        if (it != Executable.PendingRegistrations.end()) {
-          // Element exists
-          auto &val = it->second;
-          Linked.ModuleIds.push_back(val);
-          Executable.PendingRegistrations.erase(it);
-        } else {
-          Linked.ModuleIds.push_back("");
-        }
-        LOG_DEBUG("RDC Binary {} includes Binary address of {}", I,
-                  (void *)FatbinWrapper->PrelinkedFatBins[I]);
-      }
-    } else {
-      LOG_FATAL("Cannot handle binary type {}", FatbinWrapper->Version);
-    }
-  }
-
-  void explicitEndRegisterFatBinary(DeviceHandle Handle) {
-
-    if (Executable.CurrHandle != Handle) {
-      LOG_WARN("Register Fat Binary End Handle does not match with current "
-               "Handle {}:{}",
-               (void *)Handle, (void *)Executable.CurrHandle);
-    }
-    // We turn off the tracking of the current handle.
-    Executable.CurrHandle = nullptr;
-  }
-
-  void registerVar(DeviceHandle Handle, char *hostVar, char *deviceAddress,
-                   const char *deviceName, int ext, size_t size, int constant,
-                   int global) {
-    LOG_INFO("Register Global Variable: {} SIZE:{}, CONSTANT:{} GLOBAL:{} ",
-             deviceName, size, constant, global);
-
-    origRegisterDeviceVar(Handle, hostVar, deviceAddress, deviceName, ext, size,
-                          constant, global);
-
-    if (constant)
-      return;
-
-    if (Handle != Executable.CurrHandle) {
-      LOG_WARN("Assuming this is not a tracked fatbin skipping ...");
-      return;
-    }
-
-    auto it = HandleToGlobalSymbol.find(Handle);
-    if (it == HandleToGlobalSymbol.end()) {
-      HandleToGlobalSymbol.insert({Handle, {}});
-    }
-
-    HandleToGlobalSymbol[Handle].emplace_back(
-        GlobalVarInfo(deviceName, hostVar, size));
-    return;
-  }
-
-  void registerFunc(DeviceHandle Handle, const char *hostFun, char *deviceFun,
-                    const char *deviceName, int thread_limit, uint3 *tid,
-                    uint3 *bid, dim3 *bDim, dim3 *gDim, int *wSize) {
-    if (!Executable.LinkedBinaries.contains(Handle)) {
-      LOG_DEBUG("Function {} will not be tracked, as handle is not explicitly "
-                "registered",
-                deviceName);
-      origRegisterFunction(Handle, hostFun, deviceFun, deviceName, thread_limit,
-                           tid, bid, bDim, gDim, wSize);
-      return;
-    }
-
-    auto &Exec = Executable.LinkedBinaries[Handle];
-
-    std::shared_ptr<KernelInfo> KI = std::make_shared<KernelInfo>(
-        *Exec.get(), (const void *)hostFun, deviceFun);
-    Executable.TrackedKernels.insert({(const void *)hostFun, KI});
-    LOG_INFO("Register Function with handle: {} and Name: {} with a "
-             "thread_limit off {} at address {}",
-             (void *)Handle, deviceName, thread_limit, (void *)hostFun);
-
-    origRegisterFunction(Handle, hostFun, deviceFun, deviceName, thread_limit,
-                         tid, bid, bDim, gDim, wSize);
-  };
-
   DeviceError_t rtMalloc(void **ptr, size_t size) {
     if (!PM) {
       // NOTE: We need this arch cause internally we initialize the device.
@@ -450,26 +294,6 @@ public:
         dlsym(rtLib, MnemeDeviceRT::getDeviceFreeFnName());
     assert(origFreeDevice && "Expected non-null Device free function pointer");
 
-    reinterpret_cast<void *&>(origRegisterFunction) =
-        dlsym(rtLib, MnemeDeviceRT::getUURegisterFunctionFnName());
-    assert(origRegisterFunction && "Expected non-null Register Function");
-
-    reinterpret_cast<void *&>(origRegisterDeviceVar) =
-        dlsym(rtLib, MnemeDeviceRT::getUURegisterVarFnName());
-    assert(origRegisterDeviceVar && "Expected non-null register Device Var");
-
-    reinterpret_cast<void *&>(origRegisterFatBinary) =
-        dlsym(rtLib, MnemeDeviceRT::getUURegisterFatbinFnName());
-    assert(origRegisterFatBinary && "Expected non-null register Device Var");
-
-    reinterpret_cast<void *&>(origUnregisterFatBinary) =
-        dlsym(rtLib, MnemeDeviceRT::getUUUnRegisterFatBinaryFnName());
-    assert(origUnregisterFatBinary && "Expected non-null unregister fatbinary");
-
-    reinterpret_cast<void *&>(origUnregisterFatBinary) =
-        dlsym(rtLib, MnemeDeviceRT::getUUUnRegisterFatBinaryFnName());
-    assert(origUnregisterFatBinary && "Expected non-null unregister fatbinary");
-
     reinterpret_cast<void *&>(origSetDeviceID) =
         dlsym(rtLib, MnemeDeviceRT::getDeviceSetIDFnName());
     assert(origSetDeviceID && "Expected non-null set device id fn name");
@@ -477,13 +301,6 @@ public:
     reinterpret_cast<void *&>(origGetDeviceID) =
         dlsym(rtLib, MnemeDeviceRT::getDeviceGetIDFnName());
     assert(origGetDeviceID && "Expected non-null get device id fn name");
-
-    if (MnemeDeviceRT::hasFatBinEnd) {
-      reinterpret_cast<void *&>(origRegisterFatBinaryEnd) =
-          dlsym(rtLib, MnemeDeviceRT::getUURegisterFatbinEndFnName());
-      assert(origRegisterFatBinaryEnd &&
-             "Expected non-null register Device Var");
-    }
   }
 
   ~MnemeRecorder() {

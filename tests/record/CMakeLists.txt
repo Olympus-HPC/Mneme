@@ -14,17 +14,8 @@ function(CREATE_GPU_TEST exe check_source)
   endif()
   target_include_directories(${exe} PRIVATE ${CMAKE_SOURCE_DIR}/include/)
 
-  set_source_files_properties(${check_source} ${ARGN} PROPERTIES
-    OBJECT_DEPENDS ${PROJECT_SOURCE_DIR}/pass/regdeviceir.cpp
-    )
-  add_dependencies(${exe} regdeviceir)
   add_dependencies(${exe} record)
-
-  target_compile_options(
-      ${exe}
-      PUBLIC
-      -fpass-plugin=$<TARGET_FILE:regdeviceir>
-  )
+  add_proteus(${exe})
 
 add_test(NAME ${exe} COMMAND ${LIT} -a -vv -DFILECHECK=${FILECHECK} -D ext='' -D PG=1 -D RR=${RECORD_READ_JSON} ${check_source})
   set_tests_properties(${exe} PROPERTIES LABELS "MnemeRecord::Link")
@@ -43,10 +34,6 @@ function(CREATE_RDC_GPU_TEST exe check_source)
   endif()
   target_include_directories(${exe}.rdc PRIVATE ${CMAKE_SOURCE_DIR}/include/)
 
-  set_source_files_properties(${check_source} ${ARGN} PROPERTIES
-    OBJECT_DEPENDS ${PROJECT_SOURCE_DIR}/pass/regdeviceir.cpp
-    )
-  add_dependencies(${exe}.rdc regdeviceir)
   add_dependencies(${exe}.rdc record)
 
   if(MNEME_ENABLE_HIP)
@@ -58,7 +45,6 @@ function(CREATE_RDC_GPU_TEST exe check_source)
         ${exe}.rdc
         PUBLIC
         -fgpu-rdc
-        -fpass-plugin=$<TARGET_FILE:regdeviceir>
     )
 
     target_link_options(
@@ -66,15 +52,14 @@ function(CREATE_RDC_GPU_TEST exe check_source)
         PUBLIC
         -fgpu-rdc
         --hip-link
-        -Xoffload-linker --load-pass-plugin=$<TARGET_FILE:regdeviceir>
     )
     elseif(MNEME_ENABLE_CUDA)
         target_compile_options(
             ${exe}.rdc
             PUBLIC
-            -fpass-plugin=$<TARGET_FILE:regdeviceir>
         )
     set_target_properties(${exe}.rdc PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
+	add_proteus(${exe}.rdc)
   endif()
 
   add_test(NAME ${exe}.rdc COMMAND ${LIT} -a -vv -DFILECHECK=${FILECHECK} -D ext=.rdc -D PG=1 -D RR=${RECORD_READ_JSON} ${check_source})

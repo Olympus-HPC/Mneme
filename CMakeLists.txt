@@ -84,7 +84,6 @@ elseif(MNEME_ENABLE_HIP)
 endif()
 
 add_subdirectory(src)
-add_subdirectory(pass)
 
 if(MNEME_ENABLE_TESTS)
   enable_testing()
@@ -104,7 +103,7 @@ write_basic_package_version_file(
   VERSION ${PROJECT_VERSION}
   COMPATIBILITY AnyNewerVersion)
 
-set(MNEME_TARGETS record replay regdeviceir mneme_shallow )
+set(MNEME_TARGETS record replay mneme_shallow)
 if(MNEME_ENABLE_AUTOTUNE)
 list(APPEND MNEME_TARGETS mneme_profile mneme)
 endif()
