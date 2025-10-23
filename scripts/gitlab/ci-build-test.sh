@@ -41,8 +41,10 @@ build_proteus() {
 }
 
 build_spdlog() {
-  if [[ "${MNEME_CI_ENABLE_LOGGER^^}" -eq "OFF" ]]; then
-	  return
+  echo "Building spdlog ${MNEME_CI_ENABLE_LOGGER} ${MNEME_CI_ENABLE_LOGGER^^}"
+  if [[ "${MNEME_CI_ENABLE_LOGGER^^}" == "OFF" ]]; then
+	echo "Early exit"
+	return
   fi
 
   echo "Building SPDLOG"
