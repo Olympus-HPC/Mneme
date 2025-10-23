@@ -41,6 +41,12 @@ build_proteus() {
 }
 
 build_spdlog() {
+  echo "Building spdlog ${MNEME_CI_ENABLE_LOGGER} ${MNEME_CI_ENABLE_LOGGER^^}"
+  if [[ "${MNEME_CI_ENABLE_LOGGER^^}" == "OFF" ]]; then
+	echo "Early exit"
+	return
+  fi
+
   echo "Building SPDLOG"
   git clone --depth 1 --branch v1.15.0  --single-branch https://github.com/gabime/spdlog.git
   pushd spdlog
@@ -105,7 +111,7 @@ cmake \
 -DLLVM_INSTALL_DIR=${LLVM_INSTALL_DIR} \
 -DMNEME_ENABLE_HIP=Off \
 -DMNEME_ENABLE_CUDA=On \
--DMNEME_ENABLE_DEBUG=${MNEME_CI_ENABLE_DEBUG} \
+-DMNEME_ENABLE_LOGGER=${MNEME_CI_ENABLE_LOGGER} \
 -DMNEME_ENABLE_TESTS=On \
 -DCMAKE_EXPORT_COMPILE_COMMANDS=on ${mneme_src}
 
@@ -129,7 +135,7 @@ cmake \
 -DCMAKE_C_COMPILER=amdclang \
 -DLLVM_INSTALL_DIR=${LLVM_INSTALL_DIR} \
 -DMNEME_ENABLE_HIP=On \
--DMNEME_ENABLE_DEBUG=${MNEME_CI_ENABLE_DEBUG} \
+-DMNEME_ENABLE_LOGGER=${MNEME_CI_ENABLE_LOGGER} \
 -DMNEME_ENABLE_TESTS=On \
 -DCMAKE_EXPORT_COMPILE_COMMANDS=on ${mneme_src}
 fi
