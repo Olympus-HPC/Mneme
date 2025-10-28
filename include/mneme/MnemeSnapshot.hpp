@@ -15,6 +15,10 @@
 #include <string>
 #include <sys/types.h>
 
+#include "proteus/CompilerInterfaceDevice.h"
+#include "proteus/Hashing.hpp"
+#include <proteus/JitEngineDevice.hpp>
+
 #include "mneme/DeviceTraits.hpp"
 #include "mneme/MnemeKernelInfo.hpp"
 #include "mneme/MnemeLLVMUtils.hpp"
@@ -35,10 +39,10 @@ public:
   std::filesystem::path static takeMnemeSnapshot(
       llvm::SmallVector<GlobalVarInfo> &GlobalVars,
       llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &DeviceMemory,
-      std::filesystem::path &Filename, std::shared_ptr<KernelInfo> KInfo,
-      void **Args, DeviceStream_t Stream) {
+      std::filesystem::path &Filename,
+      llvm::SmallVector<size_t> &KernelArgSizes, void **Args,
+      DeviceStream_t Stream) {
     LOG_DEBUG("Storing mneme snapshot: {}", Filename.string());
-    llvm::stable_hash KHash = llvm::stable_hash_combine_string(KInfo->Name);
     std::error_code EC;
     // Syncrhonize cause we need to get a consistent GPU state.
     // We may want to do a DeviceSynchronize().
@@ -75,7 +79,7 @@ public:
     for (auto &[Ptr, Blob] : DeviceMemory)
       OutBC << Blob;
     // Lastly write the arguments
-    size_t NumArgs = KInfo->KernelArgSizes.size();
+    size_t NumArgs = KernelArgSizes.size();
     LOG_DEBUG("Number of Kernel Arguments in snapshot:{} stored at position:{}",
               NumArgs, OutBC.tell());
 
@@ -84,10 +88,9 @@ public:
 
     for (int I = 0; I < NumArgs; I++) {
       OutBC << llvm::StringRef(
-          reinterpret_cast<const char *>(&KInfo->KernelArgSizes[I]),
-          sizeof(size_t));
+          reinterpret_cast<const char *>(&KernelArgSizes[I]), sizeof(size_t));
       OutBC << llvm::StringRef(reinterpret_cast<const char *>(Args[I]),
-                               KInfo->KernelArgSizes[I]);
+                               KernelArgSizes[I]);
     }
 
     return std::filesystem::canonical(Filename);
@@ -169,30 +172,56 @@ struct KernelInstance {
     instance["Occurrences"] = NumOccurrences;
     return instance;
   }
-  KernelInstance(std::shared_ptr<KernelInfo> KInfo, dim3 &GridDim,
-                 dim3 &BlockDim, uint64_t SharedMem, void **Args)
+  KernelInstance(dim3 &GridDim, dim3 &BlockDim, uint64_t SharedMem, void **Args)
       : GridDim(GridDim), BlockDim(BlockDim), SharedMem(SharedMem),
-        NumOccurrences(0) {
-    auto CanSpecialize = KInfo->getArgSpecializations();
-    auto toDouble = KInfo->getToDoubleFunc();
-    for (int I = 0; I < KInfo->getNumArgs(); I++) {
-      if (CanSpecialize[I]) {
-        ArgValues.emplace_back(toDouble[I](Args[I]));
-      } else {
-        ArgValues.emplace_back(-1.0);
-      }
-    }
+        NumOccurrences(1) {
+#warning fix accessors;
+    //    auto CanSpecialize = KInfo->getArgSpecializations();
+    //    auto toDouble = KInfo->getToDoubleFunc();
+    //    for (int I = 0; I < KInfo->getNumArgs(); I++) {
+    //      if (CanSpecialize[I]) {
+    //        ArgValues.emplace_back(toDouble[I](Args[I]));
+    //      } else {
+    //        ArgValues.emplace_back(-1.0);
+    //      }
+    //    }
   }
   KernelInstance() = default;
 };
 
 class KernelInstancesCollection {
-  std::shared_ptr<KernelInfo> KInfo;
   void *VAddr;
   uint64_t VASize;
   llvm::DenseMap<uint64_t, KernelInstance> Instances;
   uint64_t NumRecords;
   int MaxRecordings;
+  llvm::SmallVector<size_t> KernelArgSizes;
+  llvm::SmallVector<std::string> KernelArgNames;
+  llvm::SmallVector<bool> KernelSpecializations;
+  llvm::SmallVector<std::function<double(void *)>> ConvertArgToDouble;
+  llvm::SmallVector<std::string> ModuleFiles;
+  const std::string KName;
+
+private:
+  std::string StoreModule(llvm::Module &M, const std::string &RecordReplayDir,
+                          uint64_t StaticHash) {
+    std::string Filename(
+        std::filesystem::path(llvm::Twine(RecordReplayDir + "/RecordedIR_" +
+                                          std::to_string(StaticHash) + ".bc")
+                                  .str())
+            .string());
+
+    std::error_code EC;
+    llvm::raw_fd_ostream OutBC(Filename, EC);
+    llvm::WriteBitcodeToFile(M, OutBC);
+    if (EC)
+      LOG_FATAL("Cannot write module ir file");
+
+    LOG_DEBUG("Stored Blob with StaticHash:{} to file {}", StaticHash,
+              std::filesystem::canonical(Filename).string());
+    OutBC.close();
+    return std::filesystem::canonical(Filename).string();
+  }
 
 public:
   llvm::json::Object toJSON(uint64_t StaticHash) const {
@@ -201,19 +230,15 @@ public:
     Collection["VAddr"] =
         util::pointerToHexString(reinterpret_cast<uint8_t *>(VAddr));
     Collection["VASize"] = VASize;
-    auto &KName = KInfo->getName();
     Collection["KernelName"] = KName;
     std::size_t pos = KName.find("__intern__");
     std::string Orig =
         (pos != std::string::npos) ? KName.substr(0, pos) : KName;
-    auto &Executable = KInfo->getExecutable();
     Collection["DemangledName"] = llvm::demangle(Orig);
-    Collection["Modules"] = llvm::json::Array(Executable.getModuleIRFiles());
-    Collection["BinaryBlobs"] =
-        llvm::json::Array(Executable.getModuleBinFiles());
-    Collection["ArgNames"] = llvm::json::Array(KInfo->getArgNames());
-    Collection["Specializations"] =
-        llvm::json::Array(KInfo->getArgSpecializations());
+    Collection["Modules"] = llvm::json::Array(ModuleFiles);
+    Collection["BinaryBlobs"] = llvm::json::Array();
+    Collection["ArgNames"] = llvm::json::Array(KernelArgNames);
+    Collection["Specializations"] = llvm::json::Array(KernelSpecializations);
     llvm::json::Object JSONInstances;
     for (auto &[hash, KI] : Instances) {
       JSONInstances[std::to_string(hash)] = KI.toJSON();
@@ -222,20 +247,19 @@ public:
     return Collection;
   }
 
-  KernelInstancesCollection(void *VAddr, uint64_t VASize,
-                            std::shared_ptr<KernelInfo> KInfo,
+  KernelInstancesCollection(const std::string &MnemeDirectory, void *VAddr,
+                            uint64_t VASize, proteus::JITKernelInfo &KInfo,
                             int MaxRecordings)
-      : VAddr(VAddr), VASize(VASize), KInfo(KInfo),
-        MaxRecordings(MaxRecordings), NumRecords(0) {
-    // Here I need to extract information regarding the kernel
-    auto Func = KInfo->getExecutable().getKernelFunction(KInfo->Name);
-    if (!Func)
-      LOG_FATAL("Cannot find descriptor of function {}", KInfo->Name);
-
-    KInfo->setArgSizes(mneme::getFuncDescr(*Func.value()));
-    KInfo->setArgNames(mneme::getArgNames(*Func.value()));
-    KInfo->setSpecializations(mneme::canSpecialize(*Func.value()));
-    KInfo->setToDoubleFunc(mneme::convertToDouble(*Func.value()));
+      : VAddr(VAddr), VASize(VASize), MaxRecordings(MaxRecordings),
+        NumRecords(0), KName(KInfo.getName()) {
+    auto &Module = KInfo.getModule();
+    auto *F = Module.getFunction(KInfo.getName());
+    KernelArgSizes = mneme::getFuncDescr(*F);
+    KernelArgNames = mneme::getArgNames(*F);
+    KernelSpecializations = mneme::canSpecialize(*F);
+    ConvertArgToDouble = mneme::convertToDouble(*F);
+    ModuleFiles.emplace_back(
+        StoreModule(Module, MnemeDirectory, KInfo.getStaticHash().getValue()));
   }
 
   llvm::stable_hash computeHash(dim3 &GridDim, dim3 &BlockDim,
@@ -247,16 +271,6 @@ public:
                                               (llvm::stable_hash)GridDim.y,
                                               (llvm::stable_hash)GridDim.z);
     auto DHash = llvm::stable_hash_combine(GridHash, BlockHash, SharedMem);
-
-    auto CanSpecialize = KInfo->getArgSpecializations();
-    auto ArgSizes = KInfo->getArgSizes();
-    for (int I = 0; I < KInfo->getNumArgs(); I++) {
-      if (CanSpecialize[I]) {
-        DHash = llvm::stable_hash_combine(
-            DHash, stable_hash_combine_string(
-                       llvm::StringRef((char *)Args[I], ArgSizes[I])));
-      }
-    }
     return DHash;
   }
 
@@ -282,17 +296,17 @@ public:
       Instances[DynamicHash].NumOccurrences++;
       LOG_DEBUG(
           "Kernel {} with DynamicHash {} is already recorded, skipping ...",
-          KInfo->getName(), DynamicHash);
+          StaticHash, DynamicHash);
       return std::nullopt;
     }
 
     NumRecords++;
 
     LOG_DEBUG("First Instance of Kernel {} with DynamicHash {}, recording ...",
-              KInfo->getName(), DynamicHash);
+              StaticHash, DynamicHash);
 
-    Instances.insert({DynamicHash, KernelInstance(KInfo, GridDim, BlockDim,
-                                                  SharedMem, Args)});
+    Instances.insert(
+        {DynamicHash, KernelInstance(GridDim, BlockDim, SharedMem, Args)});
     std::filesystem::path Filename(MnemeDir /
                                    (std::string("DeviceState.prologue.") +
                                     std::to_string(StaticHash) + "." +
@@ -300,7 +314,7 @@ public:
 
     Instances[DynamicHash].PrologueFn =
         MnemeSnapshot<VendorTypes>::takeMnemeSnapshot(
-            GlobalVars, DeviceMemory, Filename, KInfo, Args, Stream)
+            GlobalVars, DeviceMemory, Filename, KernelArgSizes, Args, Stream)
             .string();
 
     std::function<void(llvm::SmallVector<GlobalVarInfo> &,
@@ -308,7 +322,7 @@ public:
                        void **,
                        typename DeviceTraits<VendorTypes>::DeviceStream_t)>
         CaptureEpilogue =
-            [this, DynamicHash, StaticHash, &MnemeDir](
+            [this, DynamicHash, StaticHash, MnemeDir](
                 llvm::SmallVector<GlobalVarInfo> &GlobalVars,
                 llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>>
                     &DeviceMemory,
@@ -321,7 +335,8 @@ public:
 
               Instances[DynamicHash].EpilogueFn =
                   MnemeSnapshot<VendorTypes>::takeMnemeSnapshot(
-                      GlobalVars, DeviceMemory, Filename, KInfo, Args, Stream)
+                      GlobalVars, DeviceMemory, Filename, KernelArgSizes, Args,
+                      Stream)
                       .string();
             };
     return CaptureEpilogue;
@@ -392,27 +407,29 @@ public:
            llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &, void **,
            typename DeviceTraits<VendorTypes>::DeviceStream_t)>>
   takeSnapshot(
-      void *VAddr, uint64_t VASize, std::shared_ptr<KernelInfo> KInfo,
+      void *VAddr, uint64_t VASize, proteus::JITKernelInfo &KInfo,
       llvm::SmallVector<GlobalVarInfo> &GlobalVars,
       llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &DeviceMemory,
       dim3 &GridDim, dim3 &BlockDim, void **Args, size_t SharedMem,
       typename DeviceTraits<VendorTypes>::DeviceStream_t Stream) {
+    using namespace proteus;
 
-    if (!shouldRecord(KInfo->getName())) {
-      LOG_INFO("Skip record of Kernel {}, not matching regex",
-               KInfo->getName());
+    if (!shouldRecord(KInfo.getName())) {
+      LOG_INFO("Skip record of Kernel");
       return std::nullopt;
     }
 
     auto IT = KernelRecords.try_emplace(
-        KInfo->getStaticHash(),
-        KernelInstancesCollection(VAddr, VASize, KInfo, MaxRecordings));
+        KInfo.getStaticHash().getValue(),
+        KernelInstancesCollection(getDir(), VAddr, VASize, KInfo,
+                                  MaxRecordings));
+    LOG_INFO("Created instance");
     return IT.first->second.takeSnapshot<VendorTypes>(
         MnemeDirectory, GlobalVars, DeviceMemory, GridDim, BlockDim, Args,
-        SharedMem, Stream, KInfo->getStaticHash());
+        SharedMem, Stream, KInfo.getStaticHash().getValue());
   }
 
-  std::string getDir() const { return MnemeDirectory.string(); }
+  const std::string getDir() const { return MnemeDirectory.string(); }
 };
 
 } // namespace mneme

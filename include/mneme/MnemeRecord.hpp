@@ -21,6 +21,9 @@
 #include <llvm/IR/Module.h>
 #include <mutex>
 
+#include <proteus/CompilerInterfaceDevice.h>
+#include <proteus/JitEngineDevice.hpp>
+
 #include "mneme/DeviceTraits.hpp"
 #include "mneme/MnemeDeviceBinary.hpp"
 #include "mneme/MnemeKernelInfo.hpp"
@@ -46,15 +49,14 @@ struct MnemeDeviceExecutable {
 template <DeviceVendors VendorTypes> class MnemeRecorder {
 protected:
   void *rtLib;
+  void *proteusLib;
   std::string RecordReplayDir;
   llvm::DenseMap<void **, FatBinaryWrapper_t *> HandleToBin;
   llvm::DenseMap<void **, llvm::SmallVector<std::shared_ptr<KernelInfo>>>
       HandleToKernels;
   llvm::DenseMap<const void *, std::shared_ptr<KernelInfo>> KernelInfoMap;
-  llvm::DenseMap<void **, llvm::SmallVector<GlobalVarInfo>>
-      HandleToGlobalSymbol;
+  llvm::SmallVector<GlobalVarInfo> GlobalSymbols;
   llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> AllocatedBlobs;
-  llvm::DenseSet<const void *> BlackList;
   MnemeDeviceExecutable Executable;
 
   std::unique_ptr<PageManager<VendorTypes>> PM;
@@ -98,20 +100,22 @@ private:
 
 private:
   void getGlobalAddresses() {
-    for (auto &[Handle, GVars] : HandleToGlobalSymbol) {
-      for (auto &GVar : GVars) {
-        auto EC = MnemeDeviceRT::DeviceErrorCheck(
-            MnemeDeviceRT::deviceGetSymbolAddress(&GVar.DevAddr,
-                                                  GVar.HostSymbolAddr));
-        if (EC) {
-          LOG_FATAL("When copying device global received error\n{}",
-                    EC.value());
-        }
-        LOG_INFO("Getting Global Variable: {} stored at address {} mapped "
-                 "with host symbol addr {} of size {}",
-                 GVar.Name, GVar.DevAddr, GVar.HostSymbolAddr, GVar.VarSize);
-      }
-    }
+    //    for (auto &[Handle, GVars] : HandleToGlobalSymbol) {
+    //      for (auto &GVar : GVars) {
+    //        auto EC = MnemeDeviceRT::DeviceErrorCheck(
+    //            MnemeDeviceRT::deviceGetSymbolAddress(&GVar.DevAddr,
+    //                                                  GVar.HostSymbolAddr));
+    //        if (EC) {
+    //          LOG_FATAL("When copying device global received error\n{}",
+    //                    EC.value());
+    //        }
+    //        LOG_INFO("Getting Global Variable: {} stored at address {} mapped
+    //        "
+    //                 "with host symbol addr {} of size {}",
+    //                 GVar.Name, GVar.DevAddr, GVar.HostSymbolAddr,
+    //                 GVar.VarSize);
+    //      }
+    //    }
   }
 
 public:
@@ -182,19 +186,9 @@ public:
   DeviceError_t rtLaunchKernel(const void *func, dim3 &GridDim, dim3 &BlockDim,
                                void **Args, size_t SharedMem,
                                DeviceStream_t Stream) {
-    auto it = Executable.TrackedKernels.find(func);
+    using namespace llvm;
+    using namespace proteus;
 
-    if (it == Executable.TrackedKernels.end()) {
-      LOG_WARN("Skipping kernel {} cause not tracked", func);
-      return origLaunchKernel(func, GridDim, BlockDim, Args, SharedMem, Stream);
-    }
-
-    if (BlackList.contains(func)) {
-      LOG_WARN("Skipping kernel cause kernel is blacklisted");
-      return origLaunchKernel(func, GridDim, BlockDim, Args, SharedMem, Stream);
-    }
-
-    auto KInfo = it->second;
     if (!PM) {
       // NOTE: We need this arch cause internally we initialize the device.
       // FIXME: We need to have a DeviceTrait function to initialize the GPU
@@ -209,36 +203,42 @@ public:
       getGlobalAddresses();
     }
 
-    auto &LinkedExecutable = KInfo->getExecutable();
-    if (LinkedExecutable.ExtractCode<VendorTypes>(Executable.Ctx)) {
-      LinkedExecutable.StoreModules<VendorTypes>(RecordReplayDir);
-      LinkedExecutable.FindKernels<VendorTypes>();
-    }
+    // TODO: Here query proteus about kernel
+    auto &Proteus = JitDeviceImplT::instance();
 
-    auto Handle = KInfo->getExecutable().Handle;
+    auto OptionalKernelInfo = Proteus.getJITKernelInfo(func);
+    LOG_DEBUG("Received OptionalKernel Info {}", (void *)origLaunchKernel);
+    if (!OptionalKernelInfo) {
+      LOG_DEBUG("Information for kernel  {} is not included", func);
+      return origLaunchKernel(func, GridDim, BlockDim, Args, SharedMem, Stream);
+    }
+    auto &KInfo = OptionalKernelInfo.value().get();
+    LOG_DEBUG("Continue with {}", KInfo.getName());
+    Proteus.extractModuleAndBitcode(KInfo);
+
+    auto Hash = Proteus.getStaticHash(KInfo);
+    LOG_INFO("Hash value is {}", Hash.getValue());
 
     auto RecordAction = DB.takeSnapshot<VendorTypes>(
-        PM->getVAStart(), PM->getTotalVASize(), KInfo,
-        HandleToGlobalSymbol[Handle], AllocatedBlobs, GridDim, BlockDim, Args,
-        SharedMem, Stream);
+        PM->getVAStart(), PM->getTotalVASize(), KInfo, GlobalSymbols,
+        AllocatedBlobs, GridDim, BlockDim, Args, SharedMem, Stream);
     if (RecordAction)
       LOG_INFO("Successfully Recorded Prologue of Kernel {} NAME:{} GRID:({}, "
                "{}, {}) "
                "BLOCK:({}, {}, "
                "{}) SHM_SIZE:{}",
-               func, KInfo->Name, GridDim.x, GridDim.y, GridDim.z, BlockDim.x,
-               BlockDim.y, BlockDim.z, SharedMem);
+               func, KInfo.getName(), GridDim.x, GridDim.y, GridDim.z,
+               BlockDim.x, BlockDim.y, BlockDim.z, SharedMem);
     auto ret =
         origLaunchKernel(func, GridDim, BlockDim, Args, SharedMem, Stream);
     if (RecordAction) {
-      (*RecordAction)(HandleToGlobalSymbol[Handle], AllocatedBlobs, Args,
-                      Stream);
+      (*RecordAction)(GlobalSymbols, AllocatedBlobs, Args, Stream);
       LOG_INFO("Successfully Recorded Epilogue of Kernel {} NAME:{} GRID:({}, "
                "{}, {}) "
                "BLOCK:({}, {}, "
                "{}) SHM_SIZE:{}",
-               func, KInfo->Name, GridDim.x, GridDim.y, GridDim.z, BlockDim.x,
-               BlockDim.y, BlockDim.z, SharedMem);
+               func, KInfo.getName(), GridDim.x, GridDim.y, GridDim.z,
+               BlockDim.x, BlockDim.y, BlockDim.z, SharedMem);
     }
     return ret;
   }
@@ -262,12 +262,13 @@ public:
     VAStartAddr = nullptr;
     VATotalSize = 0;
     rtLib = MnemeDeviceRT::getRTLib();
+    proteusLib = dlopen("libproteus.so", RTLD_NOW);
     RecordReplayDir = DB.getDir();
     DeviceID = -1;
 
     // Redirect overloaded device runtime functions.
     reinterpret_cast<void *&>(origLaunchKernel) =
-        dlsym(rtLib, MnemeDeviceRT::getLaunchKernelFnName());
+        dlsym(proteusLib, MnemeDeviceRT::getLaunchKernelFnName());
     assert(origLaunchKernel &&
            "Expected non-null kernel-launch function pointer");
 

@@ -61,6 +61,7 @@ endif()
 target_include_directories(record SYSTEM PRIVATE ${LLVM_INCLUDE_DIRS} ${CMAKE_SOURCE_DIR}/include)
 target_include_directories(replay SYSTEM PRIVATE ${LLVM_INCLUDE_DIRS} ${CMAKE_SOURCE_DIR}/include)
 target_link_libraries(replay PRIVATE proteusCore)
+target_link_libraries(record PRIVATE proteus)
 
 if (MNEME_ENABLE_LOGGER)
 	target_link_libraries(replay PRIVATE spdlog::spdlog_header_only)

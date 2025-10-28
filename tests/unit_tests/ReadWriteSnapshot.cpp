@@ -86,7 +86,7 @@ int main(int argc, char **argv) {
   std::filesystem::path SnapshotFN("./test.mneme");
 
   MnemeSnapshot<Vendor>::takeMnemeSnapshot(GVars, DeviceMemMap, SnapshotFN,
-                                           TestKernel, Args, 0);
+                                           TestKernel->KernelArgSizes, Args, 0);
 
   llvm::DenseMap<std::string, GlobalVarInfo> ReadGVars;
   llvm::DenseMap<void *, MnemeMemoryBlobDevice> ReadDeviceMemMap;

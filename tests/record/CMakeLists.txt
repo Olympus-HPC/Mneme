@@ -59,8 +59,8 @@ function(CREATE_RDC_GPU_TEST exe check_source)
             PUBLIC
         )
     set_target_properties(${exe}.rdc PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
-	add_proteus(${exe}.rdc)
   endif()
+	add_proteus(${exe}.rdc)
 
   add_test(NAME ${exe}.rdc COMMAND ${LIT} -a -vv -DFILECHECK=${FILECHECK} -D ext=.rdc -D PG=1 -D RR=${RECORD_READ_JSON} ${check_source})
   set_tests_properties(${exe}.rdc PROPERTIES LABELS "MnemeRecord::RDC")

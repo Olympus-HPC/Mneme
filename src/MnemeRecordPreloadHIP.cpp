@@ -63,4 +63,13 @@ hipError_t hipGetDevice(int *deviceID) {
   auto &mneme = MnemeRecorderHIPPreload::instance();
   return mneme.rtGetDevice(deviceID);
 }
+
+hipError_t __jit_launch_kernel(void *Kernel, dim3 GridDim, dim3 BlockDim,
+                               void **KernelArgs, uint64_t ShmemSize,
+                               void *Stream) {
+  LOG_DEBUG("Enetering Mneme to launch kernel");
+  auto &mneme = MnemeRecorderHIPPreload::instance();
+  return mneme.rtLaunchKernel(Kernel, GridDim, BlockDim, KernelArgs, ShmemSize,
+                              static_cast<hipStream_t>(Stream));
+}
 }
