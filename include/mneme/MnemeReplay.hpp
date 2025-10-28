@@ -8,7 +8,6 @@
 #include <memory>
 
 #include "mneme/DeviceTraits.hpp"
-#include "mneme/MnemeDeviceBinary.hpp"
 #include "mneme/MnemeLogger.hpp"
 #include "mneme/MnemeMemory.hpp"
 #include "mneme/MnemePageManager.hpp"

@@ -36,7 +36,6 @@ template <typename T> void initializeRandomBuffer(T *Buffer, size_t Size) {
 }
 
 int main(int argc, char **argv) {
-  MnemeDeviceLinkedBin Exec{nullptr, nullptr};
   // We allocate some "fake" globals
   auto initializeDeviceData = [&] {
     uint8_t *HData = new uint8_t[128];
@@ -67,7 +66,7 @@ int main(int argc, char **argv) {
 
   std::string KernelName("TestKernel");
   std::shared_ptr<KernelInfo> TestKernel =
-      std::make_shared<KernelInfo>(Exec, KernelName);
+      std::make_shared<KernelInfo>(KernelName);
 
   int NumArgs = 4;
   llvm::SmallVector<size_t> ArgSizes(4);
@@ -92,7 +91,7 @@ int main(int argc, char **argv) {
   llvm::DenseMap<void *, MnemeMemoryBlobDevice> ReadDeviceMemMap;
   std::string RKernelName("TestKernel");
   std::shared_ptr<KernelInfo> RTestKernel =
-      std::make_shared<KernelInfo>(Exec, KernelName);
+      std::make_shared<KernelInfo>(KernelName);
 
   MnemeSnapshot<Vendor>::readMnemeSnapShot(SnapshotFN, ReadGVars,
                                            ReadDeviceMemMap, RTestKernel);

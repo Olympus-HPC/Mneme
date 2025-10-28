@@ -4,12 +4,10 @@
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringRef.h>
 
-#include "mneme/MnemeDeviceBinary.hpp"
 #include "mneme/MnemeSymbols.hpp"
 
 namespace mneme {
 struct KernelInfo {
-  std::optional<std::reference_wrapper<MnemeDeviceLinkedBin>> Exec;
   const void *HostFun;
   std::string Name;
   std::optional<uint64_t> StaticHash;
@@ -18,11 +16,6 @@ struct KernelInfo {
   llvm::SmallVector<std::function<double(void *)>> ToDoubleFunc;
   llvm::SmallVector<bool> KernelSpecializations;
   llvm::SmallVector<std::unique_ptr<uint8_t[]>> ArgData;
-  KernelInfo(MnemeDeviceLinkedBin &Executable, const void *HostFun, char *Name)
-      : Exec(Executable), HostFun(HostFun), Name(Name),
-        StaticHash(std::nullopt) {};
-  KernelInfo(MnemeDeviceLinkedBin &Executable, std::string &Name)
-      : Exec(Executable), Name(Name), StaticHash(std::nullopt) {};
   KernelInfo(const void *HostFun, char *Name)
       : HostFun(HostFun), Name(Name), StaticHash(std::nullopt) {};
   KernelInfo(std::string &Name) : Name(Name), StaticHash(std::nullopt) {};
@@ -56,12 +49,6 @@ public:
   }
 
   int64_t getNumArgs() const { return KernelArgSizes.size(); }
-  MnemeDeviceLinkedBin &getExecutable() const {
-    if (!Exec)
-      LOG_FATAL(
-          "Requesting Handle on an execution with uninitialized binary handle");
-    return Exec->get();
-  }
   const std::string getName() const { return Name; }
   const void *getFunHandle() const { return HostFun; }
   llvm::ArrayRef<size_t> getArgSizes() const { return KernelArgSizes; }
@@ -70,27 +57,12 @@ public:
     return KernelSpecializations;
   }
 
-  llvm::stable_hash getStaticHash() {
-    if (StaticHash)
-      return StaticHash.value();
-    return computeStaticHash();
-  }
-
   llvm::ArrayRef<std::unique_ptr<uint8_t[]>> getArgData() const {
     return ArgData;
   }
 
   llvm::ArrayRef<std::function<double(void *)>> getToDoubleFunc() const {
     return ToDoubleFunc;
-  }
-
-private:
-  llvm::stable_hash computeStaticHash() {
-    auto &Executable = getExecutable();
-    StaticHash = llvm::stable_hash_combine_string(Name);
-    StaticHash = llvm::stable_hash_combine(StaticHash.value(),
-                                           Executable.getStaticHash());
-    return StaticHash.value();
   }
 };
 } // namespace mneme

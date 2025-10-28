@@ -16,7 +16,7 @@ function(CREATE_GPU_TEST exe check_source)
 
   add_dependencies(${exe} record)
   add_dependencies(${exe} replay)
-  add_proteus(${exe})
+  add_mneme(${exe})
 
 add_test(NAME ${exe} COMMAND ${LIT} -a -vv -DFILECHECK=${FILECHECK} -D ext='' -D PG=1 -D RR=${RECORD_READ_JSON} ${check_source})
 set_tests_properties(${exe} PROPERTIES LABELS "MnemeReplay::Link")
@@ -37,7 +37,7 @@ function(CREATE_RDC_GPU_TEST exe check_source)
 
   add_dependencies(${exe}.rdc record)
   add_dependencies(${exe}.rdc replay)
-  add_proteus(${exe}.rdc)
+  add_mneme(${exe}.rdc)
 
   if(MNEME_ENABLE_HIP)
     # This is unsupported see: https://gitlab.kitware.com/cmake/cmake/-/issues/23210

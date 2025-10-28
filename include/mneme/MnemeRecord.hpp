@@ -25,7 +25,6 @@
 #include <proteus/JitEngineDevice.hpp>
 
 #include "mneme/DeviceTraits.hpp"
-#include "mneme/MnemeDeviceBinary.hpp"
 #include "mneme/MnemeKernelInfo.hpp"
 #include "mneme/MnemeLogger.hpp"
 #include "mneme/MnemeSnapshot.hpp"
@@ -33,31 +32,16 @@
 
 namespace mneme {
 
-struct MnemeDeviceExecutable {
-  /* An execution can have a collection of Linked  Binaries. Without RDC enabled
-   * every translation unit is handled as a separate linked binary and the
-   * scoped is limited in that binary */
-  llvm::LLVMContext Ctx;
-  llvm::DenseMap<DeviceHandle, std::unique_ptr<MnemeDeviceLinkedBin>>
-      LinkedBinaries;
-  llvm::DenseMap<void *, const char *> PendingRegistrations;
-  llvm::DenseMap<const void *, std::shared_ptr<KernelInfo>> TrackedKernels;
-  DeviceHandle CurrHandle;
-  MnemeDeviceExecutable() : CurrHandle(nullptr) {}
-};
-
 template <DeviceVendors VendorTypes> class MnemeRecorder {
 protected:
   void *rtLib;
   void *proteusLib;
   std::string RecordReplayDir;
-  llvm::DenseMap<void **, FatBinaryWrapper_t *> HandleToBin;
   llvm::DenseMap<void **, llvm::SmallVector<std::shared_ptr<KernelInfo>>>
       HandleToKernels;
   llvm::DenseMap<const void *, std::shared_ptr<KernelInfo>> KernelInfoMap;
   llvm::SmallVector<GlobalVarInfo> GlobalSymbols;
   llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> AllocatedBlobs;
-  MnemeDeviceExecutable Executable;
 
   std::unique_ptr<PageManager<VendorTypes>> PM;
   void *VAStartAddr;
