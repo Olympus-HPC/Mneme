@@ -104,7 +104,7 @@ write_basic_package_version_file(
   VERSION ${PROJECT_VERSION}
   COMPATIBILITY AnyNewerVersion)
 
-set(MNEME_TARGETS record replay mneme_shallow)
+set(MNEME_TARGETS record replay)
 if(MNEME_ENABLE_AUTOTUNE)
 list(APPEND MNEME_TARGETS mneme_profile mneme)
 endif()
