@@ -67,6 +67,11 @@ private:
                                     size_t sharedMem,
                                     DeviceStream_t stream) = nullptr;
 
+  DeviceError_t (*proteusLaunchKernel)(const void *func, dim3 gridDim,
+                                       dim3 blockDim, void **args,
+                                       size_t sharedMem,
+                                       DeviceStream_t stream) = nullptr;
+
   DeviceError_t (*origMallocDevice)(void **ptr, size_t size);
 
   DeviceError_t (*origMallocPinned)(void **ptr, size_t size,
@@ -251,8 +256,13 @@ public:
     DeviceID = -1;
 
     // Redirect overloaded device runtime functions.
-    reinterpret_cast<void *&>(origLaunchKernel) =
+    reinterpret_cast<void *&>(proteusLaunchKernel) =
         dlsym(proteusLib, MnemeDeviceRT::getLaunchKernelFnName());
+    assert(proteusLaunchKernel &&
+           "Expected non-null proteus-kernel-launch function pointer");
+
+    reinterpret_cast<void *&>(origLaunchKernel) =
+        dlsym(rtLib, MnemeDeviceRT::getLaunchKernelFnName());
     assert(origLaunchKernel &&
            "Expected non-null kernel-launch function pointer");
 

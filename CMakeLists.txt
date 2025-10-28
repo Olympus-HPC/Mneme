@@ -52,6 +52,7 @@ option(MNEME_LINK_SHARED_LLVM "Link with the LLVM shared library" OFF)
 
 include(cmake/SetupLLVM.cmake)
 find_package(proteus REQUIRED)
+include(cmake/MnemeFunctions.cmake)
 get_target_property(proteus_link_dirs proteus INTERFACE_LINK_DIRECTORIES)
 message(STATUS "Proteus Link Directories: ${proteus_link_dirs}")
 
@@ -124,4 +125,5 @@ install(
 
 install(FILES "${PROJECT_BINARY_DIR}/mnemeConfigVersion.cmake"
               "${PROJECT_BINARY_DIR}/mnemeConfig.cmake"
+	      "${PROJECT_SOURCE_DIR}/cmake/MnemeFunctions.cmake"
         DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/mneme)
