@@ -9,7 +9,14 @@ elseif(MNEME_ENABLE_CUDA)
 endif()
 
 add_library(record SHARED ${RecordLibSRC})
+add_library(mneme_wrapper STATIC MnemeWrapProteus.cpp)
 add_executable(replay ${ReplaySRC})
+
+get_target_property(PROTEUS_TYPE proteus TYPE)
+set(PROTEUS_IS_STATIC OFF)
+if(PROTEUS_TYPE STREQUAL "STATIC_LIBRARY")
+  set(PROTEUS_IS_STATIC ON)
+endif()
 
 if(MNEME_LINK_SHARED_LLVM)
   if(LLVM_LINK_LLVM_DYLIB)
@@ -58,32 +65,43 @@ endif()
 target_include_directories(record SYSTEM PRIVATE ${LLVM_INCLUDE_DIRS} ${CMAKE_SOURCE_DIR}/include)
 target_include_directories(replay SYSTEM PRIVATE ${LLVM_INCLUDE_DIRS} ${CMAKE_SOURCE_DIR}/include)
 target_link_libraries(replay PRIVATE proteusCore)
-target_link_libraries(record PRIVATE proteus)
+
+if(PROTEUS_IS_STATIC)
+  # Do NOT link to proteus/LLVM here. Allow unresolved in the .so.
+  # GNU ld / lld on Linux allow undefined in shared libs by default,
+  # but we add the flag for clarity/portability.
+  target_include_directories(record PRIVATE
+    $<TARGET_PROPERTY:proteusCore,INTERFACE_INCLUDE_DIRECTORIES>)
+  target_compile_definitions(record PRIVATE
+    $<TARGET_PROPERTY:proteusCore,INTERFACE_COMPILE_DEFINITIONS>)
+  target_compile_options(record PRIVATE
+    $<TARGET_PROPERTY:proteusCore,INTERFACE_COMPILE_OPTIONS>)
+  target_link_options(record PRIVATE -Wl,--allow-shlib-undefined)
+else()
+  # Proteus is shared -> link to it normally
+  target_link_libraries(record PRIVATE proteus)
+endif()
 
 if (MNEME_ENABLE_LOGGER)
 	target_link_libraries(replay PRIVATE spdlog::spdlog_header_only)
         target_link_libraries(record PRIVATE spdlog::spdlog_header_only)
 	target_compile_definitions(replay PRIVATE MNEME_ENABLE_LOGGER)
-target_compile_definitions(record PRIVATE MNEME_ENABLE_LOGGER)
+	target_compile_definitions(record PRIVATE MNEME_ENABLE_LOGGER)
 endif()
 
 if(MNEME_ENABLE_HIP)
-target_link_libraries(record PRIVATE hip::host)
-target_link_libraries(record PRIVATE ${llvm_libs})
-set_target_properties(record PROPERTIES INSTALL_RPATH_USE_LINK_PATH TRUE)
-
-   target_link_libraries(replay PRIVATE hip::host)
-   target_link_libraries(replay PRIVATE ${llvm_libs})
-   set_target_properties(replay PROPERTIES INSTALL_RPATH_USE_LINK_PATH TRUE)
+	target_link_libraries(record PRIVATE hip::host)
+	set_target_properties(record PROPERTIES INSTALL_RPATH_USE_LINK_PATH TRUE)
+	target_link_libraries(mneme_wrapper PRIVATE hip::host)
+	target_link_libraries(replay PRIVATE hip::host)
+	target_link_libraries(replay PRIVATE ${llvm_libs})
+	set_target_properties(replay PROPERTIES INSTALL_RPATH_USE_LINK_PATH TRUE)
 elseif(MNEME_ENABLE_CUDA)
-target_link_libraries(record PRIVATE CUDA::cudart CUDA::cuda_driver)
-target_link_libraries(record PRIVATE ${llvm_libs})
-set_target_properties(record PROPERTIES INSTALL_RPATH_USE_LINK_PATH TRUE)
-
-
+	target_link_libraries(record PRIVATE CUDA::cudart CUDA::cuda_driver)
+	target_link_libraries(record PRIVATE ${llvm_libs})
+	set_target_properties(record PROPERTIES INSTALL_RPATH_USE_LINK_PATH TRUE)
 	target_link_libraries(replay PRIVATE CUDA::cudart CUDA::cuda_driver)
 	target_link_libraries(replay PRIVATE ${llvm_libs})
-
 	target_link_libraries(replay PRIVATE ${llvm_libs})
 	set_target_properties(replay PROPERTIES INSTALL_RPATH_USE_LINK_PATH TRUE)
 endif()

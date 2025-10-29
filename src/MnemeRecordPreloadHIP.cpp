@@ -64,10 +64,19 @@ hipError_t hipGetDevice(int *deviceID) {
   return mneme.rtGetDevice(deviceID);
 }
 
+hipError_t hipLaunchKernel(const void *Kernel, dim3 GridDim, dim3 BlockDim,
+                           void **KernelArgs, uint64_t ShmemSize,
+                           hipStream_t Stream) {
+  LOG_DEBUG("Intercepted hipLaunchKernel");
+  auto &mneme = MnemeRecorderHIPPreload::instance();
+  return mneme.rtLaunchKernel(Kernel, GridDim, BlockDim, KernelArgs, ShmemSize,
+                              Stream);
+}
+
 hipError_t __jit_launch_kernel(void *Kernel, dim3 GridDim, dim3 BlockDim,
                                void **KernelArgs, uint64_t ShmemSize,
                                void *Stream) {
-  LOG_DEBUG("Enetering Mneme to launch kernel");
+  LOG_DEBUG("Intercepted __jit_launch_kernel");
   auto &mneme = MnemeRecorderHIPPreload::instance();
   return mneme.rtLaunchKernel(Kernel, GridDim, BlockDim, KernelArgs, ShmemSize,
                               static_cast<hipStream_t>(Stream));
