@@ -98,7 +98,8 @@ class CMakeBuild(build_ext):
         cmake_options = [
             "-DCMAKE_BUILD_TYPE=Relwithdebinfo",
             "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
-            "-DBUILD_SHARED=Off",
+            "-DBUILD_SHARED=On",
+            "-DCMAKE_POSITION_INDEPENDENT_CODE=On",
             "-DCMAKE_BUILD_TYPE=Relwithdebinfo",
             f"-DCMAKE_INSTALL_PREFIX={self.install_dir}",
             f"-DLLVM_INSTALL_DIR={self.llvm_dir}",

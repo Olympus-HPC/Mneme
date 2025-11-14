@@ -9,6 +9,7 @@
 #include <iostream>
 
 // the following is needed for WriteGraph()
+#include "llvm/IR/Module.h"
 #include "llvm/Analysis/DOTGraphTraitsPass.h"
 #include "llvm/IR/Attributes.h"
 #include "llvm/IR/DebugInfoMetadata.h"
