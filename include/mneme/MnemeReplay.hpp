@@ -12,7 +12,6 @@
 #include "mneme/MnemeMemory.hpp"
 #include "mneme/MnemePageManager.hpp"
 #include "mneme/MnemeSnapshot.hpp"
-#include "mneme/MnemeSymbols.hpp"
 #include "mneme/MnemeUtils.hpp"
 
 namespace mneme {

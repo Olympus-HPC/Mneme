@@ -3,8 +3,11 @@
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringRef.h>
-
-#include "mneme/MnemeSymbols.hpp"
+#include <llvm/ADT/ArrayRef.h>
+#include <llvm/ADT/DenseMap.h>
+#include <llvm/ADT/SmallVector.h>
+#include <llvm/ADT/StableHashing.h>
+#include <llvm/Support/raw_ostream.h>
 
 namespace mneme {
 struct KernelInfo {

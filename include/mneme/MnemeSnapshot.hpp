@@ -24,7 +24,6 @@
 #include "mneme/MnemeLLVMUtils.hpp"
 #include "mneme/MnemeLogger.hpp"
 #include "mneme/MnemeMemory.hpp"
-#include "mneme/MnemeSymbols.hpp"
 #include "mneme/MnemeUtils.hpp"
 
 namespace mneme {

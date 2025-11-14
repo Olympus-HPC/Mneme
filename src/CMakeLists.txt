@@ -1,11 +1,11 @@
 
 set(MnemeCoreSrcDir ${CMAKE_CURRENT_SOURCE_DIR})
 set(RecordLibSRC "")
-set(ReplaySRC MnemeReplay.cpp MnemePageManager.cpp MnemeDeviceCode.cpp MnemeSymbols.cpp)
+set(ReplaySRC MnemeReplay.cpp MnemePageManager.cpp MnemeDeviceCode.cpp)
 if (MNEME_ENABLE_HIP)
-	list(APPEND RecordLibSRC MnemeRecordPreloadHIP.cpp MnemePageManager.cpp MnemeSymbols.cpp)
+	list(APPEND RecordLibSRC MnemeRecordPreloadHIP.cpp MnemePageManager.cpp)
 elseif(MNEME_ENABLE_CUDA)
-	list(APPEND RecordLibSRC MnemeRecordPreloadCUDA.cpp MnemePageManager.cpp MnemeSymbols.cpp)
+	list(APPEND RecordLibSRC MnemeRecordPreloadCUDA.cpp MnemePageManager.cpp)
 endif()
 
 add_library(record SHARED ${RecordLibSRC})

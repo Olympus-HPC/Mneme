@@ -1,6 +1,5 @@
 #include "mneme/DeviceTraits.hpp"
 #include "mneme/MnemeMemory.hpp"
-#include "mneme/MnemeSymbols.hpp"
 #include <cstdint>
 #include <random>
 
