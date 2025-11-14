@@ -49,20 +49,6 @@ struct GlobalVarInfo {
         DevAddr(other.DevAddr), VarSize(other.VarSize),
         HostAddr(other.HostAddr) {}
 
-  static GlobalVarInfo fromBuffer(const char *&Buffer) {
-    const char *tmp = Buffer;
-    size_t StrLen = util::extractScalar<size_t>(Buffer);
-    std::string Name{Buffer, StrLen};
-    Buffer += StrLen;
-    size_t VarSize = util::extractScalar<size_t>(Buffer);
-    void *DevAddr = util::extractScalar<void *>(Buffer);
-    GlobalVarInfo GV(Name, nullptr, VarSize, DevAddr);
-    std::memcpy(GV.HostAddr.get(), Buffer, VarSize);
-    Buffer += VarSize;
-    LOG_DEBUG("Loaded from buffer Global, Name:{}, VarSize:{}, RecoredAddr:{}",
-              Name, VarSize, DevAddr);
-    return std::move(GV);
-  }
 
   friend llvm::raw_ostream &operator<<(llvm::raw_ostream &os,
                                        const GlobalVarInfo &GVar);

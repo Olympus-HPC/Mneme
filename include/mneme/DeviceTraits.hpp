@@ -169,7 +169,8 @@ template <> struct DeviceTraits<DeviceVendors::HIP> {
   }
 
   static std::pair<void *, size_t>
-  getGlobalAddrFromModule(hipModule_t &HipModule, std::string &GlobalName) {
+  getGlobalAddrFromModule(hipModule_t &HipModule,
+                          const std::string &GlobalName) {
     size_t Size;
     hipDeviceptr_t DevPtr;
     auto EC = DeviceErrorCheck(

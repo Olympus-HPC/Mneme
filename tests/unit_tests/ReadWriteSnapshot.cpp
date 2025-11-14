@@ -44,13 +44,20 @@ int main(int argc, char **argv) {
 
     auto EC = MnemeDeviceRT::DeviceErrorCheck(
         MnemeDeviceRT::DeviceMalloc((void **)&DData, 128));
-    if (EC)
+    if (EC) {
+      std::cout << " Here " << EC.value() << "\n";
       LOG_FATAL("Could not allocate device data");
+    }
+
+    std::cout << "Address is " << (void *)DData << "\n";
+    std::cout << "Address is " << (void *)HData << "\n";
 
     EC = MnemeDeviceRT::DeviceErrorCheck(MnemeDeviceRT::DeviceCopy(
         DData, HData, 128, MnemeDeviceRT::MemcpyHostToDeviceKind()));
-    if (EC)
+    if (EC) {
+      std::cout << " Here " << EC.value() << "\n";
       LOG_FATAL("Could not allocate device data");
+    }
     return std::make_pair(DData, HData);
   };
 
@@ -61,8 +68,7 @@ int main(int argc, char **argv) {
 
   Blob.setHostData(std::unique_ptr<uint8_t[]>(new uint8_t[128]));
 
-  GlobalVarInfo GV("Test", nullptr, 128, GlobalData.first);
-  std::memcpy(GV.HostAddr.get(), GlobalData.second, 128);
+  proteus::GlobalVarInfo GV(GlobalData.second, GlobalData.first, 128);
 
   std::string KernelName("TestKernel");
   std::shared_ptr<KernelInfo> TestKernel =
@@ -79,7 +85,8 @@ int main(int argc, char **argv) {
   TestKernel->setArgSizes(ArgSizes);
 
   // Create a raw_svector_ostream using the buffer
-  llvm::SmallVector<GlobalVarInfo> GVars{GV};
+  std::unordered_map<std::string, proteus::GlobalVarInfo> GVars;
+  GVars.try_emplace("Test", GV);
   llvm::DenseMap<void *, MnemeMemoryBlobDevice> DeviceMemMap;
   DeviceMemMap.try_emplace((void *)BlobData.first, std::move(Blob));
   std::filesystem::path SnapshotFN("./test.mneme");
@@ -87,7 +94,7 @@ int main(int argc, char **argv) {
   MnemeSnapshot<Vendor>::takeMnemeSnapshot(GVars, DeviceMemMap, SnapshotFN,
                                            TestKernel->KernelArgSizes, Args, 0);
 
-  llvm::DenseMap<std::string, GlobalVarInfo> ReadGVars;
+  std::unordered_map<std::string, ReplayGlobalVar> ReadGVars;
   llvm::DenseMap<void *, MnemeMemoryBlobDevice> ReadDeviceMemMap;
   std::string RKernelName("TestKernel");
   std::shared_ptr<KernelInfo> RTestKernel =
@@ -95,6 +102,26 @@ int main(int argc, char **argv) {
 
   MnemeSnapshot<Vendor>::readMnemeSnapShot(SnapshotFN, ReadGVars,
                                            ReadDeviceMemMap, RTestKernel);
+
+  auto ValidateGlobalMem = [&]() {
+    auto it = ReadGVars.find("Test");
+    if (it == ReadGVars.end())
+      return 2;
+    auto &RGV = it->second;
+
+    if (RGV.VarSize != GV.VarSize) {
+      std::cerr << "VarSize differs " << RGV.VarSize << " " << GV.VarSize
+                << "\n";
+      return 2;
+    }
+
+    if (std::memcmp(GV.HostAddr, RGV.HostAddr, 128) != 0) {
+      std::cerr << "Memory differs between GV and GVR\n";
+      return 2;
+    }
+    std::cerr << "Global Memory is correct\n";
+    return 0;
+  }();
 
   auto ValidateDeviceMem = [&]() {
     for (auto &RKV : ReadDeviceMemMap) {
@@ -125,31 +152,6 @@ int main(int argc, char **argv) {
         std::cerr << "Memory differs between GV and GVR\n";
         return 1;
       }
-    }
-    return 0;
-  }();
-
-  auto ValidateGlobalMem = [&]() {
-    auto it = ReadGVars.find(GV.Name);
-    if (it == ReadGVars.end())
-      return 2;
-    auto &RGV = it->second;
-
-    if (RGV.Name != GV.Name) {
-      std::cerr << "Global Variables differ in name " << RGV.Name << " "
-                << GV.Name << "\n";
-      return 2;
-    }
-
-    if (RGV.VarSize != GV.VarSize) {
-      std::cerr << "VarSize differs " << RGV.VarSize << " " << GV.VarSize
-                << "\n";
-      return 2;
-    }
-
-    if (std::memcmp(GV.HostAddr.get(), RGV.HostAddr.get(), 128) != 0) {
-      std::cerr << "Memory differs between GV and GVR\n";
-      return 2;
     }
     return 0;
   }();

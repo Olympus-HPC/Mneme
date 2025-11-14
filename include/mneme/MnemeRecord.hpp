@@ -40,7 +40,6 @@ protected:
   llvm::DenseMap<void **, llvm::SmallVector<std::shared_ptr<KernelInfo>>>
       HandleToKernels;
   llvm::DenseMap<const void *, std::shared_ptr<KernelInfo>> KernelInfoMap;
-  llvm::SmallVector<GlobalVarInfo> GlobalSymbols;
   llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> AllocatedBlobs;
 
   std::unique_ptr<PageManager<VendorTypes>> PM;
@@ -87,26 +86,6 @@ private:
   DeviceError_t (*origSetDeviceID)(int id);
   DeviceError_t (*origGetDeviceID)(int *id);
 
-private:
-  void getGlobalAddresses() {
-    //    for (auto &[Handle, GVars] : HandleToGlobalSymbol) {
-    //      for (auto &GVar : GVars) {
-    //        auto EC = MnemeDeviceRT::DeviceErrorCheck(
-    //            MnemeDeviceRT::deviceGetSymbolAddress(&GVar.DevAddr,
-    //                                                  GVar.HostSymbolAddr));
-    //        if (EC) {
-    //          LOG_FATAL("When copying device global received error\n{}",
-    //                    EC.value());
-    //        }
-    //        LOG_INFO("Getting Global Variable: {} stored at address {} mapped
-    //        "
-    //                 "with host symbol addr {} of size {}",
-    //                 GVar.Name, GVar.DevAddr, GVar.HostSymbolAddr,
-    //                 GVar.VarSize);
-    //      }
-    //    }
-  }
-
 public:
   DeviceError_t rtMalloc(void **ptr, size_t size) {
     if (!PM) {
@@ -120,7 +99,6 @@ public:
       }
       PM = initializePageManager<VendorTypes>(
           DeviceID, (void *)MnemeDeviceRT::getSuggestedAddr());
-      getGlobalAddresses();
     }
 
     auto [Addr, ReservedSize] = PM->allocateAddr(size, nullptr);
@@ -189,12 +167,9 @@ public:
       LOG_DEBUG("Initializing system {}", arch);
       PM = initializePageManager<VendorTypes>(
           DeviceID, (void *)MnemeDeviceRT::getSuggestedAddr());
-      getGlobalAddresses();
     }
 
-    // TODO: Here query proteus about kernel
     auto &Proteus = JitDeviceImplT::instance();
-
     auto OptionalKernelInfo = Proteus.getJITKernelInfo(func);
     LOG_DEBUG("Received OptionalKernel Info {}", (void *)origLaunchKernel);
     if (!OptionalKernelInfo) {
@@ -202,6 +177,8 @@ public:
       return origLaunchKernel(func, GridDim, BlockDim, Args, SharedMem, Stream);
     }
     auto &KInfo = OptionalKernelInfo.value().get();
+    auto &BinInfo = KInfo.getBinaryInfo();
+    BinInfo.mapGlobals();
     LOG_DEBUG("Continue with {}", KInfo.getName());
     Proteus.extractModuleAndBitcode(KInfo);
 
@@ -209,8 +186,8 @@ public:
     LOG_INFO("Hash value is {}", Hash.getValue());
 
     auto RecordAction = DB.takeSnapshot<VendorTypes>(
-        PM->getVAStart(), PM->getTotalVASize(), KInfo, GlobalSymbols,
-        AllocatedBlobs, GridDim, BlockDim, Args, SharedMem, Stream);
+        PM->getVAStart(), PM->getTotalVASize(), KInfo, AllocatedBlobs, GridDim,
+        BlockDim, Args, SharedMem, Stream);
     if (RecordAction)
       LOG_INFO("Successfully Recorded Prologue of Kernel {} NAME:{} GRID:({}, "
                "{}, {}) "
@@ -221,7 +198,8 @@ public:
     auto ret =
         origLaunchKernel(func, GridDim, BlockDim, Args, SharedMem, Stream);
     if (RecordAction) {
-      (*RecordAction)(GlobalSymbols, AllocatedBlobs, Args, Stream);
+      (*RecordAction)(KInfo.getBinaryInfo().getVarNameToGlobalInfo(),
+                      AllocatedBlobs, Args, Stream);
       LOG_INFO("Successfully Recorded Epilogue of Kernel {} NAME:{} GRID:({}, "
                "{}, {}) "
                "BLOCK:({}, {}, "

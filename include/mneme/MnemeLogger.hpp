@@ -115,6 +115,6 @@ public:
 #define LOG_CRITICAL(...) ((void)0)
 #define LOG_FATAL(...)                                                         \
   std::cerr << "Error in file" << std::string(__FILE__) << ":" << __LINE__     \
-            << "\n"
-
+            << "\n";                                                           \
+  abort();
 #endif // ENABLE_LOGGING

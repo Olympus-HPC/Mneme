@@ -29,6 +29,40 @@
 
 namespace mneme {
 
+struct ReplayGlobalVar {
+  void *HostAddr;
+  void *DevAddr;
+  uint64_t VarSize;
+  ReplayGlobalVar(void *DevAddr, uint64_t VarSize)
+      : HostAddr(new uint8_t[VarSize]), DevAddr(DevAddr), VarSize(VarSize) {}
+  ReplayGlobalVar(void *HostAddr, void *DevAddr, uint64_t VarSize)
+      : HostAddr(HostAddr), DevAddr(DevAddr), VarSize(VarSize) {}
+  ReplayGlobalVar() = delete;
+  ~ReplayGlobalVar() {
+    if (HostAddr)
+      delete[] static_cast<uint8_t *>(HostAddr);
+  }
+
+  ReplayGlobalVar(const ReplayGlobalVar &) = delete;
+  ReplayGlobalVar &operator=(const ReplayGlobalVar &) = delete;
+
+  ReplayGlobalVar(ReplayGlobalVar &&Other)
+      : HostAddr(Other.HostAddr), DevAddr(Other.DevAddr),
+        VarSize(Other.VarSize) {
+    Other.HostAddr = nullptr;
+  }
+
+  ReplayGlobalVar &operator=(ReplayGlobalVar &&Other) {
+    if (this != &Other) {
+      this->HostAddr = Other.HostAddr;
+      this->DevAddr = Other.DevAddr;
+      this->VarSize = Other.VarSize;
+      Other.HostAddr = nullptr;
+    }
+    return *this;
+  }
+};
+
 template <DeviceVendors VendorTypes> class MnemeSnapshot {
   using MnemeDeviceRT = DeviceTraits<VendorTypes>;
   using DeviceError_t = typename MnemeDeviceRT::DeviceError_t;
@@ -36,8 +70,25 @@ template <DeviceVendors VendorTypes> class MnemeSnapshot {
   using KernelFunction_t = typename MnemeDeviceRT::KernelFunction_t;
 
 public:
+  static std::pair<std::string, ReplayGlobalVar>
+  fromBuffer(const char *&Buffer) {
+    const char *tmp = Buffer;
+    size_t StrLen = util::extractScalar<size_t>(Buffer);
+    std::string Name{Buffer, StrLen};
+    Buffer += StrLen;
+    size_t VarSize = util::extractScalar<size_t>(Buffer);
+    void *DevAddr = util::extractScalar<void *>(Buffer);
+    ReplayGlobalVar RGV(DevAddr, VarSize);
+    std::memcpy(const_cast<void *>(RGV.HostAddr), Buffer, VarSize);
+    Buffer += VarSize;
+    LOG_DEBUG("Loaded from buffer Global, Name:{}, VarSize:{}, RecoredAddr:{}",
+              Name, VarSize, DevAddr);
+    return std::pair<std::string, ReplayGlobalVar>(std::move(Name),
+                                                   std::move(RGV));
+  }
+
   std::filesystem::path static takeMnemeSnapshot(
-      llvm::SmallVector<GlobalVarInfo> &GlobalVars,
+      std::unordered_map<std::string, proteus::GlobalVarInfo> &GlobalVars,
       llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &DeviceMemory,
       std::filesystem::path &Filename,
       llvm::SmallVector<size_t> &KernelArgSizes, void **Args,
@@ -53,19 +104,36 @@ public:
     llvm::raw_fd_ostream OutBC(Filename.string(), EC);
     // First write Global Variables.
     size_t TotalGlobals = GlobalVars.size();
+    OutBC << llvm::StringRef(reinterpret_cast<const char *>(&TotalGlobals),
+                             sizeof(size_t));
+
     LOG_DEBUG("Number of Globals in snapshot:{} stored at position:{}",
               TotalGlobals, OutBC.tell());
 
-    OutBC << llvm::StringRef(reinterpret_cast<const char *>(&TotalGlobals),
-                             sizeof(size_t));
-    for (auto &GV : GlobalVars) {
+    for (const auto &[VarName, GV] : GlobalVars) {
+      std::cout << "Reading " << VarName << " " << GV.HostAddr << " "
+                << GV.DevAddr << " " << GV.VarSize << "\n";
+      uint8_t *HostData = new uint8_t[GV.VarSize];
       auto DEC = DeviceTraits<VendorTypes>::DeviceErrorCheck(
           DeviceTraits<VendorTypes>::DeviceCopy(
-              GV.HostAddr.get(), GV.DevAddr, GV.VarSize,
+              HostData, const_cast<void *>(GV.DevAddr), GV.VarSize,
               DeviceTraits<VendorTypes>::MemcpyDeviceToHostKind()));
-      if (DEC)
+      if (DEC) {
+        std::cout << DEC.value() << "\n";
         LOG_FATAL("Copying from device to host for global variables failed\n");
-      OutBC << GV;
+      }
+
+      size_t StrLen = VarName.size();
+      OutBC << llvm::StringRef(reinterpret_cast<const char *>(&StrLen),
+                               sizeof(StrLen));
+      OutBC << VarName;
+      OutBC << llvm::StringRef(reinterpret_cast<const char *>(&GV.VarSize),
+                               sizeof(GV.VarSize));
+      OutBC << llvm::StringRef(reinterpret_cast<const char *>(&GV.DevAddr),
+                               sizeof(GV.DevAddr));
+      OutBC << llvm::StringRef(reinterpret_cast<const char *>(HostData),
+                               GV.VarSize);
+      delete[] HostData;
     }
 
     size_t TotalBlobs = DeviceMemory.size();
@@ -98,7 +166,7 @@ public:
 
   void static readMnemeSnapShot(
       std::string Filename,
-      llvm::DenseMap<std::string, GlobalVarInfo> &GlobalVars,
+      std::unordered_map<std::string, ReplayGlobalVar> &GlobalVars,
       llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &DeviceMemory,
       std::shared_ptr<KernelInfo> KInfo) {
     if (!std::filesystem::exists(Filename))
@@ -120,8 +188,8 @@ public:
     LOG_DEBUG("Snapshot contains {} Globals at location {}", TotalGlobals,
               (uintptr_t)CurrentPtr - (uintptr_t)Start);
     for (auto I = 0; I < TotalGlobals; I++) {
-      auto GV = GlobalVarInfo::fromBuffer(CurrentPtr);
-      GlobalVars.insert({GV.Name, std::move(GV)});
+      auto [Name, RGV] = fromBuffer(CurrentPtr);
+      GlobalVars.try_emplace(Name, std::move(RGV));
     }
 
     auto TotalMemBlobs = util::extractScalar<size_t>(CurrentPtr);
@@ -174,18 +242,7 @@ struct KernelInstance {
   }
   KernelInstance(dim3 &GridDim, dim3 &BlockDim, uint64_t SharedMem, void **Args)
       : GridDim(GridDim), BlockDim(BlockDim), SharedMem(SharedMem),
-        NumOccurrences(1) {
-#warning fix accessors;
-    //    auto CanSpecialize = KInfo->getArgSpecializations();
-    //    auto toDouble = KInfo->getToDoubleFunc();
-    //    for (int I = 0; I < KInfo->getNumArgs(); I++) {
-    //      if (CanSpecialize[I]) {
-    //        ArgValues.emplace_back(toDouble[I](Args[I]));
-    //      } else {
-    //        ArgValues.emplace_back(-1.0);
-    //      }
-    //    }
-  }
+        NumOccurrences(1) {}
   KernelInstance() = default;
 };
 
@@ -276,12 +333,12 @@ public:
 
   template <DeviceVendors VendorTypes>
   std::optional<std::function<
-      void(llvm::SmallVector<GlobalVarInfo> &,
+      void(std::unordered_map<std::string, proteus::GlobalVarInfo> &,
            llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &, void **,
            typename DeviceTraits<VendorTypes>::DeviceStream_t)>>
   takeSnapshot(
       std::filesystem::path &MnemeDir,
-      llvm::SmallVector<GlobalVarInfo> &GlobalVars,
+      std::unordered_map<std::string, proteus::GlobalVarInfo> &GlobalVars,
       llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &DeviceMemory,
       dim3 &GridDim, dim3 &BlockDim, void **Args, size_t SharedMem,
       typename DeviceTraits<VendorTypes>::DeviceStream_t Stream,
@@ -317,13 +374,14 @@ public:
             GlobalVars, DeviceMemory, Filename, KernelArgSizes, Args, Stream)
             .string();
 
-    std::function<void(llvm::SmallVector<GlobalVarInfo> &,
-                       llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &,
-                       void **,
-                       typename DeviceTraits<VendorTypes>::DeviceStream_t)>
+    std::function<void(
+        std::unordered_map<std::string, proteus::GlobalVarInfo> &,
+        llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &, void **,
+        typename DeviceTraits<VendorTypes>::DeviceStream_t)>
         CaptureEpilogue =
             [this, DynamicHash, StaticHash, MnemeDir](
-                llvm::SmallVector<GlobalVarInfo> &GlobalVars,
+                std::unordered_map<std::string, proteus::GlobalVarInfo>
+                    &GlobalVars,
                 llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>>
                     &DeviceMemory,
                 void **Args,
@@ -403,12 +461,11 @@ public:
 
   template <DeviceVendors VendorTypes>
   std::optional<std::function<
-      void(llvm::SmallVector<GlobalVarInfo> &,
+      void(std::unordered_map<std::string, proteus::GlobalVarInfo> &,
            llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &, void **,
            typename DeviceTraits<VendorTypes>::DeviceStream_t)>>
   takeSnapshot(
       void *VAddr, uint64_t VASize, proteus::JITKernelInfo &KInfo,
-      llvm::SmallVector<GlobalVarInfo> &GlobalVars,
       llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &DeviceMemory,
       dim3 &GridDim, dim3 &BlockDim, void **Args, size_t SharedMem,
       typename DeviceTraits<VendorTypes>::DeviceStream_t Stream) {
@@ -425,8 +482,9 @@ public:
                                   MaxRecordings));
     LOG_INFO("Created instance");
     return IT.first->second.takeSnapshot<VendorTypes>(
-        MnemeDirectory, GlobalVars, DeviceMemory, GridDim, BlockDim, Args,
-        SharedMem, Stream, KInfo.getStaticHash().getValue());
+        MnemeDirectory, KInfo.getBinaryInfo().getVarNameToGlobalInfo(),
+        DeviceMemory, GridDim, BlockDim, Args, SharedMem, Stream,
+        KInfo.getStaticHash().getValue());
   }
 
   const std::string getDir() const { return MnemeDirectory.string(); }
