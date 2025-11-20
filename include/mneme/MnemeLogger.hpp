@@ -114,7 +114,9 @@ public:
 #define LOG_WARN(...) ((void)0)
 #define LOG_CRITICAL(...) ((void)0)
 #define LOG_FATAL(...)                                                         \
-  std::cerr << "Error in file" << std::string(__FILE__) << ":" << __LINE__     \
+  do {                                                                         \
+  std::cout << "Error in file" << std::string(__FILE__) << ":" << __LINE__     \
             << "\n";                                                           \
-  abort();
+  abort();                                                                     \
+  } while (0)
 #endif // ENABLE_LOGGING

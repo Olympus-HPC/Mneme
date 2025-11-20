@@ -170,6 +170,8 @@ public:
 
     auto &Proteus = JitDeviceImplT::instance();
     auto OptionalKernelInfo = Proteus.getJITKernelInfo(func);
+    // NOTE: Here we do something conceptually different. We no longer go through
+    // proteus. We call immediately the vendor launcher. Thus we avoid overheads from caching etc.
     LOG_DEBUG("Received OptionalKernel Info {}", (void *)origLaunchKernel);
     if (!OptionalKernelInfo) {
       LOG_DEBUG("Information for kernel  {} is not included", func);
