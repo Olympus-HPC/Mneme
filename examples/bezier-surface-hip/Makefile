@@ -40,19 +40,20 @@ ifeq ($(Version), mneme)
   CFLAGS += -fpass-plugin=${MNEME_PREFIX}/lib64/libProteusPass.so \
 						-fplugin=${MNEME_PREFIX}/lib64/libProteusPass.so \
             -fno-discard-value-names -ftrivial-auto-var-init=zero \
-            -Xclang -mllvm -Xclang -force-proteus-jit-annotate-all
+						-Xclang -mllvm -Xclang -force-proteus-jit-annotate-all
 
-  LDFLAGS = -L${ROCM_PATH}/lib -L${ROCM_PATH}/llvm/lib \
-    $(shell ${ROCM_PATH}/llvm/bin/llvm-config --libs) \
-    $(shell ${ROCM_PATH}/llvm/bin/llvm-config --system-libs) \
-    -L${MNEME_PREFIX}/lib64 \
-    -Wl,-rpath,${MNEME_PREFIX}/lib64 \
-    -llldCommon -llldELF -lproteus
+	LDFLAGS += -L${ROCM_PATH}/lib -L${ROCM_PATH}/llvm/lib \
+		$(shell ${ROCM_PATH}/llvm/bin/llvm-config --libs) \
+		$(shell ${ROCM_PATH}/llvm/bin/llvm-config --system-libs) \
+		-L${MNEME_PREFIX}/lib64 \
+		-Wl,-rpath,${MNEME_PREFIX}/lib64 \
+		-llldCommon -llldELF -lproteus
+
 else ifeq ($(Version), proteus)
 CFLAGS += -DENABLE_PROTEUS -I${MNEME_PREFIX}/include \
     -fpass-plugin=${MNEME_PREFIX}/lib64/libProteusPass.so
 
-LDFLAGS = -L${ROCM_PATH}/lib -L${ROCM_PATH}/llvm/lib \
+LDFLAGS += -L${ROCM_PATH}/lib -L${ROCM_PATH}/llvm/lib \
 	$(shell ${ROCM_PATH}/llvm/bin/llvm-config --libs) \
 	$(shell ${ROCM_PATH}/llvm/bin/llvm-config --system-libs) \
 	-L${MNEME_PREFIX}/lib64 \
