@@ -8,12 +8,10 @@
 #include <memory>
 
 #include "mneme/DeviceTraits.hpp"
-#include "mneme/MnemeDeviceBinary.hpp"
 #include "mneme/MnemeLogger.hpp"
 #include "mneme/MnemeMemory.hpp"
 #include "mneme/MnemePageManager.hpp"
 #include "mneme/MnemeSnapshot.hpp"
-#include "mneme/MnemeSymbols.hpp"
 #include "mneme/MnemeUtils.hpp"
 
 namespace mneme {
@@ -29,7 +27,7 @@ public:
 
   std::shared_ptr<KernelInfo> KInfo;
   llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> DeviceMemoryState;
-  llvm::DenseMap<std::string, GlobalVarInfo> GlobalVars;
+  std::unordered_map<std::string, ReplayGlobalVar> GlobalVars;
   InstanceType IType;
   std::string SnapshotName;
   std::unique_ptr<void *[]> Args;
@@ -54,11 +52,11 @@ private:
     for (auto &[GVName, GVI] : GlobalVars) {
       LOG_DEBUG("Copying data of variable {} to device addr {} and of size {}",
                 GVName, GVI.DevAddr, GVI.VarSize);
-      auto CEC = MnemeDeviceRT::DeviceErrorCheck(MnemeDeviceRT::DeviceCopy(
-          GVI.DevAddr, GVI.HostAddr.get(), GVI.VarSize,
-          MnemeDeviceRT::MemcpyHostToDeviceKind()));
+      auto CEC = MnemeDeviceRT::DeviceErrorCheck(
+          MnemeDeviceRT::DeviceCopy(GVI.DevAddr, GVI.HostAddr, GVI.VarSize,
+                                    MnemeDeviceRT::MemcpyHostToDeviceKind()));
       if (CEC)
-        LOG_FATAL("Could not copy global " + GVI.Name +
+        LOG_FATAL("Could not copy global " + GVName +
                   " to device EC: " + CEC.value() + "\n");
     }
   }
@@ -167,10 +165,10 @@ public:
         correct = false;
       }
 
-      const GlobalVarInfo &OtherGV = it->second;
+      auto &OtherGV = it->second;
 
       std::unique_ptr<uint8_t[]> hostData(new uint8_t[GVI.VarSize]);
-      uint8_t *comparator;
+      void *comparator;
       if (IType == InstanceType::Prologue) {
         auto CEC = MnemeDeviceRT::DeviceErrorCheck(
             MnemeDeviceRT::DeviceCopy(hostData.get(), GVI.DevAddr, GVI.VarSize,
@@ -178,15 +176,15 @@ public:
         if (CEC)
           LOG_FATAL("Could not copy Memory Blob to device EC: " + CEC.value() +
                     "\n");
-        comparator = OtherGV.HostAddr.get();
+        comparator = OtherGV.HostAddr;
       } else if (other.IType == InstanceType::Prologue) {
         auto CEC = MnemeDeviceRT::DeviceErrorCheck(MnemeDeviceRT::DeviceCopy(
-            OtherGV.HostAddr.get(), OtherGV.DevAddr, OtherGV.VarSize,
+            OtherGV.HostAddr, OtherGV.DevAddr, OtherGV.VarSize,
             MnemeDeviceRT::MemcpyDeviceToHostKind()));
         if (CEC)
           LOG_FATAL("Could not copy Memory Blob to device EC: " + CEC.value() +
                     "\n");
-        comparator = GVI.HostAddr.get();
+        comparator = GVI.HostAddr;
       } else {
         LOG_FATAL("Either this or other need to be of Prologue type");
       }
@@ -228,7 +226,7 @@ public:
 
       auto EC = DeviceTraits<VendorTypes>::DeviceErrorCheck(
           DeviceTraits<VendorTypes>::DeviceCopy(
-              KV.second.DevAddr, KV.second.HostAddr.get(), KV.second.VarSize,
+              KV.second.DevAddr, KV.second.HostAddr, KV.second.VarSize,
               DeviceTraits<VendorTypes>::MemcpyHostToDeviceKind()));
       if (EC)
         LOG_FATAL("Copying Global :" + KV.first +
@@ -395,7 +393,7 @@ public:
 
       auto EC = DeviceTraits<VendorTypes>::DeviceErrorCheck(
           DeviceTraits<VendorTypes>::DeviceCopy(
-              KV.second.DevAddr, KV.second.HostAddr.get(), KV.second.VarSize,
+              KV.second.DevAddr, KV.second.HostAddr, KV.second.VarSize,
               DeviceTraits<VendorTypes>::MemcpyHostToDeviceKind()));
       if (EC)
         LOG_FATAL("Copying Global :" + KV.first +

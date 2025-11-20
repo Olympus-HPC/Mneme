@@ -20,6 +20,12 @@ template <typename Ty> Ty extractScalar(const char *&Buffer) {
   Buffer += sizeof(Ty);
   return Value;
 }
+template <typename Ty> Ty extractScalar(char *&Buffer) {
+  Ty Value = *reinterpret_cast<const Ty *>(Buffer);
+  Buffer += sizeof(Ty);
+  return Value;
+}
+
 
 template <typename T> std::string pointerToHexString(T *ptr) {
   std::ostringstream oss;

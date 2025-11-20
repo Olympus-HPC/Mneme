@@ -52,6 +52,7 @@ option(MNEME_LINK_SHARED_LLVM "Link with the LLVM shared library" OFF)
 
 include(cmake/SetupLLVM.cmake)
 find_package(proteus REQUIRED)
+include(cmake/MnemeFunctions.cmake)
 get_target_property(proteus_link_dirs proteus INTERFACE_LINK_DIRECTORIES)
 message(STATUS "Proteus Link Directories: ${proteus_link_dirs}")
 
@@ -84,7 +85,6 @@ elseif(MNEME_ENABLE_HIP)
 endif()
 
 add_subdirectory(src)
-add_subdirectory(pass)
 
 if(MNEME_ENABLE_TESTS)
   enable_testing()
@@ -104,7 +104,7 @@ write_basic_package_version_file(
   VERSION ${PROJECT_VERSION}
   COMPATIBILITY AnyNewerVersion)
 
-set(MNEME_TARGETS record replay regdeviceir mneme_shallow )
+set(MNEME_TARGETS record replay)
 if(MNEME_ENABLE_AUTOTUNE)
 list(APPEND MNEME_TARGETS mneme_profile mneme)
 endif()
@@ -125,4 +125,5 @@ install(
 
 install(FILES "${PROJECT_BINARY_DIR}/mnemeConfigVersion.cmake"
               "${PROJECT_BINARY_DIR}/mnemeConfig.cmake"
+	      "${PROJECT_SOURCE_DIR}/cmake/MnemeFunctions.cmake"
         DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/mneme)

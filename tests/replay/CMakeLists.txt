@@ -6,26 +6,17 @@ function(CREATE_GPU_TEST exe check_source)
   if (MNEME_ENABLE_HIP)
     set_source_files_properties(${check_source} ${ARGN} PROPERTIES LANGUAGE HIP) 
     target_compile_definitions(${exe} PRIVATE MNEME_ENABLE_HIP)
-    target_link_libraries(${exe} PRIVATE hip::host mneme_shallow)
+    target_link_libraries(${exe} PRIVATE hip::host)
   elseif(MNEME_ENABLE_CUDA)
     set_source_files_properties(${check_source} ${ARGN} PROPERTIES LANGUAGE CUDA) 
     target_compile_definitions(${exe} PRIVATE MNEME_ENABLE_CUDA)
-    target_link_libraries(${exe} PRIVATE CUDA::cudart CUDA::cuda_driver mneme_shallow)
+    target_link_libraries(${exe} PRIVATE CUDA::cudart CUDA::cuda_driver)
   endif()
   target_include_directories(${exe} PRIVATE ${CMAKE_SOURCE_DIR}/include/)
 
-  set_source_files_properties(${check_source} ${ARGN} PROPERTIES
-    OBJECT_DEPENDS ${PROJECT_SOURCE_DIR}/pass/regdeviceir.cpp
-    )
-  add_dependencies(${exe} regdeviceir)
   add_dependencies(${exe} record)
   add_dependencies(${exe} replay)
-
-  target_compile_options(
-      ${exe}
-      PUBLIC
-      -fpass-plugin=$<TARGET_FILE:regdeviceir>
-  )
+  add_mneme(${exe})
 
 add_test(NAME ${exe} COMMAND ${LIT} -a -vv -DFILECHECK=${FILECHECK} -D ext='' -D PG=1 -D RR=${RECORD_READ_JSON} ${check_source})
 set_tests_properties(${exe} PROPERTIES LABELS "MnemeReplay::Link")
@@ -36,20 +27,17 @@ function(CREATE_RDC_GPU_TEST exe check_source)
   if (MNEME_ENABLE_HIP)
     set_source_files_properties(${check_source} ${ARGN} PROPERTIES LANGUAGE HIP) 
     target_compile_definitions(${exe}.rdc PRIVATE MNEME_ENABLE_HIP)
-    target_link_libraries(${exe}.rdc PRIVATE hip::host mneme_shallow)
+    target_link_libraries(${exe}.rdc PRIVATE hip::host)
   elseif(MNEME_ENABLE_CUDA)
     set_source_files_properties(${check_source} ${ARGN} PROPERTIES LANGUAGE CUDA) 
     target_compile_definitions(${exe}.rdc PRIVATE MNEME_ENABLE_CUDA)
-    target_link_libraries(${exe}.rdc PRIVATE CUDA::cudart CUDA::cuda_driver mneme_shallow)
+    target_link_libraries(${exe}.rdc PRIVATE CUDA::cudart CUDA::cuda_driver)
   endif()
   target_include_directories(${exe}.rdc PRIVATE ${CMAKE_SOURCE_DIR}/include/)
 
-  set_source_files_properties(${check_source} ${ARGN} PROPERTIES
-    OBJECT_DEPENDS ${PROJECT_SOURCE_DIR}/pass/regdeviceir.cpp
-    )
-  add_dependencies(${exe}.rdc regdeviceir)
   add_dependencies(${exe}.rdc record)
-  add_dependencies(${exe} replay)
+  add_dependencies(${exe}.rdc replay)
+  add_mneme(${exe}.rdc)
 
   if(MNEME_ENABLE_HIP)
     # This is unsupported see: https://gitlab.kitware.com/cmake/cmake/-/issues/23210
@@ -60,7 +48,6 @@ function(CREATE_RDC_GPU_TEST exe check_source)
         ${exe}.rdc
         PUBLIC
         -fgpu-rdc
-        -fpass-plugin=$<TARGET_FILE:regdeviceir>
     )
 
     target_link_options(
@@ -68,13 +55,11 @@ function(CREATE_RDC_GPU_TEST exe check_source)
         PUBLIC
         -fgpu-rdc
         --hip-link
-        -Xoffload-linker --load-pass-plugin=$<TARGET_FILE:regdeviceir>
     )
     elseif(MNEME_ENABLE_CUDA)
         target_compile_options(
             ${exe}.rdc
             PUBLIC
-            -fpass-plugin=$<TARGET_FILE:regdeviceir>
         )
     set_target_properties(${exe}.rdc PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
   endif()

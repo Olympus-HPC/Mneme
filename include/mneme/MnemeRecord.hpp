@@ -21,41 +21,25 @@
 #include <llvm/IR/Module.h>
 #include <mutex>
 
+#include <proteus/CompilerInterfaceDevice.h>
+#include <proteus/JitEngineDevice.hpp>
+
 #include "mneme/DeviceTraits.hpp"
-#include "mneme/MnemeDeviceBinary.hpp"
 #include "mneme/MnemeKernelInfo.hpp"
 #include "mneme/MnemeLogger.hpp"
 #include "mneme/MnemeSnapshot.hpp"
-#include "mneme/MnemeSymbols.hpp"
 
 namespace mneme {
-
-struct MnemeDeviceExecutable {
-  /* An execution can have a collection of Linked  Binaries. Without RDC enabled
-   * every translation unit is handled as a separate linked binary and the
-   * scoped is limited in that binary */
-  llvm::LLVMContext Ctx;
-  llvm::DenseMap<DeviceHandle, std::unique_ptr<MnemeDeviceLinkedBin>>
-      LinkedBinaries;
-  llvm::DenseMap<void *, const char *> PendingRegistrations;
-  llvm::DenseMap<const void *, std::shared_ptr<KernelInfo>> TrackedKernels;
-  DeviceHandle CurrHandle;
-  MnemeDeviceExecutable() : CurrHandle(nullptr) {}
-};
 
 template <DeviceVendors VendorTypes> class MnemeRecorder {
 protected:
   void *rtLib;
+  void *proteusLib;
   std::string RecordReplayDir;
-  llvm::DenseMap<void **, FatBinaryWrapper_t *> HandleToBin;
   llvm::DenseMap<void **, llvm::SmallVector<std::shared_ptr<KernelInfo>>>
       HandleToKernels;
   llvm::DenseMap<const void *, std::shared_ptr<KernelInfo>> KernelInfoMap;
-  llvm::DenseMap<void **, llvm::SmallVector<GlobalVarInfo>>
-      HandleToGlobalSymbol;
   llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> AllocatedBlobs;
-  llvm::DenseSet<const void *> BlackList;
-  MnemeDeviceExecutable Executable;
 
   std::unique_ptr<PageManager<VendorTypes>> PM;
   void *VAStartAddr;
@@ -81,6 +65,11 @@ private:
                                     size_t sharedMem,
                                     DeviceStream_t stream) = nullptr;
 
+  DeviceError_t (*proteusLaunchKernel)(const void *func, dim3 gridDim,
+                                       dim3 blockDim, void **args,
+                                       size_t sharedMem,
+                                       DeviceStream_t stream) = nullptr;
+
   DeviceError_t (*origMallocDevice)(void **ptr, size_t size);
 
   DeviceError_t (*origMallocPinned)(void **ptr, size_t size,
@@ -93,184 +82,10 @@ private:
 
   DeviceError_t (*origFreeHost)(void *ptr);
 
-  void (*origRegisterDeviceVar)(void **fatbinHandle, char *hostVar,
-                                char *deviceAddress, const char *deviceName,
-                                int ext, size_t size, int constant, int global);
-
-  void (*origRegisterFunction)(void **fatbinHandle, const char *hostFun,
-                               char *deviceFun, const char *deviceName,
-                               int thread_limit, uint3 *tid, uint3 *bid,
-                               dim3 *bDim, dim3 *gDim, int *wSize);
-
-  void **(*origRegisterFatBinary)(void *fatDevbin);
-
-  void (*origRegisterFatBinaryEnd)(void *);
-
-  void (*origUnregisterFatBinary)(void **);
-
   DeviceError_t (*origSetDeviceID)(int id);
   DeviceError_t (*origGetDeviceID)(int *id);
 
-private:
-  void getGlobalAddresses() {
-    for (auto &[Handle, GVars] : HandleToGlobalSymbol) {
-      for (auto &GVar : GVars) {
-        auto EC = MnemeDeviceRT::DeviceErrorCheck(
-            MnemeDeviceRT::deviceGetSymbolAddress(&GVar.DevAddr,
-                                                  GVar.HostSymbolAddr));
-        if (EC) {
-          LOG_FATAL("When copying device global received error\n{}",
-                    EC.value());
-        }
-        LOG_INFO("Getting Global Variable: {} stored at address {} mapped "
-                 "with host symbol addr {} of size {}",
-                 GVar.Name, GVar.DevAddr, GVar.HostSymbolAddr, GVar.VarSize);
-      }
-    }
-  }
-
 public:
-  void unregisterFatBinEnd(void **ptr) {
-    LOG_DEBUG("Unregistering fatbinary");
-    if (PM) {
-      LOG_DEBUG("Releasing memory");
-      PM.release();
-      LOG_DEBUG("Done with Releasing memory");
-    }
-    origUnregisterFatBinary(ptr);
-  }
-
-  void registerFatBinEnd(void *ptr) {
-    LOG_DEBUG("Marking end of fat binary");
-    origRegisterFatBinaryEnd(ptr);
-  }
-
-  void **registerFatBin(FatBinaryWrapper_t *fatbin) {
-    void **Handle = origRegisterFatBinary(fatbin);
-    LOG_DEBUG("Register Fatbin Returned handle {}", (void *)Handle);
-
-    return Handle;
-  }
-
-  void explicitRegisterPreLinkedBinary(FatBinaryWrapper_t *FatbinWrapper,
-                                       const char *ModuleId) {
-    LOG_DEBUG("Received prelinked binary with the following fields {} {} {} {}",
-              FatbinWrapper->Magic, FatbinWrapper->Version,
-              (void *)FatbinWrapper->Binary,
-              (void *)FatbinWrapper->PrelinkedFatBins);
-    Executable.PendingRegistrations.insert(
-        {(void *)FatbinWrapper->Binary, ModuleId});
-  }
-
-  void explicitRegisterFatBin(DeviceHandle Handle,
-                              FatBinaryWrapper_t *FatbinWrapper,
-                              const char *ModuleId) {
-    if (Executable.CurrHandle == nullptr)
-      Executable.CurrHandle = Handle;
-    if (Executable.CurrHandle != Handle) {
-#ifdef MNEME_ENABLE_CUDA
-      LOG_FATAL("Current Handle is still open and we received a new one");
-#endif
-      Executable.CurrHandle = Handle;
-    }
-
-    if (Executable.LinkedBinaries.contains(Handle)) {
-      LOG_FATAL("Received a new Handle but we already have a fatbinary for "
-                "this handle");
-    }
-
-    auto [LinkedIt, inserted] = Executable.LinkedBinaries.insert(std::make_pair(
-        Handle, std::make_unique<MnemeDeviceLinkedBin>(Handle, FatbinWrapper)));
-    auto &Linked = *LinkedIt->second;
-    // TODO: Do we need this for HIP?
-    if (FatbinWrapper->Version == 1) {
-      Linked.ModuleIds.push_back(ModuleId);
-    } else if (FatbinWrapper->Version == 2) {
-      // NOTE: On version 2 binaries, we should not pushs the module-id of this
-      // Fatbinary. Instead we inherit the module ids from the internal
-      // fat-binaries.
-      for (int I = 0; FatbinWrapper->PrelinkedFatBins[I] != nullptr; I++) {
-        auto it = Executable.PendingRegistrations.find(
-            FatbinWrapper->PrelinkedFatBins[I]);
-        if (it != Executable.PendingRegistrations.end()) {
-          // Element exists
-          auto &val = it->second;
-          Linked.ModuleIds.push_back(val);
-          Executable.PendingRegistrations.erase(it);
-        } else {
-          Linked.ModuleIds.push_back("");
-        }
-        LOG_DEBUG("RDC Binary {} includes Binary address of {}", I,
-                  (void *)FatbinWrapper->PrelinkedFatBins[I]);
-      }
-    } else {
-      LOG_FATAL("Cannot handle binary type {}", FatbinWrapper->Version);
-    }
-  }
-
-  void explicitEndRegisterFatBinary(DeviceHandle Handle) {
-
-    if (Executable.CurrHandle != Handle) {
-      LOG_WARN("Register Fat Binary End Handle does not match with current "
-               "Handle {}:{}",
-               (void *)Handle, (void *)Executable.CurrHandle);
-    }
-    // We turn off the tracking of the current handle.
-    Executable.CurrHandle = nullptr;
-  }
-
-  void registerVar(DeviceHandle Handle, char *hostVar, char *deviceAddress,
-                   const char *deviceName, int ext, size_t size, int constant,
-                   int global) {
-    LOG_INFO("Register Global Variable: {} SIZE:{}, CONSTANT:{} GLOBAL:{} ",
-             deviceName, size, constant, global);
-
-    origRegisterDeviceVar(Handle, hostVar, deviceAddress, deviceName, ext, size,
-                          constant, global);
-
-    if (constant)
-      return;
-
-    if (Handle != Executable.CurrHandle) {
-      LOG_WARN("Assuming this is not a tracked fatbin skipping ...");
-      return;
-    }
-
-    auto it = HandleToGlobalSymbol.find(Handle);
-    if (it == HandleToGlobalSymbol.end()) {
-      HandleToGlobalSymbol.insert({Handle, {}});
-    }
-
-    HandleToGlobalSymbol[Handle].emplace_back(
-        GlobalVarInfo(deviceName, hostVar, size));
-    return;
-  }
-
-  void registerFunc(DeviceHandle Handle, const char *hostFun, char *deviceFun,
-                    const char *deviceName, int thread_limit, uint3 *tid,
-                    uint3 *bid, dim3 *bDim, dim3 *gDim, int *wSize) {
-    if (!Executable.LinkedBinaries.contains(Handle)) {
-      LOG_DEBUG("Function {} will not be tracked, as handle is not explicitly "
-                "registered",
-                deviceName);
-      origRegisterFunction(Handle, hostFun, deviceFun, deviceName, thread_limit,
-                           tid, bid, bDim, gDim, wSize);
-      return;
-    }
-
-    auto &Exec = Executable.LinkedBinaries[Handle];
-
-    std::shared_ptr<KernelInfo> KI = std::make_shared<KernelInfo>(
-        *Exec.get(), (const void *)hostFun, deviceFun);
-    Executable.TrackedKernels.insert({(const void *)hostFun, KI});
-    LOG_INFO("Register Function with handle: {} and Name: {} with a "
-             "thread_limit off {} at address {}",
-             (void *)Handle, deviceName, thread_limit, (void *)hostFun);
-
-    origRegisterFunction(Handle, hostFun, deviceFun, deviceName, thread_limit,
-                         tid, bid, bDim, gDim, wSize);
-  };
-
   DeviceError_t rtMalloc(void **ptr, size_t size) {
     if (!PM) {
       // NOTE: We need this arch cause internally we initialize the device.
@@ -283,7 +98,6 @@ public:
       }
       PM = initializePageManager<VendorTypes>(
           DeviceID, (void *)MnemeDeviceRT::getSuggestedAddr());
-      getGlobalAddresses();
     }
 
     auto [Addr, ReservedSize] = PM->allocateAddr(size, nullptr);
@@ -338,19 +152,9 @@ public:
   DeviceError_t rtLaunchKernel(const void *func, dim3 &GridDim, dim3 &BlockDim,
                                void **Args, size_t SharedMem,
                                DeviceStream_t Stream) {
-    auto it = Executable.TrackedKernels.find(func);
+    using namespace llvm;
+    using namespace proteus;
 
-    if (it == Executable.TrackedKernels.end()) {
-      LOG_WARN("Skipping kernel {} cause not tracked", func);
-      return origLaunchKernel(func, GridDim, BlockDim, Args, SharedMem, Stream);
-    }
-
-    if (BlackList.contains(func)) {
-      LOG_WARN("Skipping kernel cause kernel is blacklisted");
-      return origLaunchKernel(func, GridDim, BlockDim, Args, SharedMem, Stream);
-    }
-
-    auto KInfo = it->second;
     if (!PM) {
       // NOTE: We need this arch cause internally we initialize the device.
       // FIXME: We need to have a DeviceTrait function to initialize the GPU
@@ -362,39 +166,47 @@ public:
       LOG_DEBUG("Initializing system {}", arch);
       PM = initializePageManager<VendorTypes>(
           DeviceID, (void *)MnemeDeviceRT::getSuggestedAddr());
-      getGlobalAddresses();
     }
 
-    auto &LinkedExecutable = KInfo->getExecutable();
-    if (LinkedExecutable.ExtractCode<VendorTypes>(Executable.Ctx)) {
-      LinkedExecutable.StoreModules<VendorTypes>(RecordReplayDir);
-      LinkedExecutable.FindKernels<VendorTypes>();
+    auto &Proteus = JitDeviceImplT::instance();
+    auto OptionalKernelInfo = Proteus.getJITKernelInfo(func);
+    // NOTE: Here we do something conceptually different. We no longer go through
+    // proteus. We call immediately the vendor launcher. Thus we avoid overheads from caching etc.
+    LOG_DEBUG("Received OptionalKernel Info {}", (void *)origLaunchKernel);
+    if (!OptionalKernelInfo) {
+      LOG_DEBUG("Information for kernel  {} is not included", func);
+      return origLaunchKernel(func, GridDim, BlockDim, Args, SharedMem, Stream);
     }
+    auto &KInfo = OptionalKernelInfo.value().get();
+    auto &BinInfo = KInfo.getBinaryInfo();
+    BinInfo.mapGlobals();
+    LOG_DEBUG("Continue with {}", KInfo.getName());
+    Proteus.extractModuleAndBitcode(KInfo);
 
-    auto Handle = KInfo->getExecutable().Handle;
+    auto Hash = Proteus.getStaticHash(KInfo);
+    LOG_INFO("Hash value is {}", Hash.getValue());
 
     auto RecordAction = DB.takeSnapshot<VendorTypes>(
-        PM->getVAStart(), PM->getTotalVASize(), KInfo,
-        HandleToGlobalSymbol[Handle], AllocatedBlobs, GridDim, BlockDim, Args,
-        SharedMem, Stream);
+        PM->getVAStart(), PM->getTotalVASize(), KInfo, AllocatedBlobs, GridDim,
+        BlockDim, Args, SharedMem, Stream);
     if (RecordAction)
       LOG_INFO("Successfully Recorded Prologue of Kernel {} NAME:{} GRID:({}, "
                "{}, {}) "
                "BLOCK:({}, {}, "
                "{}) SHM_SIZE:{}",
-               func, KInfo->Name, GridDim.x, GridDim.y, GridDim.z, BlockDim.x,
-               BlockDim.y, BlockDim.z, SharedMem);
+               func, KInfo.getName(), GridDim.x, GridDim.y, GridDim.z,
+               BlockDim.x, BlockDim.y, BlockDim.z, SharedMem);
     auto ret =
         origLaunchKernel(func, GridDim, BlockDim, Args, SharedMem, Stream);
     if (RecordAction) {
-      (*RecordAction)(HandleToGlobalSymbol[Handle], AllocatedBlobs, Args,
-                      Stream);
+      (*RecordAction)(KInfo.getBinaryInfo().getVarNameToGlobalInfo(),
+                      AllocatedBlobs, Args, Stream);
       LOG_INFO("Successfully Recorded Epilogue of Kernel {} NAME:{} GRID:({}, "
                "{}, {}) "
                "BLOCK:({}, {}, "
                "{}) SHM_SIZE:{}",
-               func, KInfo->Name, GridDim.x, GridDim.y, GridDim.z, BlockDim.x,
-               BlockDim.y, BlockDim.z, SharedMem);
+               func, KInfo.getName(), GridDim.x, GridDim.y, GridDim.z,
+               BlockDim.x, BlockDim.y, BlockDim.z, SharedMem);
     }
     return ret;
   }
@@ -418,10 +230,16 @@ public:
     VAStartAddr = nullptr;
     VATotalSize = 0;
     rtLib = MnemeDeviceRT::getRTLib();
+    proteusLib = dlopen("libproteus.so", RTLD_NOW);
     RecordReplayDir = DB.getDir();
     DeviceID = -1;
 
     // Redirect overloaded device runtime functions.
+    reinterpret_cast<void *&>(proteusLaunchKernel) =
+        dlsym(proteusLib, MnemeDeviceRT::getLaunchKernelFnName());
+    assert(proteusLaunchKernel &&
+           "Expected non-null proteus-kernel-launch function pointer");
+
     reinterpret_cast<void *&>(origLaunchKernel) =
         dlsym(rtLib, MnemeDeviceRT::getLaunchKernelFnName());
     assert(origLaunchKernel &&
@@ -450,26 +268,6 @@ public:
         dlsym(rtLib, MnemeDeviceRT::getDeviceFreeFnName());
     assert(origFreeDevice && "Expected non-null Device free function pointer");
 
-    reinterpret_cast<void *&>(origRegisterFunction) =
-        dlsym(rtLib, MnemeDeviceRT::getUURegisterFunctionFnName());
-    assert(origRegisterFunction && "Expected non-null Register Function");
-
-    reinterpret_cast<void *&>(origRegisterDeviceVar) =
-        dlsym(rtLib, MnemeDeviceRT::getUURegisterVarFnName());
-    assert(origRegisterDeviceVar && "Expected non-null register Device Var");
-
-    reinterpret_cast<void *&>(origRegisterFatBinary) =
-        dlsym(rtLib, MnemeDeviceRT::getUURegisterFatbinFnName());
-    assert(origRegisterFatBinary && "Expected non-null register Device Var");
-
-    reinterpret_cast<void *&>(origUnregisterFatBinary) =
-        dlsym(rtLib, MnemeDeviceRT::getUUUnRegisterFatBinaryFnName());
-    assert(origUnregisterFatBinary && "Expected non-null unregister fatbinary");
-
-    reinterpret_cast<void *&>(origUnregisterFatBinary) =
-        dlsym(rtLib, MnemeDeviceRT::getUUUnRegisterFatBinaryFnName());
-    assert(origUnregisterFatBinary && "Expected non-null unregister fatbinary");
-
     reinterpret_cast<void *&>(origSetDeviceID) =
         dlsym(rtLib, MnemeDeviceRT::getDeviceSetIDFnName());
     assert(origSetDeviceID && "Expected non-null set device id fn name");
@@ -477,13 +275,6 @@ public:
     reinterpret_cast<void *&>(origGetDeviceID) =
         dlsym(rtLib, MnemeDeviceRT::getDeviceGetIDFnName());
     assert(origGetDeviceID && "Expected non-null get device id fn name");
-
-    if (MnemeDeviceRT::hasFatBinEnd) {
-      reinterpret_cast<void *&>(origRegisterFatBinaryEnd) =
-          dlsym(rtLib, MnemeDeviceRT::getUURegisterFatbinEndFnName());
-      assert(origRegisterFatBinaryEnd &&
-             "Expected non-null register Device Var");
-    }
   }
 
   ~MnemeRecorder() {

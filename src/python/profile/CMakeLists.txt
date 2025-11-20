@@ -5,7 +5,7 @@ add_library(mneme_profile SHARED rocr_profile.cpp)
 if (MNEME_ENABLE_HIP)
 find_package(rocprofiler-sdk QUIET CONFIG)
 target_include_directories(mneme_profile PRIVATE ${HIP_INCLUDE_DIRS} ${CMAKE_SOURCE_DIR}/include)
-target_link_libraries(mneme_profile PRIVATE spdlog::spdlog_header_only hip::host)
+target_link_libraries(mneme_profile PRIVATE hip::host)
 endif()
 
 if (MNEME_ENABLE_LOGGER)

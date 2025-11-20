@@ -1,18 +1,15 @@
 
 set(MnemeCoreSrcDir ${CMAKE_CURRENT_SOURCE_DIR})
 set(RecordLibSRC "")
-set(ReplaySRC MnemeReplay.cpp MnemePageManager.cpp MnemeDeviceCode.cpp MnemeSymbols.cpp)
+set(ReplaySRC MnemeReplay.cpp MnemePageManager.cpp MnemeDeviceCode.cpp)
 if (MNEME_ENABLE_HIP)
-	list(APPEND RecordLibSRC MnemeRecordPreloadHIP.cpp MnemePageManager.cpp MnemeSymbols.cpp MnemeHIPBinary.cpp)
+	list(APPEND RecordLibSRC MnemeRecordPreloadHIP.cpp MnemePageManager.cpp)
 elseif(MNEME_ENABLE_CUDA)
-	list(APPEND RecordLibSRC MnemeRecordPreloadCUDA.cpp MnemePageManager.cpp MnemeSymbols.cpp MnemeCUDABinary.cpp)
+	list(APPEND RecordLibSRC MnemeRecordPreloadCUDA.cpp MnemePageManager.cpp)
 endif()
 
 add_library(record SHARED ${RecordLibSRC})
-add_library(mneme_shallow SHARED MnemeShallowRuntime.cpp)
 add_executable(replay ${ReplaySRC})
-
-
 
 if(MNEME_LINK_SHARED_LLVM)
   if(LLVM_LINK_LLVM_DYLIB)
@@ -61,6 +58,7 @@ endif()
 target_include_directories(record SYSTEM PRIVATE ${LLVM_INCLUDE_DIRS} ${CMAKE_SOURCE_DIR}/include)
 target_include_directories(replay SYSTEM PRIVATE ${LLVM_INCLUDE_DIRS} ${CMAKE_SOURCE_DIR}/include)
 target_link_libraries(replay PRIVATE proteusCore)
+target_link_libraries(record PRIVATE proteus)
 
 if (MNEME_ENABLE_LOGGER)
 	target_link_libraries(replay PRIVATE spdlog::spdlog_header_only)
@@ -74,9 +72,6 @@ target_link_libraries(record PRIVATE hip::host)
 target_link_libraries(record PRIVATE ${llvm_libs})
 set_target_properties(record PROPERTIES INSTALL_RPATH_USE_LINK_PATH TRUE)
 
-target_include_directories(mneme_shallow PRIVATE ${HIP_INCLUDE_DIRS})
-target_compile_definitions(mneme_shallow PRIVATE __HIP_PLATFORM_AMD__)
-
    target_link_libraries(replay PRIVATE hip::host)
    target_link_libraries(replay PRIVATE ${llvm_libs})
    set_target_properties(replay PROPERTIES INSTALL_RPATH_USE_LINK_PATH TRUE)
@@ -85,8 +80,6 @@ target_link_libraries(record PRIVATE CUDA::cudart CUDA::cuda_driver)
 target_link_libraries(record PRIVATE ${llvm_libs})
 set_target_properties(record PROPERTIES INSTALL_RPATH_USE_LINK_PATH TRUE)
 
-
-target_include_directories(mneme_shallow PRIVATE ${CUDA_INCLUDE_DIRS})
 
 	target_link_libraries(replay PRIVATE CUDA::cudart CUDA::cuda_driver)
 	target_link_libraries(replay PRIVATE ${llvm_libs})

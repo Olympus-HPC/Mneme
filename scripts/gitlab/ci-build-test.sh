@@ -13,17 +13,21 @@ installDir="/dev/shm/install"
 
 build_proteus() {
   echo "Building PROTEUS"
-  git clone --depth 1 git@github.com:Olympus-HPC/proteus.git
+  if [[ ! -d proteus ]]; then
+  	git clone --depth 1 git@github.com:Olympus-HPC/proteus.git
+  fi
   pushd proteus 
   PROTEUS_ENABLE_HIP=$1
   PROTEUS_ENABLE_CUDA=$2
   PROTEUS_INSTALL_DIR=$3
   LINK_SHARED_LLVM=$4
   echo "Proteus: ENABLE_HIP: $PROTEUS_ENABLE_HIP ENABLE_CUDA: $PROTEUS_ENABLE_CUDA"
+  rm -rf build-proteus-${host}
   mkdir build-proteus-${host}
   pushd build-proteus-${host}
   cmake .. \
-  -DBUILD_SHARED=Off \
+  -DBUILD_SHARED=On \
+  -DCMAKE_POSITION_INDEPENDENT_CODE=On \
   -DLLVM_INSTALL_DIR=${LLVM_INSTALL_DIR} \
   -DCMAKE_C_COMPILER=${LLVM_INSTALL_DIR}/bin/clang \
   -DCMAKE_PREFIX_PATH="$CONDA_PREFIX;$CONDA_PREFIX/lib/cmake" \
@@ -48,9 +52,12 @@ build_spdlog() {
   fi
 
   echo "Building SPDLOG"
+  if [[ ! -d spdlog ]]; then
   git clone --depth 1 --branch v1.15.0  --single-branch https://github.com/gabime/spdlog.git
+  fi
   pushd spdlog
   SPDLOG_INSTALL_DIR=$1
+  rm -rf build-spdlog-${host}
   mkdir build-spdlog-${host}
   pushd build-spdlog-${host}
   cmake \

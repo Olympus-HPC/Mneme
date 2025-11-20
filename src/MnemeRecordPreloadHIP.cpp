@@ -21,68 +21,6 @@ public:
 };
 
 extern "C" {
-
-void __register_fatbinary(void **Handle, void *FatbinWrapper,
-                          const char *ModuleId) {
-  auto &mneme = MnemeRecorderHIPPreload::instance();
-  auto Wrapper = (FatBinaryWrapper_t *)FatbinWrapper;
-  LOG_DEBUG("Mneme received explicit request to register binary with ID: {} "
-            "HANDLE:{} WRAPPER: {}",
-            ModuleId, (void *)Handle, FatbinWrapper);
-  mneme.explicitRegisterFatBin(Handle, Wrapper, ModuleId);
-}
-
-void __register_linked_binary(void *FatbinWrapper, const char *ModuleId) {
-  auto &mneme = MnemeRecorderHIPPreload::instance();
-  auto Wrapper = (FatBinaryWrapper_t *)FatbinWrapper;
-  LOG_DEBUG(
-      "Mneme received explicit request to register linked binary with ID: "
-      "{} WRAPPER : {}",
-      ModuleId, FatbinWrapper);
-  mneme.explicitRegisterPreLinkedBinary((FatBinaryWrapper_t *)Wrapper,
-                                        ModuleId);
-}
-
-void __register_fatbinary_end(void **Handle) {
-  auto &mneme = MnemeRecorderHIPPreload::instance();
-  LOG_DEBUG("Mneme received explicit request to finalize fatbinary "
-            "registration: "
-            "{}",
-            (void *)Handle);
-  mneme.explicitEndRegisterFatBinary(Handle);
-}
-
-void __hipRegisterFatBinaryEnd(void *ptr) {
-  LOG_DEBUG("Entering mneme to finalize fatbinary");
-  auto &mneme = MnemeRecorderHIPPreload::instance();
-  mneme.registerFatBinEnd(ptr);
-}
-
-void **__hipRegisterFatBinary(void *fatbin) {
-  LOG_DEBUG("Entering mneme to register fatbinary {}", fatbin);
-  auto &mneme = MnemeRecorderHIPPreload::instance();
-  return mneme.registerFatBin(static_cast<FatBinaryWrapper_t *>(fatbin));
-}
-
-void __hipRegisterVar(void **fatbinHandle, char *hostVar, char *deviceAddress,
-                      const char *deviceName, int ext, size_t size,
-                      int constant, int global) {
-  LOG_DEBUG("Entering Mneme to Register Variable");
-  auto &mneme = MnemeRecorderHIPPreload::instance();
-  mneme.registerVar(fatbinHandle, hostVar, deviceAddress, deviceName, ext, size,
-                    constant, global);
-};
-
-void __hipRegisterFunction(void **fatbinHandle, const char *hostFun,
-                           char *deviceFun, const char *deviceName,
-                           int thread_limit, uint3 *tid, uint3 *bid, dim3 *bDim,
-                           dim3 *gDim, int *wSize) {
-  LOG_DEBUG("Entering Mneme to Register function");
-  auto &mneme = MnemeRecorderHIPPreload::instance();
-  mneme.registerFunc(fatbinHandle, hostFun, deviceFun, deviceName, thread_limit,
-                     tid, bid, bDim, gDim, wSize);
-};
-
 hipError_t hipMalloc(void **ptr, size_t size) {
   LOG_DEBUG("Entering Mneme to Malloc pointer of size : {}", size);
   auto &mneme = MnemeRecorderHIPPreload::instance();
@@ -114,13 +52,6 @@ hipError_t hipHostFree(void *ptr) {
   return mneme.rtHostFree(ptr);
 }
 
-hipError_t hipLaunchKernel(const void *func, dim3 gridDim, dim3 blockDim,
-                           void **args, size_t sharedMem, hipStream_t stream) {
-  LOG_DEBUG("Entering Mneme to Launch Kernel");
-  auto &mneme = MnemeRecorderHIPPreload::instance();
-  return mneme.rtLaunchKernel(func, gridDim, blockDim, args, sharedMem, stream);
-}
-
 hipError_t hipSetDevice(int deviceID) {
   LOG_DEBUG("Entering Mneme to set Device");
   auto &mneme = MnemeRecorderHIPPreload::instance();
@@ -131,5 +62,14 @@ hipError_t hipGetDevice(int *deviceID) {
   LOG_DEBUG("Entering Mneme to set Device");
   auto &mneme = MnemeRecorderHIPPreload::instance();
   return mneme.rtGetDevice(deviceID);
+}
+
+hipError_t __jit_launch_kernel(void *Kernel, dim3 GridDim, dim3 BlockDim,
+                               void **KernelArgs, uint64_t ShmemSize,
+                               void *Stream) {
+  LOG_DEBUG("Enetering Mneme to launch kernel");
+  auto &mneme = MnemeRecorderHIPPreload::instance();
+  return mneme.rtLaunchKernel(Kernel, GridDim, BlockDim, KernelArgs, ShmemSize,
+                              static_cast<hipStream_t>(Stream));
 }
 }

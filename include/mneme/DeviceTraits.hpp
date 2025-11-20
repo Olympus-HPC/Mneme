@@ -92,21 +92,6 @@ template <> struct DeviceTraits<DeviceVendors::HIP> {
   }
   static constexpr const char *getDeviceFreeFnName() { return "hipFree"; }
   static constexpr const char *getPinnedFreeFnName() { return "hipHostFree"; }
-  static constexpr const char *getUURegisterFunctionFnName() {
-    return "__hipRegisterFunction";
-  }
-  static const char *getUURegisterVarFnName() { return "__hipRegisterVar"; }
-  static const char *getUURegisterFatbinFnName() {
-    return "__hipRegisterFatBinary";
-  }
-
-  static const char *getUURegisterFatbinEndFnName() {
-    return "__hipRegisterFatBinaryEnd";
-  }
-
-  static const char *getUUUnRegisterFatBinaryFnName() {
-    return "__hipUnregisterFatBinary";
-  }
 
   static const char *getDeviceGetIDFnName() { return "hipGetDevice"; }
   static const char *getDeviceSetIDFnName() { return "hipSetDevice"; }
@@ -184,7 +169,8 @@ template <> struct DeviceTraits<DeviceVendors::HIP> {
   }
 
   static std::pair<void *, size_t>
-  getGlobalAddrFromModule(hipModule_t &HipModule, std::string &GlobalName) {
+  getGlobalAddrFromModule(hipModule_t &HipModule,
+                          const std::string &GlobalName) {
     size_t Size;
     hipDeviceptr_t DevPtr;
     auto EC = DeviceErrorCheck(
