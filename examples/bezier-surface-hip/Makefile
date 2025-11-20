@@ -40,7 +40,7 @@ ifeq ($(Version), mneme)
   CFLAGS += -fpass-plugin=${MNEME_PREFIX}/lib64/libProteusPass.so \
 						-fplugin=${MNEME_PREFIX}/lib64/libProteusPass.so \
             -fno-discard-value-names -ftrivial-auto-var-init=zero \
-						-Xclang -mllvm -Xclang -force-proteus-jit-annotate-all
+            -Xclang -mllvm -Xclang -force-proteus-jit-annotate-all
 
   LDFLAGS = -L${ROCM_PATH}/lib -L${ROCM_PATH}/llvm/lib \
     $(shell ${ROCM_PATH}/llvm/bin/llvm-config --libs) \
