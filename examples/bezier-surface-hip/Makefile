@@ -42,7 +42,7 @@ ifeq ($(Version), mneme)
             -fno-discard-value-names -ftrivial-auto-var-init=zero \
 						-Xclang -mllvm -Xclang -force-proteus-jit-annotate-all
 
-	LDFLAGS = -L${ROCM_PATH}/lib -L${ROCM_PATH}/llvm/lib \
+	LDFLAGS += -L${ROCM_PATH}/lib -L${ROCM_PATH}/llvm/lib \
 		$(shell ${ROCM_PATH}/llvm/bin/llvm-config --libs) \
 		$(shell ${ROCM_PATH}/llvm/bin/llvm-config --system-libs) \
 		-L${MNEME_PREFIX}/lib64 \
@@ -52,7 +52,7 @@ else ifeq ($(Version), proteus)
 CFLAGS += -DENABLE_PROTEUS -I${MNEME_PREFIX}/include \
     -fpass-plugin=${MNEME_PREFIX}/lib64/libProteusPass.so
 
-LDFLAGS = -L${ROCM_PATH}/lib -L${ROCM_PATH}/llvm/lib \
+LDFLAGS += -L${ROCM_PATH}/lib -L${ROCM_PATH}/llvm/lib \
 	$(shell ${ROCM_PATH}/llvm/bin/llvm-config --libs) \
 	$(shell ${ROCM_PATH}/llvm/bin/llvm-config --system-libs) \
 	-L${MNEME_PREFIX}/lib64 \
