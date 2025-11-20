@@ -71,12 +71,12 @@ def _copy_or_move(sources, dest, move=False):
 class Clean:
     @staticmethod
     def set_cli_args(parser):
-        parser.add_argument("dbs", help="Recorded Mneme DB files", nargs="+")
+        parser.add_argument("record-database", help="Recorded Mneme DB files", nargs="+")
         parser.set_defaults(func=Clean.run)
 
     @staticmethod
     def run(args):
-        dbs = args.dbs
+        dbs = args.record_database
         for db in dbs:
             if not Path(db).exists():
                 raise FileNotFoundError(f"Mneme Database '{db}' does not exist")
@@ -104,7 +104,7 @@ class Copy:
     @staticmethod
     def set_cli_args(parser):
         parser.add_argument(
-            "dbs",
+            "record-database",
             nargs="+",
             help="Source paths of Mneme DB records followed by a destination path to which data will be copied to",
         )
@@ -112,7 +112,7 @@ class Copy:
 
     @staticmethod
     def run(args):
-        paths = args.dbs
+        paths = args.record_database
         if len(paths) < 2:
             raise ValueError(
                 f"Please provide both source and destination directories {paths}"
@@ -135,7 +135,7 @@ class Move:
     @staticmethod
     def set_cli_args(parser):
         parser.add_argument(
-            "dbs",
+            "record-database",
             nargs="+",
             help="Source paths of Mneme DB records followed by a destination path to which data will be moved to",
         )
@@ -143,7 +143,7 @@ class Move:
 
     @staticmethod
     def run(args):
-        paths = args.dbs
+        paths = args.record_database
         if len(paths) < 2:
             raise ValueError(
                 f"Please provide both source and destination directories {paths}"
@@ -167,7 +167,7 @@ class Summary:
     @staticmethod
     def set_cli_args(parser):
         parser.add_argument(
-            "-db",
+            "-rdb",
             "--record-database",
             dest="db",
             required=True,
@@ -423,7 +423,7 @@ class Summary:
 
     @staticmethod
     def analyze(args):
-        kernel_descr = RecordedExecution.from_json(args.db)
+        kernel_descr = RecordedExecution.from_json(args.rdb)
         OrigMod = jit.link_llvm_modules(
             kernel_descr.llvm_files, kernel_descr.kernel_name, False, False
         )
@@ -643,7 +643,7 @@ class Serve:
     @staticmethod
     def set_cli_args(parser):
         parser.add_argument(
-            "-db",
+            "-rdb",
             "--record-database",
             dest="db",
             required=True,
@@ -658,7 +658,7 @@ class Serve:
         )
 
         parser.add_argument(
-            "json",
+            "proteus-json",
             help="json file to store proteus configuration, if the file exists we append the configuration",
         )
 
@@ -673,8 +673,8 @@ class Serve:
     @staticmethod
     def serve(args):
         console = Console(theme=Serve.theme, soft_wrap=False)
-        kernel_descr = RecordedExecution.from_json(args.db)
-        jsFn = args.json
+        kernel_descr = RecordedExecution.from_json(args.rdb)
+        jsFn = args.proteus_json
         data = {}
         if Path(jsFn).exists():
             with open(jsFn, "r") as fd:

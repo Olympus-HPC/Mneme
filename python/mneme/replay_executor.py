@@ -357,7 +357,7 @@ class CLIExecutor(BaseExecutor):
         self.max_threads = kwargs.pop("max_threads", False)
         self.min_blocks_per_sm = kwargs.pop("min_blocks_per_sm", 0)
         self.dims = kwargs.pop("dims", False)
-        self.db_dir = kwargs.pop("db_dir", None)
+        self.results_db_dir = kwargs.pop("results_db_dir", None)
         super().__init__(*args, **kwargs)
         self.pass_manager = PipelineManager()
         if self.pipeline not in (
@@ -442,9 +442,9 @@ class CLIExecutor(BaseExecutor):
         root_ir = executor.link_ir()
 
         orig = ""
-        if executor.db_dir is not None:
+        if executor.results_db_dir is not None:
             executor._db = MnemeDB(
-                executor.db_dir,
+                executor.results_db_dir,
                 executor.kernel_descr.static_hash,
                 executor.kernel_descr.dynamic_hash,
             ).open()
@@ -525,12 +525,12 @@ class TuneWorker(BaseExecutor):
         codegen_opt: int,
         codegen_method: str,
         iterations: int,
-        db_dir: str,
+        results_db_dir: str,
         state: Event,
     ):
         # We need this to actually run things...
         fd_out = os.open(
-            f"{db_dir}/Worker-{device_id}.log", os.O_WRONLY | os.O_CREAT | os.O_APPEND
+            f"{results_db_dir}/Worker-{device_id}.log", os.O_WRONLY | os.O_CREAT | os.O_APPEND
         )
         os.dup2(fd_out, 1)  # 1 = stdout
         os.dup2(fd_out, 2)  # 2 = stderr
@@ -548,7 +548,7 @@ class TuneWorker(BaseExecutor):
         # LLVM IR file to start working on optimizations
         root_ir = worker.link_ir()
         resdb = MnemeDB(
-            db_dir, worker.kernel_descr.static_hash, worker.kernel_descr.dynamic_hash
+            results_db_dir, worker.kernel_descr.static_hash, worker.kernel_descr.dynamic_hash
         ).open()
 
         with worker as Memory:

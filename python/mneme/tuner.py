@@ -39,7 +39,7 @@ class TuneWorkerHandle:
         codegen_opt: int,
         codegen_method: bool,
         iterations: int,
-        db_dir: str,
+        results_db_dir: str,
     ):
 
         self.idx = idx
@@ -60,7 +60,7 @@ class TuneWorkerHandle:
         self.codegen_opt = codegen_opt
         self.codegen_method = codegen_method
         self.iterations = iterations
-        self.db_dir = db_dir
+        self.results_db_dir = results_db_dir
 
         # Start the subprocess and its monitor thread
         self._state = None
@@ -85,7 +85,7 @@ class TuneWorkerHandle:
                 self.codegen_opt,
                 self.codegen_method,
                 self.iterations,
-                self.db_dir,
+                self.results_db_dir,
                 self._state,
             ),
             daemon=False,
@@ -168,7 +168,7 @@ class ReplayTuner(BaseExecutor):
     @staticmethod
     def set_cli_args(parser):
         parser.add_argument(
-            "--db-dir",
+            "--results-db-dir",
             required=True,
             default=None,
             help="Directory to store the collected data to",
@@ -249,7 +249,7 @@ class ReplayTuner(BaseExecutor):
 
     def __init__(self, *args, **kwargs):
         self.specialize = kwargs.pop("specialize", False)
-        self.db_dir = kwargs.pop("db_dir")
+        self.results_db_dir = kwargs.pop("results_db_dir")
         self.num_trials = kwargs.pop("num_trials")
         self.seed = kwargs.pop("seed", 0)
         self.mean_size = kwargs.pop("average_pipeline_length", 50)
@@ -357,13 +357,13 @@ class ReplayTuner(BaseExecutor):
                 executor.codegen_opt,
                 executor.codegen_method,
                 executor._iterations,
-                executor.db_dir,
+                executor.results_db_dir,
             )
             for i in range(executor.num_workers)
         ]
 
         db = MnemeDB(
-            executor.db_dir,
+            executor.results_db_dir,
             executor.kernel_descr.static_hash,
             executor.kernel_descr.dynamic_hash,
         ).open()
@@ -472,7 +472,7 @@ class ReplayTuner(BaseExecutor):
                 executor.codegen_opt,
                 executor.codegen_method,
                 executor._iterations,
-                executor.db_dir,
+                executor.results_db_dir,
             )
             for i in range(executor.num_workers)
         ]
@@ -491,7 +491,7 @@ class ReplayTuner(BaseExecutor):
         ]
 
         db = MnemeDB(
-            executor.db_dir,
+            executor.results_db_dir,
             executor.kernel_descr.static_hash,
             executor.kernel_descr.dynamic_hash,
         ).open()
