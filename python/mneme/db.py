@@ -57,7 +57,7 @@ class MnemeDB:
         self._best = sys.float_info.max
         self._o3 = None
         self._default_name = "results"
-        self._filename = dir / pathlib.Path(f"{self._default_name}.csv")
+        self._filename = results_db_dir / pathlib.Path(f"{self._default_name}.csv")
 
     @property
     def results_db_dir(self):
@@ -201,6 +201,6 @@ class MnemeDB:
 
         missing = set(MnemeDB._columns) - headers
         if missing:
-            logger.warn(f"Missing fields: {missing}")
+            logger.warning(f"Missing fields: {missing}")
             return False
         return True

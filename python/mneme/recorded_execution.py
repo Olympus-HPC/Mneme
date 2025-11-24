@@ -131,7 +131,24 @@ class MemStateRef:
         return not bool(ffi.lib.MnemePy_CompareMemState(self._state, other._state))
 
     def __del__(self):
-        self._dispose()
+        try:
+            state = getattr(self, "_state", None)
+
+            # If no state, or constructor failed, or tests used fake values → skip cleanup
+            if not state or isinstance(state, str):
+                return
+
+            # Call disposer only if available and callable
+            dispose = getattr(ffi.lib, "MnemePy_DisposeMemState", None)
+            if callable(dispose):
+                try:
+                    dispose(state)
+                except Exception:
+                    pass
+
+        except Exception:
+            # Absolutely nothing should escape __del__
+            pass
 
 # `RecordedExecution` captures the full static description of a kernel as
 # recorded by Mneme: argument names, specializations, LLVM IR modules, virtual
