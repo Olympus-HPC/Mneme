@@ -36,7 +36,20 @@ def _analyze_measurements(times):
 
     return (std_val, avg_val, median_val, R, R_percent, iqr, iqr / median_val, q1, q3)
 
-
+# `Experiment` represents a single configuration of a kernel replay: a specific
+# combination of specialization flags, launch-bounds settings, LLVM pass
+# pipelines, and codegen options. It also stores all metadata produced during
+# replay, including:
+#   • optimization/codegen timings and object size
+#   • execution-time statistics (median, std, IQR, robustness metrics)
+#   • resource usage (registers, local/const memory)
+#   • bookkeeping information (start/end timestamps, GPU id, commit ids)
+#
+# Experiments are uniquely identified by a stable hash of their configuration
+# fields. They can be serialized to dictionaries (for database storage) and
+# reconstructed from them. In short, this class is the data model used by
+# Mneme to describe *what* configuration was run and *what* performance and
+# resource metrics were observed.
 class Experiment:
     def __init__(self, **kwargs):
         self.specialize = kwargs.pop("specialize")

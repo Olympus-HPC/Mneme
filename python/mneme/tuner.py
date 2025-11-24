@@ -24,7 +24,24 @@ from mneme.replay_executor import BaseExecutor, TuneWorker
 from mneme.tuner_optuna import run_optuna_tune
 
 
-# Handle a single persistent subprocess and its monitor thread
+# A `TuneWorkerHandle` manages a single persistent tuning subprocess and a
+# dedicated monitor thread. Each handle owns:
+#   • a long-lived worker subprocess running `TuneWorker.run`
+#   • a monitor thread that waits for the subprocess to exit, reports crashes,
+#     and automatically respawns workers when needed
+#   • bookkeeping for the currently assigned experiment so results or failures
+#     can be correlated with the correct request
+#
+# The handle exposes:
+#   • `assign(experiment)` — send a new tuning request to the worker
+#   • automatic crash recovery — if the worker dies unexpectedly, the monitor
+#     reports the failure and respawns a fresh worker
+#   • clean shutdown — `shutdown_process()` signals termination and stops the
+#     monitor thread
+#
+# In short, this class encapsulates the lifecycle management of one tuning
+# subprocess and ensures robust, fault-tolerant communication with it via
+# multiprocessing queues.
 class TuneWorkerHandle:
     def __init__(
         self,
@@ -163,7 +180,23 @@ class TuneWorkerHandle:
         self.monitor_thread.join()
         logger.debug(f"[TuneWorkerHandle]:{self.idx} Worker shutdown")
 
-
+# `ReplayTuner` coordinates the end-to-end tuning workflow for a single
+# recorded kernel. It builds experiment configurations, launches a pool of
+# persistent `TuneWorkerHandle` subprocesses, schedules experiments across
+# them, and records results into the Mneme database. 
+#
+# Responsibilities:
+#   • Parse CLI arguments controlling sampling strategy, pipeline length,
+#     specialization options, and number of workers/GPUs to use.
+#   • Generate experiment objects (random or optuna-driven) describing
+#     codegen options, launch-bound settings, and LLVM pass pipelines.
+#   • Dispatch experiments to workers and collect completed results from a
+#     shared queue, including handling failures or worker restarts.
+#   • Record all outcomes (IR, metadata, performance) into the results DB.
+#
+# In short, `ReplayTuner` is the top-level orchestrator that turns a recorded
+# dynamic GPU kernel into a large set of experiments and executes them
+# efficiently across all available GPUs.
 class ReplayTuner(BaseExecutor):
     @staticmethod
     def set_cli_args(parser):
@@ -264,7 +297,17 @@ class ReplayTuner(BaseExecutor):
         )
         self.LLVMPassManager = PipelineManager()
 
-    def create_experiments(self, pipeline, db):
+    # Generate all experiment configurations for a given LLVM pass pipeline.
+    # This expands the pipeline into a full set of tuning candidates by
+    # enumerating:
+    #   • specialization on/off
+    #   • launch-bound settings (max threads per block and min blocks per SM)
+    #
+    # For each combination, an `Experiment` object is constructed and filtered
+    # against the results database so we only execute experiments that have not
+    # already been replayed. The returned list therefore represents the unique
+    # set of experiments that still need to be evaluated for this pipeline.
+    def generate_experiments_for_pipeline(self, pipeline, db):
         # NOTE: Some of the fields of the experiment are misguiding.
         # For example, the 'internalize' field is ignored, cause this
         # happens earlier regardless of the value of the field itself.
@@ -331,6 +374,7 @@ class ReplayTuner(BaseExecutor):
         kwargs.pop("command")
         kwargs.pop("func")
         executor = ReplayTuner(**kwargs)
+        #NOTE: This needs to take place early, before launching the workers. Otherwise we get issues with dlopen and profiling executions
         os.environ["ROCP_TOOL_LIBRARIES"] = (
             get_profile_library()
         )  # /path/to/libmneme_profile.so
@@ -498,15 +542,18 @@ class ReplayTuner(BaseExecutor):
 
         logger.info(f"Database contains {len(db)} experiments")
 
+        #NOTE: In all pipelines we always append "globaldce" we have observed this
+        # reduces the size of the generated binary and can lead into issues. We perform
+        # this for apple to apple comparisons across sizes. 
         for p in passes:
-            total_experiments += executor.create_experiments(
+            total_experiments += executor.generate_experiments_for_pipeline(
                 executor.LLVMPassManager.to_string(p) + ",globaldce", db
             )
 
         # Schedule happens in reverse order (pop) thus we want default pipelines to rin first.
         requested_num_exp = len(total_experiments)
         for p in default_pipelines:
-            total_experiments += executor.create_experiments(p + ",globaldce", db)
+            total_experiments += executor.generate_experiments_for_pipeline(p + ",globaldce", db)
 
         root_ir = executor.link_ir()
         orig = db.save_ir(root_ir, "orig")

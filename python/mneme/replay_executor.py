@@ -55,13 +55,12 @@ class BaseExecutor:
             help="Aggressive Dead Code Elimination by assuming we will only execute the kernel identified by 'id'",
         )
 
-        # default is True; user can override with --no-foo
         parser.add_argument(
             "--internalize",
             dest="internalize",
             default=False,
             action=argparse.BooleanOptionalAction,
-            help="Internalize LLVM IR before optimization (reduces size of generated object file and may enable more aggressive inlining)",
+            help="Internalize LLVM IR before optimization (reduces size of generated object file and may enable more aggressive inlinining). Disabling may result to mis compilations",
         )
 
         parser.add_argument(
@@ -70,7 +69,6 @@ class BaseExecutor:
             dest="codegen_method",
             choices=["rtc", "serial", "parallel"],
             default="serial",
-            action=argparse.BooleanOptionalAction,
             help="Technology to use to lower to LLVM IR to a device object file instead of default Proteus Infrastructure",
         )
 
@@ -141,6 +139,7 @@ class BaseExecutor:
         )
 
     def open(self):
+        # Note the 'executor' allocates all resources and picks address space.
         self._page_manager = PageManagerRef(
             self.device_id, self.records.va_addr, self.records.va_size
         )
@@ -241,6 +240,8 @@ class BaseExecutor:
         ir_module = transform.remove_auto_initialize(ir_module)
         # Done with verification. Moving to next stage
 
+        # NOTE: 3. We build and run. We set tracking on and we always execute iterations +2,
+        # to enalbe later computation of statistical metrics etc.
         mem_buffer = self._build(exp, ir_module, middle_end_opt, True)
         self._run(exp, mem_buffer, True, self._iterations + 2)
         exp.executed = True
@@ -528,7 +529,8 @@ class TuneWorker(BaseExecutor):
         results_db_dir: str,
         state: Event,
     ):
-        # We need this to actually run things...
+        # NOTE: We open a file for every individual executor and give persmisions, then we redirect stdout/stderr
+        # to that file. We do this to not conflict our messages 
         fd_out = os.open(
             f"{results_db_dir}/Worker-{device_id}.log", os.O_WRONLY | os.O_CREAT | os.O_APPEND
         )
