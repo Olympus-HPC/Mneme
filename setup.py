@@ -1,12 +1,13 @@
 import glob
 import os
-import shutil
 import subprocess
 import sys
+from pathlib import Path
 
 from setuptools import Extension, find_packages, setup
 from setuptools.command.build_ext import build_ext
 from setuptools.command.build_py import build_py
+from distutils.sysconfig import get_python_lib
 
 
 # Helper function to run shell commands
@@ -43,7 +44,8 @@ class CMakeBuild(build_ext):
         self.root_dir = os.path.abspath(os.path.dirname(__file__))
         build_cmd = self.get_finalized_command("build")
         self.build_lib = build_cmd.build_lib
-        self.install_dir = os.path.abspath(self.build_lib)
+        site_packages = Path(get_python_lib())
+        self.install_dir = site_packages / "mneme/native/"
         self.has_nvidia = "On" if has_nvidia_gpu() else "Off"
         self.has_amd = "On" if has_amd_gpu() else "Off"
         self.llvm_dir = os.getenv("LLVM_INSTALL_DIR", None)
@@ -99,9 +101,15 @@ class CMakeBuild(build_ext):
             "-DCMAKE_BUILD_TYPE=Relwithdebinfo",
             "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
             "-DBUILD_SHARED=On",
+            f"-DCMAKE_INSTALL_RPATH={self.install_dir}/lib64/",
+            "-DCMAKE_SKIP_INSTALL_RPATH=OFF",
+            "-DCMAKE_INSTALL_RPATH_USE_LINK_PATH=ON",
             "-DCMAKE_POSITION_INDEPENDENT_CODE=On",
             "-DCMAKE_BUILD_TYPE=Relwithdebinfo",
             f"-DCMAKE_INSTALL_PREFIX={self.install_dir}",
+            "-DCMAKE_INSTALL_LIBDIR=lib64",
+            "-DCMAKE_INSTALL_BINDIR=bin",
+            "-DCMAKE_INSTALL_INCLUDEDIR=include",
             f"-DLLVM_INSTALL_DIR={self.llvm_dir}",
             f"-DPROTEUS_ENABLE_CUDA={self.has_nvidia}",
             f"-DPROTEUS_ENABLE_HIP={self.has_amd}",
@@ -143,6 +151,9 @@ class CMakeBuild(build_ext):
             [
                 "cmake",
                 f"-DCMAKE_INSTALL_PREFIX={self.install_dir}",
+                "-DCMAKE_INSTALL_LIBDIR=lib64",
+                "-DCMAKE_INSTALL_BINDIR=bin",
+                "-DCMAKE_INSTALL_INCLUDEDIR=include",
                 f"-DCMAKE_C_COMPILER={self.cc}",
                 f"-DCMAKE_CXX_COMPILER={self.cxx}",
                 "..",
@@ -162,13 +173,19 @@ class CMakeBuild(build_ext):
         cmake_options = [
             "-DCMAKE_BUILD_TYPE=Relwithdebinfo",
             f"-DCMAKE_INSTALL_PREFIX={self.install_dir}",
+            "-DCMAKE_INSTALL_LIBDIR=lib64",
+            "-DCMAKE_INSTALL_BINDIR=bin",
+            "-DCMAKE_INSTALL_INCLUDEDIR=include",
             f"-DCMAKE_C_COMPILER={self.cc}",
             f"-DCMAKE_CXX_COMPILER={self.cxx}",
             f"-DLLVM_INSTALL_DIR={self.llvm_dir}",
             f"-DMNEME_ENABLE_HIP={self.has_amd}",
             "-DMNEME_ENABLE_TESTS=On",
             "-DMNEME_ENABLE_AUTOTUNE=On",
-            "-DCMAKE_INSTALL_RPATH_USE_LINK_PATH=On",
+            f"-DCMAKE_INSTALL_RPATH={self.install_dir}/lib64/",
+            "-DCMAKE_SKIP_INSTALL_RPATH=OFF",
+            "-DCMAKE_INSTALL_RPATH_USE_LINK_PATH=ON",
+            "-DMNEME_ENABLE_LOGGER=On",
             f"-Dproteus_DIR={proteus_dir}",
             f"-Dspdlog_DIR={spdlog_dir}",
         ]
@@ -176,29 +193,6 @@ class CMakeBuild(build_ext):
         run_command(["cmake", ".."] + cmake_options, cwd=build_dir)
         run_command(["make", "-j4"], cwd=build_dir)
         run_command(["make", "-j4", "install"], cwd=build_dir)
-
-        build_module = [
-            p
-            for p in glob.glob(os.path.join(self.install_dir, "lib64", "libmneme*.so"))
-        ]
-        build_module += [
-            p
-            for p in glob.glob(
-                os.path.join(self.install_dir, "lib64", "libmneme_profile*.so")
-            )
-        ]
-
-        if not build_module:
-            raise RuntimeError(
-                "Error: mneme shared libraries not found in build output!"
-            )
-
-        python_package_dir = os.path.join(self.build_lib, "mneme")
-        for built_module in build_module:
-            sys.stderr.write(f"Writting package to {python_package_dir}")
-            os.makedirs(python_package_dir, exist_ok=True)
-            shutil.copy(built_module, python_package_dir)
-
 
 class CustomBuildPy(build_py):
     """Ensure CMake runs before packaging Python code"""
