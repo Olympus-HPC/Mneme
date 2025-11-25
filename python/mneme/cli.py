@@ -16,7 +16,7 @@ import sys
 import time
 from typing import Tuple, Union
 
-from mneme.commands import Clean, Copy, Detail, Move, Serve, Summary
+from mneme.commands import Clean, Copy, Detail, Move, Serve, Summary, Record
 from mneme.device import DeviceModule, dim3, get_device_arch
 from mneme.llvm.module import ModuleRef
 from mneme.logging import logger as replay_logger
@@ -116,6 +116,12 @@ def main():
         help="Provide details of a specific experiment",
     )
 
+    p_record = subparsers.add_parser(
+        "record",
+        parents=[],
+        help="Record the execution of an application"
+    )
+
     CLIExecutor.set_cli_args(p_exec)
     ReplayTuner.set_cli_args(p_tune)
     Clean.set_cli_args(p_clean)
@@ -124,11 +130,13 @@ def main():
     Summary.set_cli_args(p_summary)
     Serve.set_cli_args(p_serve)
     Detail.set_cli_args(p_detail)
+    Record.set_cli_args(p_record)
 
     args = parser.parse_args()
-    configure_replay_logging(vars(args).pop("verbosity", None))
+    verbosity = vars(args).pop("verbosity", None)
+    configure_replay_logging(verbosity)
 
-    return args.func(args)
+    return args.func(args, verbosity)
 
 
 if __name__ == "__main__":

@@ -162,6 +162,18 @@ ProteusPY_specializeDims(LLVMModuleRef Mod, uint64_t CurrentHash,
 }
 
 API_EXPORT(uint64_t)
+ProteusPY_specializeDimsAssume(LLVMModuleRef Mod, uint64_t CurrentHash,
+                         const char *KernelName, dim3 GridDim, dim3 BlockDim) {
+  auto *M = llvm::unwrap(Mod);
+  auto *F = M->getFunction(KernelName);
+  proteus::setKernelDimsAssume(*M, GridDim, BlockDim);
+  auto Hash = hash(CurrentHash, GridDim.x, GridDim.y, GridDim.z, BlockDim.x,
+                   BlockDim.y, BlockDim.z);
+  return Hash.getValue();
+}
+
+
+API_EXPORT(uint64_t)
 ProteusPY_setLaunchBounds(LLVMModuleRef Mod, uint64_t CurrentHash,
                           const char *KernelName, int MaxThreadsPerBlock,
                           int MinBlocksPerSM) {

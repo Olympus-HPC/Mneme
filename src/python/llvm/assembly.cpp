@@ -28,8 +28,6 @@ LLVMPY_ParseAssembly(LLVMContextRef context, const char *ir,
     *outmsg = LLVMPY_CreateString(os.str().c_str());
     return NULL;
   }
-
-  std::cout << "Assembly pointer is " << (void *)m << "\n";
   return wrap(m);
 }
 

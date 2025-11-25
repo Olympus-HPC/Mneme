@@ -1,4 +1,5 @@
 import argparse
+import subprocess
 import json
 import os
 import shutil
@@ -10,7 +11,7 @@ from typing import Any, Dict, Iterable, Optional
 import numpy as np
 import pandas as pd
 from mneme.db import MnemeDB
-from mneme.llvm import debug, module
+from mneme.llvm import debug, module, utils
 from mneme.logging import logger
 from mneme.proteus import jit
 from mneme.recorded_execution import RecordedExecution
@@ -75,7 +76,7 @@ class Clean:
         parser.set_defaults(func=Clean.run)
 
     @staticmethod
-    def run(args):
+    def run(args, verbosity):
         dbs = args.record_database
         for db in dbs:
             if not Path(db).exists():
@@ -111,7 +112,7 @@ class Copy:
         parser.set_defaults(func=Copy.run)
 
     @staticmethod
-    def run(args):
+    def run(args, verbosity):
         paths = args.record_database
         if len(paths) < 2:
             raise ValueError(
@@ -142,7 +143,7 @@ class Move:
         parser.set_defaults(func=Move.run)
 
     @staticmethod
-    def run(args):
+    def run(args, verbosity):
         paths = args.record_database
         if len(paths) < 2:
             raise ValueError(
@@ -769,3 +770,75 @@ class Detail:
         # Filter verified=True and failed=False
         filtered = df[(df["hash"]) == args.hash]
         print(json.dumps(filtered.iloc[0].to_dict(), indent=2))
+
+
+class Record:
+    @staticmethod
+    def set_cli_args(parser):
+        parser.add_argument(
+            "-rdb",
+            "--record-db-dir",
+            default = os.getcwd(), 
+            help="Path to directory to store the recorded database(s) and memory snapshots",
+        )
+        parser.add_argument(
+            "-vass",
+            "--virtual-address-space-size",
+            type=int,
+            default = 4, 
+            help="Size (in GigaBytes) of virtual address space to be allocatd by mneme.",
+        )
+
+        parser.add_argument(
+            "-mr",
+            "--per-kernel-max-recordings",
+            type=int,
+            default=4,
+            help="The maximum number of times to record the same GPU kernel (function) with different dynamic hashes")
+        parser.add_argument("cmd", nargs=argparse.REMAINDER)
+        parser.set_defaults(func=Record.run, parser=parser)
+
+    @staticmethod
+    def run(args, verbosity):
+        parser = args.parser
+        idx = 0
+        try:
+            idx = args.cmd.index("--")
+        except ValueError:
+            idx = -1
+
+
+        if idx != 0:
+            parser.error(f"Unrecognized options are passed to menme {args.cmd[:idx]}")
+
+        cmd = args.cmd[idx+1:]
+        record_env = os.environ.copy()
+        librecord_path = utils.get_mneme_record_library_name()
+        logger.debug(f"LD_PRELOAD={librecord_path}")
+        record_env["LD_PRELOAD"] = librecord_path
+        logger.debug(f"MNEME_PAGE_SIZE={args.virtual_address_space_size}")
+        record_env["MNEME_PAGE_SIZE"] = str(args.virtual_address_space_size)
+        record_db_dir  = Path(args.record_db_dir).resolve()
+        if not record_db_dir.exists():
+            raise FileNotFoundError(f"Directory '{args.record_db_dir}' does not exist")
+
+        if not record_db_dir.is_dir():
+            raise NotADirectoryError(f"Path '{args.record_db_dir}' is not a directory")
+
+        logger.debug(f"MNEME_DATA_DIR={str(record_db_dir)}")
+        record_env["MNEME_DATA_DIR"] = str(record_db_dir)
+
+        if verbosity is not None:
+            logger.debug(f"MNEME_LOG_LEVEL={verbosity}")
+            record_env["MNEME_LOG_LEVEL"] = verbosity 
+
+        try:
+            subprocess.run(cmd, env=record_env)
+        except FileNotFoundError:
+            parser.error(f"Executable '{cmd[0]}' not found")
+        except PermissionError:
+            parser.error(f"Executable '{cmd[0]}' is not executable")
+
+
+        print(librecord_path)
+

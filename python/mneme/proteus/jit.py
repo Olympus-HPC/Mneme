@@ -47,6 +47,15 @@ ffi.lib.ProteusPY_specializeDims.argtypes = [
 ]
 ffi.lib.ProteusPY_specializeDims.restype = c_uint64
 
+ffi.lib.ProteusPY_specializeDimsAssume.argtypes = [
+    ffi.LLVMModuleRef,
+    c_uint64,
+    c_char_p,
+    dim3,
+    dim3,
+]
+ffi.lib.ProteusPY_specializeDimsAssume.restype = c_uint64
+
 ffi.lib.ProteusPY_setLaunchBounds.argtypes = [
     ffi.LLVMModuleRef,
     c_uint64,
@@ -259,6 +268,30 @@ def specialize_dims(
             mod, c_uint64(mod_hash), _encode_string(kernel_name), grid_dim, block_dim
         )
     )
+
+def specialize_dims_assume(
+    mod: ModuleRef, mod_hash: int, kernel_name: str, grid_dim: dim3, block_dim: dim3
+):
+    """
+    @brief Adds assumptions on operations beased on (grid/block) inside the LLVM module.
+
+    Embeds compile-time constants for launch configuration, enabling more
+    aggressive loop unrolling and simplification.
+
+    @param mod LLVM module to update.
+    @param mod_hash Previous module hash.
+    @param kernel_name Kernel to specialize.
+    @param grid_dim Grid dimensions (dim3).
+    @param block_dim Block dimensions (dim3).
+
+    @return Updated module hash.
+    """
+    return int(
+        ffi.lib.ProteusPY_specializeDimsAssume(
+            mod, c_uint64(mod_hash), _encode_string(kernel_name), grid_dim, block_dim
+        )
+    )
+
 
 
 def set_launch_bounds(
