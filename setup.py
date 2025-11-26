@@ -3,6 +3,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+import json
 
 from setuptools import Extension, find_packages, setup
 from setuptools.command.build_ext import build_ext
@@ -33,6 +34,22 @@ def has_amd_gpu():
     except subprocess.CalledProcessError:
         return False
 
+def get_llvm_paths(llvm_dir):
+    llvm_config = Path(llvm_dir) / "bin" / "llvm-config"
+    if not llvm_config.exists():
+        raise RuntimeError(f"llvm-config not found at {llvm_config}")
+
+    def run(*args):
+        return subprocess.check_output([str(llvm_config), *args], text=True).strip()
+
+    return {
+        "include": run("--includedir"),
+        "libdir":  run("--libdir"),
+        "libs":    run("--libs"),
+        "ldflags": run("--ldflags"),
+        "system_libs": run("--system-libs"),
+    }
+
 
 # Custom build class for CMake
 class CMakeBuild(build_ext):
@@ -62,6 +79,24 @@ class CMakeBuild(build_ext):
             raise RuntimeError(
                 "Error: LLVM_INSTALL_DIR is not set. Please export it before running setup.py."
             )
+        prefix = Path(self.install_dir).resolve()
+        libdir = prefix / "lib64"
+        includedir = prefix / "include"
+        cmake_dir = libdir / "cmake" 
+        llvm_config = get_llvm_paths(self.llvm_dir)
+
+        cfg = {
+            "cc": self.cc,
+            "cxx": self.cxx,
+            "prefix": str(prefix),
+            "libdir": str(libdir),
+            "includedir": str(includedir),
+            "cmakedir": str(cmake_dir),
+            "cflags": f"-fpass-plugin={prefix}/lib64/libProteusPass.so -fplugin={prefix}/lib64/libProteusPass.so -fno-discard-value-names -ftrivial-auto-var-init=zero -Xclang -mllvm -Xclang -force-proteus-jit-annotate-all",
+            "ldflags" : f"-L{self.llvm_dir}/lib -L{self.llvm_dir}/llvm/lib {llvm_config['libs']} {llvm_config['system_libs']} -L{libdir}/ -Wl,-rpath,{libdir}/ -llldCommon -llldELF -lproteus"
+        }
+        with open(prefix / "config.json", "w") as fd:
+            json.dump(cfg, fd, indent=2)
 
     def run(self):
         if not os.path.exists("third_party"):

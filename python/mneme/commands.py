@@ -839,6 +839,32 @@ class Record:
         except PermissionError:
             parser.error(f"Executable '{cmd[0]}' is not executable")
 
+class Config:
+    def set_cli_args(parser):
+        base = Path(__file__).resolve().parent / "native"
+        cfg_file = base / "config.json"
+        if not cfg_file.exists():
+            raise RuntimeError("mneme config file not found — installation broken.")
 
-        print(librecord_path)
+        with open(cfg_file) as fd:
+            cfg = json.load(fd)
+
+        parser.add_argument("key", choices=list(cfg.keys()), help="Config key to query")
+        parser.set_defaults(func=Config.run, mneme_config=cfg)
+
+    @staticmethod
+    def run(args, verbosity):
+        key = args.key
+        cfg = args.mneme_config
+
+        if key not in cfg:
+            raise ValueError(f"Unknown config key '{key}'. Available: {list(cfg.keys())}")
+
+        value = cfg[key]
+
+        # Pretty print lists as space-separated, like llvm-config
+        if isinstance(value, list):
+            print(" ".join(value))
+        else:
+            print(value)
 
