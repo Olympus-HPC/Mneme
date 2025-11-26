@@ -34,8 +34,6 @@ inline static llvm::SmallVector<std::string> getArgNames(llvm::Function &F) {
       Info.push_back(name);
     else
       Info.push_back("");
-    LOG_DEBUG("Got argument for function {} and was emplaced '{}' {}",
-              F.getName().str(), name, name.size());
   }
   return Info;
 }

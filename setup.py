@@ -1,14 +1,15 @@
 import glob
+import json
 import os
 import subprocess
 import sys
+from distutils.sysconfig import get_python_lib
 from pathlib import Path
-import json
 
 from setuptools import Extension, find_packages, setup
 from setuptools.command.build_ext import build_ext
 from setuptools.command.build_py import build_py
-from distutils.sysconfig import get_python_lib
+from setuptools.command.develop import develop
 
 
 # Helper function to run shell commands
@@ -34,6 +35,7 @@ def has_amd_gpu():
     except subprocess.CalledProcessError:
         return False
 
+
 def get_llvm_paths(llvm_dir):
     llvm_config = Path(llvm_dir) / "bin" / "llvm-config"
     if not llvm_config.exists():
@@ -44,8 +46,8 @@ def get_llvm_paths(llvm_dir):
 
     return {
         "include": run("--includedir"),
-        "libdir":  run("--libdir"),
-        "libs":    run("--libs"),
+        "libdir": run("--libdir"),
+        "libs": run("--libs"),
         "ldflags": run("--ldflags"),
         "system_libs": run("--system-libs"),
     }
@@ -82,7 +84,7 @@ class CMakeBuild(build_ext):
         prefix = Path(self.install_dir).resolve()
         libdir = prefix / "lib64"
         includedir = prefix / "include"
-        cmake_dir = libdir / "cmake" 
+        cmake_dir = libdir / "cmake"
         llvm_config = get_llvm_paths(self.llvm_dir)
 
         cfg = {
@@ -93,7 +95,7 @@ class CMakeBuild(build_ext):
             "includedir": str(includedir),
             "cmakedir": str(cmake_dir),
             "cflags": f"-fpass-plugin={prefix}/lib64/libProteusPass.so -fplugin={prefix}/lib64/libProteusPass.so -fno-discard-value-names -ftrivial-auto-var-init=zero -Xclang -mllvm -Xclang -force-proteus-jit-annotate-all",
-            "ldflags" : f"-L{self.llvm_dir}/lib -L{self.llvm_dir}/llvm/lib {llvm_config['libs']} {llvm_config['system_libs']} -L{libdir}/ -Wl,-rpath,{libdir}/ -llldCommon -llldELF -lproteus"
+            "ldflags": f"-L{self.llvm_dir}/lib -L{self.llvm_dir}/llvm/lib {llvm_config['libs']} {llvm_config['system_libs']} -L{libdir}/ -Wl,-rpath,{libdir}/ -llldCommon -llldELF -lproteus",
         }
         with open(prefix / "config.json", "w") as fd:
             json.dump(cfg, fd, indent=2)
@@ -229,9 +231,16 @@ class CMakeBuild(build_ext):
         run_command(["make", "-j4"], cwd=build_dir)
         run_command(["make", "-j4", "install"], cwd=build_dir)
 
+
 class CustomBuildPy(build_py):
     """Ensure CMake runs before packaging Python code"""
 
+    def run(self):
+        self.run_command("build_ext")
+        super().run()
+
+
+class CustomDevelop(develop):
     def run(self):
         self.run_command("build_ext")
         super().run()
@@ -254,12 +263,23 @@ setup(
             "mneme= mneme.cli:main",
         ],
     },
-    cmdclass={"build_ext": CMakeBuild, "build_py": CustomBuildPy},
+    cmdclass={
+        "build_ext": CMakeBuild,
+        "build_py": CustomBuildPy,
+        "develop": CustomDevelop,
+    },
     classifiers=[
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: Apache License",
         "Operating System :: OS Independent",
     ],
     python_requires=">=3.6",
-    install_requires=["optuna>=4.4", "scipy", "rich", "pandas>=2.3.1", "pytest>=7.0", "pytest-mock>=3.0"],
+    install_requires=[
+        "optuna>=4.4",
+        "scipy",
+        "rich",
+        "pandas>=2.3.1",
+        "pytest>=7.0",
+        "pytest-mock>=3.0",
+    ],
 )
