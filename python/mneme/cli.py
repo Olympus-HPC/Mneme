@@ -16,7 +16,7 @@ import sys
 import time
 from typing import Tuple, Union
 
-from mneme.commands import Clean, Copy, Detail, Move, Serve, Summary, Record, Config
+from mneme.commands import Clean, Config, Copy, Detail, Move, Record, Serve, Summary
 from mneme.device import DeviceModule, dim3, get_device_arch
 from mneme.llvm.module import ModuleRef
 from mneme.logging import logger as replay_logger
@@ -53,7 +53,7 @@ def configure_replay_logging(level_name: Union[str, None]) -> None:
     replay_logger.setLevel(level)
 
 
-def main():
+def main(argv=None):
     parser = argparse.ArgumentParser(
         prog="mneme", description="Mneme Tool for Autotuning GPU kernels"
     )
@@ -117,15 +117,11 @@ def main():
     )
 
     p_record = subparsers.add_parser(
-        "record",
-        parents=[],
-        help="Record the execution of an application"
+        "record", parents=[], help="Record the execution of an application"
     )
 
     p_config = subparsers.add_parser(
-        "config",
-        parents=[],
-        help="Get mneme config options"
+        "config", parents=[], help="Get mneme config options"
     )
 
     CLIExecutor.set_cli_args(p_exec)
@@ -139,7 +135,7 @@ def main():
     Record.set_cli_args(p_record)
     Config.set_cli_args(p_config)
 
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     verbosity = vars(args).pop("verbosity", None)
     configure_replay_logging(verbosity)
 

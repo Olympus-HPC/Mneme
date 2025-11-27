@@ -262,4 +262,4 @@ def test_execute_happy_path(monkeypatch, tmp_path):
     # ACTUALLY RUN THE EXECUTOR
     # This should now run entirely in mocked mode with no FFI.
     # ------------------------------------------------------------------
-    CLIExecutor.run(args)
+    CLIExecutor.run(args, True)

@@ -44,11 +44,14 @@ def test_record_happy_path(tmp_path, record_parser, monkeypatch):
 
     captured = {}
 
+    class FakeCode:
+        returncode = 0
+
     # Monkeypatch subprocess.run so we don't run anything real
     def fake_run(cmd, env=None, **kwargs):
         captured["cmd"] = cmd
         captured["env"] = env or {}
-        return None
+        return FakeCode
 
     monkeypatch.setattr(record_mod.subprocess, "run", fake_run)
 
@@ -182,9 +185,12 @@ def test_record_default_page_size(record_parser, tmp_path, monkeypatch):
 
     captured = {}
 
+    class FakeCode:
+        returncode = 0
+
     def fake_run(cmd, env=None, **kwargs):
         captured["env"] = env
-        return None
+        return FakeCode
 
     monkeypatch.setattr(record_mod.subprocess, "run", fake_run)
 

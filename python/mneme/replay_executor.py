@@ -253,7 +253,7 @@ class CLIExecutor(BaseExecutor):
     @staticmethod
     def set_cli_args(parser):
         parser.add_argument(
-            "--db-dir",
+            "--results-db-dir",
             required=False,
             default=None,
             help="Directory to store the collected data to",
@@ -432,7 +432,7 @@ class CLIExecutor(BaseExecutor):
                 printer.print_pass_result(pass_name, exp.exec_time, exp.verified)
 
     @staticmethod
-    def run(args):
+    def run(args, verbosity):
         kwargs = vars(args)
         kwargs.pop("command")
         kwargs.pop("func")
@@ -530,9 +530,10 @@ class TuneWorker(BaseExecutor):
         state: Event,
     ):
         # NOTE: We open a file for every individual executor and give persmisions, then we redirect stdout/stderr
-        # to that file. We do this to not conflict our messages 
+        # to that file. We do this to not conflict our messages
         fd_out = os.open(
-            f"{results_db_dir}/Worker-{device_id}.log", os.O_WRONLY | os.O_CREAT | os.O_APPEND
+            f"{results_db_dir}/Worker-{device_id}.log",
+            os.O_WRONLY | os.O_CREAT | os.O_APPEND,
         )
         os.dup2(fd_out, 1)  # 1 = stdout
         os.dup2(fd_out, 2)  # 2 = stderr
@@ -550,7 +551,9 @@ class TuneWorker(BaseExecutor):
         # LLVM IR file to start working on optimizations
         root_ir = worker.link_ir()
         resdb = MnemeDB(
-            results_db_dir, worker.kernel_descr.static_hash, worker.kernel_descr.dynamic_hash
+            results_db_dir,
+            worker.kernel_descr.static_hash,
+            worker.kernel_descr.dynamic_hash,
         ).open()
 
         with worker as Memory:

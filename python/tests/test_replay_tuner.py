@@ -196,7 +196,7 @@ def test_replay_tuner_random(monkeypatch):
     # ---------------------------------------------------------
     # Call ReplayTuner
     # ---------------------------------------------------------
-    result = tuner_mod.ReplayTuner.run(args)
+    result = tuner_mod.ReplayTuner.run(args, False)
 
     # ---------------------------------------------------------
     # Assert successful run

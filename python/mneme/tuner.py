@@ -180,10 +180,11 @@ class TuneWorkerHandle:
         self.monitor_thread.join()
         logger.debug(f"[TuneWorkerHandle]:{self.idx} Worker shutdown")
 
+
 # `ReplayTuner` coordinates the end-to-end tuning workflow for a single
 # recorded kernel. It builds experiment configurations, launches a pool of
 # persistent `TuneWorkerHandle` subprocesses, schedules experiments across
-# them, and records results into the Mneme database. 
+# them, and records results into the Mneme database.
 #
 # Responsibilities:
 #   • Parse CLI arguments controlling sampling strategy, pipeline length,
@@ -368,16 +369,16 @@ class ReplayTuner(BaseExecutor):
         return experiments
 
     @staticmethod
-    def run(cli_args):
+    def run(cli_args, verbosity):
         kwargs = vars(cli_args)
         tuner = kwargs.pop("tuner")
         kwargs.pop("command")
         kwargs.pop("func")
         executor = ReplayTuner(**kwargs)
-        #NOTE: This needs to take place early, before launching the workers. Otherwise we get issues with dlopen and profiling executions
-        os.environ["ROCP_TOOL_LIBRARIES"] = (
-            get_profile_library()
-        )  # /path/to/libmneme_profile.so
+        # NOTE: This needs to take place early, before launching the workers. Otherwise we get issues with dlopen and profiling executions
+        os.environ[
+            "ROCP_TOOL_LIBRARIES"
+        ] = get_profile_library()  # /path/to/libmneme_profile.so
         if tuner == "random":
             kwargs.pop("sampler")
             return ReplayTuner.run_random(executor)
@@ -542,9 +543,9 @@ class ReplayTuner(BaseExecutor):
 
         logger.info(f"Database contains {len(db)} experiments")
 
-        #NOTE: In all pipelines we always append "globaldce" we have observed this
+        # NOTE: In all pipelines we always append "globaldce" we have observed this
         # reduces the size of the generated binary and can lead into issues. We perform
-        # this for apple to apple comparisons across sizes. 
+        # this for apple to apple comparisons across sizes.
         for p in passes:
             total_experiments += executor.generate_experiments_for_pipeline(
                 executor.LLVMPassManager.to_string(p) + ",globaldce", db
@@ -553,7 +554,9 @@ class ReplayTuner(BaseExecutor):
         # Schedule happens in reverse order (pop) thus we want default pipelines to rin first.
         requested_num_exp = len(total_experiments)
         for p in default_pipelines:
-            total_experiments += executor.generate_experiments_for_pipeline(p + ",globaldce", db)
+            total_experiments += executor.generate_experiments_for_pipeline(
+                p + ",globaldce", db
+            )
 
         root_ir = executor.link_ir()
         orig = db.save_ir(root_ir, "orig")

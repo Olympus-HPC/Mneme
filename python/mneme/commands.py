@@ -67,6 +67,7 @@ def _copy_or_move(sources, dest, move=False):
         exec.to_json(str(json_fn))
         if move:
             s.unlink()
+        return 0
 
 
 class Clean:
@@ -101,6 +102,7 @@ class Clean:
         for fn in mneme_db_files:
             if fn.exists():
                 fn.unlink()
+        return 0
 
 
 class Copy:
@@ -131,7 +133,7 @@ class Copy:
             )
 
         sources = [Path(s) for s in _sources]
-        _copy_or_move(sources, dest)
+        return _copy_or_move(sources, dest)
 
 
 class Move:
@@ -163,7 +165,7 @@ class Move:
 
         sources = [Path(s) for s in _sources]
 
-        _copy_or_move(sources, dest, move=True)
+        return _copy_or_move(sources, dest, move=True)
 
 
 class Summary:
@@ -812,7 +814,7 @@ class Record:
             idx = -1
 
         if idx != 0:
-            parser.error(f"Unrecognized options are passed to menme {args.cmd[:idx]}")
+            parser.error(f"Unrecognized options are passed to mneme {args.cmd[:idx]}")
 
         cmd = args.cmd[idx + 1 :]
         record_env = os.environ.copy()
@@ -836,17 +838,19 @@ class Record:
             record_env["MNEME_LOG_LEVEL"] = verbosity
 
         try:
-            subprocess.run(cmd, env=record_env)
+            result = subprocess.run(cmd, env=record_env)
+            return result.returncode
         except FileNotFoundError:
             parser.error(f"Executable '{cmd[0]}' not found")
         except PermissionError:
             parser.error(f"Executable '{cmd[0]}' is not executable")
+        except OSError as e:
+            parser.error(f"Failed to execute '{cmd[0]}': {e.strerror}")
 
 
 class Config:
     def set_cli_args(parser):
-        base = Path(__file__).resolve().parent / "native"
-        cfg_file = base / "config.json"
+        cfg_file = Path(utils.get_config_file())
         if not cfg_file.exists():
             raise RuntimeError("mneme config file not found — installation broken.")
 

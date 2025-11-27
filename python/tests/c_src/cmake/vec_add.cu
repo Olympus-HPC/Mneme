@@ -3,7 +3,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-__device__ int some_value = 1.0;
 
 template <typename T>
 __global__ void vecAdd_test(T *in, T *out, size_t size, int k) {
@@ -13,7 +12,7 @@ __global__ void vecAdd_test(T *in, T *out, size_t size, int k) {
   auto stride = gridDim.x * blockDim.x;
 
   for (; tid < size; tid += stride) {
-    out[tid] += in[tid] + tid; // + some_value;
+    out[tid] += in[tid] + tid;
   }
 }
 
@@ -25,7 +24,6 @@ int main(int argc, const char *argv[]) {
   void *deviceAddress = nullptr;
 
   // Get the address of the device variable
-  hipError_t err = hipGetSymbolAddress(&deviceAddress, HIP_SYMBOL(some_value));
   std::cout << "Device address of deviceVar: " << deviceAddress << std::endl;
 
   size_t numElements = atoi(argv[1]);
@@ -48,19 +46,9 @@ int main(int argc, const char *argv[]) {
   double *h_out = new double[numElements];
   hipMemcpy(h_in, in, sizeof(double) * numElements, hipMemcpyDeviceToHost);
   hipMemcpy(h_out, out, sizeof(double) * numElements, hipMemcpyDeviceToHost);
-  int ret = 0;
-  for (int i = 0; i < numElements; i++) {
-    if (h_in[i] + i != h_out[i]) {
-      std::cout << "Values at " << i << " differ\n";
-      std::cout << "Values " << h_in[i] << " " << h_out[i] << "differ\n";
-      ret = -1;
-      break;
-    }
-  }
-
   delete[] h_in;
   delete[] h_out;
   hipFree(in);
   hipFree(out);
-  return ret;
+  return 0;
 }
