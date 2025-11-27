@@ -1,8 +1,8 @@
 [![docs (gh-pages)](https://github.com/Olympus-HPC/mneme/actions/workflows/gh-pages-docs.yml/badge.svg)](https://github.com/Olympus-HPC/mneme/actions/workflows/gh-pages-docs.yml)
 ![License: Apache 2.0 with LLVM exceptions](https://img.shields.io/badge/license-Apache%202.0%20with%20LLVM%20exceptions-blue.svg)
 
+# <img src="docs/assets/MnemeLogoNotext.png" width="128" align="middle" /> Mneme (Μνήμη)
 
-# Mneme (Μνήμη)  
 *Named after the Greek goddess of memory, preserves and replays the essence of your application's execution, allowing developers to revisit, analyze, and refine specific moments in code with precision.* 
 
 ## Description
