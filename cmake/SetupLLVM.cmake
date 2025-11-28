@@ -1,7 +1,15 @@
 # Add the location of LLVMConfig.cmake to CMake search paths (so that
 # find_package can locate it)
 
-set(LLVM_DIR "${LLVM_INSTALL_DIR}/lib/cmake/llvm")
+find_package(LLVM REQUIRED CONFIG NO_DEFAULT_PATH
+  HINTS "${LLVM_INSTALL_DIR}"
+  PATH_SUFFIXES
+    "lib/cmake/llvm"
+    "lib64/cmake/llvm"
+    "cmake/llvm"
+    "llvm/lib/cmake/llvm"
+    "llvm/lib64/cmake/llvm"
+)
 
 file(REAL_PATH "${LLVM_DIR}" LLVM_DIR)
 

@@ -1,5 +1,6 @@
 import glob
 import json
+import tempfile
 import os
 import subprocess
 import sys
@@ -135,9 +136,8 @@ class CMakeBuild(build_ext):
             json.dump(cfg, fd, indent=2)
 
     def run(self):
-        print(">>> Running CMakeBuild.run()")
-        if not os.path.exists("third_party"):
-            os.mkdir("third_party")
+        self.build_scratch = tempfile.mkdtemp()
+
         if "PROTEUS_DIR" in os.environ:
             proteus_dir = os.environ["PROTEUS_DIR"]
         else:
@@ -151,7 +151,7 @@ class CMakeBuild(build_ext):
         if "PROTEUS_SRC" in os.environ:
             proteus_path = os.environ["PROTEUS_SRC"]
         else:
-            proteus_path = os.path.abspath("third_party/proteus")
+            proteus_path = os.path.abspath(f"{self.build_scratch}/proteus")
             if not os.path.exists(proteus_path):
                 run_command(
                     [
@@ -164,7 +164,7 @@ class CMakeBuild(build_ext):
                         self.PROTEUS_REPO,
                         proteus_path,
                     ],
-                    cwd="third_party",
+                    cwd=self.build_scratch,
                 )
 
         build_dir = os.path.join(proteus_path, "build")
@@ -201,7 +201,7 @@ class CMakeBuild(build_ext):
         return self.install_dir
 
     def clone_and_build_spdlog(self):
-        spdlog_path = os.path.abspath("third_party/spdlog")
+        spdlog_path = os.path.abspath(f"{self.build_scratch}/spdlog")
         if not os.path.exists(spdlog_path):
             run_command(
                 [
@@ -240,7 +240,7 @@ class CMakeBuild(build_ext):
 
     def build_mneme(self, proteus_dir, spdlog_dir):
         mneme_path = self.root_dir
-        build_dir = os.path.join(mneme_path, "build")
+        build_dir = os.path.join(self.build_scratch, "mneme/build")
         os.makedirs(build_dir, exist_ok=True)
 
         cmake_options = [
@@ -263,7 +263,7 @@ class CMakeBuild(build_ext):
             f"-Dspdlog_DIR={spdlog_dir}",
         ]
 
-        run_command(["cmake", ".."] + cmake_options, cwd=build_dir)
+        run_command(["cmake", mneme_path] + cmake_options, cwd=build_dir)
         run_command(["make", "-j4"], cwd=build_dir)
         run_command(["make", "-j4", "install"], cwd=build_dir)
 

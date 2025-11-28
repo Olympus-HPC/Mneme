@@ -10,8 +10,10 @@ test_dir="$TMP/mneme-ci-${CI_JOB_ID}"
 echo "Test dir is ${test_dir}"
 mkdir -p ${test_dir} 
 pushd ${test_dir}
-python -m venv create venv
+rm -rf venv
+python -m venv venv
 source venv/bin/activate
 pip install ${mneme_src}
+pip install pytest pytest-cov
 pytest -v -s ${mneme_src}/python/tests/ 
 

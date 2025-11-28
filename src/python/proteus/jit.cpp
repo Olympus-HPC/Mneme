@@ -166,7 +166,7 @@ ProteusPY_specializeDimsAssume(LLVMModuleRef Mod, uint64_t CurrentHash,
                          const char *KernelName, dim3 GridDim, dim3 BlockDim) {
   auto *M = llvm::unwrap(Mod);
   auto *F = M->getFunction(KernelName);
-  proteus::setKernelDimsAssume(*M, GridDim, BlockDim);
+  proteus::setKernelDimsRange(*M, GridDim, BlockDim);
   auto Hash = hash(CurrentHash, GridDim.x, GridDim.y, GridDim.z, BlockDim.x,
                    BlockDim.y, BlockDim.z);
   return Hash.getValue();

@@ -10,8 +10,10 @@ from mneme.llvm.buffer import MemBufferRef
 # Helpers
 # ------------------------------------------------------------
 
+
 class DummyModule(ModuleRef):
     """A minimal dummy ModuleRef for type checking."""
+
     def __init__(self):
         # ModuleRef typically stores a pointer + context,
         # but we don’t need real LLVM refs for unit tests.
@@ -31,12 +33,14 @@ class DummyModule(ModuleRef):
 # pruneIR
 # ------------------------------------------------------------
 
+
 def test_pruneIR_accepts_ModuleRef():
     m = DummyModule()
     with patch("mneme.proteus.jit.ffi.lib", autospec=True) as fake_lib:
         fake_lib.ProteusPY_pruneIR = MagicMock()
         jit.pruneIR(m)
         fake_lib.ProteusPY_pruneIR.assert_called_once()
+
 
 def test_pruneIR_raises_for_wrong_type():
     with pytest.raises(TypeError):
@@ -46,6 +50,7 @@ def test_pruneIR_raises_for_wrong_type():
 # ------------------------------------------------------------
 # optimize
 # ------------------------------------------------------------
+
 
 def test_optimize_invokes_ffi_correctly():
     m = DummyModule()
@@ -77,6 +82,7 @@ def test_optimize_empty_opt_level_skips():
 # internalize
 # ------------------------------------------------------------
 
+
 def test_internalize_calls_ffi():
     m = DummyModule()
     with patch("mneme.proteus.jit.ffi.lib", autospec=True) as fake_lib:
@@ -91,13 +97,13 @@ def test_internalize_calls_ffi():
 # ------------------------------------------------------------
 # codegen_object
 # ------------------------------------------------------------
-@patch("mneme.llvm.buffer.ffi.lib", autospec=True)
+@patch("mneme.llvm.buffer.ffi.lib")
 def test_codegen_object_returns_MemBufferRef(fake_buflib):
     fake_buflib.LLVMPY_DisposeMemBuffer = MagicMock()
     m = DummyModule()
     fake_buf = MagicMock()
 
-    with patch("mneme.proteus.jit.ffi.lib", autospec=True) as fake_lib:
+    with patch("mneme.proteus.jit.ffi.lib") as fake_lib:
         fn = fake_lib.ProteusPY_codeGenObject = MagicMock()
 
         buf = jit.codegen_object(m, "gfx942", "serial", 3)
@@ -114,12 +120,14 @@ def test_codegen_object_invalid_opt_level():
 # link_llvm_modules
 # ------------------------------------------------------------
 
+
 def test_link_llvm_modules_calls_ffi_with_c_array():
     fake_mod = MagicMock()
 
     # Patch BOTH ffi.lib and get_global_context
-    with patch("mneme.proteus.jit.ffi.lib") as fake_lib, \
-         patch("mneme.proteus.jit.get_global_context", return_value="CTX") as fake_ctx:
+    with patch("mneme.proteus.jit.ffi.lib") as fake_lib, patch(
+        "mneme.proteus.jit.get_global_context", return_value="CTX"
+    ) as fake_ctx:
 
         fake_lib.ProteusPY_linkModules = MagicMock(return_value=fake_mod)
 
@@ -136,15 +144,18 @@ def test_link_llvm_modules_calls_ffi_with_c_array():
         # Validate return wrapped in ModuleRef
         assert isinstance(out, jit.ModuleRef)
 
+
 # ------------------------------------------------------------
 # specialize_args
 # ------------------------------------------------------------
 
+
 def test_specialize_args_checks_index_count():
     m = DummyModule()
     with pytest.raises(RuntimeError):
-        jit.specialize_args(m, 123, "kernel", None, num_args=1,
-                            specialize_indexes=[0, 1])
+        jit.specialize_args(
+            m, 123, "kernel", None, num_args=1, specialize_indexes=[0, 1]
+        )
 
 
 def test_specialize_args_invokes_ffi():
@@ -152,12 +163,14 @@ def test_specialize_args_invokes_ffi():
     with patch("mneme.proteus.jit.ffi.lib", autospec=True) as fake_lib:
         fn = fake_lib.ProteusPY_specializeArguments = MagicMock(return_value=42)
         h = jit.specialize_args(
-            m, 10, "kernel",
+            m,
+            10,
+            "kernel",
             kernel_args=MagicMock(),
             num_args=3,
             specialize_indexes=[0, 2],
         )
-        assert h == 42 
+        assert h == 42
         assert fn.called
 
 
@@ -165,12 +178,14 @@ def test_specialize_args_invokes_ffi():
 # specialize_dims
 # ------------------------------------------------------------
 
+
 def test_specialize_dims_invokes_ffi():
     m = DummyModule()
     with patch("mneme.proteus.jit.ffi.lib", autospec=True) as fake_lib:
         fn = fake_lib.ProteusPY_specializeDims = MagicMock(return_value=7)
 
         from mneme.mneme_types import dim3
+
         dd = dim3(1, 2, 3)
         h = jit.specialize_dims(m, 11, "kernel", dd, dd)
         assert h == 7
@@ -180,6 +195,7 @@ def test_specialize_dims_invokes_ffi():
 # ------------------------------------------------------------
 # set_launch_bounds
 # ------------------------------------------------------------
+
 
 def test_set_launch_bounds_checks_max_threads():
     m = DummyModule()
@@ -194,4 +210,3 @@ def test_set_launch_bounds_invokes_ffi():
         h = jit.set_launch_bounds(m, 11, "kernel", 128, 1)
         assert h == 99
         assert fn.called
-

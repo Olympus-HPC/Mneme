@@ -49,7 +49,7 @@ declare i32 @llvm.amdgcn.workitem.id.x()
     val = c_int(7)
     val_ptr = ctypes.byref(val)
     KernelArgs = (c_void_p * 2)()
-    KernelArgs[0] = c_void_p()           # first arg not specialized
+    KernelArgs[0] = c_void_p()  # first arg not specialized
     KernelArgs[1] = c_void_p(ctypes.addressof(val))
 
     mod_hash = 0
@@ -65,6 +65,7 @@ declare i32 @llvm.amdgcn.workitem.id.x()
     assert new_hash != mod_hash
 
     assert "%new = add i32 %old, 7" in str(mod)
+
 
 def test_specialize_dims_assume():
     # 1. Construct minimal IR
@@ -100,20 +101,19 @@ declare i32 @llvm.amdgcn.workitem.id.x()
     mod = parse_assembly(IR)
     old_mod = str(mod)
 
+    print("before", mod)
+
     block = dim3(4, 4, 4)
     grid = dim3(16, 16, 16)
 
     mod_hash = 0
-    new_hash = jit.specialize_dims_assume(
-        mod,
-        mod_hash,
-        "kernel_add",
-        grid,
-        block)
+    new_hash = jit.specialize_dims_assume(mod, mod_hash, "kernel_add", grid, block)
 
     assert new_hash != mod_hash
-    assert "icmp ult i32 %tid, 4" in str(mod)
-    assert "call void @llvm.assume" in str(mod)
+    print("After", mod)
+    assert "%tid = call i32 @llvm.amdgcn.workitem.id.x(), !range !0" in str(mod)
+    assert "!0 = !{i32 0, i32 4}" in str(mod)
+
 
 def test_specialize_dims():
     # 1. Construct minimal IR
@@ -164,7 +164,6 @@ declare i32 @llvm.amdgcn.workgroup.size.y()
 declare i32 @llvm.amdgcn.workgroup.size.z()
 """
 
-
     mod = parse_assembly(IR)
     old_mod = str(mod)
 
@@ -172,12 +171,7 @@ declare i32 @llvm.amdgcn.workgroup.size.z()
     grid = dim3(16, 16, 16)
 
     mod_hash = 0
-    new_hash = jit.specialize_dims(
-        mod,
-        mod_hash,
-        "kernel_add",
-        grid,
-        block)
+    new_hash = jit.specialize_dims(mod, mod_hash, "kernel_add", grid, block)
 
     assert new_hash != mod_hash
     opt_hash = jit.optimize(mod, "gfx942", "default<O3>", 3)
@@ -233,21 +227,19 @@ declare i32 @llvm.amdgcn.workgroup.size.y()
 declare i32 @llvm.amdgcn.workgroup.size.z()
 """
 
-
     mod = parse_assembly(IR)
     old_mod = str(mod)
 
     mod_hash = 0
-    new_hash = jit.set_launch_bounds(
-        mod,
-        mod_hash,
-        "kernel_add",
-        128,
-        2)
+    new_hash = jit.set_launch_bounds(mod, mod_hash, "kernel_add", 128, 2)
 
     assert new_hash != mod_hash
     opt_hash = jit.optimize(mod, "gfx942", "default<O3>", 3)
-    assert 'attributes #0 = { "amdgpu-flat-work-group-size"="1,128" "amdgpu-waves-per-eu"="2,2" }' in str(mod)
+    assert (
+        'attributes #0 = { "amdgpu-flat-work-group-size"="1,128" "amdgpu-waves-per-eu"="2,2" }'
+        in str(mod)
+    )
+
 
 def test_link_llvm_modules(tmp_path):
     MODULE_A = r"""
@@ -282,7 +274,7 @@ def test_link_llvm_modules(tmp_path):
 
     declare i32 @llvm.amdgcn.workitem.id.x()
     """
-        # 1. Create paths inside pytest's temporary directory
+    # 1. Create paths inside pytest's temporary directory
     module_a_path = tmp_path / "module_a.ll"
     module_b_path = tmp_path / "module_b.ll"
     mod_A = parse_assembly(MODULE_A)
@@ -293,9 +285,15 @@ def test_link_llvm_modules(tmp_path):
 
     modules = [str(module_a_path), str(module_b_path)]
 
-    mod = jit.link_llvm_modules(modules, "kernel_a", False, False) 
+    mod = jit.link_llvm_modules(modules, "kernel_a", False, False)
 
-    assert "define amdgpu_kernel void @kernel_b(ptr addrspace(1) %ptr, i32 %val)" in str(mod)
+    assert (
+        "define amdgpu_kernel void @kernel_b(ptr addrspace(1) %ptr, i32 %val)"
+        in str(mod)
+    )
     assert "define amdgpu_kernel void @kernel_a(ptr addrspace(1) %ptr)" in str(mod)
-    mod = jit.link_llvm_modules(modules, "kernel_a", False, True) 
-    assert "define internal amdgpu_kernel void @kernel_b(ptr addrspace(1) %ptr, i32 %val)" in str(mod)
+    mod = jit.link_llvm_modules(modules, "kernel_a", False, True)
+    assert (
+        "define internal amdgpu_kernel void @kernel_b(ptr addrspace(1) %ptr, i32 %val)"
+        in str(mod)
+    )
