@@ -56,5 +56,5 @@ variables:
       - MNEME_CI_ROCM_VERSION: ["6.3.1", "6.4.2"]
         MNEME_CI_PYTHON_VERSION: ["3.9", "3.10", "3.11", "3.12"]
 
-build-and-test-tuolumne:
+tuolumne-test-python-cov:
   extends: [.base-job, .build-variants]
