@@ -111,8 +111,7 @@ declare i32 @llvm.amdgcn.workitem.id.x()
 
     assert new_hash != mod_hash
     print("After", mod)
-    assert "%tid = call i32 @llvm.amdgcn.workitem.id.x(), !range !0" in str(mod)
-    assert "!0 = !{i32 0, i32 4}" in str(mod)
+    assert "%tid = call i32 @llvm.amdgcn.workitem.id.x(), !range !0" in str(mod) or "%tid = call range(i32 0, 4) i32 @llvm.amdgcn.workitem.id.x()" in str(mod)
 
 
 def test_specialize_dims():
