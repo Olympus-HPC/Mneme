@@ -1,4 +1,5 @@
 [![docs (gh-pages)](https://github.com/Olympus-HPC/mneme/actions/workflows/gh-pages-docs.yml/badge.svg)](https://github.com/Olympus-HPC/mneme/actions/workflows/gh-pages-docs.yml)
+[![codecov](https://codecov.io/gh/Olympus-HPC/Mneme/graph/badge.svg?token=N8CELEZ277)](https://codecov.io/gh/Olympus-HPC/Mneme)
 ![License: Apache 2.0 with LLVM exceptions](https://img.shields.io/badge/license-Apache%202.0%20with%20LLVM%20exceptions-blue.svg)
 
 # <img src="docs/assets/MnemeLogoNoText.png" width="128" align="middle" /> Mneme (Μνήμη)
