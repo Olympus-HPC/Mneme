@@ -2,6 +2,12 @@
 
 set -e
 
+if [[ -n "$CODECOV_TOKEN" ]]; then
+  echo "CODECOV_TOKEN is set"
+else
+  echo "CODECOV_TOKEN is not set"
+fi
+
 mneme_src=$(pwd)
 ml load python/${MNEME_CI_PYTHON_VERSION}
 ml load rocm/${MNEME_CI_ROCM_VERSION}
