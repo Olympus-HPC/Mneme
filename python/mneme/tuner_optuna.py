@@ -146,7 +146,7 @@ def run_optuna_tune(
     if not custom_db.is_open:
         raise RuntimeError("Expecting database to be open")
 
-    _filename = f"{custom_db.db_dir}/{custom_db.default_name}.sql"
+    _filename = f"{custom_db.results_db_dir}/{custom_db.default_name}.sql"
 
     sampler = get_sampler(sampler_name, seed)
 
@@ -275,7 +275,7 @@ def run_optuna_tune(
             raise RuntimeError("Unknown payload")
 
     total_end = time.time()
-    with open(f"{custom_db.db_dir}/{custom_db.default_name}.prof.json", "w") as fd:
+    with open(f"{custom_db.results_db_dir}/{custom_db.default_name}.prof.json", "w") as fd:
         json.dump(
             {
                 "wait_duration": wait_duration,

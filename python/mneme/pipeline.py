@@ -415,7 +415,7 @@ Machine function analyses (WIP):
 """
 
 
-def __split_top_level__(s: str) -> list[str]:
+def split_top_level(s: str) -> list[str]:
     """
     Split on commas that are not nested inside parentheses.
     """
@@ -437,7 +437,7 @@ def __split_top_level__(s: str) -> list[str]:
     return parts
 
 
-def __flatten_passes__(s: str) -> list[str]:
+def flatten_passes(s: str) -> list[str]:
     """
     Recursively extract only the *leaf* pass names from a pipeline string.
     Any pass that has parentheses is expanded, its *contents* flattened,
@@ -1049,18 +1049,3 @@ def parse_llvm_pass_options(llvm_pass):
             pass_options[name] = PassOption(values, PassOption.OptionType.SETTING)
 
     return name, pass_options
-
-
-if __name__ == "__main__":
-    PM = PipelineManager()
-    passes = PM.generate(100, 120, 16.7, False, 0)
-    print("START")
-    for i, pipeline in enumerate(passes):
-        input = "RecordedIR_0.bc"
-        for j, p in enumerate(pipeline):
-            pipe = PipelineManager.to_string([p])
-            output = f"file_{j}.bc"
-            ret, res = test_pass_requires_analysis(pipe, input, output)
-            input = output
-            if ret != 0:
-                print(ret, res)

@@ -49,7 +49,16 @@ def find_non_jsonables(obj, where="$"):
         # add other allowed conversions here if you plan to support them
         print("Non-JSON type:", where, "->", type(obj))
 
-
+# `MemStateRef` is a Python wrapper around Mneme’s C-level memory snapshot
+# representation. It loads, compares, and resets GPU memory state from a
+# recorded prologue/epilogue file using the C FFI interface. Instances behave
+# as context managers and expose:
+#   • argument pointers stored in the snapshot
+#   • the number of kernel arguments
+#   • equality comparison between two memory states
+#
+# In short, `MemStateRef` gives high-level access to recorded GPU memory images
+# used for verification during replay.
 class MemStateRef:
     def __init__(self, fn: str, kernel_name: str, snap_type: SnapshotType):
         if not Path(fn).exists():
@@ -122,10 +131,46 @@ class MemStateRef:
         return not bool(ffi.lib.MnemePy_CompareMemState(self._state, other._state))
 
     def __del__(self):
-        self._dispose()
+        try:
+            state = getattr(self, "_state", None)
 
+            # If no state, or constructor failed, or tests used fake values → skip cleanup
+            if not state or isinstance(state, str):
+                return
 
+            # Call disposer only if available and callable
+            dispose = getattr(ffi.lib, "MnemePy_DisposeMemState", None)
+            if callable(dispose):
+                try:
+                    dispose(state)
+                except Exception:
+                    pass
+
+        except Exception:
+            # Absolutely nothing should escape __del__
+            pass
+
+# `RecordedExecution` captures the full static description of a kernel as
+# recorded by Mneme: argument names, specializations, LLVM IR modules, virtual
+# address ranges, and all dynamic kernel instances observed at runtime.
+#
+# It behaves like a container mapping dynamic-hash → `KernelInstance`, and also
+# provides:
+#   • linking of LLVM modules into a single IR module suitable for replay
+#   • serialization/deserialization to/from JSON
+#
+# In short, this class describes everything Mneme needs to reconstruct,
+# specialize, and replay a previously recorded GPU kernel.
 class RecordedExecution:
+    # Represents a single dynamic instance of a recorded kernel launch: the grid and
+    # block dimensions used, shared-memory size, argument values, available
+    # specializations, and file paths to its prologue/epilogue memory snapshots.
+    # Each instance provides:
+    #   • equality/hash behavior based on dynamic+static hash
+    #   • on-demand access to its memory snapshots via `MemStateRef`
+    #   • conversion to a JSON-friendly dictionary
+    #
+    # This class is the per-launch unit of information used by Mneme during replay.
     class KernelInstance:
         def __init__(
             self,

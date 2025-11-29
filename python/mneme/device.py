@@ -88,12 +88,12 @@ class DeviceFunction(ffi.ObjectRef):
         self.invalidate()
 
     def launch(self, grid_dim: dim3, block_dim: dim3):
-        if self == c_void_p(None):
-            raise RuntimeError(
-                "hipFunction_t is NULL. The module may have been unloaded."
-            )
+          # Correct NULL check
+        if self._ptr is None or self._ptr.value is None:
+            raise RuntimeError("hipFunction_t is NULL. The module may have been unloaded.")
 
-        if self._module_ref == c_void_p(None):
+        mod = self._module_ref()
+        if mod is None:
             raise RuntimeError("hipModule is NULL. The module may have been unloaded.")
 
         if not self.valid:

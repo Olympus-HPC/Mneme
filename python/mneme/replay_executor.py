@@ -55,13 +55,12 @@ class BaseExecutor:
             help="Aggressive Dead Code Elimination by assuming we will only execute the kernel identified by 'id'",
         )
 
-        # default is True; user can override with --no-foo
         parser.add_argument(
             "--internalize",
             dest="internalize",
             default=False,
             action=argparse.BooleanOptionalAction,
-            help="Internalize LLVM IR before optimization (reduces size of generated object file and may enable more aggressive inlining)",
+            help="Internalize LLVM IR before optimization (reduces size of generated object file and may enable more aggressive inlinining). Disabling may result to mis compilations",
         )
 
         parser.add_argument(
@@ -70,7 +69,6 @@ class BaseExecutor:
             dest="codegen_method",
             choices=["rtc", "serial", "parallel"],
             default="serial",
-            action=argparse.BooleanOptionalAction,
             help="Technology to use to lower to LLVM IR to a device object file instead of default Proteus Infrastructure",
         )
 
@@ -141,6 +139,7 @@ class BaseExecutor:
         )
 
     def open(self):
+        # Note the 'executor' allocates all resources and picks address space.
         self._page_manager = PageManagerRef(
             self.device_id, self.records.va_addr, self.records.va_size
         )
@@ -241,6 +240,8 @@ class BaseExecutor:
         ir_module = transform.remove_auto_initialize(ir_module)
         # Done with verification. Moving to next stage
 
+        # NOTE: 3. We build and run. We set tracking on and we always execute iterations +2,
+        # to enalbe later computation of statistical metrics etc.
         mem_buffer = self._build(exp, ir_module, middle_end_opt, True)
         self._run(exp, mem_buffer, True, self._iterations + 2)
         exp.executed = True
@@ -252,7 +253,7 @@ class CLIExecutor(BaseExecutor):
     @staticmethod
     def set_cli_args(parser):
         parser.add_argument(
-            "--db-dir",
+            "--results-db-dir",
             required=False,
             default=None,
             help="Directory to store the collected data to",
@@ -357,7 +358,7 @@ class CLIExecutor(BaseExecutor):
         self.max_threads = kwargs.pop("max_threads", False)
         self.min_blocks_per_sm = kwargs.pop("min_blocks_per_sm", 0)
         self.dims = kwargs.pop("dims", False)
-        self.db_dir = kwargs.pop("db_dir", None)
+        self.results_db_dir = kwargs.pop("results_db_dir", None)
         super().__init__(*args, **kwargs)
         self.pass_manager = PipelineManager()
         if self.pipeline not in (
@@ -431,7 +432,7 @@ class CLIExecutor(BaseExecutor):
                 printer.print_pass_result(pass_name, exp.exec_time, exp.verified)
 
     @staticmethod
-    def run(args):
+    def run(args, verbosity):
         kwargs = vars(args)
         kwargs.pop("command")
         kwargs.pop("func")
@@ -442,9 +443,9 @@ class CLIExecutor(BaseExecutor):
         root_ir = executor.link_ir()
 
         orig = ""
-        if executor.db_dir is not None:
+        if executor.results_db_dir is not None:
             executor._db = MnemeDB(
-                executor.db_dir,
+                executor.results_db_dir,
                 executor.kernel_descr.static_hash,
                 executor.kernel_descr.dynamic_hash,
             ).open()
@@ -525,12 +526,14 @@ class TuneWorker(BaseExecutor):
         codegen_opt: int,
         codegen_method: str,
         iterations: int,
-        db_dir: str,
+        results_db_dir: str,
         state: Event,
     ):
-        # We need this to actually run things...
+        # NOTE: We open a file for every individual executor and give persmisions, then we redirect stdout/stderr
+        # to that file. We do this to not conflict our messages
         fd_out = os.open(
-            f"{db_dir}/Worker-{device_id}.log", os.O_WRONLY | os.O_CREAT | os.O_APPEND
+            f"{results_db_dir}/Worker-{device_id}.log",
+            os.O_WRONLY | os.O_CREAT | os.O_APPEND,
         )
         os.dup2(fd_out, 1)  # 1 = stdout
         os.dup2(fd_out, 2)  # 2 = stderr
@@ -548,7 +551,9 @@ class TuneWorker(BaseExecutor):
         # LLVM IR file to start working on optimizations
         root_ir = worker.link_ir()
         resdb = MnemeDB(
-            db_dir, worker.kernel_descr.static_hash, worker.kernel_descr.dynamic_hash
+            results_db_dir,
+            worker.kernel_descr.static_hash,
+            worker.kernel_descr.dynamic_hash,
         ).open()
 
         with worker as Memory:

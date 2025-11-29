@@ -41,46 +41,47 @@
       #  needs: [ruby-up-check]
       #  ## [Shared jobs scenario]
 
-# TIOGA
 tioga-up-check:
   variables:
     CI_MACHINE: "tioga"
   extends: [.machine-check]
 
-tioga-build-and-test:
-  variables:
-    CI_MACHINE: "tioga"
-  needs: [tioga-up-check]
-  ## [Shared jobs scenario]
-  ## (See Umpire CI setup for an example).
-  #needs: [tioga-up-check, generate-job-lists]
-  extends: [.build-and-test]
-
-# # LASSEN
-# lassen-up-check:
-#   variables:
-#     CI_MACHINE: "lassen"
-#   extends: [.machine-check]
-
-# lassen-build-and-test:
-#   variables:
-#     CI_MACHINE: "lassen"
-#   needs: [lassen-up-check]
-#   extends: [.build-and-test]
-# #  #needs: [lassen-up-check, generate-job-lists]
-# #
-
-# TUOLUMNE
 tuolumne-up-check:
   variables:
     CI_MACHINE: "tuolumne"
   extends: [.machine-check]
 
+# C/C++ Tests
+tioga-build-and-test:
+  variables:
+    CI_MACHINE: "tioga"
+  needs: [tioga-up-check]
+  extends: [.build-and-test]
+
 tuolumne-build-and-test:
   variables:
     CI_MACHINE: "tuolumne"
   needs: [tuolumne-up-check]
-  ## [Shared jobs scenario]
-  ## (See Umpire CI setup for an example).
-  #needs: [tuolumne-up-check, generate-job-lists]
   extends: [.build-and-test]
+
+
+## Python tests
+tioga-test-python-cov:
+  variables:
+    CI_MACHINE: "tioga"
+    JOB_CMD:
+      value: "scripts/gitlab/ci-python-test.sh"
+      expand: false
+  needs: [tioga-up-check]
+  extends: [.test-python-cov]
+
+tuolumne-test-python-cov:
+  variables:
+    CI_MACHINE: "tuolumne"
+    JOB_CMD:
+      value: "scripts/gitlab/ci-python-test.sh"
+      expand: false
+  needs: [tioga-up-check]
+  extends: [.test-python-cov]
+
+

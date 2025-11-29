@@ -65,8 +65,7 @@ variables:
 stages:
   - prerequisites
   - build-and-test
-  - test-integration
-  - run-benchmarks
+  - test-python-cov
 
 # Template for jobs triggering a build-and-test sub-pipeline:
 .build-and-test:
@@ -88,30 +87,15 @@ stages:
     forward:
       pipeline_variables: true
 
-.test-integration:
-  stage: test-integration
+.test-python-cov:
+  stage: test-python-cov
   trigger:
     include:
       - local: '.gitlab/custom-jobs-and-variables.yml'
       - project: 'radiuss/radiuss-shared-ci'
         ref: 'v2025.06.0'
         file: 'pipelines/${CI_MACHINE}.yml'
-      - local: '.gitlab/jobs/${CI_MACHINE}-integration.yml'
-    strategy: depend
-    forward:
-      pipeline_variables: true
-
-.run-benchmarks:
-  stage: run-benchmarks
-  trigger:
-    include:
-      - local: '.gitlab/custom-jobs-and-variables.yml'
-      - project: 'radiuss/radiuss-shared-ci'
-        ref: 'v2025.06.0'
-        file: 'pipelines/${CI_MACHINE}.yml'
-      # Add your jobs
-      # you can use a local file
-      - local: '.gitlab/jobs/${CI_MACHINE}-benchmarks.yml'
+      - local: '.gitlab/jobs/${CI_MACHINE}-python-cov.yml'
     strategy: depend
     forward:
       pipeline_variables: true

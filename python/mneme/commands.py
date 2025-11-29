@@ -2,6 +2,7 @@ import argparse
 import json
 import os
 import shutil
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -10,7 +11,7 @@ from typing import Any, Dict, Iterable, Optional
 import numpy as np
 import pandas as pd
 from mneme.db import MnemeDB
-from mneme.llvm import debug, module
+from mneme.llvm import debug, module, utils
 from mneme.logging import logger
 from mneme.proteus import jit
 from mneme.recorded_execution import RecordedExecution
@@ -66,17 +67,20 @@ def _copy_or_move(sources, dest, move=False):
         exec.to_json(str(json_fn))
         if move:
             s.unlink()
+        return 0
 
 
 class Clean:
     @staticmethod
     def set_cli_args(parser):
-        parser.add_argument("dbs", help="Recorded Mneme DB files", nargs="+")
+        parser.add_argument(
+            "record_database", help="Recorded Mneme DB files", nargs="+"
+        )
         parser.set_defaults(func=Clean.run)
 
     @staticmethod
-    def run(args):
-        dbs = args.dbs
+    def run(args, verbosity):
+        dbs = args.record_database
         for db in dbs:
             if not Path(db).exists():
                 raise FileNotFoundError(f"Mneme Database '{db}' does not exist")
@@ -98,21 +102,22 @@ class Clean:
         for fn in mneme_db_files:
             if fn.exists():
                 fn.unlink()
+        return 0
 
 
 class Copy:
     @staticmethod
     def set_cli_args(parser):
         parser.add_argument(
-            "dbs",
+            "record_database",
             nargs="+",
             help="Source paths of Mneme DB records followed by a destination path to which data will be copied to",
         )
         parser.set_defaults(func=Copy.run)
 
     @staticmethod
-    def run(args):
-        paths = args.dbs
+    def run(args, verbosity):
+        paths = args.record_database
         if len(paths) < 2:
             raise ValueError(
                 f"Please provide both source and destination directories {paths}"
@@ -128,22 +133,22 @@ class Copy:
             )
 
         sources = [Path(s) for s in _sources]
-        _copy_or_move(sources, dest)
+        return _copy_or_move(sources, dest)
 
 
 class Move:
     @staticmethod
     def set_cli_args(parser):
         parser.add_argument(
-            "dbs",
+            "record_database",
             nargs="+",
             help="Source paths of Mneme DB records followed by a destination path to which data will be moved to",
         )
         parser.set_defaults(func=Move.run)
 
     @staticmethod
-    def run(args):
-        paths = args.dbs
+    def run(args, verbosity):
+        paths = args.record_database
         if len(paths) < 2:
             raise ValueError(
                 f"Please provide both source and destination directories {paths}"
@@ -160,16 +165,16 @@ class Move:
 
         sources = [Path(s) for s in _sources]
 
-        _copy_or_move(sources, dest, move=True)
+        return _copy_or_move(sources, dest, move=True)
 
 
 class Summary:
     @staticmethod
     def set_cli_args(parser):
         parser.add_argument(
-            "-db",
-            "--record-database",
-            dest="db",
+            "-rdb",
+            "--record_database",
+            dest="record_database",
             required=True,
             help="Path to Mneme JSON/db file",
         )
@@ -423,7 +428,7 @@ class Summary:
 
     @staticmethod
     def analyze(args):
-        kernel_descr = RecordedExecution.from_json(args.db)
+        kernel_descr = RecordedExecution.from_json(args.record_database)
         OrigMod = jit.link_llvm_modules(
             kernel_descr.llvm_files, kernel_descr.kernel_name, False, False
         )
@@ -643,9 +648,9 @@ class Serve:
     @staticmethod
     def set_cli_args(parser):
         parser.add_argument(
-            "-db",
-            "--record-database",
-            dest="db",
+            "-rdb",
+            "--record_database",
+            dest="record_database",
             required=True,
             help="Path to Mneme JSON/db file",
         )
@@ -658,7 +663,7 @@ class Serve:
         )
 
         parser.add_argument(
-            "json",
+            "proteus_json",
             help="json file to store proteus configuration, if the file exists we append the configuration",
         )
 
@@ -673,8 +678,8 @@ class Serve:
     @staticmethod
     def serve(args):
         console = Console(theme=Serve.theme, soft_wrap=False)
-        kernel_descr = RecordedExecution.from_json(args.db)
-        jsFn = args.json
+        kernel_descr = RecordedExecution.from_json(args.record_database)
+        jsFn = args.proteus_json
         data = {}
         if Path(jsFn).exists():
             with open(jsFn, "r") as fd:
@@ -769,3 +774,106 @@ class Detail:
         # Filter verified=True and failed=False
         filtered = df[(df["hash"]) == args.hash]
         print(json.dumps(filtered.iloc[0].to_dict(), indent=2))
+
+
+class Record:
+    @staticmethod
+    def set_cli_args(parser):
+        parser.add_argument(
+            "-rdb",
+            "--record-db-dir",
+            dest="record_db_dir",
+            default=os.getcwd(),
+            help="Path to directory to store the recorded database(s) and memory snapshots",
+        )
+        parser.add_argument(
+            "-vass",
+            "--virtual-address-space-size",
+            type=int,
+            default=4,
+            help="Size (in GigaBytes) of virtual address space to be allocatd by mneme.",
+        )
+
+        parser.add_argument(
+            "-mr",
+            "--per-kernel-max-recordings",
+            type=int,
+            default=4,
+            help="The maximum number of times to record the same GPU kernel (function) with different dynamic hashes",
+        )
+        parser.add_argument("cmd", nargs=argparse.REMAINDER)
+        parser.set_defaults(func=Record.run, parser=parser)
+
+    @staticmethod
+    def run(args, verbosity):
+        parser = args.parser
+        idx = 0
+        try:
+            idx = args.cmd.index("--")
+        except ValueError:
+            idx = -1
+
+        if idx != 0:
+            parser.error(f"Unrecognized options are passed to mneme {args.cmd[:idx]}")
+
+        cmd = args.cmd[idx + 1 :]
+        record_env = os.environ.copy()
+        librecord_path = utils.get_mneme_record_library_name()
+        logger.debug(f"LD_PRELOAD={librecord_path}")
+        record_env["LD_PRELOAD"] = librecord_path
+        logger.debug(f"MNEME_PAGE_SIZE={args.virtual_address_space_size}")
+        record_env["MNEME_PAGE_SIZE"] = str(args.virtual_address_space_size)
+        record_db_dir = Path(args.record_db_dir).resolve()
+        if not record_db_dir.exists():
+            raise FileNotFoundError(f"Directory '{args.record_db_dir}' does not exist")
+
+        if not record_db_dir.is_dir():
+            raise NotADirectoryError(f"Path '{args.record_db_dir}' is not a directory")
+
+        logger.debug(f"MNEME_DATA_DIR={str(record_db_dir)}")
+        record_env["MNEME_DATA_DIR"] = str(record_db_dir)
+
+        if verbosity is not None:
+            logger.debug(f"MNEME_LOG_LEVEL={verbosity}")
+            record_env["MNEME_LOG_LEVEL"] = verbosity
+
+        try:
+            result = subprocess.run(cmd, env=record_env)
+            return result.returncode
+        except FileNotFoundError:
+            parser.error(f"Executable '{cmd[0]}' not found")
+        except PermissionError:
+            parser.error(f"Executable '{cmd[0]}' is not executable")
+        except OSError as e:
+            parser.error(f"Failed to execute '{cmd[0]}': {e.strerror}")
+
+
+class Config:
+    def set_cli_args(parser):
+        cfg_file = Path(utils.get_config_file())
+        if not cfg_file.exists():
+            raise RuntimeError("mneme config file not found — installation broken.")
+
+        with open(cfg_file) as fd:
+            cfg = json.load(fd)
+
+        parser.add_argument("key", choices=list(cfg.keys()), help="Config key to query")
+        parser.set_defaults(func=Config.run, mneme_config=cfg)
+
+    @staticmethod
+    def run(args, verbosity):
+        key = args.key
+        cfg = args.mneme_config
+
+        if key not in cfg:
+            raise ValueError(
+                f"Unknown config key '{key}'. Available: {list(cfg.keys())}"
+            )
+
+        value = cfg[key]
+
+        # Pretty print lists as space-separated, like llvm-config
+        if isinstance(value, list):
+            print(" ".join(value))
+        else:
+            print(value)

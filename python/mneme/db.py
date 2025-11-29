@@ -48,8 +48,8 @@ class MnemeDB:
         "local_mem",
     ]
 
-    def __init__(self, dir, static_hash, dynamic_hash):
-        self._dir = pathlib.Path(dir)
+    def __init__(self, results_db_dir, static_hash, dynamic_hash):
+        self._results_db_dir = pathlib.Path(results_db_dir)
         self._static_hash = static_hash
         self._dynamic_hash = dynamic_hash
         self._experiments = {}
@@ -57,11 +57,11 @@ class MnemeDB:
         self._best = sys.float_info.max
         self._o3 = None
         self._default_name = "results"
-        self._filename = dir / pathlib.Path(f"{self._default_name}.csv")
+        self._filename = results_db_dir / pathlib.Path(f"{self._default_name}.csv")
 
     @property
-    def db_dir(self):
-        return self._dir
+    def results_db_dir(self):
+        return self._results_db_dir
 
     @property
     def default_name(self):
@@ -75,11 +75,11 @@ class MnemeDB:
         return len(self._experiments)
 
     def open(self):
-        logger.debug(f"Opening database under directory: '{str(self._dir)}'")
-        if not self._dir.exists():
-            logger.debug(f"Making directory: '{str(self._dir)}'")
-            self._dir.mkdir(parents=True, exist_ok=True)
-        self._dir = self._dir.resolve()
+        logger.debug(f"Opening database under directory: '{str(self._results_db_dir)}'")
+        if not self._results_db_dir.exists():
+            logger.debug(f"Making directory: '{str(self._results_db_dir)}'")
+            self._results_db_dir.mkdir(parents=True, exist_ok=True)
+        self._results_db_dir = self._results_db_dir.resolve()
         self._open = True
 
         logger.debug(f"Database file is {str(self._filename)}")
@@ -130,7 +130,7 @@ class MnemeDB:
         return True
 
     def suggest_ir_fn_name(self, exp: Experiment):
-        return f"{self._dir}/{exp.hash()}.ll"
+        return f"{self._results_db_dir}/{exp.hash()}.ll"
 
     def _is_baseline(self, exp):
         logger.debug(
@@ -186,7 +186,7 @@ class MnemeDB:
         self._experiments[_hash] = exp.executed
 
     def save_ir(self, ir, _id):
-        fn = f"{str(self._dir)}/{self._static_hash}.{self._dynamic_hash}.{_id}.bc"
+        fn = f"{str(self._results_db_dir)}/{self._static_hash}.{self._dynamic_hash}.{_id}.bc"
         ir.to_bitcode(fn)
         return fn
 
@@ -201,6 +201,6 @@ class MnemeDB:
 
         missing = set(MnemeDB._columns) - headers
         if missing:
-            logger.warn(f"Missing fields: {missing}")
+            logger.warning(f"Missing fields: {missing}")
             return False
         return True

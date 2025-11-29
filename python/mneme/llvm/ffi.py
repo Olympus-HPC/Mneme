@@ -4,7 +4,7 @@ import sys
 import threading
 
 from .common import _decode_string, _is_shutting_down
-from .utils import get_library_name
+from .utils import get_mneme_core_library_name
 
 
 def _make_opaque_ref(name):
@@ -186,7 +186,7 @@ def load_library_so(lib_name):
     return _lib_wrapper(lib)
 
 
-lib = load_library_so(get_library_name())
+lib = load_library_so(get_mneme_core_library_name())
 
 
 def register_lock_callback(acq_fn, rel_fn):
