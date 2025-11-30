@@ -26,7 +26,14 @@ pytest -v -s ${mneme_src}/python/tests/ || exit $?
 # Upload to Codecov (only if token is available)
 if [[ -n "$CODECOV_TOKEN" ]]; then
     echo "Uploading coverage to Codecov..."
-    curl -s https://codecov.io/bash | bash -s -- -t "$CODECOV_TOKEN" -f coverage.xml || echo "Codecov upload failed"
+    curl -Os https://uploader.codecov.io/latest/linux/codecov
+    chmod +x codecov
+    ./codecov \
+        -t "$CODECOV_TOKEN" \
+        -f coverage.xml \
+        -C "$CI_COMMIT_SHA" \
+        -B "$CI_COMMIT_BRANCH" \
+        -r "Olympus-HPC/Mneme" || echo "Codecov upload failed"
 else
     echo "No CODECOV_TOKEN set, skipping upload."
 fi
