@@ -14,11 +14,12 @@ ml load rocm/${MNEME_CI_ROCM_VERSION}
 export LLVM_INSTALL_DIR=${ROCM_PATH}/
 test_dir="$TMP/mneme-ci-${CI_JOB_ID}"
 echo "Test dir is ${test_dir}"
-mkdir -p ${test_dir} 
+VENV_NAME="/usr/workspace/LExperts/ci/gitlab/venv-${MNEME_CI_ROCM_VERSION}-${MNEME_CI_PYTHON_VERSION}/"
+mkdir  -p ${VENV_NAME}
 pushd ${test_dir}
-rm -rf venv
-python -m venv venv
-source venv/bin/activate
+python -m venv ${VENV_NAME} 
+source ${VENV_NAME}/bin/activate
+pip uninstall mneme
 pip install ${mneme_src}
 pip install pytest pytest-cov
 pytest -v -s ${mneme_src}/python/tests/ || exit $? 
