@@ -13,6 +13,7 @@ ml load python/${MNEME_CI_PYTHON_VERSION}
 ml load rocm/${MNEME_CI_ROCM_VERSION}
 export LLVM_INSTALL_DIR=${ROCM_PATH}/
 test_dir="$TMP/mneme-ci-${CI_JOB_ID}"
+mkdir -p ${test_dir}
 echo "Test dir is ${test_dir}"
 VENV_NAME="/usr/workspace/LExperts/ci/gitlab/venv-${MNEME_CI_ROCM_VERSION}-${MNEME_CI_PYTHON_VERSION}/"
 mkdir  -p ${VENV_NAME}
