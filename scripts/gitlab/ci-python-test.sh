@@ -16,7 +16,7 @@ test_dir="$TMP/mneme-ci-${CI_JOB_ID}"
 mkdir -p ${test_dir}
 echo "Test dir is ${test_dir}"
 VENV_NAME="/usr/workspace/LExperts/ci/gitlab/venv-${LCSCHEDCLUSTER}-${MNEME_CI_ROCM_VERSION}-${MNEME_CI_PYTHON_VERSION}/"
-mkdir  -p ${VENV_NAME}
+mkdir -p ${VENV_NAME}
 pushd ${test_dir}
 python -m venv ${VENV_NAME} 
 source ${VENV_NAME}/bin/activate
