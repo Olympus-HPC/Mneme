@@ -15,14 +15,15 @@ export LLVM_INSTALL_DIR=${ROCM_PATH}/
 test_dir="$TMP/mneme-ci-${CI_JOB_ID}"
 mkdir -p ${test_dir}
 echo "Test dir is ${test_dir}"
-VENV_NAME="/usr/workspace/LExperts/ci/gitlab/venv-${MNEME_CI_ROCM_VERSION}-${MNEME_CI_PYTHON_VERSION}/"
+VENV_NAME="/usr/workspace/LExperts/ci/gitlab/venv-${LCSCHEDCLUSTER}-${MNEME_CI_ROCM_VERSION}-${MNEME_CI_PYTHON_VERSION}/"
 mkdir  -p ${VENV_NAME}
 pushd ${test_dir}
 python -m venv ${VENV_NAME} 
 source ${VENV_NAME}/bin/activate
-pip uninstall mneme
-pip install ${mneme_src}
-pip install pytest pytest-cov
+python -m pip uninstall mneme
+rm -rf /usr/workspace/LExperts/ci/gitlab/venv-${LCSCHEDCLUSTER}-${MNEME_CI_ROCM_VERSION}-${MNEME_CI_PYTHON_VERSION}/lib64/python3.9/site-packages/mneme
+python -m pip install ${mneme_src}
+python -m pip install pytest pytest-cov
 pytest -v -s ${mneme_src}/python/tests/ || exit $? 
 
 # Upload to Codecov (only if token is available)
@@ -40,3 +41,4 @@ else
     echo "No CODECOV_TOKEN set, skipping upload."
 fi
 
+deactivate
