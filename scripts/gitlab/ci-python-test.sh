@@ -21,7 +21,7 @@ pushd ${test_dir}
 python -m venv ${VENV_NAME} 
 source ${VENV_NAME}/bin/activate
 python -m pip uninstall -y mneme
-rm -rf /usr/workspace/LExperts/ci/gitlab/venv-${LCSCHEDCLUSTER}-${MNEME_CI_ROCM_VERSION}-${MNEME_CI_PYTHON_VERSION}/lib64/python3.9/site-packages/mneme
+rm -rf ${VENV_NAME}/lib*/python*/site-packages/mneme
 python -m pip install ${mneme_src}
 python -m pip install pytest pytest-cov
 pytest -v -s ${mneme_src}/python/tests/ || exit $? 
