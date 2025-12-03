@@ -18,7 +18,7 @@ echo "Test dir is ${test_dir}"
 VENV_NAME="/usr/workspace/LExperts/ci/gitlab/venv-${LCSCHEDCLUSTER}-${MNEME_CI_ROCM_VERSION}-${MNEME_CI_PYTHON_VERSION}/"
 mkdir -p ${VENV_NAME}
 pushd ${test_dir}
-python -m venv ${VENV_NAME} 
+python -m venv ${VENV_NAME}
 source ${VENV_NAME}/bin/activate
 python -m pip uninstall -y mneme
 rm -rf ${VENV_NAME}/lib*/python*/site-packages/mneme
