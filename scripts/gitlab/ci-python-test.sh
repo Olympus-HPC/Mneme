@@ -25,6 +25,8 @@ rm -rf ${VENV_NAME}/lib*/python*/site-packages/mneme
 python -m pip install ${mneme_src}
 python -m pip install pytest pytest-cov
 pytest -v -s ${mneme_src}/python/tests/ || exit $? 
+pushd ${mneme_src}
+pytest --cov-report=xml:coverage-${CI_JOB_ID}.xml --cov-config=.coveragerc python/tests/test_db.py
 
 # Upload to Codecov (only if token is available)
 if [[ -n "$CODECOV_TOKEN" ]]; then
@@ -37,7 +39,7 @@ if [[ -n "$CODECOV_TOKEN" ]]; then
     chmod +x codecov
     ./codecov \
         -t "$CODECOV_TOKEN" \
-        -f coverage.xml \
+        -f coverage-${CI_JOB_ID}.xml \
         -C "$CI_COMMIT_SHA" \
         -B "$CI_COMMIT_BRANCH" \
         --insecure \
@@ -47,4 +49,5 @@ else
     echo "No CODECOV_TOKEN set, skipping upload."
 fi
 
+rm -f coverage-${CI_JOB_ID}.xml
 deactivate

@@ -1,0 +1,9 @@
+[run]
+relative_files = True
+source = python
+
+[paths]
+source =
+    python
+    */python*/site-packages
+
