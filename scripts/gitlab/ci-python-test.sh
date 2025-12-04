@@ -37,7 +37,8 @@ if [[ -n "$CODECOV_TOKEN" ]]; then
         -C "$CI_COMMIT_SHA" \
         -B "$CI_COMMIT_BRANCH" \
         --insecure \
-        -r "Olympus-HPC/Mneme" || echo "Codecov upload failed"
+        --disable-ci-detection \
+        --slug=gh/Olympus-HPC/Mneme || echo "Codecov upload failed"
 else
     echo "No CODECOV_TOKEN set, skipping upload."
 fi
