@@ -31,6 +31,7 @@ if [[ -n "$CODECOV_TOKEN" ]]; then
     echo "Uploading coverage to Codecov..."
     echo "SHA is $CI_COMMIT_SHA"
     echo "Branch is $CI_COMMIT_BRANCH"
+    export NODE_TLS_REJECT_UNAUTHORIZED=0
 
     curl -k -Os https://uploader.codecov.io/latest/linux/codecov
     chmod +x codecov
