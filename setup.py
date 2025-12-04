@@ -196,7 +196,7 @@ class CMakeBuild(build_ext):
             ["cmake"] + cmake_options,
             cwd=build_dir,
         )
-        run_command(["make", "-j4"], cwd=build_dir)
+        run_command(["make", "-j10"], cwd=build_dir)
         run_command(["make", "install"], cwd=build_dir)
         return self.install_dir
 
@@ -234,7 +234,7 @@ class CMakeBuild(build_ext):
             cwd=build_dir,
         )
 
-        run_command(["make", "-j4"], cwd=build_dir)
+        run_command(["make", "-j10"], cwd=build_dir)
         run_command(["make", "install"], cwd=build_dir)
         return self.install_dir
 
@@ -253,7 +253,7 @@ class CMakeBuild(build_ext):
             f"-DCMAKE_CXX_COMPILER={self.cxx}",
             f"-DLLVM_INSTALL_DIR={self.llvm_dir}",
             f"-DMNEME_ENABLE_HIP={self.has_amd}",
-            "-DMNEME_ENABLE_TESTS=On",
+            "-DMNEME_ENABLE_TESTS=Off",
             "-DMNEME_ENABLE_AUTOTUNE=On",
             f"-DCMAKE_INSTALL_RPATH={self.install_dir}/lib64/",
             "-DCMAKE_SKIP_INSTALL_RPATH=OFF",
@@ -264,8 +264,8 @@ class CMakeBuild(build_ext):
         ]
 
         run_command(["cmake", mneme_path] + cmake_options, cwd=build_dir)
-        run_command(["make", "-j4"], cwd=build_dir)
-        run_command(["make", "-j4", "install"], cwd=build_dir)
+        run_command(["make", "-j10"], cwd=build_dir)
+        run_command(["make", "-j10", "install"], cwd=build_dir)
 
 
 class CustomDevelop(develop):
