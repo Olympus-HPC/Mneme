@@ -29,6 +29,9 @@ pytest -v -s ${mneme_src}/python/tests/ || exit $?
 # Upload to Codecov (only if token is available)
 if [[ -n "$CODECOV_TOKEN" ]]; then
     echo "Uploading coverage to Codecov..."
+    echo "SHA is $CI_COMMIT_SHA"
+    echo "Branch is $CI_COMMIT_BRANCH"
+
     curl -k -Os https://uploader.codecov.io/latest/linux/codecov
     chmod +x codecov
     ./codecov \
