@@ -26,7 +26,7 @@ python -m pip install ${mneme_src}
 python -m pip install pytest pytest-cov
 pytest -v -s ${mneme_src}/python/tests/ || exit $? 
 pushd ${mneme_src}
-pytest --cov-report=xml:coverage-${CI_JOB_ID}.xml --cov-config=.coveragerc python/tests/test_db.py
+pytest --cov-report=xml:coverage-${CI_JOB_ID}.xml --cov-config=.coveragerc python/tests/
 
 # Upload to Codecov (only if token is available)
 if [[ -n "$CODECOV_TOKEN" ]]; then
