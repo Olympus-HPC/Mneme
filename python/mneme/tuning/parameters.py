@@ -40,7 +40,7 @@ class CategoricalParam(BaseParam):
 class IntRangeParam(BaseParam):
     """A parameter representing an inclusive integer range [low, high] with optional step."""
 
-    def __init__(self, name: str, low: int, high: int, step: Optional[int] = 1):
+    def __init__(self, name: str, low: int, high: int, step: int = 1):
         super().__init__(name)
         if low > high:
             raise ValueError("IntRangeParam low must be <= high.")
