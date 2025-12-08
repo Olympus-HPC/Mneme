@@ -1,5 +1,3 @@
-# mneme/tuning/parameters.py
-
 from __future__ import annotations
 
 from abc import ABC
@@ -26,7 +24,6 @@ class BoolParam(BaseParam):
 
     def __init__(self, name: str):
         super().__init__(name)
-        # We keep the domain explicit in case we want to expose it later.
         self.choices: List[bool] = [True, False]
 
 
@@ -41,31 +38,31 @@ class CategoricalParam(BaseParam):
 
 
 class IntRangeParam(BaseParam):
-    """A parameter representing an inclusive integer range [low, high]."""
+    """A parameter representing an inclusive integer range [low, high] with optional step."""
 
     def __init__(self, name: str, low: int, high: int, step: Optional[int] = 1):
         super().__init__(name)
         if low > high:
             raise ValueError("IntRangeParam low must be <= high.")
+        if step is None or step <= 0:
+            raise ValueError("IntRangeParam step must be a positive integer.")
+
         self.low: int = low
         self.high: int = high
-        self.step: Optional[int] = step
+        self.step: int = step
 
 
 class PipelineParam(BaseParam):
     """
     Parameter representing LLVM pass pipelines.
 
-    This supports two modes:
+    Supports two mutually-exclusive modes:
 
-      1. Finite set of known pipelines:
+      1. Finite set of pipelines:
            PipelineParam("pipeline", pipelines=[...])
 
-      2. Generator-driven pipelines (non-enumerable space):
-           PipelineParam("pipeline", generator=my_pipeline_generator)
-
-         where `my_pipeline_generator: () -> str` returns a single pipeline
-         string when called.
+      2. Generator-driven infinite/unknown space:
+           PipelineParam("pipeline", generator=fn)
 
     """
 
@@ -77,10 +74,17 @@ class PipelineParam(BaseParam):
     ):
         super().__init__(name)
 
+        # If *both* are provided, this is an ambiguous configuration.
+        if pipelines is not None and generator is not None:
+            raise ValueError(
+                "PipelineParam cannot define both `pipelines` and `generator`. "
+                "Choose one mode."
+            )
+
+        # If neither is provided, nothing to sample from.
         if pipelines is None and generator is None:
             raise ValueError(
-                "PipelineParam requires either a finite `pipelines` list "
-                "or a `generator` callable."
+                "PipelineParam requires either a `pipelines` list or a `generator` callable."
             )
 
         if pipelines is not None and not pipelines:

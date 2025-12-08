@@ -1,3 +1,5 @@
+import pytest
+
 from mneme.tuning.parameters import (
     BaseParam,
     FixedParam,
@@ -17,50 +19,65 @@ def test_fixed_param_basic():
 
 def test_bool_param_basic():
     p = BoolParam("flag")
-    assert p.name == "flag"
     assert p.choices == [True, False]
 
 
-def test_categorical_param_requires_choices():
-    try:
-        CategoricalParam("x", [])
-        assert False, "Expected ValueError for empty choices."
-    except ValueError:
-        pass
+def test_categorical_param_requires_values():
+    with pytest.raises(ValueError):
+        CategoricalParam("cat", [])
 
 
-def test_int_range_param_bounds():
-    p = IntRangeParam("x", 1, 4)
+def test_int_range_param():
+    p = IntRangeParam("r", 1, 10)
     assert p.low == 1
-    assert p.high == 4
-
-    try:
-        IntRangeParam("y", 5, 2)
-        assert False, "Expected ValueError when low > high."
-    except ValueError:
-        pass
+    assert p.high == 10
+    assert p.step == 1
 
 
-def test_pipeline_param_with_pipelines():
-    p = PipelineParam("pipe", pipelines=["O3", "O2"])
-    assert p.name == "pipe"
-    assert p.pipelines == ["O3", "O2"]
+def test_int_range_param_custom_step():
+    p = IntRangeParam("r", 0, 8, step=2)
+    assert p.step == 2
+
+
+def test_int_range_param_step_invalid():
+    with pytest.raises(ValueError):
+        IntRangeParam("r", 0, 10, step=0)
+    with pytest.raises(ValueError):
+        IntRangeParam("r", 0, 10, step=-3)
+    with pytest.raises(ValueError):
+        IntRangeParam("r", 10, 0)  # low > high
+
+
+def test_pipeline_param_with_list():
+    p = PipelineParam("pipeline", pipelines=["O1", "O2"])
+    assert p.pipelines == ["O1", "O2"]
     assert p.generator is None
 
 
 def test_pipeline_param_with_generator():
     def gen():
-        return "some_pipeline"
+        return "random_pipeline"
 
-    p = PipelineParam("pipe", generator=gen)
+    p = PipelineParam("pipeline", generator=gen)
     assert p.pipelines is None
     assert p.generator is gen
 
 
-def test_pipeline_param_requires_mode():
-    try:
-        PipelineParam("pipe")
-        assert False, "Expected ValueError if neither pipelines nor generator is given."
-    except ValueError:
-        pass
+def test_pipeline_param_empty_list():
+    with pytest.raises(ValueError):
+        PipelineParam("pipeline", pipelines=[])
+
+
+def test_pipeline_param_requires_one_mode():
+    # neither pipelines nor generator
+    with pytest.raises(ValueError):
+        PipelineParam("pipeline")
+
+
+def test_pipeline_param_rejects_both():
+    def gen():
+        return "x"
+
+    with pytest.raises(ValueError):
+        PipelineParam("pipeline", pipelines=["O3"], generator=gen)
 
