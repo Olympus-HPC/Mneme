@@ -4,3 +4,7 @@ build*/
 gpucore.*
 .cache/
 *.csv
+HecBench/
+Testing/
+miniconda3/
+venvs/
