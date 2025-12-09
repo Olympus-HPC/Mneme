@@ -3,6 +3,7 @@ from abc import ABC, abstractmethod
 from typing import Dict, Any
 
 from .parameters import BaseParam
+from .optuna_sampler import sample_optuna_param
 
 
 class SearchSpace(ABC):
@@ -84,3 +85,36 @@ class SearchSpace(ABC):
         while True:
             yield self.sample_random()
 
+    def sample_optuna(self, trial):
+        """
+        Generate a valid configuration using Optuna.
+
+        Steps:
+          1. Use trial.suggest_* to sample primary dimensions
+          2. Compute derived parameters
+          3. Enforce constraints
+          4. Retry if needed
+        """
+
+        MAX_RETRIES = 1000
+        dims = self.dimensions()
+
+        for _ in range(MAX_RETRIES):
+            config = {}
+
+            # Step 1: primary dimension sampling
+            for name, param in dims.items():
+                config[name] = sample_optuna_param(trial, param)
+
+            # Step 2: derived parameters
+            derived = self.derived(config)
+            if derived:
+                config.update(derived)
+
+            # Step 3: constraints
+            if self.constraints(config):
+                return config
+
+        raise RuntimeError(
+            f"Failed to generate a valid Optuna sample after {MAX_RETRIES} attempts."
+        )
