@@ -8,3 +8,6 @@ HecBench/
 Testing/
 miniconda3/
 venvs/
+__pycache__/
+*.py[cod]
+*$py.class
