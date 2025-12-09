@@ -36,6 +36,7 @@ def _analyze_measurements(times):
 
     return (std_val, avg_val, median_val, R, R_percent, iqr, iqr / median_val, q1, q3)
 
+
 # `Experiment` represents a single configuration of a kernel replay: a specific
 # combination of specialization flags, launch-bounds settings, LLVM pass
 # pipelines, and codegen options. It also stores all metadata produced during
@@ -52,7 +53,15 @@ def _analyze_measurements(times):
 # resource metrics were observed.
 class Experiment:
     def __init__(self, **kwargs):
+        self.grid_dim_x = kwargs.pop("grid_dim_x")
+        self.grid_dim_y = kwargs.pop("grid_dim_y")
+        self.grid_dim_z = kwargs.pop("grid_dim_z")
+        self.block_dim_x = kwargs.pop("block_dim_x")
+        self.block_dim_y = kwargs.pop("block_dim_y")
+        self.block_dim_z = kwargs.pop("block_dim_z")
+        self.shared_mem = kwargs.pop("shared_mem")
         self.specialize = kwargs.pop("specialize")
+        self.set_launch_bounds = kwargs.pop("set_launch_bounds")
         self.max_threads = kwargs.pop("max_threads")
         self.min_blocks_per_sm = kwargs.pop("min_blocks_per_sm")
         self.specialize_dims = kwargs.pop("specialize_dims")
@@ -329,6 +338,14 @@ class Experiment:
     def hash(self):
         hasher = hashlib.sha256()
         hasher.update(str(self._specialize).encode("utf-8"))
+        hasher.update(str(self.grid_dim_x).encode("utf-8"))
+        hasher.update(str(self.grid_dim_y).encode("utf-8"))
+        hasher.update(str(self.grid_dim_z).encode("utf-8"))
+        hasher.update(str(self.block_dim_x).encode("utf-8"))
+        hasher.update(str(self.block_dim_y).encode("utf-8"))
+        hasher.update(str(self.block_dim_z).encode("utf-8"))
+        hasher.update(str(self.set_launch_bounds).encode("utf-8"))
+        hasher.update(str(self.shared_mem).encode("utf-8"))
         hasher.update(str(self._max_threads).encode("utf-8"))
         hasher.update(str(self._min_blocks_per_sm).encode("utf-8"))
         hasher.update(str(self._specialize_dims).encode("utf-8"))
@@ -346,6 +363,14 @@ class Experiment:
 
     def to_dict(self):
         data = {}
+        data["grid_dim_x"] = self.grid_dim_x
+        data["grid_dim_y"] = self.grid_dim_y
+        data["grid_dim_z"] = self.grid_dim_z
+        data["block_dim_x"] = self.block_dim_x
+        data["block_dim_y"] = self.block_dim_y
+        data["block_dim_z"] = self.block_dim_z
+        data["shared_mem"] = self.shared_mem
+        data["set_launch_bounds"] = self.set_launch_bounds
         data["specialize"] = self._specialize
         data["max_threads"] = self._max_threads
         data["min_blocks_per_sm"] = self._min_blocks_per_sm

@@ -1,4 +1,5 @@
 import argparse
+import json
 import os
 import time
 from datetime import datetime
@@ -32,9 +33,9 @@ class BaseExecutor:
     def get_base_parser():
         parser = argparse.ArgumentParser(add_help=False)
         parser.add_argument(
-            "-db",
+            "-rdb",
             "--record-database",
-            dest="db",
+            dest="record_db",
             required=True,
             help="Path to Mneme JSON/db file",
         )
@@ -47,87 +48,26 @@ class BaseExecutor:
             help="Kernel ID to operate on",
         )
 
-        parser.add_argument(
-            "--prune",
-            action=argparse.BooleanOptionalAction,
-            default=True,
-            dest="prune",
-            help="Aggressive Dead Code Elimination by assuming we will only execute the kernel identified by 'id'",
-        )
-
-        parser.add_argument(
-            "--internalize",
-            dest="internalize",
-            default=False,
-            action=argparse.BooleanOptionalAction,
-            help="Internalize LLVM IR before optimization (reduces size of generated object file and may enable more aggressive inlinining). Disabling may result to mis compilations",
-        )
-
-        parser.add_argument(
-            "-cm",
-            "--codegen-method",
-            dest="codegen_method",
-            choices=["rtc", "serial", "parallel"],
-            default="serial",
-            help="Technology to use to lower to LLVM IR to a device object file instead of default Proteus Infrastructure",
-        )
-
-        parser.add_argument(
-            "--codegen-opt",
-            "-co",
-            dest="codegen_opt",
-            type=int,
-            default=3,
-            help="Optimization level to be used when generating machine code (back end optimizations)",
-        )
-
-        parser.add_argument(
-            "--iterations",
-            "-it",
-            required=False,
-            type=int,
-            help="The number of iterations to run every execution, used to get statistical meaningful results",
-            default=3,
-        )
-
-        parser.add_argument(
-            "--device-id",
-            "-dev",
-            dest="device_id",
-            type=int,
-            required=False,
-            help="The GPU device ID to use",
-            default=0,
-        )
-
-        parser.set_defaults(prune=True, internalize=False, codegen_method="serial")
+        parser.set_defaults()
 
         return parser
 
     def __init__(
         self,
-        db: str = "",
+        record_db: str = "",
         record_id: str = "",
-        prune: bool = True,
-        internalize: bool = False,
         iterations: int = 3,
-        codegen_method: str = "serial",
-        codegen_opt: int = 3,
         device_id: int = 0,
     ):
-        self.db = db
+        self.record_db = record_db
         self.record_id = record_id
-        logger.debug(
-            f"BaseExecutor Got {db} and {record_id} and will run on device:{device_id}"
-        )
-        self.records = RecordedExecution.from_json(db)
-        self.kernel_descr = self.records[record_id]
-        self.device_arch = get_device_arch()
         self.device_id = device_id
-        self.prune = prune
-        self.internalize = internalize
-        self.codegen_opt = codegen_opt
-        self.codegen_method = codegen_method
+        logger.debug(
+            f"BaseExecutor Got {self.record_db} and {self.record_id} and will run on device:{self.device_id}"
+        )
+        self.records = RecordedExecution.from_json(self.record_db)
+        self.kernel_descr = self.records[self.record_id]
+        self.device_arch = get_device_arch()
         self._epilogue = None
         self._prologue = None
         self._page_manager = None
@@ -135,7 +75,7 @@ class BaseExecutor:
         self.num_devices = get_device_count()
         set_device(device_id)
         logger.debug(
-            f"GPU Affinity of process was set to device:{device_id} out of {self.num_devices}"
+            f"GPU Affinity of process was set to device:{self.device_id} out of {self.num_devices}"
         )
 
     def open(self):
@@ -174,35 +114,70 @@ class BaseExecutor:
         return False
 
     def link_ir(self):
-        return self.records.link_llvm_modules(
-            prune=self.prune, internalize=self.internalize
-        )
+        return self.records.link_llvm_modules(prune=True, internalize=True)
+
+    @cond_time("preprocess_ir_time")
+    def _preprocess_ir(self, exp, llvm_ir):
+        code_hash = self.kernel_descr.static_hash
+
+        if exp.specialize:
+            code_hash = jit.specialize_args(
+                llvm_ir,
+                code_hash,
+                self.kernel_descr.kernel_name,
+                self.prologue.args,
+                self.prologue.num_args,
+                self.kernel_descr.available_specializations,
+            )
+
+        if exp.specialize_dims:
+            grid_dim = dim3(exp.grid_dim_x, exp.grid_dim_y, exp.grid_dim_z)
+            block_dim = dim3(exp.block_dim_x, exp.block_dim_y, exp.block_dim_z)
+            code_hash = jit.specialize_dims(
+                llvm_ir,
+                code_hash,
+                self.kernel_descr.kernel_name,
+                grid_dim,
+                block_dim,
+            )
+        if exp.set_launch_bounds:
+            code_hash = jit.set_launch_bounds(
+                llvm_ir,
+                code_hash,
+                self.kernel_descr.kernel_name,
+                exp.max_threads,
+                exp.min_blocks_per_sm,
+            )
+        return code_hash, llvm_ir
 
     @cond_time("opt_time")
-    def _optimize(self, exp, ir_module, middle_end_opt):
-        jit.optimize(ir_module, self.device_arch, middle_end_opt, self.codegen_opt)
+    def _optimize(self, exp, ir_module):
+        jit.optimize(ir_module, self.device_arch, exp.passes, exp.codegen_opt)
 
     @cond_time("codegen_time")
     def _codegen(self, exp, ir_module):
         return jit.codegen_object(
-            ir_module, self.device_arch, self.codegen_method, self.codegen_opt
+            ir_module, self.device_arch, exp.codegen_method, exp.codegen_opt
         )
 
     @cond_gpu_time("exec_time")
     def _run_kernel(self, exp, kernel_name, device_func, iterations):
+        grid_dim = dim3(exp.grid_dim_x, exp.grid_dim_y, exp.grid_dim_z)
+        block_dim = dim3(exp.block_dim_x, exp.block_dim_y, exp.block_dim_z)
         return device_func.profile(
-            self.kernel_descr.grid_dim,
-            self.kernel_descr.block_dim,
+            grid_dim,
+            block_dim,
             self._prologue._state,
             self._epilogue._state,
-            self.kernel_descr.shared_mem,
+            exp.shared_mem,
             iterations,
         )
 
     def _build(
-        self, exp: Experiment, ir_module: ModuleRef, middle_end_opt: str, track: bool
+        self, exp: Experiment, ir_module: ModuleRef, track: bool
     ) -> MemBufferRef:
-        self._optimize(exp, ir_module, middle_end_opt, profile=track)
+        self._preprocess_ir(exp, ir_module)
+        self._optimize(exp, ir_module, profile=track)
         mem_buffer = self._codegen(exp, ir_module, profile=track)
         if track:
             exp.obj_size = mem_buffer.get_size()
@@ -224,14 +199,14 @@ class BaseExecutor:
                 exp.local_mem = device_func.local_mem
 
     def _execute(
-        self, exp: Experiment, ir_module: ModuleRef, middle_end_opt: str
+        self, exp: Experiment, ir_module: ModuleRef
     ) -> Tuple[Experiment, ModuleRef]:
         if self._prologue._state is None or self._epilogue._state is None:
             raise RuntimeError("States should never be none when executing a kernel")
 
         # NOTE: 1. First we need to verify.
         ver_mod = ir_module.clone()
-        mem_buffer = self._build(exp, ver_mod, middle_end_opt, False)
+        mem_buffer = self._build(exp, ver_mod, False)
         self._run(exp, mem_buffer, False, 1)
         exp.verified = self.prologue == self.epilogue
 
@@ -242,7 +217,7 @@ class BaseExecutor:
 
         # NOTE: 3. We build and run. We set tracking on and we always execute iterations +2,
         # to enalbe later computation of statistical metrics etc.
-        mem_buffer = self._build(exp, ir_module, middle_end_opt, True)
+        mem_buffer = self._build(exp, ir_module, True)
         self._run(exp, mem_buffer, True, self._iterations + 2)
         exp.executed = True
 
@@ -283,11 +258,22 @@ class CLIExecutor(BaseExecutor):
         )
 
         parser.add_argument(
-            "--dims",
+            "--specialize-dims",
+            "-sdims",
+            dest="specialize_dims",
             default=False,
             required=False,
             action=argparse.BooleanOptionalAction,
-            dest="dims",
+            help="Specialize ThreadID.*, BlockDim.* and GridDim.* with constants and provide 'assume' instructions to llvm",
+        )
+
+        parser.add_argument(
+            "--set-launch-bounds",
+            "-slb",
+            dest="set_launch_bounds",
+            default=False,
+            required=False,
+            action=argparse.BooleanOptionalAction,
             help="Specialize ThreadID.*, BlockDim.* and GridDim.* with constants and provide 'assume' instructions to llvm",
         )
 
@@ -295,7 +281,7 @@ class CLIExecutor(BaseExecutor):
             "--max-threads",
             default=False,
             required=False,
-            action=argparse.BooleanOptionalAction,
+            type=int,
             dest="max_threads",
             help="Set launch bound 'max_threads' of kernel to the executed number of threads",
         )
@@ -303,62 +289,125 @@ class CLIExecutor(BaseExecutor):
         parser.add_argument(
             "--min-threads-per-block",
             default=0,
-            required=False,
             type=int,
             dest="min_blocks_per_sm",
             help="Set launch bound 'min_blocks_per_sm' of kernel to the provided value",
         )
 
+        parser.add_argument(
+            "-cm",
+            "--codegen-method",
+            dest="codegen_method",
+            choices=["rtc", "serial", "parallel"],
+            default="serial",
+            help="Technology to use to lower to LLVM IR to a device object file instead of default Proteus Infrastructure",
+        )
+
+        parser.add_argument(
+            "--codegen-opt",
+            "-co",
+            dest="codegen_opt",
+            type=int,
+            default=3,
+            help="Optimization level to be used when generating machine code (back end optimizations)",
+        )
+
+        parser.add_argument(
+            "--block-dim-x",
+            "-bidx",
+            dest="block_dim_x",
+            type=int,
+            default=None,
+            help="Value of BlockDim.x during kernel replay, when omitted the recorded value is used",
+        )
+
+        parser.add_argument(
+            "--block-dim-y",
+            "-bidy",
+            dest="block_dim_y",
+            type=int,
+            default=None,
+            help="Value of BlockDim.y during kernel replay, when omitted the recorded value is used",
+        )
+
+        parser.add_argument(
+            "--block-dim-z",
+            "-bidz",
+            dest="block_dim_z",
+            type=int,
+            default=None,
+            help="Value of BlockDim.z during kernel replay, when omitted the recorded value is used",
+        )
+
+        parser.add_argument(
+            "--grid-dim-x",
+            "-gidx",
+            dest="grid_dim_x",
+            type=int,
+            default=None,
+            help="Value of GridDim.x during kernel replay, when omitted the recorded value is used",
+        )
+
+        parser.add_argument(
+            "--grid-dim-y",
+            "-gidy",
+            dest="grid_dim_y",
+            type=int,
+            default=None,
+            help="Value of GridDim.y during kernel replay, when omitted the recorded value is used",
+        )
+
+        parser.add_argument(
+            "--grid-dim-z",
+            "-gidz",
+            dest="grid_dim_z",
+            type=int,
+            default=None,
+            help="Value of GridDim.z during kernel replay, when omitted the recorded value is used",
+        )
+
+        parser.add_argument(
+            "--shared-mem",
+            "-shem",
+            dest="shared_mem",
+            type=int,
+            default=None,
+            help="Size of shared memory, if not set we default to recorded value",
+        )
+
+        parser.add_argument(
+            "--iterations",
+            "-it",
+            required=False,
+            type=int,
+            help="The number of iterations to run every execution, used to get statistical meaningful results",
+            default=3,
+        )
+
         parser.set_defaults(func=CLIExecutor.run)
-
-    def apply_user_options(self, llvm_ir, exp):
-        code_hash = self.kernel_descr.static_hash
-        _hash = exp.hash()
-        if self.specialize:
-            code_hash = jit.specialize_args(
-                llvm_ir,
-                code_hash,
-                self.kernel_descr.kernel_name,
-                self.prologue.args,
-                self.prologue.num_args,
-                self.kernel_descr.available_specializations,
-            )
-
-        if self.dims:
-            code_hash = jit.specialize_dims(
-                llvm_ir,
-                code_hash,
-                self.kernel_descr.kernel_name,
-                self.kernel_descr.grid_dim,
-                self.kernel_descr.block_dim,
-            )
-
-        if self.max_threads:
-            self.max_threads = int(
-                self.kernel_descr.block_dim.x
-                * self.kernel_descr.block_dim.y
-                * self.kernel_descr.block_dim.z
-            )
-
-            code_hash = jit.set_launch_bounds(
-                llvm_ir,
-                code_hash,
-                self.kernel_descr.kernel_name,
-                self.max_threads,
-                self.min_blocks_per_sm,
-            )
-
-        return code_hash, llvm_ir
 
     def __init__(self, *args, **kwargs):
         init_profiler()
         self.pipeline = kwargs.pop("pipeline", None)
         self.increamental = kwargs.pop("increamental", False)
         self.specialize = kwargs.pop("specialize", False)
-        self.max_threads = kwargs.pop("max_threads", False)
+        self.max_threads = kwargs.pop("max_threads", None)
         self.min_blocks_per_sm = kwargs.pop("min_blocks_per_sm", 0)
         self.dims = kwargs.pop("dims", False)
         self.results_db_dir = kwargs.pop("results_db_dir", None)
+        self.codegen_method = kwargs.pop("codegen_method", "serial")
+        self.codegen_opt = kwargs.pop("codegen_opt", 3)
+        self.block_dim_x = kwargs.pop("block_dim_x", None)
+        self.block_dim_y = kwargs.pop("block_dim_y", None)
+        self.block_dim_z = kwargs.pop("block_dim_z", None)
+        self.grid_dim_x = kwargs.pop("grid_dim_x", None)
+        self.grid_dim_y = kwargs.pop("grid_dim_y", None)
+        self.grid_dim_z = kwargs.pop("grid_dim_z", None)
+        self.set_launch_bounds = kwargs.pop("set_launch_bounds", False)
+        self.specialize_dims = kwargs.pop("specialize_dims", False)
+        self.shared_mem = kwargs.pop("shared_mem", None)
+
+        print(json.dumps(kwargs, indent=6))
         super().__init__(*args, **kwargs)
         self.pass_manager = PipelineManager()
         if self.pipeline not in (
@@ -375,21 +424,63 @@ class CLIExecutor(BaseExecutor):
         self._db = None
 
     def get_experiment(self, pipeline):
+        self.block_dim_x = (
+            self.kernel_descr.block_dim.x
+            if (self.block_dim_x is None)
+            else self.block_dim_x
+        )
+        self.block_dim_y = (
+            self.kernel_descr.block_dim.y
+            if (self.block_dim_y is None)
+            else self.block_dim_y
+        )
+        self.block_dim_z = (
+            self.kernel_descr.block_dim.z
+            if (self.block_dim_z is None)
+            else self.block_dim_z
+        )
+
+        self.grid_dim_x = (
+            self.kernel_descr.grid_dim.x
+            if (self.grid_dim_x is None)
+            else self.grid_dim_x
+        )
+        self.grid_dim_y = (
+            self.kernel_descr.grid_dim.y
+            if (self.grid_dim_y is None)
+            else self.grid_dim_y
+        )
+        self.grid_dim_z = (
+            self.kernel_descr.grid_dim.z
+            if (self.grid_dim_z is None)
+            else self.grid_dim_z
+        )
+
         max_threads = self.max_threads
-        if self.max_threads:
-            max_threads = (
-                self.kernel_descr.block_dim.x
-                * self.kernel_descr.block_dim.y
-                * self.kernel_descr.block_dim.z
-            )
+        if self.set_launch_bounds:
+            if self.max_threads == -1:
+                max_threads = self.block_dim_x * self.block_dim_y * self.block_dim_z
+
+        self.shared_mem = (
+            self.kernel_descr.shared_mem if self.shared_mem is None else self.shared_mem
+        )
+
         return Experiment(
+            grid_dim_x=self.grid_dim_x,
+            grid_dim_y=self.grid_dim_y,
+            grid_dim_z=self.grid_dim_z,
+            block_dim_x=self.block_dim_x,
+            block_dim_y=self.block_dim_y,
+            block_dim_z=self.block_dim_z,
             specialize=self.specialize,
+            shared_mem=self.shared_mem,
+            set_launch_bounds=self.set_launch_bounds,
             max_threads=max_threads,
             min_blocks_per_sm=self.min_blocks_per_sm,
-            specialize_dims=self.dims,
+            specialize_dims=self.specialize_dims,
             passes=pipeline,
-            prune=self.prune,
-            internalize=self.internalize,
+            prune=True,
+            internalize=True,
             codegen_opt=self.codegen_opt,
             codegen_method=self.codegen_method,
             device_arch=self.device_arch,
@@ -400,7 +491,8 @@ class CLIExecutor(BaseExecutor):
 
     def execute(self, exp, ir_module, clone=False, orig=""):
         if not self.increamental:
-            exp, generated_ir = super()._execute(exp, ir_module, self.pipeline)
+            exp.pipeline = self.pipeline
+            exp, generated_ir = super()._execute(exp, ir_module)
             if self._db is not None:
                 final = self._db.save_ir(generated_ir, exp.hash())
                 self._db.add(orig, final, exp)
@@ -453,10 +545,9 @@ class CLIExecutor(BaseExecutor):
 
         with executor as Memory:
             exp = executor.get_experiment(executor.pipeline)
-            code_hash, code = executor.apply_user_options(root_ir.clone(), exp)
             executor.execute(
                 exp,
-                code,
+                root_ir.clone(),
                 True,
             )
 
@@ -464,36 +555,6 @@ class CLIExecutor(BaseExecutor):
 
 
 class TuneWorker(BaseExecutor):
-    def preprocess_ir(self, llvm_ir, specialize, dims, max_threads, min_blocks_per_sm):
-        code_hash = self.kernel_descr.static_hash
-        if specialize:
-            code_hash = jit.specialize_args(
-                llvm_ir,
-                code_hash,
-                self.kernel_descr.kernel_name,
-                self.prologue.args,
-                self.prologue.num_args,
-                self.kernel_descr.available_specializations,
-            )
-
-        if dims:
-            code_hash = jit.specialize_dims(
-                llvm_ir,
-                code_hash,
-                self.kernel_descr.kernel_name,
-                self.kernel_descr.grid_dim,
-                self.kernel_descr.block_dim,
-            )
-        if max_threads != 0:
-            code_hash = jit.set_launch_bounds(
-                llvm_ir,
-                code_hash,
-                self.kernel_descr.kernel_name,
-                max_threads,
-                min_blocks_per_sm,
-            )
-        return code_hash, llvm_ir
-
     def __init__(self, *args, **kwargs):
         init_profiler()
         super().__init__(*args, **kwargs)
