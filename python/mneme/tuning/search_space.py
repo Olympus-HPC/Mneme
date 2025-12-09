@@ -42,3 +42,45 @@ class SearchSpace(ABC):
         """
         return True
 
+    def sample_random(self) -> Dict[str, Any]:
+        """
+        Generate one valid random configuration from this search space.
+        """
+        from .random_sampler import sample_random_param
+
+        MAX_RETRIES = 1000
+        dims = self.dimensions()
+
+        for _ in range(MAX_RETRIES):
+            result = {}
+
+            # Step 1: sample primary dimensions
+            for name, param in dims.items():
+                result[name] = sample_random_param(param)
+
+            # Step 2: derived parameters
+            derived = self.derived(result)
+            if derived:
+                result.update(derived)
+
+            # Step 3: constraints
+            if self.constraints(result):
+                return result
+
+        raise RuntimeError(
+            f"Failed to produce a valid random sample after {MAX_RETRIES} attempts."
+        )
+
+    def random_samples(self):
+        """
+        Infinite generator yielding valid random configurations.
+
+        Usage:
+            for config in space.random_samples():
+                process(config)
+                if done:
+                    break
+        """
+        while True:
+            yield self.sample_random()
+
