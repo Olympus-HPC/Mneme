@@ -11,3 +11,7 @@ venvs/
 __pycache__/
 *.py[cod]
 *$py.class
+*.bc
+*.mneme
+*.o
+*.egginfo/
