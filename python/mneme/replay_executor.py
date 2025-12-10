@@ -212,7 +212,7 @@ class BaseExecutor:
 
         # NOTE: 2. We apply a custom pass to delete all clang insered code.
         # It is hard to identify these cases, So we delete only things that have been attributed by clang
-        ir_module = transform.remove_auto_initialize(ir_module)
+        ir_module = transform.remove_auto_initialize(ir_module.clone())
         # Done with verification. Moving to next stage
 
         # NOTE: 3. We build and run. We set tracking on and we always execute iterations +2,
@@ -563,14 +563,7 @@ class TuneWorker(BaseExecutor):
     def process_payload(self, ir_module, exp_dict) -> Tuple[Experiment, ModuleRef]:
         exp = Experiment.from_dict(**exp_dict)
         exp.start_time = datetime.utcnow().isoformat()
-        code_hash, code = self.preprocess_ir(
-            ir_module,
-            exp.specialize,
-            exp.specialize_dims,
-            exp.max_threads,
-            exp.min_blocks_per_sm,
-        )
-        exp, generated_ir = super()._execute(exp, code, exp.passes)
+        exp, generated_ir = super()._execute(exp, ir_module)
         exp.end_time = datetime.utcnow().isoformat()
         exp.gpu_id = self.device_id
         return exp, generated_ir
@@ -579,13 +572,9 @@ class TuneWorker(BaseExecutor):
     def run(
         request_q: Queue,
         response_q: Queue,
-        db: str,
+        record_db: str,
         record_id: str,
         device_id: int,
-        prune: bool,
-        internalize: bool,
-        codegen_opt: int,
-        codegen_method: str,
         iterations: int,
         results_db_dir: str,
         state: Event,
@@ -599,13 +588,9 @@ class TuneWorker(BaseExecutor):
         os.dup2(fd_out, 1)  # 1 = stdout
         os.dup2(fd_out, 2)  # 2 = stderr
         worker = TuneWorker(
-            db=db,
+            record_db=record_db,
             record_id=record_id,
             device_id=device_id,
-            prune=prune,
-            internalize=internalize,
-            codegen_opt=codegen_opt,
-            codegen_method=codegen_method,
             iterations=iterations,
         )
         # Open GPU memory, setup prologue epilogue and create a single
@@ -624,7 +609,7 @@ class TuneWorker(BaseExecutor):
                 msg = request_q.get()
                 if msg["payload"] == "terminate":
                     logger.debug(
-                        "Worker {worker.device_id} received terminate request, exiting ..."
+                        f"Worker {worker.device_id} received terminate request, exiting ..."
                     )
                     break
                 elif msg["payload"] == "process":

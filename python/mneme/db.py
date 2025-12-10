@@ -11,6 +11,14 @@ from mneme.logging import logger
 class MnemeDB:
     _columns = [
         "hash",
+        "grid_dim_x",
+        "grid_dim_y",
+        "grid_dim_z",
+        "block_dim_x",
+        "block_dim_y",
+        "block_dim_z",
+        "shared_mem",
+        "set_launch_bounds",
         "orig_ir",
         "compiled_ir",
         "specialize",
