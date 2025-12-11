@@ -427,7 +427,7 @@ class Summary:
         console.print(tbl)
 
     @staticmethod
-    def analyze(args):
+    def analyze(args, verbosity):
         kernel_descr = RecordedExecution.from_json(args.record_database)
         OrigMod = jit.link_llvm_modules(
             kernel_descr.llvm_files, kernel_descr.kernel_name, False, False
@@ -768,7 +768,7 @@ class Detail:
         parser.set_defaults(func=Detail.detail)
 
     @staticmethod
-    def detail(args):
+    def detail(args, verbosity):
         df = pd.read_csv(str(args.results))
 
         # Filter verified=True and failed=False

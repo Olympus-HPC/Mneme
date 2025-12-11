@@ -66,12 +66,12 @@ class Experiment:
         self.min_blocks_per_sm = kwargs.pop("min_blocks_per_sm")
         self.specialize_dims = kwargs.pop("specialize_dims")
         self.passes = kwargs.pop("passes")
-        self.prune = kwargs.pop("prune")
-        self.internalize = kwargs.pop("internalize")
         self.codegen_opt = kwargs.pop("codegen_opt")
         self.codegen_method = kwargs.pop("codegen_method")
-        self._device_arch = kwargs.pop("device_arch")
 
+        self.prune = kwargs.pop("prune", True)
+        self.internalize = kwargs.pop("internalize", True)
+        self._device_arch = kwargs.pop("device_arch", None)
         self._opt_time = kwargs.pop("opt_time", None)
         self._codegen_time = kwargs.pop("codegen_time", None)
         self._verified = kwargs.pop("verified", None)
@@ -334,6 +334,24 @@ class Experiment:
     @codegen_method.setter
     def codegen_method(self, value):
         self._codegen_method = value
+
+    def is_valid(self):
+        if self.set_launch_bounds:
+            if self.max_threads is None:
+                return False
+            if self.min_blocks_per_sm is None:
+                return False
+            threads = self.block_dim_x * self.block_dim_y * self.block_dim_z
+
+            if threads > self.max_threads:
+                # We are running an experiment with more
+                return False
+        return True
+
+    def ground(self):
+        if not self.set_launch_bounds:
+            self.max_threads = 0
+            self.min_blocks_per_sm
 
     def hash(self):
         hasher = hashlib.sha256()

@@ -7,11 +7,13 @@ from multiprocessing import Process
 from multiprocessing import Queue as ProcessQueue
 from queue import Queue as ThreadQueue
 from threading import Event as ThreadEvent
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from mneme.futures import EvalFuture
 from mneme.logging import logger
 from mneme.replay_executor import TuneWorker
+from mneme.experiment import Experiment
+from optuna import trial
 
 
 def pop(q, timeout):
@@ -54,11 +56,17 @@ class TuneWorkerHandle:
         self._state = None  # ProcessEvent
         self._process = None  # Process
         self.current = None  # EvalFuture
-
+        logger.debug(f"[TuneWorkerHandle] Starting processes")
         self._spawn_process()
 
+        logger.debug(
+            f"[TuneWorkerHandle] Starting Thread and bind it to monitor process {self._process.pid}"
+        )
         self._monitor_thread = threading.Thread(target=self._shadow_process_loop)
         self._monitor_thread.start()
+        logger.debug(
+            f"[TuneWorkerHandle] Done Launching TunerWorkerHandles Thread and Processing Infrastructure"
+        )
 
     def _spawn_process(self):
         self._state = ProcessEvent()
@@ -95,12 +103,14 @@ class TuneWorkerHandle:
                 f"Worker {self.idx} received result for unexpected job "
                 f"{msg['exp_id']} vs {future.job_id}"
             )
-
+        logger.debug(
+            f"[{self.__class__.__name__}]-[{self.device_id}] finished experiment {future.job_id}"
+        )
         future.set_result(msg)
         self.current = None
 
     def _try_receive(self):
-        msg = pop(self._ipc_read_q, timeout=0.01)
+        msg = pop(self._ipc_read_q, timeout=1)
         if msg is None:
             return
 
@@ -111,7 +121,7 @@ class TuneWorkerHandle:
     # Job submission
     # ------------------------------------------------------------
     def _submit(self):
-        future: EvalFuture = pop(self.global_q, timeout=0.01)
+        future: EvalFuture = pop(self.global_q, timeout=1)
         if future is None:
             return
 
@@ -134,7 +144,7 @@ class TuneWorkerHandle:
                 # Crash recovery
                 if self.current is not None:
                     self.current.set_error(
-                        f"Worker crashed (exit {self._process.exitcode})"
+                        f"Worker crashed (exit code: {self._process.exitcode}) running on device {self.device_id}"
                     )
                     self.current = None
                     _ = pop(self._ipc_read_q, timeout=0)
@@ -144,7 +154,7 @@ class TuneWorkerHandle:
 
             # Wait for worker to initialize
             if not self._state.is_set():
-                time.sleep(0.01)
+                time.sleep(0.5)
                 continue
 
             if self._action == self.StateMachine.SUBMIT:
@@ -202,11 +212,27 @@ class AsyncReplayExecutor:
             job_id = self._next_id
             self._next_id += 1
 
+        logger.debug(f"[{self.__class__.__name__}] Submitting job {job_id}")
         future = EvalFuture(job_id, params)
         self._futures[job_id] = future
         self.global_q.put(future)
         return future
 
-    def terminate(self):
+    def shutdown(self):
+        logger.debug(f"[{self.__class__.__name__}] Starting shutdown process")
         for w in self.workers:
             w.join()
+        logger.debug(f"[{self.__class__.__name__}] Done Shutdown")
+
+    def evaluate(self, experiment: Experiment) -> Optional[Dict[str, Any]]:
+        """
+        Synchronously evaluate one configuration through the worker pool.
+        Returns a stable dict with exec_time + metadata.
+        """
+        future = self.submit(experiment.to_dict())
+        msg = future.result()  # blocks until worker finishes
+
+        if msg.get("payload") != "result":
+            raise RuntimeError(f"Unexpected worker message: {msg}")
+
+        return msg

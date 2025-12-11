@@ -11,6 +11,9 @@ class FeedbackReducer(ABC):
     The parent tuner uses this to decide which child configuration wins.
     """
 
+    def __init__(self, name):
+        self.name = name
+
     @abstractmethod
     def reduce(self, configs: List[Any], values: List[float]) -> Any:
         pass

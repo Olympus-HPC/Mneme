@@ -20,15 +20,16 @@ class TunerNode(ABC):
     sub-tuners, reduce results, or perform nested search.
     """
 
-    def __init__(self, space: SearchSpace):
+    def __init__(self, space: SearchSpace, sampler):
         self.space = space
+        self.sampler = sampler
 
     # ------------------------------------------------------------
     # Core tuning interface
     # ------------------------------------------------------------
 
     @abstractmethod
-    def ask(self) -> Dict[str, Any]:
+    def ask(self, trial=None) -> Dict[str, Any]:
         """
         Produce the next configuration to evaluate.
         Must return a dict mapping parameter names to values.
@@ -61,3 +62,27 @@ class TunerNode(ABC):
             - aggregate child results using a FeedbackReducer
         """
         pass
+
+
+class PipelineParentTuner(TunerNode):
+    def __init__(self, space, sampler, blockdim_tuner, reducer):
+        super().__init__(space, sampler)
+        self.child = blockdim_tuner
+        self.reducer = reducer
+
+    def ask(self, trial=None):
+        return self.sampler.sample(self.space, trial)
+
+    def tell(self, params, feedback):
+        # simple bookkeeping for now
+        pass
+
+    def evaluate(self, fixed_params):
+        # Evaluate using child tuner
+        result = self.child.evaluate(fixed_params)
+
+        # Reduce feedback
+        reduced = self.reducer.reduce([result])
+
+        self.tell(fixed_params, reduced)
+        return reduced

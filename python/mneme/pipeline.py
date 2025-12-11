@@ -664,6 +664,7 @@ class PipelineManager:
             "attributor-cgscc",
             "coro",
             "objc",
+            "callbrprepare",
             "gc-lowering",
             "pgo",
             "verifier",
@@ -778,7 +779,16 @@ class PipelineManager:
     def __init__(self):
         self._passes = PipelineManager.__parse_llvm_pipeline__(__all_passes__)
         self._kw_passes = {k.pass_name: k for k in self._passes}
+        self._kw_concrete_passes = {
+            k.pass_name: AbstractPass.ConcretePass(k) for k in self._passes
+        }
         logger.debug(f"Total LLVM exposed pipeline passes are: {len(self._passes)}")
+
+    def get_passes(self) -> List[str]:
+        return list(self._kw_concrete_passes.keys())
+
+    def get_concrete_passes(self) -> Dict[str, AbstractPass.ConcretePass]:
+        return self._kw_concrete_passes
 
     def split_pipeline(self, pipeline):
         return __flatten_passes__(__split_top_level__(pipeline))
