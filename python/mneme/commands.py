@@ -984,7 +984,7 @@ class Execute(BaseExecutor):
 
         parser.add_argument(
             "--max-threads",
-            default=False,
+            default=None,
             required=False,
             type=int,
             dest="max_threads",
@@ -1084,7 +1084,7 @@ class Execute(BaseExecutor):
             "default<O2>",
             "default<O1>",
             "default<O0>",
-            "default<Os",
+            "default<Os>",
             "default<Oz>",
         ):
             self.passes = self.pass_manager.from_string(self.passes)
@@ -1126,8 +1126,9 @@ class Execute(BaseExecutor):
         )
 
         max_threads = self.max_threads
+        print(f"max_threads is {max_threads} {self.set_launch_bounds}")
         if self.set_launch_bounds:
-            if self.max_threads == -1:
+            if self.max_threads == -1 or self.max_threads is None:
                 max_threads = self.block_dim_x * self.block_dim_y * self.block_dim_z
 
         self.shared_mem = (
@@ -1154,7 +1155,8 @@ class Execute(BaseExecutor):
         return f"{self.__class__.__name__}"
 
     def execute(self, config, ir_module, clone=False, orig=""):
-        result, generated_ir = super()._execute(config, ir_module)
+        result = ExperimentResult()
+        generated_ir = super()._execute(result, config, ir_module)
         if self.output_ll is not None:
             with open(self.output_ll, "w") as fd:
                 fd.write(str(generated_ir))
@@ -1178,7 +1180,8 @@ class Execute(BaseExecutor):
                 root_ir.clone(),
                 True,
             )
-            print(json.dumps(exp.to_dict(), cls=MnemeEncoder, indent=2))
-            print(json.dumps(res.to_dict(), cls=MnemeEncoder, indent=2))
+            print("Execute configuration:\n", json.dumps(exp.to_dict(), cls=MnemeEncoder, indent=2))
+
+            print("Result of experiment:\n", json.dumps(res.to_dict(), cls=MnemeEncoder, indent=2))
 
         return

@@ -1,7 +1,7 @@
 import argparse
 import json
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from multiprocessing import Event, Queue
 from typing import Tuple
 
@@ -459,8 +459,11 @@ class BaseExecutor:
                 result.local_mem_usage = device_func.local_mem
 
     def _execute(
-        self, config: ExperimentConfiguration, ir_module: ModuleRef
-    ) -> Tuple[ExperimentResult, ModuleRef]:
+        self,
+        result: ExperimentResult,
+        config: ExperimentConfiguration,
+        ir_module: ModuleRef,
+    ) -> ModuleRef:
         """
         Execute a single Mneme experiment using the given configuration and IR module.
 
@@ -489,6 +492,8 @@ class BaseExecutor:
 
         Parameters
         ----------
+        result : ExperimentResult
+            The container to store all the collected/counted values to.
         config : ExperimentConfiguration
             The experiment configuration controlling launch parameters, specialization,
             and code generation settings.
@@ -511,7 +516,6 @@ class BaseExecutor:
         RuntimeError
             If internal prologue or epilogue state is unexpectedly ``None``.
         """
-        result = ExperimentResult()
         if self._prologue._state is None or self._epilogue._state is None:
             raise RuntimeError("States should never be none when executing a kernel")
 
@@ -533,7 +537,7 @@ class BaseExecutor:
         self._run(result, config, mem_buffer, True, self._iterations + 2)
         result.executed = True
 
-        return result, ir_module
+        return ir_module
 
 
 class TuneWorker(BaseExecutor):
@@ -542,13 +546,14 @@ class TuneWorker(BaseExecutor):
         super().__init__(*args, **kwargs)
 
     def process_payload(
-        self, ir_module, exp_dict
+        self, ir_module, config: ExperimentConfiguration
     ) -> Tuple[ExperimentResult, ModuleRef]:
-        config = ExperimentConfiguration.from_dict(**exp_dict)
         result = ExperimentResult()
-        result.start_time = datetime.utcnow().isoformat()
-        result, generated_ir = super()._execute(config, ir_module)
-        result.end_time = datetime.utcnow().isoformat()
+        result.start_time = datetime.now(timezone.utc).isoformat()
+        print("Before Start time is", result.start_time)
+        generated_ir = super()._execute(result, config, ir_module)
+        result.end_time = datetime.now(timezone.utc).isoformat()
+        print("After Start time is", result.start_time)
         result.gpu_id = self.device_id
         return result, generated_ir
 
@@ -580,11 +585,6 @@ class TuneWorker(BaseExecutor):
         # Open GPU memory, setup prologue epilogue and create a single
         # LLVM IR file to start working on optimizations
         root_ir = worker.link_ir()
-        resdb = MnemeDB(
-            results_db_dir,
-            worker.kernel_descr.static_hash,
-            worker.kernel_descr.dynamic_hash,
-        ).open()
 
         with worker as Memory:
             state.set()
@@ -600,8 +600,10 @@ class TuneWorker(BaseExecutor):
                     logger.debug(
                         f"Worker {worker.device_id} received processing request {msg['exp_id']}"
                     )
-                    exp, ir = worker.process_payload(root_ir.clone(), msg["data"])
-                    final = resdb.save_ir(ir, exp.hash())
+                    exp, ir = worker.process_payload(
+                        root_ir.clone(), ExperimentConfiguration.from_dict(msg["data"])
+                    )
+                    # final = resdb.save_ir(ir, exp.hash())
                     logger.debug(
                         f"Worker {worker.device_id} finalized processing request {msg['exp_id']}"
                     )
@@ -611,7 +613,7 @@ class TuneWorker(BaseExecutor):
                             "exp_id": msg["exp_id"],
                             "payload": "result",
                             "data": exp.to_dict(),
-                            "llvm_ir": final,
+                            "llvm_ir": "",
                         }
                     )
                 else:

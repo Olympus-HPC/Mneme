@@ -129,10 +129,22 @@ class ExperimentConfiguration:
         ExperimentConfiguration
             A new configuration instance initialized from ``data``.
         """
-        data = dict(data)  # avoid mutating caller's dict
-        grid = dim3.from_dict(data.pop("grid"))
-        block = dim3.from_dict(data.pop("block"))
-        return cls(grid=grid, block=block, **data)
+        data = dict(data)
+
+        grid = data.pop("grid")
+        block = data.pop("block")
+
+        if isinstance(grid, dim3):
+            grid_obj = grid
+        else:
+            grid_obj = dim3.from_dict(grid)
+
+        if isinstance(block, dim3):
+            block_obj = block
+        else:
+            block_obj = dim3.from_dict(block)
+
+        return cls(grid=grid_obj, block=block_obj, **data)
 
     def to_dict(self) -> Dict[str, Any]:
         """
@@ -144,8 +156,37 @@ class ExperimentConfiguration:
             A JSON-/YAML-serializable dictionary representation of the
             configuration, suitable for persistence or hashing.
         """
-        # asdict handles nested dataclasses; dim3 should already be serializable
-        return asdict(self)
+
+        return _to_serializable(self)
+
+    def is_valid(self):
+        """
+        Checks if the configuration follows device constraints
+
+        Returns
+        -------
+        bool
+            A boolean value indicating whether this is a valid configuration
+        """
+        if self.set_launch_bounds and (
+            self.max_threads < (self.block.x * self.block.y * self.block.z)
+        ):
+            return False
+        return True
+
+    def ground(self):
+        """
+        Values that are 'unused' are set on default values. This can help when hashing configs
+
+        Returns
+        -------
+            None
+                This function does not return anyhing, but modifies the contents of the class in place
+        """
+
+        if not self.set_launch_bounds:
+            self.max_threads = 0
+            self.min_blocks_per_sm = 0
 
     def hash(self) -> str:
         """
@@ -206,6 +247,8 @@ class ExperimentResult:
         Amount of local memory used by the generated kernel.
     reg_usage : int
         Number of registers used per thread by the generated kernel.
+    error : str
+        Error description, usually set by the TunerHandler on crash
     """
 
     preprocess_ir_time: float = 0.0
@@ -222,6 +265,7 @@ class ExperimentResult:
     const_mem_usage: int = 0
     local_mem_usage: int = 0
     reg_usage: int = 0
+    error: str = ""
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "ExperimentResult":

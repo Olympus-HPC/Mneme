@@ -1,6 +1,7 @@
 # python/mneme/futures.py
 import threading
 from typing import Any, Optional, Dict
+from mneme.mneme_types import ExperimentConfiguration, ExperimentResult
 
 
 class EvalFuture:
@@ -8,16 +9,16 @@ class EvalFuture:
     Mneme Future: lightweight identity + synchronization.
     """
 
-    def __init__(self, job_id: int, params: Dict[str, Any]):
+    def __init__(self, job_id: int, config: ExperimentConfiguration):
         self.job_id = job_id
-        self.params = params  # small dict of input params
+        self.config = config  # small dict of input params
 
         self._cond = threading.Condition()
         self._done = False
-        self._result = None
-        self._error = None
+        self._result: Optional[ExperimentResult] = None
+        self._error: Optional[str] = None
 
-    def set_result(self, result: Dict[str, Any]):
+    def set_result(self, result: ExperimentResult):
         with self._cond:
             self._done = True
             self._result = result
@@ -33,12 +34,19 @@ class EvalFuture:
         with self._cond:
             return self._done
 
-    def result(self, timeout=None) -> Optional[Dict[str, Any]]:
+    def result(self, timeout=None) -> Optional[ExperimentResult]:
         with self._cond:
             if not self._done:
                 self._cond.wait(timeout=timeout)
 
             if self._error:
+                if self._result is None:
+                    return ExperimentResult(
+                        error=self._error, failed=True, executed=False
+                    )
+                else:
+                    self._result.error = self._error
+
                 raise RuntimeError(self._error)
 
             return self._result

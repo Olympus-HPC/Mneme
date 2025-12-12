@@ -1,4 +1,5 @@
 import queue
+import json
 import threading
 import time
 from enum import IntEnum
@@ -7,13 +8,12 @@ from multiprocessing import Process
 from multiprocessing import Queue as ProcessQueue
 from queue import Queue as ThreadQueue
 from threading import Event as ThreadEvent
-from typing import Any, Dict, Optional
+from typing import Dict, Optional
 
 from mneme.futures import EvalFuture
 from mneme.logging import logger
 from mneme.replay_executor import TuneWorker
-from mneme.experiment import Experiment
-from optuna import trial
+from mneme.mneme_types import ExperimentConfiguration, ExperimentResult
 
 
 def pop(q, timeout):
@@ -94,19 +94,18 @@ class TuneWorkerHandle:
     # Result handling
     # ------------------------------------------------------------
     def _process_result(self, msg):
-        future = self.current
-        if future is None:
+        if self.current is None:
             return
 
-        if future.job_id != msg["exp_id"]:
+        if self.current.job_id != msg["exp_id"]:
             raise RuntimeError(
                 f"Worker {self.idx} received result for unexpected job "
                 f"{msg['exp_id']} vs {future.job_id}"
             )
         logger.debug(
-            f"[{self.__class__.__name__}]-[{self.device_id}] finished experiment {future.job_id}"
+            f"[{self.__class__.__name__}-{self.device_id}] finished experiment {self.current.job_id}"
         )
-        future.set_result(msg)
+        self.current.set_result(ExperimentResult.from_dict(msg["data"]))
         self.current = None
 
     def _try_receive(self):
@@ -128,7 +127,7 @@ class TuneWorkerHandle:
         self.current = future
         msg = {
             "payload": "process",
-            "data": future.params,
+            "data": future.config.to_dict(),
             "exp_id": future.job_id,
         }
 
@@ -143,6 +142,7 @@ class TuneWorkerHandle:
             if not self._process.is_alive():
                 # Crash recovery
                 if self.current is not None:
+                    # TODO: At some point we need to have more descrptive messages on the crash, it is not always a seg fault, somethimes it is LLVM related and we should know.
                     self.current.set_error(
                         f"Worker crashed (exit code: {self._process.exitcode}) running on device {self.device_id}"
                     )
@@ -154,6 +154,8 @@ class TuneWorkerHandle:
 
             # Wait for worker to initialize
             if not self._state.is_set():
+                # TODO: We should use mp.conditional variables instead of the state.
+                # That should simplify the logic.
                 time.sleep(0.5)
                 continue
 
@@ -207,13 +209,13 @@ class AsyncReplayExecutor:
     # ------------------------------------------------------------------
     # Submit new job (non-blocking)
     # ------------------------------------------------------------------
-    def submit(self, params: Dict[str, Any]) -> EvalFuture:
+    def submit(self, config: ExperimentConfiguration) -> EvalFuture:
         with self._lock:
             job_id = self._next_id
             self._next_id += 1
 
         logger.debug(f"[{self.__class__.__name__}] Submitting job {job_id}")
-        future = EvalFuture(job_id, params)
+        future = EvalFuture(job_id, config)
         self._futures[job_id] = future
         self.global_q.put(future)
         return future
@@ -224,15 +226,11 @@ class AsyncReplayExecutor:
             w.join()
         logger.debug(f"[{self.__class__.__name__}] Done Shutdown")
 
-    def evaluate(self, experiment: Experiment) -> Optional[Dict[str, Any]]:
+    def evaluate(self, config: ExperimentConfiguration) -> ExperimentResult:
         """
         Synchronously evaluate one configuration through the worker pool.
         Returns a stable dict with exec_time + metadata.
         """
-        future = self.submit(experiment.to_dict())
-        msg = future.result()  # blocks until worker finishes
+        future = self.submit(config)
 
-        if msg.get("payload") != "result":
-            raise RuntimeError(f"Unexpected worker message: {msg}")
-
-        return msg
+        return future.result()

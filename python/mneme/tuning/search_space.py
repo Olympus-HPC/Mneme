@@ -1,12 +1,9 @@
-from __future__ import annotations
-
-import time
 from abc import ABC, abstractmethod
 from collections import defaultdict
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Dict, List, Tuple, Iterable
 
-import optuna
-from mneme.logging import logger
+from optuna.trial import Trial
+from mneme.mneme_types import ExperimentConfiguration
 from mneme.pipeline import PipelineManager
 
 
@@ -80,7 +77,7 @@ class RealRangeParam(BaseParam):
         self.high: float = high
 
 
-def sample_optuna_param(trial: optuna.trial.Trial, param: BaseParam) -> Any:
+def sample_optuna_param(trial: Trial, param: BaseParam) -> Any:
     """
     Sample a single parameter using Optuna.
     """
@@ -180,7 +177,8 @@ class SearchSpace(ABC):
         """
         pass
 
-    def derived(self, params: Dict[str, Any]) -> Dict[str, Any]:
+    @abstractmethod
+    def derived(self, params: Dict[str, Any]) -> ExperimentConfiguration:
         """
         Compute derived parameters from the given primary parameters.
 
@@ -190,6 +188,7 @@ class SearchSpace(ABC):
         """
         return {}
 
+    @abstractmethod
     def constraints(self, params: Dict[str, Any]) -> bool:
         """
         Validate that this parameter assignment is legal.
@@ -222,7 +221,7 @@ class SearchSpace(ABC):
             f"Failed to produce a valid random sample after {MAX_RETRIES} attempts."
         )
 
-    def sample_optuna(self, study):
+    def sample_optuna(self, study) -> Tuple[ExperimentConfiguration, Trial]:
         """
         Generate a valid configuration using Optuna.
 
@@ -236,7 +235,7 @@ class SearchSpace(ABC):
         MAX_RETRIES = 1000
         dims = self.dimensions()
 
-        for k in range(MAX_RETRIES):
+        for _ in range(MAX_RETRIES):
             trial = study.ask()
             config = {}
 
@@ -247,10 +246,7 @@ class SearchSpace(ABC):
             # Step 2: constraints
             derived_config = self.derived(config)
             if self.constraints(derived_config):
-                return {
-                    "parameters": derived_config,
-                    "__optuna_trial__": trial,
-                }
+                return derived_config, trial
             else:
                 study.tell(trial, (1 << 64) - 1)
 
