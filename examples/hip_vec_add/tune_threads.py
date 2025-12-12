@@ -136,7 +136,7 @@ study = optuna.create_study(
     direction="minimize",
     sampler=optuna.samplers.RandomSampler(),
 )
-SS = OptunaSamplingStrategy(space, study, 1000)
+SS = OptunaSamplingStrategy(space, study, 100)
 pending = []
 start = time.time()
 for i, (config, ctrial) in enumerate(SS):
@@ -146,17 +146,22 @@ for i, (config, ctrial) in enumerate(SS):
 
     val = executor.evaluate(config)
     if val.verified:
+        print("ID:", id(ctrial))
         avg_time = statistics.mean(val.exec_time)
         speedup = baseline_time / avg_time
-        study.tell(
-            ctrial,
-        )
+        ctrial.set_user_attr("mneme.config", config.to_dict())
+        ctrial.set_user_attr("mneme.result", val.to_dict())
+        study.tell(ctrial, speedup)
         print(
             f" Experiment {i} with hash:{config.hash()} has speedup of {speedup} and total time is {avg_time}"
         )
     else:
         study.tell(ctrial, (1 << 64) - 1)
         print(i, config.hash(), f"Experiment failed with {val.error}")
+
+best = study.best_trial
+print(json.dumps(best.user_attrs.get("mneme.config"), indent=2))
+print(json.dumps(best.user_attrs.get("mneme.result"), indent=2))
 end = time.time()
 print("total process time is ", end - start)
 executor.shutdown()

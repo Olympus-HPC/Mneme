@@ -237,6 +237,7 @@ class SearchSpace(ABC):
 
         for _ in range(MAX_RETRIES):
             trial = study.ask()
+            print("Asked trial", id(trial))
             config = {}
 
             # Step 1: primary dimension sampling
