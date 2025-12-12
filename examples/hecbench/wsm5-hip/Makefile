@@ -7,7 +7,8 @@ HCC        ?= hipcc
 OPTIMIZE  = yes
 DEBUG     ?= no
 LAUNCHER  =
-Version ?= default
+VERSION ?= default
+
 
 #===============================================================================
 # Program name & source code list
@@ -15,32 +16,32 @@ Version ?= default
 
 program = main
 
-source = main.cpp
+source = main.cu
 
-obj = $(source:.cpp=.o)
+obj = $(source:.cu=.o)
 
 #===============================================================================
 # Sets Flags
 #===============================================================================
 
 # Standard Flags
-CFLAGS := $(EXTRA_CFLAGS) -std=c++14 -Wall
+CFLAGS := -O3 -DMKX=4 -std=c++14 -Wall
 
 # Linker Flags
 LDFLAGS = 
+ 
 
 # Debug Flags
 ifeq ($(DEBUG),yes)
-  CFLAGS += -g
+  CFLAGS += -g -DDEBUG
   LDFLAGS  += -g
 endif
 
-# Optimization Flags
-ifeq ($(Version), mneme)
+ifeq ($(VERSION), mneme)
   CFLAGS += $(shell mneme config cflags) 
 	LDFLAGS += $(shell mneme config ldflags)
 
-else ifeq ($(Version), proteus)
+else ifeq ($(VERSION), proteus)
 CFLAGS += -DENABLE_PROTEUS -I${MNEME_PREFIX}/include \
     -fpass-plugin=${MNEME_PREFIX}/lib64/libProteusPass.so
 
@@ -60,11 +61,11 @@ LDFLAGS += -L${MNEME_PREFIX}/lib64 \
     -lproteus
 endif
 
+
 # Optimization Flags
 ifeq ($(OPTIMIZE),yes)
   CFLAGS += -O3
 endif
-
 #===============================================================================
 # Targets to Build
 #===============================================================================
@@ -72,12 +73,13 @@ endif
 $(program): $(obj) Makefile
 	$(HCC) $(CFLAGS) $(obj) -o $@ $(LDFLAGS)
 
-%.o: %.cpp Makefile
+%.o: %.cu kernel.h \
+          spt.h \
+          constants.h utils.h Makefile
 	$(HCC) $(CFLAGS) -c $< -o $@
 
 clean:
-	rm -rf $(program) $(obj)
+	rm -rf $(program) $(obj) .proteus
 
 run: $(program)
-	$(LAUNCHER) ./$(program) -n 8192
-
+	$(LAUNCHER) ./$(program) 1
