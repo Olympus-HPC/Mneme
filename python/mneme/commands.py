@@ -3,18 +3,20 @@ import json
 import os
 import shutil
 import subprocess
-import sys
-import time
 from pathlib import Path
-from typing import Any, Dict, Iterable, Optional
+from typing import Any, Iterable, Optional
 
 import numpy as np
 import pandas as pd
-from mneme.db import MnemeDB
-from mneme.llvm import debug, module, utils
+from mneme.llvm import module, utils
 from mneme.logging import logger
+from mneme.mneme_types import ExperimentConfiguration, ExperimentResult, dim3
+from mneme.pipeline import PipelineManager
+from mneme.profile import init_profiler
 from mneme.proteus import jit
 from mneme.recorded_execution import RecordedExecution
+from mneme.replay_executor import BaseExecutor
+from mneme.utils import MnemeEncoder
 from rich import box
 from rich.columns import Columns
 from rich.console import Console, Group
@@ -877,3 +879,306 @@ class Config:
             print(" ".join(value))
         else:
             print(value)
+
+
+class Execute(BaseExecutor):
+    @staticmethod
+    def set_cli_args(parser):
+        parser.add_argument(
+            "-rdb",
+            "--record-database",
+            dest="record_db",
+            required=True,
+            help="Path to Mneme JSON/db file",
+        )
+
+        parser.add_argument(
+            "-record-id",
+            "-rid",
+            dest="record_id",
+            required=True,
+            help="Kernel ID to operate on",
+        )
+
+        parser.add_argument(
+            "--grid-dim-x",
+            "-gidx",
+            dest="grid_dim_x",
+            type=int,
+            default=None,
+            help="Value of GridDim.x during kernel replay, when omitted the recorded value is used",
+        )
+
+        parser.add_argument(
+            "--grid-dim-y",
+            "-gidy",
+            dest="grid_dim_y",
+            type=int,
+            default=None,
+            help="Value of GridDim.y during kernel replay, when omitted the recorded value is used",
+        )
+
+        parser.add_argument(
+            "--grid-dim-z",
+            "-gidz",
+            dest="grid_dim_z",
+            type=int,
+            default=None,
+            help="Value of GridDim.z during kernel replay, when omitted the recorded value is used",
+        )
+
+        parser.add_argument(
+            "--block-dim-x",
+            "-bidx",
+            dest="block_dim_x",
+            type=int,
+            default=None,
+            help="Value of BlockDim.x during kernel replay, when omitted the recorded value is used",
+        )
+
+        parser.add_argument(
+            "--block-dim-y",
+            "-bidy",
+            dest="block_dim_y",
+            type=int,
+            default=None,
+            help="Value of BlockDim.y during kernel replay, when omitted the recorded value is used",
+        )
+
+        parser.add_argument(
+            "--block-dim-z",
+            "-bidz",
+            dest="block_dim_z",
+            type=int,
+            default=None,
+            help="Value of BlockDim.z during kernel replay, when omitted the recorded value is used",
+        )
+
+        parser.add_argument(
+            "--shared-mem",
+            "-shem",
+            dest="shared_mem",
+            type=int,
+            default=None,
+            help="Size of shared memory, if not set we default to recorded value",
+        )
+
+        parser.add_argument(
+            "--specialize",
+            default=False,
+            required=False,
+            action=argparse.BooleanOptionalAction,
+            dest="specialize",
+            help="Apply argument specialization on the kernel",
+        )
+
+        parser.add_argument(
+            "--set-launch-bounds",
+            "-slb",
+            dest="set_launch_bounds",
+            default=False,
+            required=False,
+            action=argparse.BooleanOptionalAction,
+            help="Set the launch bounds of the execution",
+        )
+
+        parser.add_argument(
+            "--max-threads",
+            default=False,
+            required=False,
+            type=int,
+            dest="max_threads",
+            help="Set launch bound 'max_threads' parameter of kernel to the executed number of threads",
+        )
+
+        parser.add_argument(
+            "--min-threads-per-block",
+            default=0,
+            type=int,
+            dest="min_blocks_per_sm",
+            help="Set launch bound 'min_blocks_per_sm' of kernel to the provided value",
+        )
+
+        parser.add_argument(
+            "--specialize-dims",
+            "-sdims",
+            dest="specialize_dims",
+            default=False,
+            required=False,
+            action=argparse.BooleanOptionalAction,
+            help="Specialize ThreadID.*, BlockDim.* and GridDim.* with constants",
+        )
+
+        parser.add_argument(
+            "passes",
+            help="Compilation pipeline of the kernel to execute",
+        )
+
+        parser.add_argument(
+            "--codegen-opt",
+            "-co",
+            dest="codegen_opt",
+            type=int,
+            default=3,
+            help="Optimization level to be used when generating machine code (back end optimizations)",
+        )
+
+        parser.add_argument(
+            "-cm",
+            "--codegen-method",
+            dest="codegen_method",
+            choices=["serial"],
+            default="serial",
+            help="Technology to use to lower to LLVM IR to a device object file instead of default Proteus Infrastructure",
+        )
+
+        parser.add_argument(
+            "--iterations",
+            "-it",
+            required=False,
+            type=int,
+            help="The number of iterations to run every execution, used to get statistical meaningful results",
+            default=3,
+        )
+
+        parser.add_argument(
+            "--output-ll",
+            "-ol",
+            dest="output_ll",
+            required=False,
+            default=None,
+            help="Store the output LLVM IR to this file",
+        )
+
+        parser.set_defaults(func=Execute.run)
+
+    def __init__(self, *args, **kwargs):
+        # NOTE: We need to instantiate the profiler here so 
+        # that upcoming calls are going to be robust
+        init_profiler()
+        self.grid_dim_x = kwargs.pop("grid_dim_x", None)
+        self.grid_dim_y = kwargs.pop("grid_dim_y", None)
+        self.grid_dim_z = kwargs.pop("grid_dim_z", None)
+
+        self.block_dim_x = kwargs.pop("block_dim_x", None)
+        self.block_dim_y = kwargs.pop("block_dim_y", None)
+        self.block_dim_z = kwargs.pop("block_dim_z", None)
+
+        self.shared_mem = kwargs.pop("shared_mem", None)
+        self.specialize = kwargs.pop("specialize", False)
+        self.set_launch_bounds = kwargs.pop("set_launch_bounds", False)
+        self.max_threads = kwargs.pop("max_threads", None)
+        self.min_blocks_per_sm = kwargs.pop("min_blocks_per_sm", 0)
+        self.specialize_dims = kwargs.pop("specialize_dims", False)
+        self.passes = kwargs.pop("passes", None)
+        self.codegen_method = kwargs.pop("codegen_method", "serial")
+        self.codegen_opt = kwargs.pop("codegen_opt", 3)
+
+        self.output_ll = kwargs.pop("output_ll", None)
+
+        print(json.dumps(kwargs, indent=6))
+        super().__init__(*args, **kwargs)
+        self.pass_manager = PipelineManager()
+        if self.passes not in (
+            "default<O3>",
+            "default<O2>",
+            "default<O1>",
+            "default<O0>",
+            "default<Os",
+            "default<Oz>",
+        ):
+            self.passes = self.pass_manager.from_string(self.passes)
+        else:
+            self.passes = self.passes
+        self._db = None
+
+    def get_mneme_config(self, passes):
+        self.block_dim_x = (
+            self.kernel_descr.block_dim.x
+            if (self.block_dim_x is None)
+            else self.block_dim_x
+        )
+        self.block_dim_y = (
+            self.kernel_descr.block_dim.y
+            if (self.block_dim_y is None)
+            else self.block_dim_y
+        )
+        self.block_dim_z = (
+            self.kernel_descr.block_dim.z
+            if (self.block_dim_z is None)
+            else self.block_dim_z
+        )
+
+        self.grid_dim_x = (
+            self.kernel_descr.grid_dim.x
+            if (self.grid_dim_x is None)
+            else self.grid_dim_x
+        )
+        self.grid_dim_y = (
+            self.kernel_descr.grid_dim.y
+            if (self.grid_dim_y is None)
+            else self.grid_dim_y
+        )
+        self.grid_dim_z = (
+            self.kernel_descr.grid_dim.z
+            if (self.grid_dim_z is None)
+            else self.grid_dim_z
+        )
+
+        max_threads = self.max_threads
+        if self.set_launch_bounds:
+            if self.max_threads == -1:
+                max_threads = self.block_dim_x * self.block_dim_y * self.block_dim_z
+
+        self.shared_mem = (
+            self.kernel_descr.shared_mem if self.shared_mem is None else self.shared_mem
+        )
+
+        return ExperimentConfiguration(
+            grid=dim3(self.grid_dim_x, self.grid_dim_y, self.grid_dim_z),
+            block=dim3(self.block_dim_x, self.block_dim_y, self.block_dim_z),
+            shared_mem=self.shared_mem,
+            specialize=self.specialize,
+            set_launch_bounds=self.set_launch_bounds,
+            max_threads=max_threads,
+            min_blocks_per_sm=self.min_blocks_per_sm,
+            specialize_dims=self.specialize_dims,
+            passes=passes,
+            codegen_opt=self.codegen_opt,
+            codegen_method=self.codegen_method,
+            prune=True,
+            internalize=True,
+        )
+
+    def __str__(self):
+        return f"{self.__class__.__name__}"
+
+    def execute(self, config, ir_module, clone=False, orig=""):
+        result, generated_ir = super()._execute(config, ir_module)
+        if self.output_ll is not None:
+            with open(self.output_ll, "w") as fd:
+                fd.write(str(generated_ir))
+        return result
+
+    @staticmethod
+    def run(args, verbosity):
+        kwargs = vars(args)
+        kwargs.pop("command")
+        kwargs.pop("func")
+        executor = Execute(**kwargs)
+
+        # We currently link all LLVM IR modules together
+        # NOTE: Does this break with externals on CUDA?
+        root_ir = executor.link_ir()
+
+        with executor as Memory:
+            exp = executor.get_mneme_config(executor.passes)
+            res = executor.execute(
+                exp,
+                root_ir.clone(),
+                True,
+            )
+            print(json.dumps(exp.to_dict(), cls=MnemeEncoder, indent=2))
+            print(json.dumps(res.to_dict(), cls=MnemeEncoder, indent=2))
+
+        return

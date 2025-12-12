@@ -1,57 +1,32 @@
 import argparse
 import json
 import os
-import time
 from datetime import datetime
 from multiprocessing import Event, Queue
 from typing import Tuple
 
-from mneme.db import MnemeDB
 from mneme.device import (
+    DeviceFunction,
     DeviceModule,
-    dim3,
     get_device_arch,
     get_device_count,
     set_device,
 )
-from mneme.experiment import Experiment
 from mneme.fancy_out import PrettyTablePrinter
 from mneme.llvm.buffer import MemBufferRef
 from mneme.llvm.module import ModuleRef
 from mneme.logging import logger
+from mneme.mneme_types import ExperimentConfiguration, ExperimentResult
 from mneme.page_manager import PageManagerRef
 from mneme.pipeline import PipelineManager
 from mneme.profile import init_profiler
 from mneme.proteus import jit
-from mneme.recorded_execution import MemStateRef, RecordedExecution
+from mneme.recorded_execution import RecordedExecution
 from mneme.transforms import transform
 from mneme.utils import cond_gpu_time, cond_time
 
 
 class BaseExecutor:
-    @staticmethod
-    def get_base_parser():
-        parser = argparse.ArgumentParser(add_help=False)
-        parser.add_argument(
-            "-rdb",
-            "--record-database",
-            dest="record_db",
-            required=True,
-            help="Path to Mneme JSON/db file",
-        )
-
-        parser.add_argument(
-            "-record-id",
-            "-rid",
-            dest="record_id",
-            required=True,
-            help="Kernel ID to operate on",
-        )
-
-        parser.set_defaults()
-
-        return parser
-
     def __init__(
         self,
         record_db: str = "",
@@ -117,10 +92,69 @@ class BaseExecutor:
         return self.records.link_llvm_modules(prune=True, internalize=True)
 
     @cond_time("preprocess_ir_time")
-    def _preprocess_ir(self, exp, llvm_ir):
+    def _preprocess_ir(
+        self,
+        result: ExperimentResult,
+        config: ExperimentConfiguration,
+        llvm_ir: ModuleRef,
+    ) -> Tuple[str, ModuleRef]:
+        """
+        Apply IR-level preprocessing and specialization transformations prior to
+        kernel code generation.
+
+        This method computes a deterministic code hash reflecting all applied
+        specializations and transformations. The input IR module may be modified
+        in-place depending on the selected configuration options. The resulting
+        hash is used to uniquely identify the transformed kernel and ensure
+        reproducibility across record/replay runs.
+
+        The preprocessing pipeline consists of the following conditional steps:
+
+        1. **Argument specialization** (``config.specialize``)
+           Specializes the kernel based on recorded argument values from the
+           prologue. This may produce more optimized IR for kernels whose behavior
+           depends on constant parameters.
+
+        2. **Launch-dimension specialization** (``config.specialize_dims``)
+           Specializes the kernel based on the provided grid and block dimensions,
+           enabling IR simplification or elimination of dimension-dependent logic.
+
+        3. **Launch-bounds insertion** (``config.set_launch_bounds``)
+           Applies explicit CUDA/HIP launch bounds using the maximum threads per block
+           and minimum blocks per SM provided in the experiment configuration.
+
+        Each transformation updates the evolving code hash to reflect the applied
+        change, ensuring that semantically distinct IR variants map to unique
+        identifiers.
+
+        Parameters
+        ----------
+        result : ExperimentResult
+            The experiment result object that may be updated during preprocessing.
+            (Currently unused directly, but modified by the decorator (``cond_time``)).
+        config : ExperimentConfiguration
+            Configuration controlling which IR specializations are applied.
+        llvm_ir : ModuleRef
+            Intermediate representation (LLVM-like) to be specialized. The module
+            may be modified during preprocessing.
+
+        Returns
+        -------
+        (str, ModuleRef)
+            A tuple containing:
+
+            * **str** – The updated code hash after all applicable transformations.
+            * **ModuleRef** – The (potentially modified) IR module.
+
+        Notes
+        -----
+        * IR-specialization routines are delegated to the ``proteus`` subsystem.
+
+        """
+
         code_hash = self.kernel_descr.static_hash
 
-        if exp.specialize:
+        if config.specialize:
             code_hash = jit.specialize_args(
                 llvm_ir,
                 code_hash,
@@ -130,443 +164,393 @@ class BaseExecutor:
                 self.kernel_descr.available_specializations,
             )
 
-        if exp.specialize_dims:
-            grid_dim = dim3(exp.grid_dim_x, exp.grid_dim_y, exp.grid_dim_z)
-            block_dim = dim3(exp.block_dim_x, exp.block_dim_y, exp.block_dim_z)
+        if config.specialize_dims:
             code_hash = jit.specialize_dims(
                 llvm_ir,
                 code_hash,
                 self.kernel_descr.kernel_name,
-                grid_dim,
-                block_dim,
+                config.grid,
+                config.block,
             )
-        if exp.set_launch_bounds:
+        if config.set_launch_bounds:
             code_hash = jit.set_launch_bounds(
                 llvm_ir,
                 code_hash,
                 self.kernel_descr.kernel_name,
-                exp.max_threads,
-                exp.min_blocks_per_sm,
+                config.max_threads,
+                config.min_blocks_per_sm,
             )
         return code_hash, llvm_ir
 
     @cond_time("opt_time")
-    def _optimize(self, exp, ir_module):
-        jit.optimize(ir_module, self.device_arch, exp.passes, exp.codegen_opt)
+    def _optimize(
+        self,
+        result: ExperimentResult,
+        config: ExperimentConfiguration,
+        ir_module: ModuleRef,
+    ):
+        """
+        Apply optimization passes to the IR module prior to code generation.
+
+        This method invokes the JIT optimization pipeline configured for the current
+        device architecture. The pipeline typically includes both generic compiler
+        optimizations (e.g., ``O1–O3``) and Mneme-specific IR transformations
+        specified in the experiment configuration. Optimization operates in-place on
+        the provided IR module.
+
+        Parameters
+        ----------
+        result : ExperimentResult
+            The experiment result object. Although not modified directly in this
+            method, it is modified by the decorator (``cond_time``).
+        config : ExperimentConfiguration
+            Configuration controlling the optimization pipeline. Relevant fields
+            include:
+            * ``passes`` – Name or specification of the optimization pass pipeline.
+            * ``codegen_opt`` – Code generation optimization level.
+        ir_module : ModuleRef
+            The intermediate representation to be optimized. The module is mutated
+            in-place by the underlying JIT subsystem.
+
+        Notes
+        -----
+        * Optimization routines are delegated to ``jit.optimize``.
+        * The optimization phase typically precedes code generation and may
+          significantly affect both performance and final code size.
+        * This method does not return a value; the IR module is modified directly.
+
+        """
+        jit.optimize(ir_module, self.device_arch, config.passes, config.codegen_opt)
 
     @cond_time("codegen_time")
-    def _codegen(self, exp, ir_module):
+    def _codegen(
+        self,
+        result: ExperimentResult,
+        config: ExperimentConfiguration,
+        ir_module: ModuleRef,
+    ) -> MemBufferRef:
+        """
+        Generate a device-executable object from the optimized IR module.
+
+        This method invokes the JIT backend to lower the intermediate representation
+        into a binary object suitable for loading and execution on the target device.
+        The resulting artifact is returned as a :class:`MemBufferRef`. Code generation
+        behavior—including backend choice and optimization level—is controlled by the
+        experiment configuration.
+
+        Parameters
+        ----------
+        result : ExperimentResult
+            Experiment result object. Not modified directly by this method, but
+            modified from the decorator (``cond_time``).
+        config : ExperimentConfiguration
+            Experiment configuration specifying code-generation parameters:
+            * ``codegen_method`` – Backend or strategy used for code generation
+              (e.g., ``"serial"`` or alternative compilation modes).
+            * ``codegen_opt`` – Optimization level for the code-generation backend.
+        ir_module : ModuleRef
+            Optimized IR module to be lowered into an executable object. Must be the
+            output of prior preprocessing and optimization stages.
+
+        Returns
+        -------
+        MemBufferRef
+            A memory buffer containing the generated object code. This buffer can be
+            loaded into a device runtime via ``DeviceModule.from_MemBuffer`` for
+            execution.
+
+        Notes
+        -----
+        * The code generation step is performed by the ``jit.codegen_object`` backend.
+        * Code generation typically represents the final stage of the build pipeline
+          before the kernel is executed on the device.
+        * Returned memory buffers may include architecture-specific metadata depending
+          on the JIT backend used.
+
+        """
         return jit.codegen_object(
-            ir_module, self.device_arch, exp.codegen_method, exp.codegen_opt
+            ir_module, self.device_arch, config.codegen_method, config.codegen_opt
         )
 
     @cond_gpu_time("exec_time")
-    def _run_kernel(self, exp, kernel_name, device_func, iterations):
-        grid_dim = dim3(exp.grid_dim_x, exp.grid_dim_y, exp.grid_dim_z)
-        block_dim = dim3(exp.block_dim_x, exp.block_dim_y, exp.block_dim_z)
-        return device_func.profile(
-            grid_dim,
-            block_dim,
+    def _run_kernel(
+        self,
+        result: ExperimentResult,
+        config: ExperimentConfiguration,
+        kernel_name: str,
+        device_func: DeviceFunction,
+        iterations: int,
+    ) -> None:
+        """
+        Execute the kernel on the device using the provided launch configuration.
+
+        This method invokes the device-level profiling interface to run the kernel
+        for the specified number of iterations. Launch parameters (grid, block, and
+        shared memory), as well as the recorded prologue and epilogue states, are
+        passed directly to the device runtime. Profiling results—such as execution
+        times—are captured internally by the device function object and propagated
+        into the associated :class:`ExperimentResult`.
+
+        Parameters
+        ----------
+        result : ExperimentResult
+            The result object that accumulates execution metrics. Although this
+            method does not write to it directly, profiling performed by the device
+            backend updates fields that will later be reflected in the result through
+            the ``cond_gpu_time`` decorator.
+        config : ExperimentConfiguration
+            Experiment configuration specifying launch parameters, shared-memory
+            requirements, and specialization settings.
+        kernel_name: str
+            The name of the kernel to be executed. The parameter is not directly used by the function,
+            but it is actually used by the ``decorator``.
+        device_func : DeviceFunction
+            The device-side kernel entry point obtained from the compiled module.
+            Must support the ``profile`` interface for execution and timing.
+        iterations : int
+            Number of times the kernel should be executed. Typically more than one
+            iteration is used for performance characterization and variance analysis.
+
+        Notes
+        -----
+        * Actual execution and profiling of the kernel is handled by
+          ``device_func.profile``.
+        * Both prologue and epilogue states are forwarded to the device runtime so
+          that Mneme’s record–replay mechanism can validate kernel behavior and
+          collect replay-specific metrics.
+        * Errors raised by the device runtime will propagate upward to the caller.
+
+        """
+        device_func.profile(
+            config.grid,
+            config.block,
             self._prologue._state,
             self._epilogue._state,
-            exp.shared_mem,
+            config.shared_mem,
             iterations,
         )
 
     def _build(
-        self, exp: Experiment, ir_module: ModuleRef, track: bool
+        self,
+        result: ExperimentResult,
+        config: ExperimentConfiguration,
+        ir_module: ModuleRef,
+        track: bool,
     ) -> MemBufferRef:
-        self._preprocess_ir(exp, ir_module)
-        self._optimize(exp, ir_module, profile=track)
-        mem_buffer = self._codegen(exp, ir_module, profile=track)
+        """
+        Build the executable device kernel from the given IR module.
+
+        This method runs the full compilation pipeline on the provided IR module:
+        preprocessing, optimization, and final code generation. The resulting
+        device-ready binary is returned as a :class:`MemBufferRef`. When tracking
+        is enabled, additional metadata such as object size is recorded into the
+        provided :class:`ExperimentResult`.
+
+        The build process consists of the following stages:
+
+        1. **IR preprocessing**
+           Applies specialization, dimension-dependent transformations, and optional
+           launch-bound insertion. This step updates the internal code hash and
+           prepares the IR for optimization.
+
+        2. **Optimization**
+           Runs the configured optimization passes (e.g., ``O3`` or user-defined
+           pipelines). If profiling is enabled, optimization timing is recorded in
+           the experiment result.
+
+        3. **Code generation**
+           Lowers the optimized IR into a device-executable artifact. The resulting
+           binary is wrapped in a :class:`MemBufferRef`. When ``track=True``,
+           the size of the generated object code is stored in ``result.obj_size``.
+
+        Parameters
+        ----------
+        result : ExperimentResult
+            Result object to be populated with build metrics such as optimization
+            time and object size.
+        config : ExperimentConfiguration
+            Configuration controlling specialization, optimization pipeline, and
+            code-generation strategy.
+        ir_module : ModuleRef
+            Intermediate representation on which the build pipeline operates.
+            The module may be transformed during preprocessing and optimization.
+        track : bool
+            Whether to collect profiling information and resource-usage statistics
+            during the build process.
+
+        Returns
+        -------
+        MemBufferRef
+            A memory buffer containing the compiled device module produced by the
+            code-generation stage.
+
+        Notes
+        -----
+        * This method does not execute the kernel; execution occurs in :meth:`_run`.
+        * Tracking is optional but recommended when performance analysis is needed.
+        """
+        self._preprocess_ir(result, config, ir_module, profile=track)
+        self._optimize(result, config, ir_module, profile=track)
+        mem_buffer = self._codegen(result, config, ir_module, profile=track)
         if track:
-            exp.obj_size = mem_buffer.get_size()
+            result.obj_size = mem_buffer.get_size()
         return mem_buffer
 
-    def _run(self, exp: Experiment, mem_buffer: MemBufferRef, track: bool, iterations):
+    def _run(
+        self,
+        result: ExperimentResult,
+        config: ExperimentConfiguration,
+        mem_buffer: MemBufferRef,
+        track: bool,
+        iterations: int,
+    ):
+        """
+        Execute a compiled kernel on the device and optionally collect resource-usage
+        metadata.
+
+        This method loads the device module from the provided memory buffer, extracts
+        the kernel function, and executes it for the requested number of iterations.
+        When ``track`` is enabled, the kernel launch is profiled and register usage,
+        local memory usage, and constant memory usage are recorded into the provided
+        :class:`ExperimentResult` object.
+
+        Parameters
+        ----------
+        result : ExperimentResult
+            Result object that will be populated with execution metrics and resource
+            usage information.
+        config : ExperimentConfiguration
+            The configuration controlling launch parameters such as grid, block,
+            specialization settings, and shared-memory use.
+        mem_buffer : MemBufferRef
+            Memory buffer containing the device-side compiled module from which the
+            kernel function is loaded.
+        track : bool
+            If ``True``, profiling and resource-usage tracking are enabled for the
+            kernel execution. This populates register usage, constant memory usage,
+            and local memory usage in the experiment result.
+        iterations : int
+            Number of times the kernel should be executed. Typically more than one
+            run is used when statistical accuracy is required.
+
+        Notes
+        -----
+        * The device module is managed via a context manager to ensure allocation and
+          cleanup follow the device runtime’s requirements.
+        * Resource usage fields are only updated when ``track=True``.
+        * Actual execution is delegated to :meth:`_run_kernel`.
+
+        ------
+        """
         with DeviceModule.from_MemBuffer(mem_buffer) as DeviceObj:
             device_func = DeviceObj.get_function(self.kernel_descr.kernel_name)
             self._run_kernel(
-                exp,
+                result,
+                config,
                 self.kernel_descr.kernel_name,
                 device_func,
                 iterations,
                 profile=track,
             )
             if track:
-                exp.reg_usage = device_func.reg_usage
-                exp.const_mem = device_func.const_mem
-                exp.local_mem = device_func.local_mem
+                result.reg_usage = device_func.reg_usage
+                print("Const mem usage is ", device_func.const_mem)
+                result.const_mem_usage = device_func.const_mem
+                result.local_mem_usage = device_func.local_mem
 
     def _execute(
-        self, exp: Experiment, ir_module: ModuleRef
-    ) -> Tuple[Experiment, ModuleRef]:
+        self, config: ExperimentConfiguration, ir_module: ModuleRef
+    ) -> Tuple[ExperimentResult, ModuleRef]:
+        """
+        Execute a single Mneme experiment using the given configuration and IR module.
+
+        This method performs the full record/replay experiment pipeline, including
+        verification, IR cleanup, code generation, and timed execution. It returns
+        both the populated experiment result and the transformed IR module.
+
+        The execution consists of three stages:
+
+        1. **Verification pass**
+           A clone of the input IR module is built and executed once without
+           instrumentation. This ensures the recorded prologue and epilogue states
+           match, allowing the system to validate kernel determinism and correctness.
+
+        2. **IR sanitization**
+           A custom transformation is applied to remove automatically inserted Clang
+           initialization code. Only IR regions explicitly marked by Clang are
+           removed to avoid disturbing user code.
+
+        3. **Instrumented execution**
+           The cleaned up version of the kernel is built with tracking enabled.
+           The kernel is executed ``iterations + 2`` times to allow downstream
+           statistical metrics to be computed reliably. Execution time, resource
+           usage, and other experiment metrics are accumulated into the resulting
+           :class:`ExperimentResult`.
+
+        Parameters
+        ----------
+        config : ExperimentConfiguration
+            The experiment configuration controlling launch parameters, specialization,
+            and code generation settings.
+        ir_module : ModuleRef
+            The LLVM-like intermediate representation module on which the experiment
+            is executed. The module may be cloned and transformed during execution.
+
+        Returns
+        -------
+        (ExperimentResult, ModuleRef)
+            A tuple containing:
+
+            * **ExperimentResult** – Populated result object containing verification
+              status, execution metrics, and profiling data.
+            * **ModuleRef** – The transformed IR module after auto-initialization
+              removal and other modifications performed during execution.
+
+        Raises
+        ------
+        RuntimeError
+            If internal prologue or epilogue state is unexpectedly ``None``.
+        """
+        result = ExperimentResult()
         if self._prologue._state is None or self._epilogue._state is None:
             raise RuntimeError("States should never be none when executing a kernel")
 
         # NOTE: 1. First we need to verify.
         ver_mod = ir_module.clone()
-        mem_buffer = self._build(exp, ver_mod, False)
-        self._run(exp, mem_buffer, False, 1)
-        exp.verified = self.prologue == self.epilogue
+        mem_buffer = self._build(result, config, ver_mod, False)
+        self._run(result, config, mem_buffer, False, 1)
+        result.verified = self.prologue == self.epilogue
 
         # NOTE: 2. We apply a custom pass to delete all clang insered code.
-        # It is hard to identify these cases, So we delete only things that have been attributed by clang
+        # It is hard to identify these cases, So we delete only things
+        # that have been attributed by clang
         ir_module = transform.remove_auto_initialize(ir_module.clone())
         # Done with verification. Moving to next stage
 
         # NOTE: 3. We build and run. We set tracking on and we always execute iterations +2,
         # to enalbe later computation of statistical metrics etc.
-        mem_buffer = self._build(exp, ir_module, True)
-        self._run(exp, mem_buffer, True, self._iterations + 2)
-        exp.executed = True
+        mem_buffer = self._build(result, config, ir_module, True)
+        self._run(result, config, mem_buffer, True, self._iterations + 2)
+        result.executed = True
 
-        return exp, ir_module
-
-
-class CLIExecutor(BaseExecutor):
-    @staticmethod
-    def set_cli_args(parser):
-        parser.add_argument(
-            "--results-db-dir",
-            required=False,
-            default=None,
-            help="Directory to store the collected data to",
-        )
-
-        parser.add_argument(
-            "--apply-increamentally",
-            required=False,
-            action=argparse.BooleanOptionalAction,
-            dest="increamental",
-            default=False,
-            help="Apply passes one by one and increamentally build the pipelines. Useful for debugging",
-        )
-
-        parser.add_argument(
-            "pipeline",
-            help="Compilation pipeline of the kernel to execute",
-        )
-
-        parser.add_argument(
-            "--specialize",
-            default=False,
-            required=False,
-            action=argparse.BooleanOptionalAction,
-            dest="specialize",
-            help="Apply argument specialization on the kernel",
-        )
-
-        parser.add_argument(
-            "--specialize-dims",
-            "-sdims",
-            dest="specialize_dims",
-            default=False,
-            required=False,
-            action=argparse.BooleanOptionalAction,
-            help="Specialize ThreadID.*, BlockDim.* and GridDim.* with constants and provide 'assume' instructions to llvm",
-        )
-
-        parser.add_argument(
-            "--set-launch-bounds",
-            "-slb",
-            dest="set_launch_bounds",
-            default=False,
-            required=False,
-            action=argparse.BooleanOptionalAction,
-            help="Specialize ThreadID.*, BlockDim.* and GridDim.* with constants and provide 'assume' instructions to llvm",
-        )
-
-        parser.add_argument(
-            "--max-threads",
-            default=False,
-            required=False,
-            type=int,
-            dest="max_threads",
-            help="Set launch bound 'max_threads' of kernel to the executed number of threads",
-        )
-
-        parser.add_argument(
-            "--min-threads-per-block",
-            default=0,
-            type=int,
-            dest="min_blocks_per_sm",
-            help="Set launch bound 'min_blocks_per_sm' of kernel to the provided value",
-        )
-
-        parser.add_argument(
-            "-cm",
-            "--codegen-method",
-            dest="codegen_method",
-            choices=["rtc", "serial", "parallel"],
-            default="serial",
-            help="Technology to use to lower to LLVM IR to a device object file instead of default Proteus Infrastructure",
-        )
-
-        parser.add_argument(
-            "--codegen-opt",
-            "-co",
-            dest="codegen_opt",
-            type=int,
-            default=3,
-            help="Optimization level to be used when generating machine code (back end optimizations)",
-        )
-
-        parser.add_argument(
-            "--block-dim-x",
-            "-bidx",
-            dest="block_dim_x",
-            type=int,
-            default=None,
-            help="Value of BlockDim.x during kernel replay, when omitted the recorded value is used",
-        )
-
-        parser.add_argument(
-            "--block-dim-y",
-            "-bidy",
-            dest="block_dim_y",
-            type=int,
-            default=None,
-            help="Value of BlockDim.y during kernel replay, when omitted the recorded value is used",
-        )
-
-        parser.add_argument(
-            "--block-dim-z",
-            "-bidz",
-            dest="block_dim_z",
-            type=int,
-            default=None,
-            help="Value of BlockDim.z during kernel replay, when omitted the recorded value is used",
-        )
-
-        parser.add_argument(
-            "--grid-dim-x",
-            "-gidx",
-            dest="grid_dim_x",
-            type=int,
-            default=None,
-            help="Value of GridDim.x during kernel replay, when omitted the recorded value is used",
-        )
-
-        parser.add_argument(
-            "--grid-dim-y",
-            "-gidy",
-            dest="grid_dim_y",
-            type=int,
-            default=None,
-            help="Value of GridDim.y during kernel replay, when omitted the recorded value is used",
-        )
-
-        parser.add_argument(
-            "--grid-dim-z",
-            "-gidz",
-            dest="grid_dim_z",
-            type=int,
-            default=None,
-            help="Value of GridDim.z during kernel replay, when omitted the recorded value is used",
-        )
-
-        parser.add_argument(
-            "--shared-mem",
-            "-shem",
-            dest="shared_mem",
-            type=int,
-            default=None,
-            help="Size of shared memory, if not set we default to recorded value",
-        )
-
-        parser.add_argument(
-            "--iterations",
-            "-it",
-            required=False,
-            type=int,
-            help="The number of iterations to run every execution, used to get statistical meaningful results",
-            default=3,
-        )
-
-        parser.set_defaults(func=CLIExecutor.run)
-
-    def __init__(self, *args, **kwargs):
-        init_profiler()
-        self.pipeline = kwargs.pop("pipeline", None)
-        self.increamental = kwargs.pop("increamental", False)
-        self.specialize = kwargs.pop("specialize", False)
-        self.max_threads = kwargs.pop("max_threads", None)
-        self.min_blocks_per_sm = kwargs.pop("min_blocks_per_sm", 0)
-        self.dims = kwargs.pop("dims", False)
-        self.results_db_dir = kwargs.pop("results_db_dir", None)
-        self.codegen_method = kwargs.pop("codegen_method", "serial")
-        self.codegen_opt = kwargs.pop("codegen_opt", 3)
-        self.block_dim_x = kwargs.pop("block_dim_x", None)
-        self.block_dim_y = kwargs.pop("block_dim_y", None)
-        self.block_dim_z = kwargs.pop("block_dim_z", None)
-        self.grid_dim_x = kwargs.pop("grid_dim_x", None)
-        self.grid_dim_y = kwargs.pop("grid_dim_y", None)
-        self.grid_dim_z = kwargs.pop("grid_dim_z", None)
-        self.set_launch_bounds = kwargs.pop("set_launch_bounds", False)
-        self.specialize_dims = kwargs.pop("specialize_dims", False)
-        self.shared_mem = kwargs.pop("shared_mem", None)
-
-        print(json.dumps(kwargs, indent=6))
-        super().__init__(*args, **kwargs)
-        self.pass_manager = PipelineManager()
-        if self.pipeline not in (
-            "default<O3>",
-            "default<O2>",
-            "default<O1>",
-            "default<O0>",
-            "default<Os",
-            "default<Oz>",
-        ):
-            self.passes = self.pass_manager.from_string(self.pipeline)
-        else:
-            self.passes = self.pipeline
-        self._db = None
-
-    def get_experiment(self, pipeline):
-        self.block_dim_x = (
-            self.kernel_descr.block_dim.x
-            if (self.block_dim_x is None)
-            else self.block_dim_x
-        )
-        self.block_dim_y = (
-            self.kernel_descr.block_dim.y
-            if (self.block_dim_y is None)
-            else self.block_dim_y
-        )
-        self.block_dim_z = (
-            self.kernel_descr.block_dim.z
-            if (self.block_dim_z is None)
-            else self.block_dim_z
-        )
-
-        self.grid_dim_x = (
-            self.kernel_descr.grid_dim.x
-            if (self.grid_dim_x is None)
-            else self.grid_dim_x
-        )
-        self.grid_dim_y = (
-            self.kernel_descr.grid_dim.y
-            if (self.grid_dim_y is None)
-            else self.grid_dim_y
-        )
-        self.grid_dim_z = (
-            self.kernel_descr.grid_dim.z
-            if (self.grid_dim_z is None)
-            else self.grid_dim_z
-        )
-
-        max_threads = self.max_threads
-        if self.set_launch_bounds:
-            if self.max_threads == -1:
-                max_threads = self.block_dim_x * self.block_dim_y * self.block_dim_z
-
-        self.shared_mem = (
-            self.kernel_descr.shared_mem if self.shared_mem is None else self.shared_mem
-        )
-
-        return Experiment(
-            grid_dim_x=self.grid_dim_x,
-            grid_dim_y=self.grid_dim_y,
-            grid_dim_z=self.grid_dim_z,
-            block_dim_x=self.block_dim_x,
-            block_dim_y=self.block_dim_y,
-            block_dim_z=self.block_dim_z,
-            specialize=self.specialize,
-            shared_mem=self.shared_mem,
-            set_launch_bounds=self.set_launch_bounds,
-            max_threads=max_threads,
-            min_blocks_per_sm=self.min_blocks_per_sm,
-            specialize_dims=self.specialize_dims,
-            passes=pipeline,
-            prune=True,
-            internalize=True,
-            codegen_opt=self.codegen_opt,
-            codegen_method=self.codegen_method,
-            device_arch=self.device_arch,
-        )
-
-    def __str__(self):
-        return f"{self.__class__.__name__}"
-
-    def execute(self, exp, ir_module, clone=False, orig=""):
-        if not self.increamental:
-            exp.pipeline = self.pipeline
-            exp, generated_ir = super()._execute(exp, ir_module)
-            if self._db is not None:
-                final = self._db.save_ir(generated_ir, exp.hash())
-                self._db.add(orig, final, exp)
-            return
-
-        results = []
-        passes = [("", "")]
-        for i, _ in enumerate(self.passes):
-            passes.append(
-                (
-                    self.pass_manager.to_string(self.passes[: i + 1]),
-                    self.pass_manager.to_string(self.passes[i : i + 1]),
-                )
-            )
-
-        with PrettyTablePrinter() as printer:
-            for pipeline, pass_name in passes:
-                exp.passes = pipeline
-                if self._db is not None and not self._db.should_execute(exp):
-                    logger.debug(
-                        f"Skipping experiment {str(exp.hash())}, already in replayed"
-                    )
-                    continue
-
-                exp, generated_ir = super()._execute(exp, ir_module.clone(), pipeline)
-                if self._db is not None:
-                    final = self._db.save_ir(generated_ir, exp.hash())
-                    self._db.add(orig, final, exp)
-                printer.print_pass_result(pass_name, exp.exec_time, exp.verified)
-
-    @staticmethod
-    def run(args, verbosity):
-        kwargs = vars(args)
-        kwargs.pop("command")
-        kwargs.pop("func")
-        executor = CLIExecutor(**kwargs)
-
-        # We currently link all LLVM IR modules together
-        # NOTE: Does this break with externals on CUDA?
-        root_ir = executor.link_ir()
-
-        orig = ""
-        if executor.results_db_dir is not None:
-            executor._db = MnemeDB(
-                executor.results_db_dir,
-                executor.kernel_descr.static_hash,
-                executor.kernel_descr.dynamic_hash,
-            ).open()
-            orig = executor._db.save_ir(root_ir, "orig")
-
-        with executor as Memory:
-            exp = executor.get_experiment(executor.pipeline)
-            executor.execute(
-                exp,
-                root_ir.clone(),
-                True,
-            )
-
-        return
+        return result, ir_module
 
 
 class TuneWorker(BaseExecutor):
     def __init__(self, *args, **kwargs):
         init_profiler()
         super().__init__(*args, **kwargs)
-        self.pass_manager = PipelineManager()
 
-    def process_payload(self, ir_module, exp_dict) -> Tuple[Experiment, ModuleRef]:
-        exp = Experiment.from_dict(**exp_dict)
-        exp.start_time = datetime.utcnow().isoformat()
-        exp, generated_ir = super()._execute(exp, ir_module)
-        exp.end_time = datetime.utcnow().isoformat()
-        exp.gpu_id = self.device_id
-        return exp, generated_ir
+    def process_payload(
+        self, ir_module, exp_dict
+    ) -> Tuple[ExperimentResult, ModuleRef]:
+        config = ExperimentConfiguration.from_dict(**exp_dict)
+        result = ExperimentResult()
+        result.start_time = datetime.utcnow().isoformat()
+        result, generated_ir = super()._execute(config, ir_module)
+        result.end_time = datetime.utcnow().isoformat()
+        result.gpu_id = self.device_id
+        return result, generated_ir
 
     @staticmethod
     def run(

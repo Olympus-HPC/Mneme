@@ -38,15 +38,13 @@ int main(int argc, const char *argv[]) {
   HIP_CHECK(hipMalloc((void **)&in, numElements * sizeof(double)));
   HIP_CHECK(hipMalloc((void **)&out, numElements * sizeof(double)));
 
-  for (int i = 0; i < 10; i++) {
-    HIP_CHECK(hipMemset(in, 0, numElements * sizeof(double)));
-    HIP_CHECK(hipMemset(out, 0, numElements * sizeof(double)));
+  HIP_CHECK(hipMemset(in, 0, numElements * sizeof(double)));
+  HIP_CHECK(hipMemset(out, 0, numElements * sizeof(double)));
 
-    const int threads = 256;
-    int num_blocks = (numElements + threads - 1) / threads;
-    vecAdd_test<<<num_blocks, threads>>>(in, out, numElements, i % 2);
-    HIP_CHECK(hipDeviceSynchronize());
-  }
+  const int threads = 256;
+  int num_blocks = (numElements + threads - 1) / threads;
+  vecAdd_test<<<num_blocks, threads>>>(in, out, numElements, 1);
+  HIP_CHECK(hipDeviceSynchronize());
 
   double *h_in = new double[numElements];
   double *h_out = new double[numElements];
@@ -56,7 +54,7 @@ int main(int argc, const char *argv[]) {
                       hipMemcpyDeviceToHost));
   int ret = 0;
   for (int i = 0; i < numElements; i++) {
-    if (h_in[i] + i != h_out[i]) {
+    if (h_in[i] + 1 != h_out[i]) {
       std::cout << "Values at " << i << " differ\n";
       std::cout << "Values " << h_in[i] << " " << h_out[i] << "differ\n";
       ret = -1;
