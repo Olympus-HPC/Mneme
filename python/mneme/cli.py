@@ -12,12 +12,9 @@ from mneme.commands import (
     Clean,
     Config,
     Copy,
-    Detail,
     Execute,
     Move,
     Record,
-    Serve,
-    Summary,
 )
 from mneme.logging import configure_replay_logging
 
@@ -58,24 +55,6 @@ def main(argv=None):
         help="Move mneme generated files and update database accordingly",
     )
 
-    p_summary = subparsers.add_parser(
-        "summary",
-        parents=[],
-        help="summarize the best run of a tune campaign",
-    )
-
-    p_serve = subparsers.add_parser(
-        "serve",
-        parents=[],
-        help="Export optimal configuration to some json file for Proteus to digest and use",
-    )
-
-    p_detail = subparsers.add_parser(
-        "detail",
-        parents=[],
-        help="Provide details of a specific experiment",
-    )
-
     p_record = subparsers.add_parser(
         "record", parents=[], help="Record the execution of an application"
     )
@@ -88,9 +67,6 @@ def main(argv=None):
     Clean.set_cli_args(p_clean)
     Copy.set_cli_args(p_copy)
     Move.set_cli_args(p_move)
-    Summary.set_cli_args(p_summary)
-    Serve.set_cli_args(p_serve)
-    Detail.set_cli_args(p_detail)
     Record.set_cli_args(p_record)
     Config.set_cli_args(p_config)
 

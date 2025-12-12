@@ -318,8 +318,6 @@ setup(
     install_requires=[
         "optuna>=4.4",
         "scipy",
-        "rich",
-        "pandas>=2.3.1",
         "pytest>=7.0",
         "pytest-mock>=3.0",
     ],

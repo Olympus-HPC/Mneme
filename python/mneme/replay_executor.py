@@ -1,5 +1,3 @@
-import argparse
-import json
 import os
 from datetime import datetime, timezone
 from multiprocessing import Event, Queue
@@ -12,13 +10,11 @@ from mneme.device import (
     get_device_count,
     set_device,
 )
-from mneme.fancy_out import PrettyTablePrinter
 from mneme.llvm.buffer import MemBufferRef
 from mneme.llvm.module import ModuleRef
 from mneme.logging import logger
 from mneme.mneme_types import ExperimentConfiguration, ExperimentResult
 from mneme.page_manager import PageManagerRef
-from mneme.pipeline import PipelineManager
 from mneme.profile import init_profiler
 from mneme.proteus import jit
 from mneme.recorded_execution import RecordedExecution
