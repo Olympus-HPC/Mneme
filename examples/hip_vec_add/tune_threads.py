@@ -240,7 +240,7 @@ def main(argv: list[str]) -> int:
         record_id=args.record_id,
         iterations=5,
         results_db_dir="./results",
-        num_workers=4,
+        num_workers=1,
     )
     try:
         return tune(executor, args.record_db, args.record_id, args.num_trials)

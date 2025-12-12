@@ -499,7 +499,7 @@ class BaseExecutor:
             and code generation settings.
         ir_module : ModuleRef
             The LLVM-like intermediate representation module on which the experiment
-            is executed. The module may be cloned and transformed during execution.
+            is executed. The module is cloned and the ``ir_module`` is not modified.
 
         Returns
         -------
@@ -541,19 +541,92 @@ class BaseExecutor:
 
 
 class TuneWorker(BaseExecutor):
+    """
+    Worker-side executor used by the asynchronous tuning infrastructure.
+
+    ``TuneWorker`` is a concrete :class:`BaseExecutor` specialization intended to run
+    inside a dedicated worker process. It owns the GPU affinity, prologue/epilogue
+    state, page manager, and JIT pipeline required to compile and replay a recorded
+    kernel under a given :class:`ExperimentConfiguration`.
+
+    A worker process typically:
+      1) Initializes profiling and selects a GPU device.
+      2) Loads the recorded execution (record DB + record ID).
+      3) Links the recorded LLVM IR into a single module (``link_ir``).
+      4) Enters a message-processing loop (see :meth:`run`) to evaluate configurations.
+
+    Notes
+    -----
+    * The public entry point for the worker process is :meth:`run`, which is designed
+      to be used as a multiprocessing target.
+    * Per-request execution is handled by :meth:`process_payload`, which builds,
+      verifies, and runs the kernel according to the provided configuration.
+    """
+
     def __init__(self, *args, **kwargs):
+        """
+        Construct a TuneWorker and initialize worker-local profiling.
+
+        This constructor initializes the Mneme profiler (for timing breakdowns) and
+        then delegates initialization to :class:`BaseExecutor`. The base class sets
+        device affinity, loads the recorded execution, and prepares prologue/epilogue
+        descriptors.
+
+        Notes
+        -----
+        * The worker process should typically construct a single TuneWorker instance
+          and reuse it for multiple requests to amortize startup overhead.
+        * ``init_profiler()`` is required to be executed once by every OS process executing it
+            multiple times results to undefined behavior.
+        """
         init_profiler()
         super().__init__(*args, **kwargs)
 
     def process_payload(
         self, ir_module, config: ExperimentConfiguration
     ) -> Tuple[ExperimentResult, ModuleRef]:
+        """
+        Execute one tuning request: build, verify, and run the kernel under ``config``.
+
+        This method is the unit of work performed by a worker in response to a tuning
+        request. It executes the full Mneme record–replay pipeline using the provided
+        IR module and configuration:
+
+          1) Records the experiment start timestamp.
+          2) Invokes the base executor pipeline (see :meth:`BaseExecutor._execute`),
+             which performs verification, IR sanitization, compilation, and timed execution.
+          3) Records the experiment end timestamp and annotates the result with the GPU id.
+          4) Returns both the populated :class:`ExperimentResult` and the transformed IR.
+
+        Parameters
+        ----------
+        ir_module : ModuleRef
+            Root IR module (or clone) used as input for this experiment. The module
+            is cloned internally and transformed as part of the execution pipeline.
+        config : ExperimentConfiguration
+            Configuration describing launch parameters, specialization options, and
+            code-generation controls for this experiment.
+
+        Returns
+        -------
+        (ExperimentResult, ModuleRef)
+            A tuple containing:
+
+            * **ExperimentResult** – result object populated with timing, verification
+              status, and device resource usage.
+            * **ModuleRef** – the transformed IR module after preprocessing and
+              auto-initialization removal.
+
+        Notes
+        -----
+        * This method is expected to be called repeatedly within the worker loop;
+          callers should pass a cloned IR module to avoid cross-experiment mutation.
+        * Timestamps are recorded in ISO 8601 format using UTC time.
+        """
         result = ExperimentResult()
         result.start_time = datetime.now(timezone.utc).isoformat()
-        print("Before Start time is", result.start_time)
         generated_ir = super()._execute(result, config, ir_module)
         result.end_time = datetime.now(timezone.utc).isoformat()
-        print("After Start time is", result.start_time)
         result.gpu_id = self.device_id
         return result, generated_ir
 
@@ -568,8 +641,64 @@ class TuneWorker(BaseExecutor):
         results_db_dir: str,
         state: Event,
     ):
+        """
+        Worker process entry point: initialize resources and serve requests from a queue.
+
+        This method is designed to be used as the target function for a worker
+        ``multiprocessing.Process``. It performs one-time initialization and then
+        enters a blocking loop that processes messages from ``request_q``.
+
+        Initialization performed once per worker:
+          1) Redirects stdout/stderr to a per-worker log file:
+             ``{results_db_dir}/Worker-{device_id}.log``. This avoids interleaved
+             output across processes.
+          2) Constructs a :class:`TuneWorker` with the given recording and device id.
+          3) Links and caches the root IR module (``root_ir``) that will be cloned
+             per experiment.
+          4) Opens GPU memory/prologue/epilogue resources via the executor context
+             manager (``with worker as Memory``).
+          5) Signals readiness by setting ``state``.
+
+        Message protocol:
+          - ``{"payload": "terminate", ...}``:
+            Stop the worker loop and exit.
+          - ``{"payload": "process", "exp_id": <id>, "data": <config-dict>}``:
+            Execute an experiment and respond on ``response_q`` with:
+            ``{"exp_id": <id>, "payload": "result", "data": <result-dict>, "llvm_ir": ""}``.
+
+        Parameters
+        ----------
+        request_q : multiprocessing.Queue
+            Queue from which the worker receives control messages and experiment requests.
+        response_q : multiprocessing.Queue
+            Queue to which the worker publishes experiment results.
+        record_db : str
+            Path to the recorded execution database/file used to construct the executor.
+        record_id : str
+            Identifier of the recorded kernel instance inside ``record_db``.
+        device_id : int
+            GPU device index to which this worker process is pinned.
+        iterations : int
+            Number of kernel iterations to execute during the tracked run (the full
+            execution may include additional runs for verification/warmup depending
+            on the executor pipeline).
+        results_db_dir : str
+            Directory where per-worker logs and output artifacts are written.
+        state : multiprocessing.Event
+            Event used to signal to the parent process that initialization is complete
+            and the worker is ready to accept requests.
+
+        Notes
+        -----
+        * The worker loop blocks on ``request_q.get()`` until a message arrives.
+        * The worker clones ``root_ir`` per request to avoid cross-request IR mutation.
+        * Exceptions raised inside the loop will currently propagate and terminate the
+          worker process; higher-level infrastructure should treat this as a worker crash.
+
+        """
         # NOTE: We open a file for every individual executor and give persmisions, then we redirect stdout/stderr
         # to that file. We do this to not conflict our messages
+
         fd_out = os.open(
             f"{results_db_dir}/Worker-{device_id}.log",
             os.O_WRONLY | os.O_CREAT | os.O_APPEND,

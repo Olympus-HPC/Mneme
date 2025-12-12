@@ -1,5 +1,4 @@
 import queue
-import json
 import threading
 import time
 from enum import IntEnum
@@ -8,7 +7,7 @@ from multiprocessing import Process
 from multiprocessing import Queue as ProcessQueue
 from queue import Queue as ThreadQueue
 from threading import Event as ThreadEvent
-from typing import Dict, Optional
+from typing import Dict 
 
 from mneme.futures import EvalFuture
 from mneme.logging import logger
@@ -17,6 +16,26 @@ from mneme.mneme_types import ExperimentConfiguration, ExperimentResult
 
 
 def pop(q, timeout):
+    """
+    Pop an item from a queue with a timeout.
+
+    This helper provides a uniform interface for both thread-based queues
+    (:class:`queue.Queue`) and multiprocessing queues
+    (:class:`multiprocessing.Queue`). If the queue is empty at the end of the
+    timeout, ``None`` is returned.
+
+    Parameters
+    ----------
+    q
+        Queue-like object providing a ``get(timeout=...)`` API.
+    timeout : float
+        Timeout in seconds for the blocking ``get`` call.
+
+    Returns
+    -------
+    Any or None
+        The retrieved item, or ``None`` if the queue was empty.
+    """
     try:
         return q.get(timeout=timeout)
     except queue.Empty:
@@ -24,7 +43,38 @@ def pop(q, timeout):
 
 
 class TuneWorkerHandle:
+    """
+    Thread-side controller for one worker process executing tuning experiments.
+
+    ``TuneWorkerHandle`` owns:
+      - A single worker :class:`multiprocessing.Process` running :meth:`TuneWorker.run`.
+      - A pair of IPC queues for requests/responses.
+      - A monitoring thread that drives a small state machine for submitting jobs
+        and receiving results.
+      - Crash detection and automatic worker respawn.
+
+    The handle consumes :class:`EvalFuture` objects from a shared thread queue
+    (``global_q``), forwards their configurations to the worker process, and
+    resolves each future when the corresponding result arrives.
+
+    Notes
+    -----
+    * Each handle pins its worker process to a specific device id (GPU affinity is
+      handled inside :class:`BaseExecutor` / :class:`TuneWorker`).
+    * Crash recovery is best-effort: if the worker dies while running an experiment,
+      the active future is marked as failed and the worker is restarted.
+    """
+
     class StateMachine(IntEnum):
+        """
+        Internal action state for the monitor loop.
+
+        SUBMIT
+            Attempt to dequeue a new job from the global queue and send it to the worker.
+        RECEIVE
+            Poll for a worker response and resolve the currently active future.
+        """
+
         SUBMIT = 1
         RECEIVE = 2
 
@@ -38,6 +88,33 @@ class TuneWorkerHandle:
         iterations: int,
         results_db_dir: str,
     ):
+        """
+        Construct a worker handle and start the worker process + monitor thread.
+
+        Parameters
+        ----------
+        idx : int
+            Logical worker index (primarily used for logging/debugging).
+        global_q : queue.Queue
+            Shared thread queue containing :class:`EvalFuture` objects to be executed
+            by this handle’s worker process.
+        record_db : str
+            Path to the recorded execution database/file.
+        record_id : str
+            Identifier of the recorded kernel instance inside ``record_db``.
+        device_id : int
+            Device id (GPU index) assigned to the underlying worker process.
+        iterations : int
+            Number of kernel iterations used by the worker for the tracked execution.
+        results_db_dir : str
+            Directory where the worker writes logs and optional artifacts.
+
+        Notes
+        -----
+        * The worker process is spawned immediately during initialization.
+        * A background thread is started to monitor the worker process and drive job
+          submission/result collection.
+        """
         self.idx = idx
         self.global_q = global_q
 
@@ -69,6 +146,18 @@ class TuneWorkerHandle:
         )
 
     def _spawn_process(self):
+        """
+        Spawn (or respawn) the underlying worker process and IPC infrastructure.
+
+        This method creates fresh IPC queues, a new readiness event, and launches the
+        worker process using :meth:`TuneWorker.run`. The internal action state is
+        reset to ``SUBMIT``.
+
+        Notes
+        -----
+        * This is used both at startup and during crash recovery.
+        * Any in-flight job must be handled by the caller before respawning.
+        """
         self._state = ProcessEvent()
         self._ipc_write_q = ProcessQueue()
         self._ipc_read_q = ProcessQueue()
@@ -94,6 +183,21 @@ class TuneWorkerHandle:
     # Result handling
     # ------------------------------------------------------------
     def _process_result(self, msg):
+        """
+        Resolve the current in-flight future using a response message.
+
+        Parameters
+        ----------
+        msg : dict
+            Response message produced by :meth:`TuneWorker.run`. Expected fields:
+            * ``exp_id`` – experiment id matching the active future
+            * ``data`` – serialized :class:`ExperimentResult` dict
+
+        Raises
+        ------
+        RuntimeError
+            If a result is received for an unexpected experiment id.
+        """
         if self.current is None:
             return
 
@@ -109,6 +213,13 @@ class TuneWorkerHandle:
         self.current = None
 
     def _try_receive(self):
+        """
+        Poll the worker response queue and process one available result.
+
+        If no message is available within the polling timeout, this method returns
+        without modifying state. On a successful receive, the internal action state
+        transitions back to ``SUBMIT``.
+        """
         msg = pop(self._ipc_read_q, timeout=1)
         if msg is None:
             return
@@ -120,6 +231,17 @@ class TuneWorkerHandle:
     # Job submission
     # ------------------------------------------------------------
     def _submit(self):
+        """
+        Submit one job to the worker process if one is available.
+
+        This method dequeues a single :class:`EvalFuture` from the shared global
+        queue, sends its configuration to the worker process, and marks it as the
+        current in-flight job. The internal action state transitions to ``RECEIVE``.
+
+        Notes
+        -----
+        * At most one job is in-flight per worker handle at any time.
+        """
         future: EvalFuture = pop(self.global_q, timeout=1)
         if future is None:
             return
@@ -138,6 +260,34 @@ class TuneWorkerHandle:
     # Main loop
     # ------------------------------------------------------------
     def _shadow_process_loop(self):
+        """
+        Background monitor loop that drives the worker state machine.
+
+        This loop runs in a dedicated thread and performs:
+
+          1) **Crash detection and recovery**
+             If the worker process dies, the current in-flight job (if any) is
+             marked as failed and the worker is respawned.
+
+          2) **Worker readiness waiting**
+             Before sending work, the loop waits for the process-side readiness
+             event to be set.
+
+          3) **Submit/Receive alternation**
+             A simple state machine ensures that only one job is in-flight:
+             ``SUBMIT`` sends a job, then ``RECEIVE`` polls for the result.
+
+          4) **Graceful shutdown**
+             When the shutdown event is set, the loop sends a ``terminate`` message
+             to the worker, drains results while the process is alive, and joins
+             the process.
+
+        Notes
+        -----
+        * The loop uses polling timeouts to remain responsive to shutdown.
+        * The readiness event is a simple synchronization primitive; future versions
+          may use condition variables or a richer handshake protocol.
+        """
         while not self._shutdown_event.is_set():
             if not self._process.is_alive():
                 # Crash recovery
@@ -172,6 +322,12 @@ class TuneWorkerHandle:
             self._process.join()
 
     def join(self):
+        """
+        Request shutdown of the monitor thread and wait for completion.
+
+        This method signals the monitor loop to terminate, which triggers graceful
+        worker shutdown and process join. It then joins the monitor thread.
+        """
         self._shutdown_event.set()
         self._monitor_thread.join()
 
@@ -180,6 +336,27 @@ class TuneWorkerHandle:
 # AsyncReplayExecutor
 # ============================================================================
 class AsyncReplayExecutor:
+    """
+    Asynchronous record/replay executor backed by a pool of worker processes.
+
+    ``AsyncReplayExecutor`` provides a lightweight interface to evaluate
+    :class:`ExperimentConfiguration` objects using one or more worker processes.
+    Internally it manages:
+
+      - A global thread queue of pending :class:`EvalFuture` jobs.
+      - A set of :class:`TuneWorkerHandle` instances (one per worker process).
+      - A monotonic job id generator for mapping submissions to results.
+
+    Users may submit jobs asynchronously via :meth:`submit`, or synchronously
+    evaluate a configuration via :meth:`evaluate` (submit + wait).
+
+    Notes
+    -----
+    * Each worker handle can execute at most one in-flight job at a time.
+    * The executor is intended for repeated evaluations; startup/teardown overhead
+      may dominate for microbenchmarks.
+    """
+
     def __init__(
         self,
         record_db: str,
@@ -188,6 +365,22 @@ class AsyncReplayExecutor:
         results_db_dir: str,
         num_workers: int,
     ):
+        """
+        Construct an asynchronous executor with a fixed-size worker pool.
+
+        Parameters
+        ----------
+        record_db : str
+            Path to the recorded execution database/file.
+        record_id : str
+            Identifier of the recorded kernel instance inside ``record_db``.
+        iterations : int
+            Number of kernel iterations performed by each worker per tracked run.
+        results_db_dir : str
+            Directory where workers write logs and optional output artifacts.
+        num_workers : int
+            Number of worker processes to launch.
+        """
         self.global_q = ThreadQueue()
         self._futures: Dict[int, EvalFuture] = {}
         self._next_id = 0
@@ -210,6 +403,23 @@ class AsyncReplayExecutor:
     # Submit new job (non-blocking)
     # ------------------------------------------------------------------
     def submit(self, config: ExperimentConfiguration) -> EvalFuture:
+        """
+        Submit a new experiment configuration for asynchronous evaluation.
+
+        The configuration is wrapped in an :class:`EvalFuture` and enqueued for
+        execution by the first available worker handle.
+
+        Parameters
+        ----------
+        config : ExperimentConfiguration
+            Experiment configuration to evaluate.
+
+        Returns
+        -------
+        EvalFuture
+            A future that will be resolved with an :class:`ExperimentResult` once
+            the worker completes the experiment (or marked as failed on crash).
+        """
         with self._lock:
             job_id = self._next_id
             self._next_id += 1
@@ -221,15 +431,40 @@ class AsyncReplayExecutor:
         return future
 
     def shutdown(self):
+        """
+        Gracefully shutdown all workers and their monitoring threads.
+
+        This method requests each :class:`TuneWorkerHandle` to stop, which causes:
+          - the worker loop to receive a terminate message,
+          - the worker process to exit,
+          - the monitor thread to join.
+
+        Notes
+        -----
+        * After shutdown, submitting additional jobs is undefined behavior.
+        """
         logger.debug(f"[{self.__class__.__name__}] Starting shutdown process")
         for w in self.workers:
             w.join()
         logger.debug(f"[{self.__class__.__name__}] Done Shutdown")
 
     def evaluate(self, config: ExperimentConfiguration) -> ExperimentResult:
-        """
+                """
         Synchronously evaluate one configuration through the worker pool.
-        Returns a stable dict with exec_time + metadata.
+
+        This convenience method submits a configuration and blocks until the
+        corresponding :class:`EvalFuture` completes.
+
+        Parameters
+        ----------
+        config : ExperimentConfiguration
+            Experiment configuration to evaluate.
+
+        Returns
+        -------
+        ExperimentResult
+            Result object containing verification status, execution time samples,
+            and optional compilation/resource metrics, depending on worker settings.
         """
         future = self.submit(config)
 
