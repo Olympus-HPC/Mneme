@@ -1,3 +1,27 @@
+"""
+Recorded execution database and memory snapshot bindings.
+
+This module defines the Python-side representation of Mneme’s record/replay
+artifacts:
+
+  * **MemStateRef**: a lightweight wrapper over the native memory-snapshot object
+    (prologue/epilogue) used for replay verification.
+  * **RecordedExecution**: a JSON-serializable description of a recorded kernel,
+    including all observed dynamic instances and the LLVM IR modules required
+    for replay.
+
+The native snapshot API is accessed via ctypes/FFI (``ffi.lib.MnemePy_*``).
+Instances of :class:`MemStateRef` behave as context managers: they load the
+snapshot on entry and dispose the native handle on exit.
+
+Notes
+-----
+- This file is *core* to replay correctness: prologue/epilogue snapshots are used
+  to verify that the replayed kernel produced the expected state.
+- The JSON schema here is treated as a stable interchange format between record
+  and replay tools.
+"""
+
 import json
 from ctypes import POINTER, c_bool, c_char_p, c_int, c_void_p
 from enum import Enum
@@ -29,11 +53,37 @@ ffi.lib.MnemePy_getArgs.restype = POINTER(c_void_p)
 
 
 class SnapshotType(Enum):
+    """
+    Enumeration of memory snapshot roles within a recorded execution.
+
+    PROLOGUE
+        Snapshot captured immediately before kernel execution.
+    EPILOGUE
+        Snapshot captured immediately after kernel execution.
+
+    The snapshot type is used by the native snapshot loader to interpret the
+    record format and to decide which parts of state are treated as inputs vs
+    outputs during verification.
+    """
+
     PROLOGUE = 1
     EPILOGUE = 2
 
 
 def find_non_jsonables(obj, where="$"):
+    """
+    Debug helper: print paths to fields that are not JSON-serializable.
+
+    This is used as a sanity check before writing the record database to JSON.
+    It is intentionally permissive and prints to stdout rather than raising.
+
+    Parameters
+    ----------
+    obj : Any
+        Object graph to inspect.
+    where : str
+        JSONPath-like location used when printing offending fields.
+    """
     if isinstance(obj, (str, int, float, bool)) or obj is None:
         return
     if isinstance(obj, Path):
@@ -49,17 +99,39 @@ def find_non_jsonables(obj, where="$"):
         # add other allowed conversions here if you plan to support them
         print("Non-JSON type:", where, "->", type(obj))
 
-# `MemStateRef` is a Python wrapper around Mneme’s C-level memory snapshot
-# representation. It loads, compares, and resets GPU memory state from a
-# recorded prologue/epilogue file using the C FFI interface. Instances behave
-# as context managers and expose:
-#   • argument pointers stored in the snapshot
-#   • the number of kernel arguments
-#   • equality comparison between two memory states
-#
-# In short, `MemStateRef` gives high-level access to recorded GPU memory images
-# used for verification during replay.
+
 class MemStateRef:
+    """
+    Handle to a recorded memory snapshot (prologue/epilogue).
+
+    A :class:`MemStateRef` wraps Mneme’s native memory snapshot representation,
+    which encodes the recorded kernel argument pointers and the captured device
+    memory state. During replay, these snapshots serve two purposes:
+
+      1. **Inputs**: The prologue snapshot provides the argument pointer list and
+         initial memory contents required to execute the kernel deterministically.
+      2. **Verification**: The epilogue snapshot represents the expected post-kernel
+         state. Replay compares a reproduced epilogue against this snapshot to
+         validate correctness.
+
+    Instances are context managers. Entering the context loads the snapshot
+    into the native handle; leaving the context disposes it.
+
+    Parameters
+    ----------
+    fn : str
+        Path to the snapshot file on disk.
+    kernel_name : str
+        Kernel name associated with this snapshot (used by native layer).
+    snap_type : SnapshotType
+        Whether this snapshot is a prologue or epilogue capture.
+
+    Raises
+    ------
+    RuntimeError
+        If the snapshot file does not exist.
+    """
+
     def __init__(self, fn: str, kernel_name: str, snap_type: SnapshotType):
         if not Path(fn).exists():
             raise RuntimeError(f"Expected prologue file: {fn} to exist")
@@ -76,6 +148,14 @@ class MemStateRef:
             ffi.lib.MnemePy_DisposeMemState(self._state)
 
     def open(self):
+        """
+        Initialize and load the snapshot into the native handle.
+
+        Returns
+        -------
+        MemStateRef
+            Returns self for convenient chaining / context-manager usage.
+        """
         if self._state is None:
             self._state = ffi.lib.MnemePy_initializeMemState(
                 c_char_p(self.kernel_name.encode("utf-8")),
@@ -89,6 +169,19 @@ class MemStateRef:
 
     @property
     def args(self):
+        """
+        Return the kernel argument pointer array stored in the snapshot.
+
+        Returns
+        -------
+        ctypes.POINTER(ctypes.c_void_p)
+            Pointer to an array of argument pointers as returned by the native API.
+
+        Raises
+        ------
+        RuntimeError
+            If the snapshot has not been loaded via :meth:`open`.
+        """
         if not self._load:
             raise RuntimeError("Cannot access arguments without loading memory state")
 
@@ -99,6 +192,19 @@ class MemStateRef:
 
     @property
     def num_args(self):
+        """
+        Return the number of kernel arguments recorded in the snapshot.
+
+        Returns
+        -------
+        int
+            Number of arguments.
+
+        Raises
+        ------
+        RuntimeError
+            If the snapshot has not been loaded via :meth:`open`.
+        """
         if not self._load:
             raise RuntimeError("Cannot access num_args without loading memory state")
 
@@ -119,15 +225,43 @@ class MemStateRef:
         return False
 
     def reset(self):
+        """
+        Reset the snapshot state in the native layer.
+
+        This is typically used to restore the device memory state to the recorded
+        baseline (e.g., before re-running a replay) without reinitializing the
+        snapshot handle.
+
+        Raises
+        ------
+        RuntimeError
+            If the snapshot has not been loaded via :meth:`open`.
+        """
         if self._load is False:
             raise RuntimeError("Cannot reset memory, if state is not read first.")
 
         ffi.lib.MnemePy_ResetMemState(self._state)
 
     def __eq__(self, other):
+        """
+        Compare two snapshots using the native comparison routine.
+
+        Returns
+        -------
+        bool
+            True if the native layer considers the states equivalent.
+        """
         return bool(ffi.lib.MnemePy_CompareMemState(self._state, other._state))
 
     def __ne__(self, other):
+        """
+        Compare two snapshots using the native comparison routine.
+
+        Returns
+        -------
+        bool
+            True if the native layer considers the states different.
+        """
         return not bool(ffi.lib.MnemePy_CompareMemState(self._state, other._state))
 
     def __del__(self):
@@ -150,28 +284,63 @@ class MemStateRef:
             # Absolutely nothing should escape __del__
             pass
 
-# `RecordedExecution` captures the full static description of a kernel as
-# recorded by Mneme: argument names, specializations, LLVM IR modules, virtual
-# address ranges, and all dynamic kernel instances observed at runtime.
-#
-# It behaves like a container mapping dynamic-hash → `KernelInstance`, and also
-# provides:
-#   • linking of LLVM modules into a single IR module suitable for replay
-#   • serialization/deserialization to/from JSON
-#
-# In short, this class describes everything Mneme needs to reconstruct,
-# specialize, and replay a previously recorded GPU kernel.
+
 class RecordedExecution:
-    # Represents a single dynamic instance of a recorded kernel launch: the grid and
-    # block dimensions used, shared-memory size, argument values, available
-    # specializations, and file paths to its prologue/epilogue memory snapshots.
-    # Each instance provides:
-    #   • equality/hash behavior based on dynamic+static hash
-    #   • on-demand access to its memory snapshots via `MemStateRef`
-    #   • conversion to a JSON-friendly dictionary
-    #
-    # This class is the per-launch unit of information used by Mneme during replay.
+    """
+    Description of a recorded kernel execution and its dynamic instances.
+
+    A :class:`RecordedExecution` captures everything needed to replay and tune
+    a kernel that was observed during application execution:
+
+      - Kernel identity (static hash, name, demangled name)
+      - Argument names and specialization availability
+      - Virtual address space reservation information (VA base + size)
+      - LLVM IR module file paths required for linking
+      - A mapping of **dynamic hash → KernelInstance**, representing each observed
+        launch instance (grid/block/shared-mem and snapshot paths)
+
+    The class behaves like a mapping over kernel instances and supports JSON
+    serialization via :meth:`to_json` / :meth:`from_json`.
+
+    Parameters
+    ----------
+    static_hash : str
+        Stable identifier for the kernel’s static code shape.
+    kernel_name : str
+        Mangled or runtime kernel symbol name.
+    demangled_name : str
+        Human-readable kernel name (if available).
+    llvm_files : list[str]
+        Paths to LLVM IR modules captured during recording.
+    arg_names : list[str]
+        Recorded kernel argument names (for display/debugging).
+    specializations : list[bool]
+        Per-argument specialization availability flags.
+    va_addr : str
+        Base virtual address (hex string) used by Mneme’s memory manager.
+    va_size : int
+        Virtual address space size in bytes (or recording-specific unit).
+    kernel_instances : dict[str, KernelInstance]
+        Mapping from dynamic hash to recorded launch instance descriptor.
+    """
+
     class KernelInstance:
+        """
+        Description of one dynamic kernel launch instance.
+
+        A kernel may be launched multiple times with different dynamic properties
+        (e.g., different grid/block sizes, argument values, or observed runtime hashes).
+        Each :class:`KernelInstance` stores:
+
+          - Launch parameters (grid, block, shared memory)
+          - Dynamic hash (identifies the runtime instance)
+          - Available specialization indices (derived from specialization flags)
+          - Snapshot file paths for prologue and epilogue
+
+        The prologue/epilogue snapshots are exposed via :class:`MemStateRef` objects,
+        which are opened on demand by the replay executor.
+        """
+
         def __init__(
             self,
             static_hash: str,
@@ -209,6 +378,15 @@ class RecordedExecution:
             return f"Grid:{self.grid_dim}, BlockDim: {self.block_dim}, Shared Memory {self.shared_mem}"
 
         def to_dict(self):
+            """
+            Convert this instance into a JSON-friendly dictionary.
+
+            Returns
+            -------
+            dict
+                Serializable representation containing dims, shared memory,
+                occurrence count, and snapshot file paths.
+            """
             res = {}
             res["Args"] = self.specializations
             res["BlockDims"] = self.block_dim.to_dict()
@@ -274,6 +452,24 @@ class RecordedExecution:
         return self.kernel_instances.values()
 
     def link_llvm_modules(self, prune=True, internalize=True):
+        """
+        Link recorded LLVM IR modules into a single module suitable for replay.
+
+        This is a convenience wrapper over the Proteus JIT linking layer.
+        Results are cached on the first call and returned on subsequent calls.
+
+        Parameters
+        ----------
+        prune : bool
+            Whether to prune unused symbols/IR during linking.
+        internalize : bool
+            Whether to internalize symbols during linking.
+
+        Returns
+        -------
+        ModuleRef
+            Linked IR module produced by the JIT layer.
+        """
         if self._link_mod is not None:
             return self._link_mod
 
@@ -300,12 +496,41 @@ class RecordedExecution:
         return res
 
     def to_json(self, fn: str):
+        """
+        Serialize this record database to a JSON file.
+
+        Parameters
+        ----------
+        fn : str
+            Output JSON path.
+        """
         find_non_jsonables(self.to_dict())
         with open(fn, "w") as fd:
             json.dump(self.to_dict(), fd, indent=2)
 
     @classmethod
     def from_json(cls, fn: str):
+        """
+        Load a :class:`RecordedExecution` database from JSON.
+
+        This reconstructs all :class:`KernelInstance` entries and validates that
+        referenced LLVM module paths exist.
+
+        Parameters
+        ----------
+        fn : str
+            Path to the recorded execution JSON file.
+
+        Returns
+        -------
+        RecordedExecution
+            Loaded record database.
+
+        Raises
+        ------
+        RuntimeError
+            If the JSON file does not exist or referenced IR modules are missing.
+        """
         if not Path(fn).exists():
             raise RuntimeError("JSON file does not exist")
 

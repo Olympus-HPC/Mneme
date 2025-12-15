@@ -1,3 +1,16 @@
+"""
+ctypes wrapper for Mneme virtual address space (page manager).
+
+This module provides a thin Python binding around the native Mneme
+page manager, responsible for managing a virtual address space used
+during record/replay.
+
+Notes:
+  - c_uintptr_t is resolved dynamically to match the host pointer size.
+  - Lifetime is managed via ffi.ObjectRef; disposal is explicit.
+  - This is an internal, low-level API not intended for direct user use.
+"""
+
 import ctypes
 from ctypes import c_int, c_uint64, c_void_p
 
@@ -22,6 +35,13 @@ ffi.lib.MnemePY_DisposePageManager.argtypes = [c_void_p]
 
 
 class PageManagerRef(ffi.ObjectRef):
+    """
+    Handle to a native Mneme Page Manager.
+
+    This object owns a device-specific virtual address space used during
+    replay. It is created once per device and disposed explicitly.
+    """
+
     def __init__(self, device_id, va_addr: str, va_size: int):
         self._device_id = device_id
         self._va_addr = int(va_addr, 16)

@@ -7,7 +7,7 @@ from multiprocessing import Process
 from multiprocessing import Queue as ProcessQueue
 from queue import Queue as ThreadQueue
 from threading import Event as ThreadEvent
-from typing import Dict 
+from typing import Dict
 
 from mneme.futures import EvalFuture
 from mneme.logging import logger
@@ -204,7 +204,7 @@ class TuneWorkerHandle:
         if self.current.job_id != msg["exp_id"]:
             raise RuntimeError(
                 f"Worker {self.idx} received result for unexpected job "
-                f"{msg['exp_id']} vs {future.job_id}"
+                f"{msg['exp_id']} vs {self.current.job_id}"
             )
         logger.debug(
             f"[{self.__class__.__name__}-{self.device_id}] finished experiment {self.current.job_id}"
@@ -449,7 +449,7 @@ class AsyncReplayExecutor:
         logger.debug(f"[{self.__class__.__name__}] Done Shutdown")
 
     def evaluate(self, config: ExperimentConfiguration) -> ExperimentResult:
-                """
+        """
         Synchronously evaluate one configuration through the worker pool.
 
         This convenience method submits a configuration and blocks until the

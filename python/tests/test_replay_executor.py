@@ -1,265 +1,605 @@
-import json
-from pathlib import Path
-from types import SimpleNamespace
+# tests/test_replay_executor.py
 
+import importlib
+import queue
+import types
+from dataclasses import dataclass
 import pytest
-from mneme.device import dim3
-from mneme.pipeline import PipelineManager
-from mneme.recorded_execution import RecordedExecution
-from mneme.replay_executor import CLIExecutor
 
 
-# -------------------------------------------------------------------
-# Complete Fake PageManagerRef — prevents CFFI aborts
-# -------------------------------------------------------------------
+MODULE_PATH = "mneme.replay_executor"
+
+
+# --------------------------
+# Fakes / Test doubles
+# --------------------------
+
+
 class FakePageManager:
-    def __init__(self, *a, **k):
+    def __init__(self, device_id, va_addr, va_size):
+        self.device_id = device_id
+        self.va_addr = va_addr
+        self.va_size = va_size
         self.closed = False
 
     def close(self):
         self.closed = True
 
 
-# -------------------------------------------------------------------
-# Fake device function + Fake DeviceModule that returns it
-# -------------------------------------------------------------------
-class FakeDeviceFunc:
-    def profile(self, *a, **k):
-        return 123
+class FakeSnapshot:
+    """
+    Snapshot returned by kernel_descr.prologue.open() / epilogue.open().
+    Must have: .close(), .args, .num_args, ._state
+    """
 
-    @property
-    def reg_usage(self):
-        return 10
+    def __init__(self, state="STATE", args=None, num_args=0):
+        self._state = state
+        self.args = args if args is not None else []
+        self.num_args = num_args
+        self.closed = False
 
-    @property
-    def const_mem(self):
-        return 0
+    def close(self):
+        self.closed = True
 
-    @property
-    def local_mem(self):
-        return 0
+
+class FakePrologueDescr:
+    def __init__(self, snapshot):
+        self._snapshot = snapshot
+
+    def open(self):
+        return self._snapshot
+
+
+class FakeEpilogueDescr:
+    def __init__(self, snapshot):
+        self._snapshot = snapshot
+
+    def open(self):
+        return self._snapshot
+
+
+class FakeKernelDescr:
+    def __init__(self, kernel_name="K", static_hash="H", prologue=None, epilogue=None):
+        self.kernel_name = kernel_name
+        self.static_hash = static_hash
+        self.available_specializations = {"dummy": True}
+        self.prologue = FakePrologueDescr(prologue or FakeSnapshot())
+        self.epilogue = FakeEpilogueDescr(epilogue or FakeSnapshot())
+
+
+class FakeModule:
+    def __init__(self, name="m", clone_counter=None):
+        self.name = name
+        self._clone_counter = clone_counter if clone_counter is not None else {"n": 0}
+        self.removed_auto_init = False
+
+    def clone(self):
+        self._clone_counter["n"] += 1
+        # clones share counter for observability
+        return FakeModule(self.name + "_clone", self._clone_counter)
+
+
+class FakeMemBuffer:
+    def __init__(self, size=123):
+        self._size = size
+
+    def get_size(self):
+        return self._size
+
+
+class FakeDeviceFunction:
+    def __init__(self):
+        self.profile_calls = []
+        self.reg_usage = 17
+        self.const_mem = 33
+        self.local_mem = 44
+
+    def profile(self, grid, block, pro_state, epi_state, shared_mem, iterations):
+        self.profile_calls.append(
+            (grid, block, pro_state, epi_state, shared_mem, iterations)
+        )
 
 
 class FakeDeviceModule:
-    def __init__(self, *a, **k):
-        pass
+    def __init__(self, device_func=None, kernel_name=None):
+        self._device_func = device_func or FakeDeviceFunction()
+        self._kernel_name = kernel_name
 
     def __enter__(self):
         return self
 
-    def __exit__(self, *a):
-        pass
+    def __exit__(self, exc_type, exc, tb):
+        return False
 
-    def get_function(self, name):
-        return FakeDeviceFunc()
-
-
-# -------------------------------------------------------------------
-# Fake MemBufferRef used by jit.codegen_object
-# -------------------------------------------------------------------
-class FakeMemBuffer:
-    def get_size(self):
-        return 128
+    def get_function(self, kernel_name):
+        # could validate name here if you want
+        return self._device_func
 
 
-# -------------------------------------------------------------------
-# FULL HAPPY-PATH TEST FOR EXECUTE
-# -------------------------------------------------------------------
-def test_execute_happy_path(monkeypatch, tmp_path):
-    class FakeProfileLib:
-        def MnemePy_startProfile(self, device_id):
-            # return a fake correlation ID
-            return 1
+class FakeRecordedExecution:
+    def __init__(self, kernel_descr):
+        self.va_addr = 0x1000
+        self.va_size = 0x2000
+        self._kernel_descr = kernel_descr
+        self.link_calls = []
 
-        def MnemePy_stopProfile(self, correlation_id, arr, num_records):
-            # return a fake correlation ID
-            return [10, 1, 3, 4.5, 34]
+    @classmethod
+    def from_json(cls, record_db):
+        raise RuntimeError("You must monkeypatch from_json in tests")
 
-        def MnemePy_getNumRecords(self, correlation_id):
-            # no profiling records
-            return 0
+    def __getitem__(self, record_id):
+        return self._kernel_descr
 
-    class FakeProfileLib:
-        def MnemePy_startProfile(self, device_id):
-            return 1  # correlation id
+    def link_llvm_modules(self, prune=True, internalize=True):
+        self.link_calls.append((prune, internalize))
+        return FakeModule("linked")
 
-        def MnemePy_stopProfile(self, correlation_id, arr, n):
-            return [i for i in range(n)]
 
-        def MnemePy_getNumRecords(self, correlation_id):
-            return 3  # MUST BE >=3
+# --------------------------
+# Helper: import module with patched decorators
+# --------------------------
 
-    # Patch the CFFI library
-    monkeypatch.setattr("mneme.profile.profile_lib", FakeProfileLib())
 
-    # Patch the Python-level wrappers
-    monkeypatch.setattr("mneme.profile.gpu_profile_start", lambda: 1)
-    monkeypatch.setattr("mneme.profile.gpu_profile_stop", lambda cid: [10, 11, 12])
+def _reload_with_identity_decorators(monkeypatch):
+    """
+    cond_time/cond_gpu_time are decorators imported into the module namespace at import time.
+    For testability we reload the module after patching mneme.utils.cond_time/cond_gpu_time
+    to identity decorators.
+    """
+    # Patch mneme.utils BEFORE importing replay_executor
+    utils_mod = importlib.import_module("mneme.utils")
 
-    # Patch the utils-level decorator (it calls gpu_profile_start/stop *indirectly*)
-    import mneme.utils
+    def identity_decorator(_field):
+        def deco(fn):
+            # Accept and ignore 'profile' kwarg; BaseExecutor._build passes it.
+            def wrapper(*args, **kwargs):
+                kwargs.pop("profile", None)
+                return fn(*args, **kwargs)
 
-    def fake_gpu_profile(func):
-        def wrapper(*args, **kwargs):
-            cid = 1
-            result = func(*args, **kwargs)
-            # Same measurement payload used everywhere
-            setattr(args[0], "exec_time", [10, 11, 12])
-            return result
+            return wrapper
 
-        return wrapper
+        return deco
 
-    monkeypatch.setattr("mneme.utils.cond_gpu_time", fake_gpu_profile)
+    monkeypatch.setattr(utils_mod, "cond_time", identity_decorator, raising=True)
+    monkeypatch.setattr(utils_mod, "cond_gpu_time", identity_decorator, raising=True)
 
-    class FakeState:
-        def __init__(self):
-            self._state = True
+    # Now reload target module so the decorators wrap with the identity versions.
+    mod = importlib.import_module(MODULE_PATH)
+    mod = importlib.reload(mod)
+    return mod
 
-        def close(self):
-            pass  # no-op
 
-    class FakeKernelDescr:
-        kernel_name = "vec_add"
-        static_hash = "ABC"
-        dynamic_hash = "XYZ"
-        demangled_name = "vec_add"
+# --------------------------
+# Tests
+# --------------------------
 
-        grid_dim = dim3(1, 1, 1)
-        block_dim = dim3(1, 1, 1)
-        shared_mem = 0
 
-        prologue = SimpleNamespace(
-            open=lambda: FakeState(),
-            args=[],
-            num_args=0,
-        )
-        epilogue = SimpleNamespace(open=lambda: FakeState())
+def test_baseexecutor_init_sets_gpu_affinity_and_loads_records(monkeypatch):
+    mod = _reload_with_identity_decorators(monkeypatch)
 
-        available_specializations = []
-        specializations = []
-        va_addr = 0x0
-        va_size = 1024
+    calls = {"set_device": [], "get_arch": 0, "get_count": 0, "from_json": []}
 
-    # Fake RecordedExecution
-    class FakeRecordedExec(dict):
-        va_addr = "0x0"
-        va_size = 1024
-        llvm_files = ["dummy.bc"]
-        kernel_name = "vec_add"
-        demangled_name = "vec_add"
-        specializations = []
+    def fake_set_device(d):
+        calls["set_device"].append(d)
 
-        def __init__(self):
-            super().__init__()
-            self["kid"] = FakeKernelDescr()
+    def fake_get_arch():
+        calls["get_arch"] += 1
+        return "sm_80"
 
-        @staticmethod
-        def from_json(path):
-            return FakeRecordedExec()
+    def fake_get_count():
+        calls["get_count"] += 1
+        return 8
 
-        def link_llvm_modules(self, prune=True, internalize=False):
-            return FakeModule()
+    kernel = FakeKernelDescr()
+    rec = FakeRecordedExecution(kernel)
 
-    # ------------------------------------------------------------------
-    # Fake IR module
-    # ------------------------------------------------------------------
-    class FakeModule:
-        def clone(self):
-            return FakeModule()
+    def fake_from_json(path):
+        calls["from_json"].append(path)
+        return rec
 
-        def __repr__(self):
-            return "<FakeModule>"
-
-    # ------------------------------------------------------------------
-    # Monkeypatch EVERYTHING that touches GPU/LLVM
-    # ------------------------------------------------------------------
+    monkeypatch.setattr(mod, "set_device", fake_set_device, raising=True)
+    monkeypatch.setattr(mod, "get_device_arch", fake_get_arch, raising=True)
+    monkeypatch.setattr(mod, "get_device_count", fake_get_count, raising=True)
     monkeypatch.setattr(
-        "mneme.recorded_execution.RecordedExecution.from_json",
-        staticmethod(FakeRecordedExec.from_json),
+        mod.RecordedExecution, "from_json", staticmethod(fake_from_json), raising=True
     )
 
-    # LLVM bitcode linking
-    monkeypatch.setattr(
-        "mneme.recorded_execution.RecordedExecution.link_llvm_modules",
-        FakeRecordedExec().link_llvm_modules,
+    ex = mod.BaseExecutor(
+        record_db="db.json", record_id="rid", device_id=3, iterations=5
     )
 
-    # Prevent PageManagerRef CFFI calls
-    monkeypatch.setattr("mneme.replay_executor.PageManagerRef", FakePageManager)
+    assert ex.records is rec
+    assert ex.kernel_descr is kernel
+    assert ex.device_arch == "sm_80"
+    assert ex.num_devices == 8
+    assert calls["set_device"] == [3]
+    assert calls["from_json"] == ["db.json"]
+    assert ex._iterations == 5
 
-    # Prevent device driver calls
+
+def test_open_close_context_manager_opens_and_closes_resources(monkeypatch):
+    mod = _reload_with_identity_decorators(monkeypatch)
+
+    kernel = FakeKernelDescr(
+        prologue=FakeSnapshot(state="P"),
+        epilogue=FakeSnapshot(state="E"),
+    )
+    rec = FakeRecordedExecution(kernel)
+
     monkeypatch.setattr(
-        "mneme.device.DeviceModule.from_MemBuffer",
-        staticmethod(lambda mb: FakeDeviceModule()),
+        mod.RecordedExecution, "from_json", staticmethod(lambda _: rec), raising=True
+    )
+    monkeypatch.setattr(mod, "PageManagerRef", FakePageManager, raising=True)
+    monkeypatch.setattr(mod, "set_device", lambda _: None, raising=True)
+    monkeypatch.setattr(mod, "get_device_arch", lambda: "sm", raising=True)
+    monkeypatch.setattr(mod, "get_device_count", lambda: 1, raising=True)
+
+    ex = mod.BaseExecutor(record_db="x", record_id="rid", device_id=0)
+
+    with ex as opened:
+        assert opened._page_manager is not None
+        assert opened.prologue._state == "P"
+        assert opened.epilogue._state == "E"
+        assert opened._page_manager.device_id == 0
+        assert opened._page_manager.va_addr == rec.va_addr
+        assert opened._page_manager.va_size == rec.va_size
+
+    # After context exit
+    assert ex._page_manager is None
+    assert ex._prologue is None
+    assert ex._epilogue is None
+
+
+def test_link_ir_forwards_prune_and_internalize(monkeypatch):
+    mod = _reload_with_identity_decorators(monkeypatch)
+
+    kernel = FakeKernelDescr()
+    rec = FakeRecordedExecution(kernel)
+
+    monkeypatch.setattr(
+        mod.RecordedExecution, "from_json", staticmethod(lambda _: rec), raising=True
+    )
+    monkeypatch.setattr(mod, "set_device", lambda _: None, raising=True)
+    monkeypatch.setattr(mod, "get_device_arch", lambda: "sm", raising=True)
+    monkeypatch.setattr(mod, "get_device_count", lambda: 1, raising=True)
+
+    ex = mod.BaseExecutor(record_db="x", record_id="rid")
+
+    m = ex.link_ir()
+    assert isinstance(m, FakeModule)
+    assert rec.link_calls == [(True, True)]
+
+
+def test_preprocess_ir_calls_jit_hooks_based_on_config(monkeypatch):
+    mod = _reload_with_identity_decorators(monkeypatch)
+
+    # Setup executor with prologue/epilogue loaded
+    pro = FakeSnapshot(state="P", args=[1, 2], num_args=2)
+    epi = FakeSnapshot(state="E")
+    kernel = FakeKernelDescr(static_hash="H0", prologue=pro, epilogue=epi)
+    rec = FakeRecordedExecution(kernel)
+
+    monkeypatch.setattr(
+        mod.RecordedExecution, "from_json", staticmethod(lambda _: rec), raising=True
+    )
+    monkeypatch.setattr(mod, "set_device", lambda _: None, raising=True)
+    monkeypatch.setattr(mod, "get_device_arch", lambda: "sm", raising=True)
+    monkeypatch.setattr(mod, "get_device_count", lambda: 1, raising=True)
+    monkeypatch.setattr(mod, "PageManagerRef", FakePageManager, raising=True)
+
+    calls = []
+
+    def spec_args(ir, code_hash, kname, args, num_args, avail):
+        calls.append(("args", code_hash, kname, tuple(args), num_args))
+        return code_hash + "|A"
+
+    def spec_dims(ir, code_hash, kname, grid, block):
+        calls.append(("dims", code_hash, kname))
+        return code_hash + "|D"
+
+    def set_lb(ir, code_hash, kname, max_thr, min_b):
+        calls.append(("lb", code_hash, kname, max_thr, min_b))
+        return code_hash + "|L"
+
+    monkeypatch.setattr(mod.jit, "specialize_args", spec_args, raising=True)
+    monkeypatch.setattr(mod.jit, "specialize_dims", spec_dims, raising=True)
+    monkeypatch.setattr(mod.jit, "set_launch_bounds", set_lb, raising=True)
+
+    ex = mod.BaseExecutor(record_db="x", record_id="rid")
+    ex.open()
+
+    cfg = mod.ExperimentConfiguration(
+        specialize=True,
+        specialize_dims=True,
+        set_launch_bounds=True,
+        max_threads=256,
+        min_blocks_per_sm=2,
+    )
+    ir = FakeModule("root")
+    res = mod.ExperimentResult()
+
+    code_hash, out_ir = ex._preprocess_ir(res, cfg, ir)
+    assert out_ir is ir
+    assert code_hash == "H0|A|D|L"
+    assert [c[0] for c in calls] == ["args", "dims", "lb"]
+
+    ex.close()
+
+
+def test_build_sets_obj_size_when_track_true(monkeypatch):
+    mod = _reload_with_identity_decorators(monkeypatch)
+
+    kernel = FakeKernelDescr()
+    rec = FakeRecordedExecution(kernel)
+
+    monkeypatch.setattr(
+        mod.RecordedExecution, "from_json", staticmethod(lambda _: rec), raising=True
+    )
+    monkeypatch.setattr(mod, "set_device", lambda _: None, raising=True)
+    monkeypatch.setattr(mod, "get_device_arch", lambda: "sm", raising=True)
+    monkeypatch.setattr(mod, "get_device_count", lambda: 1, raising=True)
+
+    ex = mod.BaseExecutor(record_db="x", record_id="rid")
+
+    spy = {"pre": 0, "opt": 0, "cg": 0}
+
+    def fake_pre(result, cfg, ir):
+        spy["pre"] += 1
+        return "H", ir
+
+    def fake_opt(result, cfg, ir):
+        spy["opt"] += 1
+
+    def fake_cg(result, cfg, ir):
+        spy["cg"] += 1
+        return FakeMemBuffer(size=999)
+
+    monkeypatch.setattr(
+        ex, "_preprocess_ir", lambda *a, **k: fake_pre(*a), raising=True
+    )
+    monkeypatch.setattr(ex, "_optimize", lambda *a, **k: fake_opt(*a), raising=True)
+    monkeypatch.setattr(ex, "_codegen", lambda *a, **k: fake_cg(*a), raising=True)
+
+    res = mod.ExperimentResult()
+    cfg = mod.ExperimentConfiguration()
+    ir = FakeModule("x")
+
+    mb = ex._build(res, cfg, ir, track=True)
+    assert isinstance(mb, FakeMemBuffer)
+    assert res.obj_size == 999
+    assert spy == {"pre": 1, "opt": 1, "cg": 1}
+
+    # track=False should not set obj_size
+    res2 = mod.ExperimentResult()
+    mb2 = ex._build(res2, cfg, ir, track=False)
+    assert res2.obj_size == 0
+
+
+def test_run_records_resource_usage_when_track_true(monkeypatch):
+    mod = _reload_with_identity_decorators(monkeypatch)
+
+    kernel = FakeKernelDescr(kernel_name="K")
+    rec = FakeRecordedExecution(kernel)
+
+    monkeypatch.setattr(
+        mod.RecordedExecution, "from_json", staticmethod(lambda _: rec), raising=True
+    )
+    monkeypatch.setattr(mod, "set_device", lambda _: None, raising=True)
+    monkeypatch.setattr(mod, "get_device_arch", lambda: "sm", raising=True)
+    monkeypatch.setattr(mod, "get_device_count", lambda: 1, raising=True)
+
+    # Provide prologue/epilogue states expected by _run_kernel
+    ex = mod.BaseExecutor(record_db="x", record_id="rid")
+    ex._prologue = FakeSnapshot(state="P")
+    ex._epilogue = FakeSnapshot(state="E")
+
+    device_func = FakeDeviceFunction()
+    fake_dev_mod = FakeDeviceModule(device_func=device_func, kernel_name="K")
+
+    monkeypatch.setattr(
+        mod.DeviceModule,
+        "from_MemBuffer",
+        staticmethod(lambda mb: fake_dev_mod),
+        raising=True,
     )
 
-    # prevent GPU arch queries
-    monkeypatch.setattr("mneme.device.get_device_arch", lambda: "sm_80")
-    monkeypatch.setattr("mneme.device.get_device_count", lambda: 1)
-    monkeypatch.setattr("mneme.device.set_device", lambda dev: None)
+    run_kernel_calls = []
 
-    # Fake jit operations (IR manipulation)
-    monkeypatch.setattr("mneme.proteus.jit.optimize", lambda *a, **k: None)
-    monkeypatch.setattr("mneme.proteus.jit.specialize_args", lambda *a, **k: "HASH")
-    monkeypatch.setattr("mneme.proteus.jit.specialize_dims", lambda *a, **k: "HASH")
-    monkeypatch.setattr("mneme.proteus.jit.set_launch_bounds", lambda *a, **k: "HASH")
+    def fake_run_kernel(
+        result, config, kernel_name, device_func_in, iterations, **kwargs
+    ):
+        run_kernel_calls.append((kernel_name, iterations, kwargs.get("profile")))
+        # Exercise the DeviceFunction.profile is called by BaseExecutor._run_kernel,
+        # but here we shortcut; BaseExecutor._run uses this method.
 
-    # Fake codegen
+    monkeypatch.setattr(ex, "_run_kernel", fake_run_kernel, raising=True)
+
+    res = mod.ExperimentResult()
+    cfg = mod.ExperimentConfiguration()
+    mb = FakeMemBuffer()
+
+    ex._run(res, cfg, mb, track=True, iterations=7)
+
+    assert run_kernel_calls == [("K", 7, True)]
+    assert res.reg_usage == device_func.reg_usage
+    assert res.const_mem_usage == device_func.const_mem
+    assert res.local_mem_usage == device_func.local_mem
+
+
+def test_execute_orchestrates_verification_and_tracked_run(monkeypatch):
+    mod = _reload_with_identity_decorators(monkeypatch)
+
+    # prologue == epilogue => verified True
+    shared_snap = FakeSnapshot(state="S")
+    kernel = FakeKernelDescr(prologue=shared_snap, epilogue=shared_snap)
+    rec = FakeRecordedExecution(kernel)
+
     monkeypatch.setattr(
-        "mneme.proteus.jit.codegen_object", lambda *a, **k: FakeMemBuffer()
+        mod.RecordedExecution, "from_json", staticmethod(lambda _: rec), raising=True
+    )
+    monkeypatch.setattr(mod, "set_device", lambda _: None, raising=True)
+    monkeypatch.setattr(mod, "get_device_arch", lambda: "sm", raising=True)
+    monkeypatch.setattr(mod, "get_device_count", lambda: 1, raising=True)
+    monkeypatch.setattr(mod, "PageManagerRef", FakePageManager, raising=True)
+
+    # transform.remove_auto_initialize should be called on ir.clone()
+    transform_calls = []
+
+    def fake_remove_auto_initialize(ir_mod):
+        transform_calls.append(ir_mod.name)
+        ir_mod.removed_auto_init = True
+        return ir_mod
+
+    monkeypatch.setattr(
+        mod.transform,
+        "remove_auto_initialize",
+        fake_remove_auto_initialize,
+        raising=True,
     )
 
-    # Fake transform pass
+    # Spy on _build and _run
+    build_calls = []
+    run_calls = []
+
+    def fake_build(result, cfg, ir_mod, track):
+        build_calls.append((ir_mod.name, track))
+        return FakeMemBuffer()
+
+    def fake_run(result, cfg, mem_buf, track, iters):
+        run_calls.append((track, iters))
+
+    ex = mod.BaseExecutor(record_db="x", record_id="rid", iterations=3)
+    ex.open()  # load prologue/epilogue
+
+    monkeypatch.setattr(ex, "_build", fake_build, raising=True)
+    monkeypatch.setattr(ex, "_run", fake_run, raising=True)
+
+    res = mod.ExperimentResult()
+    cfg = mod.ExperimentConfiguration()
+    ir = FakeModule("root")
+
+    out_ir = ex._execute(res, cfg, ir)
+
+    # Verification stage: track=False, iterations=1
+    # Tracked stage: track=True, iterations=self._iterations + 2 = 5
+    assert run_calls == [(False, 1), (True, 5)]
+    assert res.executed is True
+    assert res.verified is True
+
+    # Remove-auto-init called once
+    assert len(transform_calls) == 1
+    assert out_ir.removed_auto_init is True
+
+    ex.close()
+
+
+def test_tuneworker_process_payload_sets_timestamps_and_gpu_id(monkeypatch):
+    mod = _reload_with_identity_decorators(monkeypatch)
+
+    kernel = FakeKernelDescr()
+    rec = FakeRecordedExecution(kernel)
+
     monkeypatch.setattr(
-        "mneme.transforms.transform.remove_auto_initialize", lambda ir: ir
+        mod.RecordedExecution, "from_json", staticmethod(lambda _: rec), raising=True
+    )
+    monkeypatch.setattr(mod, "set_device", lambda _: None, raising=True)
+    monkeypatch.setattr(mod, "get_device_arch", lambda: "sm", raising=True)
+    monkeypatch.setattr(mod, "get_device_count", lambda: 1, raising=True)
+
+    # Avoid actual profiler init
+    monkeypatch.setattr(mod, "init_profiler", lambda: None, raising=True)
+
+    worker = mod.TuneWorker(record_db="x", record_id="rid", device_id=2, iterations=3)
+
+    # Patch _execute to avoid deeper pipeline; return a module
+    def fake_execute(self, result, cfg, ir_mod):
+        result.executed = True
+        return FakeModule("gen")
+
+    monkeypatch.setattr(mod.BaseExecutor, "_execute", fake_execute, raising=True)
+
+    res, out_ir = worker.process_payload(
+        FakeModule("root"), mod.ExperimentConfiguration()
     )
 
-    # ------------------------------------------------------------------
-    # Fake MnemeDB so execution does not try to touch any files
-    # ------------------------------------------------------------------
-    class FakeIRDB:
-        def __init__(self, *a, **k):
-            pass
+    assert res.gpu_id == 2
+    assert res.start_time != ""
+    assert res.end_time != ""
+    assert res.executed is True
+    assert isinstance(out_ir, FakeModule)
 
-        def open(self):
+
+def test_tuneworker_run_process_and_terminate(monkeypatch, tmp_path):
+    mod = _reload_with_identity_decorators(monkeypatch)
+
+    # Save the real staticmethod BEFORE monkeypatching the class name.
+    real_run = mod.TuneWorker.run
+
+    # Patch os redirections to avoid touching real fd 1/2
+    monkeypatch.setattr(mod.os, "open", lambda *a, **k: 999, raising=True)
+    monkeypatch.setattr(mod.os, "dup2", lambda *a, **k: None, raising=True)
+
+    class FakeWorker:
+        def __init__(self, record_db, record_id, device_id, iterations):
+            self.record_db = record_db
+            self.record_id = record_id
+            self.device_id = device_id
+            self.iterations = iterations
+
+        def link_ir(self):
+            return FakeModule("root_ir")
+
+        def __enter__(self):
             return self
 
-        def save_ir(self, ir, h):
-            return "ir.bc"
+        def __exit__(self, exc_type, exc, tb):
+            return False
 
-        def add(self, *a, **k):
-            pass
+        def process_payload(self, ir_module, config):
+            res = mod.ExperimentResult(executed=True, verified=True)
+            return res, FakeModule("ir_out")
 
-        def should_execute(self, exp):
-            return True
-
-    monkeypatch.setattr("mneme.replay_executor.MnemeDB", FakeIRDB)
-
-    # ------------------------------------------------------------------
-    # Construct CLI arguments namespace
-    # ------------------------------------------------------------------
-    args = SimpleNamespace(
-        db="dummy.json",
-        record_id="kid",
-        pipeline="default<O3>",
-        prune=True,
-        internalize=False,
-        codegen_opt=3,
-        codegen_method="serial",
-        iterations=3,
-        device_id=0,
-        increamental=False,
-        specialize=False,
-        dims=False,
-        max_threads=False,
-        min_blocks_per_sm=0,
-        results_db_dir=None,
-        command=None,
-        func=None,
+    # Replace TuneWorker constructor used inside run()
+    monkeypatch.setattr(
+        mod, "TuneWorker", lambda *a, **k: FakeWorker(*a, **k), raising=True
     )
 
-    # ------------------------------------------------------------------
-    # ACTUALLY RUN THE EXECUTOR
-    # This should now run entirely in mocked mode with no FFI.
-    # ------------------------------------------------------------------
-    CLIExecutor.run(args, True)
+    req_q = queue.Queue()
+    resp_q = queue.Queue()
+
+    class FakeEvent:
+        def __init__(self):
+            self.set_called = 0
+
+        def set(self):
+            self.set_called += 1
+
+    state = FakeEvent()
+
+    req_q.put(
+        {
+            "payload": "process",
+            "exp_id": 7,
+            "data": mod.ExperimentConfiguration().to_dict(),
+        }
+    )
+    req_q.put({"payload": "terminate"})
+
+    # Call the saved real staticmethod
+    real_run(
+        request_q=req_q,
+        response_q=resp_q,
+        record_db="db.json",
+        record_id="rid",
+        device_id=0,
+        iterations=3,
+        results_db_dir=str(tmp_path),
+        state=state,
+    )
+
+    assert state.set_called == 1
+    msg = resp_q.get_nowait()
+    assert msg["payload"] == "result"
+    assert msg["exp_id"] == 7
+    assert isinstance(msg["data"], dict)
+    assert msg["llvm_ir"] == ""

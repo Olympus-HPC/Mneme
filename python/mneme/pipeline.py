@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import random
 import re
-import subprocess
-import sys
 from enum import IntEnum
 from typing import Dict, List, Tuple, Union
 
@@ -417,7 +415,22 @@ Machine function analyses (WIP):
 
 def split_top_level(s: str) -> list[str]:
     """
-    Split on commas that are not nested inside parentheses.
+    Split a pipeline string on top-level commas.
+
+    This helper splits a comma-separated pipeline string while respecting nested
+    parentheses. Commas inside parentheses are ignored. This is useful when parsing
+    LLVM pass pipeline strings that use adaptor forms such as
+    ``function(...), cgscc(...), loop(...), loop-mssa(...)``.
+
+    Parameters
+    ----------
+    s : str
+        Pipeline string to split.
+
+    Returns
+    -------
+    list[str]
+        List of top-level tokens (whitespace trimmed).
     """
     parts = []
     buf = []
@@ -439,9 +452,25 @@ def split_top_level(s: str) -> list[str]:
 
 def flatten_passes(s: str) -> list[str]:
     """
-    Recursively extract only the *leaf* pass names from a pipeline string.
-    Any pass that has parentheses is expanded, its *contents* flattened,
-    and the outer name dropped.
+    Extract leaf pass names from a pipeline string.
+
+    This helper recursively flattens adaptor constructs by discarding the adaptor
+    name and returning only the passes contained within its parentheses.
+
+    Example
+    -------
+    ``"function(loop(licm,instcombine)),gvn"`` yields:
+    ``["licm", "instcombine", "gvn"]``
+
+    Parameters
+    ----------
+    s : str
+        Pipeline string to flatten.
+
+    Returns
+    -------
+    list[str]
+        List of leaf pass tokens, in traversal order.
     """
     out = []
     for tok in split_top_level(s):
@@ -456,24 +485,23 @@ def flatten_passes(s: str) -> list[str]:
     return out
 
 
-def test_pass_requires_analysis(pipeline_str, ir_path, output):
-    result = subprocess.run(
-        [
-            "/opt/rocm-6.3.1/llvm/bin/opt",
-            f"--passes={pipeline_str}",
-            ir_path,
-            "-o",
-            output,
-        ],
-        stderr=subprocess.PIPE,
-        stdout=subprocess.DEVNULL,
-    )
-    stderr = result.stderr.decode()
-
-    return result.returncode, stderr
-
-
 class PassLevel(IntEnum):
+    """
+    Pipeline nesting level for LLVM pass adaptors.
+
+    These levels correspond to LLVM pipeline adaptors such as:
+      - ``function(...)``
+      - ``cgscc(...)``
+      - ``loop(...)``
+      - ``loop-mssa(...)``
+      - ``loopnest(...)``
+
+    Notes
+    -----
+    ``LOOPMSSA`` is treated as a pseudo-level used to wrap passes that require
+    MemorySSA context (e.g., LICM/LICM-like passes) using the ``loop-mssa`` adaptor.
+    """
+
     MODULE = 0
     CGSCC = 1
     FUNCTION = 2
@@ -485,7 +513,26 @@ class PassLevel(IntEnum):
 
 
 class PassOption:
+    """
+    Representation of a single pass option domain.
+
+    Pass options come from LLVM pass syntax, commonly expressed inside angle
+    brackets, e.g. ``instcombine<use-loop-info;max-iterations=10>``. Options are
+    represented using three coarse types:
+
+      - TOGGLE: boolean-like settings (e.g., ``foo`` vs ``no-foo``)
+      - RANGE: integer ranges (e.g., ``max-iterations=N``)
+      - SETTING: finite enumerated settings (e.g., one of several strings)
+
+    This class is used when parsing LLVM’s "passes with params" listing and when
+    generating concrete pass instances (randomly or via Optuna).
+    """
+
     class OptionType(IntEnum):
+        """
+        Option domain category.
+        """
+
         TOGGLE = 1
         RANGE = 2
         SETTING = 3
@@ -496,6 +543,16 @@ class PassOption:
         type: PassOption.OptionType,
         bound: int = 1,
     ):
+        """
+        Parameters
+        ----------
+        option : str or list[str]
+            Option name for TOGGLE/RANGE or list of available settings for SETTING.
+        type : PassOption.OptionType
+            Option category (TOGGLE, RANGE, SETTING).
+        bound : int, optional
+            Upper bound used for RANGE options.
+        """
         if isinstance(option, list):
             self.options = option
         else:
@@ -517,7 +574,42 @@ class PassOption:
 
 
 class AbstractPass:
+    """
+    Parsed representation of an LLVM pass and its option schema.
+
+    ``AbstractPass`` is a "template" for a pass: it contains the pass name and any
+    known option domains (toggle/range/setting). Concrete instances with specific
+    options are represented by :class:`AbstractPass.ConcretePass`.
+
+    Attributes
+    ----------
+    pass_name : str
+        LLVM pass identifier.
+    options : dict or None
+        Mapping from option name to :class:`PassOption`, or ``None`` if the pass has
+        no options.
+    level : PassLevel
+        Pipeline nesting level at which this pass is expected to run.
+    is_analysis : bool
+        Whether this entry represents an analysis rather than a transformation pass.
+    """
+
     class ConcretePass:
+        """
+        Concrete instantiation of an :class:`AbstractPass`.
+
+        A concrete pass binds a specific set of options and can be serialized into
+        LLVM pipeline syntax via ``str(concrete_pass)``.
+
+        Parameters
+        ----------
+        apass : AbstractPass
+            Underlying abstract pass definition.
+        options : list[str], optional
+            Explicit option strings. If omitted, options may be randomly generated
+            based on the abstract option schema.
+        """
+
         def __init__(self, apass: AbstractPass, options=None):
             self._apass = apass
 
@@ -544,6 +636,15 @@ class AbstractPass:
                     self.options.append(v.options[value])
 
         def __str__(self):
+            """
+            Serialize the concrete pass into LLVM pass pipeline syntax.
+
+            Returns
+            -------
+            str
+                Pass name or pass-with-options string such as ``"licm"`` or
+                ``"instcombine<use-loop-info;max-iterations=10>"``.
+            """
             if len(self.options) == 0:
                 return self._apass.pass_name
 
@@ -577,39 +678,46 @@ class AbstractPass:
         else:
             return self.pass_name
 
-    def optuna_pass(self, trial, identifier):
-        options = []
-        if len(options) == 0:
-            return AbstractPass.ConcretePass(self)
-
-        for k, v in self.options.items():
-            if v.is_toggle():
-                opt = trial.suggest_categorical(
-                    f"{identifier}_{v.option_name}",
-                    [v.option_name, "no-" + v.option_name],
-                )
-                options.append(opt)
-            if v.is_range():
-                opt = trial.suggest_int(
-                    f"{identifier}_{v.option_name}", 1, v.get_upper_bound()
-                )
-                options.append(v.option_name + "=" + str(opt))
-            if v.is_setting():
-                for opt in v.options:
-                    opt = trial.suggest_categorical(f"{identifier}_{v}", [True, False])
-                    if opt is True:
-                        options.append(v)
-        return AbstractPass.ConcretePass(self, options)
-
 
 class PipelineManager:
+    """
+    LLVM pass pipeline helper.
+
+    ``PipelineManager`` provides:
+      - Parsing of an LLVM "available passes" listing into structured pass objects.
+      - Accessors for available pass names and "concrete pass" templates.
+      - Conversion between internal pass representations and LLVM pipeline strings.
+
+    The main external APIs used by Mneme are:
+      - :meth:`get_passes`
+      - :meth:`get_concrete_passes`
+      - :meth:`from_string`
+      - :meth:`to_string`
+
+    Notes
+    -----
+    * Pass levels are tracked using :class:`PassLevel` and are used by :meth:`to_string`
+      to wrap passes in the appropriate adaptor nesting (module/function/cgscc/loop).
+    """
+
     @staticmethod
     def __parse_llvm_pipeline__(text: str) -> List[AbstractPass]:
         """
-        Parse AVAIL_PASSES_TEXT into three categories of generators: module, cgscc, function.
-        Sections are delimited by lines starting with '# Module passes', '# CGSCC passes',
-        and '# Function passes'. Passes not under CGSCC or Function are treated as module.
-        Returns a dict: {'module': [...], 'cgscc': [...], 'function': [...]}.
+        Parse an LLVM pass listing into :class:`AbstractPass` objects.
+
+        The input text is expected to contain section headers such as
+        "Module passes:", "Function passes:", "Loop passes:", etc. Some categories
+        (analyses and skipped families) may be intentionally omitted.
+
+        Parameters
+        ----------
+        text : str
+            LLVM passes listing text (e.g., from ``opt --print-passes`` output).
+
+        Returns
+        -------
+        list[AbstractPass]
+            Parsed list of abstract passes with inferred levels and option schemas.
         """
         # ID : (HasOptions, Skip, Level}
         identifiers: Dict[str, Tuple[bool, bool, PassLevel]] = {
@@ -785,9 +893,25 @@ class PipelineManager:
         logger.debug(f"Total LLVM exposed pipeline passes are: {len(self._passes)}")
 
     def get_passes(self) -> List[str]:
+        """
+        Return all available pass names.
+
+        Returns
+        -------
+        list[str]
+            List of pass identifiers.
+        """
         return list(self._kw_concrete_passes.keys())
 
     def get_concrete_passes(self) -> Dict[str, AbstractPass.ConcretePass]:
+        """
+        Return a mapping from pass name to a default concrete pass instance.
+
+        Returns
+        -------
+        dict[str, AbstractPass.ConcretePass]
+            Mapping from pass identifier to a concrete pass object.
+        """
         return self._kw_concrete_passes
 
     def split_pipeline(self, pipeline):
@@ -800,21 +924,26 @@ class PipelineManager:
         allow_repeats: bool = False,
     ) -> List[AbstractPass.ConcretePass]:
         """
-        Generate `samples` random LLVM-pass pipelines.
+        Generate one random pipeline as a list of concrete passes.
 
-        Each pipeline length is drawn from N(mean_passes, std_passes) and then
-        clamped to [1, len(passes_list)]. Passes are sampled from passes_list
-        either with or without replacement.
+        The pipeline length is drawn from a normal distribution
+        ``N(mean_passes, std_passes)``, rounded to an integer, and clamped to
+        ``[1, len(available_passes)]``. Passes are then sampled with or without
+        replacement depending on ``allow_repeats``.
 
-        Args:
-          passes_list:        your list of available pass names.
-          samples:            how many pipelines to generate.
-          mean_passes:        target average number of passes per pipeline.
-          std_passes:         desired standard deviation of pipeline lengths.
-          allow_repeats:      if True, pipelines may include the same pass multiple times.
+        Parameters
+        ----------
+        mean_passes : float
+            Mean of the normal distribution for pipeline length.
+        std_passes : float
+            Standard deviation of the normal distribution for pipeline length.
+        allow_repeats : bool, optional
+            If True, the same pass may appear multiple times.
 
-        Returns:
-          A list of `samples` pipelines, each a list of pass names.
+        Returns
+        -------
+        list[AbstractPass.ConcretePass]
+            A randomly generated pipeline.
         """
 
         max_len = len(self._passes)
@@ -839,6 +968,27 @@ class PipelineManager:
         return pipeline
 
     def generate(self, samples, mean_passes, std, allow_repeats=True, seed=0):
+        """
+        Generate multiple random pipelines.
+
+        Parameters
+        ----------
+        samples : int
+            Number of pipelines to generate.
+        mean_passes : float
+            Mean pipeline length.
+        std : float
+            Standard deviation of pipeline length.
+        allow_repeats : bool, optional
+            If True, pipelines may contain repeated passes.
+        seed : int, optional
+            Random seed for reproducibility.
+
+        Returns
+        -------
+        list[list[AbstractPass.ConcretePass]]
+            List of pipelines, each represented as a list of concrete passes.
+        """
         random.seed(seed)
         random_selection = []
 
@@ -849,6 +999,29 @@ class PipelineManager:
         return random_selection
 
     def from_string(self, str_pipeline: str) -> List[AbstractPass.ConcretePass]:
+        """
+        Parse an LLVM pipeline string into a list of concrete pass objects.
+
+        This parser strips known adaptor wrappers (e.g., ``function(...)``,
+        ``cgscc(...)``, ``loop(...)``, ``loop-mssa(...)``) and reconstructs concrete
+        passes with any explicitly provided options.
+
+        Parameters
+        ----------
+        str_pipeline : str
+            LLVM pipeline string.
+
+        Returns
+        -------
+        list[AbstractPass.ConcretePass]
+            Parsed concrete pass sequence.
+
+        Raises
+        ------
+        RuntimeError
+            If an unknown pass name is encountered.
+        """
+
         def get_options(names):
             if len(names) <= 1:
                 return []
@@ -884,6 +1057,22 @@ class PipelineManager:
 
     @staticmethod
     def to_string(passes: List[AbstractPass.ConcretePass]) -> str:
+        """
+        Serialize a list of concrete passes into an LLVM pipeline string.
+
+        This method wraps passes with the appropriate adaptor nesting based on each
+        pass’s :class:`PassLevel`.
+
+        Parameters
+        ----------
+        passes : list[AbstractPass.ConcretePass]
+            Sequence of passes to serialize.
+
+        Returns
+        -------
+        str
+            LLVM pipeline string usable as ``--passes=<string>``.
+        """
         currentLevel = PassLevel.MODULE
         nesting = [currentLevel]
 
@@ -1014,6 +1203,29 @@ class PipelineManager:
 
 
 def parse_llvm_pass_options(llvm_pass):
+    """
+    Parse a pass-with-params token into a name and option schema.
+
+    The input is expected to follow LLVM's ``pass<opt;opt;key=N>`` style. The
+    returned mapping contains :class:`PassOption` objects describing each detected
+    option domain.
+
+    Parameters
+    ----------
+    llvm_pass : str
+        Token describing a pass and its options.
+
+    Returns
+    -------
+    (str, dict)
+        Tuple of (pass_name, pass_options) where pass_options maps option keys to
+        :class:`PassOption`.
+
+    Raises
+    ------
+    RuntimeError
+        If the input does not match the expected structure.
+    """
     m = re.match(r"^([^<\s]+)((?:<[^>]+>)*)$", llvm_pass)
     if not m:
         raise RuntimeError(

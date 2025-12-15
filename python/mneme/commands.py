@@ -1,3 +1,23 @@
+"""
+Mneme command-line interface implementation.
+
+This module defines the concrete subcommands exposed by the ``mneme`` CLI.
+Each command is implemented as a small class with two static entry points:
+
+  - ``set_cli_args(parser)``: declares command-specific arguments
+  - ``run(args, verbosity)``: executes the command
+
+The CLI supports workflows for:
+  * recording GPU executions (``record``)
+  * cleaning, copying, and moving recorded databases (``clean``, ``copy``, ``move``)
+  * querying Mneme configuration (``config``)
+  * replaying and executing recorded kernels with custom configurations (``execute``)
+
+This module is intentionally procedural and orchestration-focused.
+It delegates all heavy lifting to lower-level Mneme components such as
+``RecordedExecution``, ``BaseExecutor``, and ``PipelineManager``.
+"""
+
 import argparse
 import json
 import os
@@ -57,6 +77,17 @@ def _copy_or_move(sources, dest, move=False):
 
 
 class Clean:
+    """
+    Remove recorded Mneme databases and associated artifacts.
+
+    This command deletes:
+      - the specified Mneme JSON database files
+      - all referenced LLVM IR files
+      - all prologue/epilogue snapshot files
+
+    Use with care: this operation is destructive.
+    """
+
     @staticmethod
     def set_cli_args(parser):
         parser.add_argument(
@@ -92,6 +123,13 @@ class Clean:
 
 
 class Copy:
+    """
+    Copy one or more Mneme recording databases to a new directory.
+
+    All referenced artifacts (LLVM IR, prologue, epilogue snapshots)
+    are duplicated and the database is rewritten to point to the new locations.
+    """
+
     @staticmethod
     def set_cli_args(parser):
         parser.add_argument(
@@ -123,6 +161,13 @@ class Copy:
 
 
 class Move:
+    """
+    Move one or more Mneme recording databases to a new directory.
+
+    This is equivalent to ``copy`` followed by deletion of the original files.
+    All internal paths in the database are rewritten accordingly.
+    """
+
     @staticmethod
     def set_cli_args(parser):
         parser.add_argument(
@@ -155,6 +200,17 @@ class Move:
 
 
 class Record:
+    """
+    Record GPU kernel executions using Mneme.
+
+    This command runs a user-provided executable under ``LD_PRELOAD`` with
+    the Mneme recording runtime enabled. Kernel launches, memory state,
+    and execution metadata are captured into one or more Mneme databases.
+
+    The command expects ``--`` to separate Mneme arguments from the target
+    executable and its arguments.
+    """
+
     @staticmethod
     def set_cli_args(parser):
         parser.add_argument(
@@ -227,6 +283,13 @@ class Record:
 
 
 class Config:
+    """
+    Query Mneme build-time configuration.
+
+    This command prints values from Mneme’s installation-time configuration
+    file, similar in spirit to ``llvm-config``.
+    """
+
     @staticmethod
     def set_cli_args(parser):
         cfg_file = Path(utils.get_config_file())
@@ -259,6 +322,20 @@ class Config:
 
 
 class Execute(BaseExecutor):
+    """
+    Replay and execute a recorded kernel with a user-defined configuration.
+
+    This command allows:
+      - overriding grid/block dimensions
+      - enabling specialization and launch bounds
+      - selecting an LLVM optimization pipeline
+      - controlling code generation parameters
+      - executing the kernel multiple times for measurement
+
+    The execution reuses the recorded prologue/epilogue state to ensure
+    correctness and reproducibility.
+    """
+
     @staticmethod
     def set_cli_args(parser):
         parser.add_argument(
@@ -456,6 +533,7 @@ class Execute(BaseExecutor):
         print(json.dumps(kwargs, indent=6))
         super().__init__(*args, **kwargs)
         self.pass_manager = PipelineManager()
+        print(self.passes)
         if self.passes not in (
             "default<O3>",
             "default<O2>",
@@ -464,12 +542,30 @@ class Execute(BaseExecutor):
             "default<Os>",
             "default<Oz>",
         ):
-            self.passes = self.pass_manager.from_string(self.passes)
+            self.passes = self.pass_manager.to_string(
+                self.pass_manager.from_string(self.passes)
+            )
         else:
             self.passes = self.passes
         self._db = None
 
     def get_mneme_config(self, passes):
+        """
+        Construct an ExperimentConfiguration from CLI arguments and recorded defaults.
+
+        CLI-provided values override recorded values where present.
+        Missing values are filled from the original recorded execution.
+
+        Parameters
+        ----------
+        passes
+            Either a parsed pipeline (list of concrete passes) or a default pipeline string.
+
+        Returns
+        -------
+        ExperimentConfiguration
+            Fully specified configuration ready for execution.
+        """
         self.block_dim_x = (
             self.kernel_descr.block_dim.x
             if (self.block_dim_x is None)

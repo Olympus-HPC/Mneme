@@ -1,3 +1,36 @@
+"""
+mneme.replay_executor
+
+Core record–replay execution pipeline for Mneme.
+
+This module provides the execution backbone used by both:
+  * the synchronous CLI execution path (via BaseExecutor subclasses), and
+  * the asynchronous tuning engine (via TuneWorker).
+
+At a high level, an "experiment" in Mneme is:
+  1) Load a recorded kernel execution (RecordedExecution + KernelInstance).
+  2) Reconstruct the recorded GPU memory state (prologue/epilogue snapshots)
+     into a managed virtual address space (PageManagerRef).
+  3) Link recorded LLVM IR modules into a single IR module suitable for replay.
+  4) Apply optional IR specializations (arguments, launch dims, launch bounds).
+  5) Run an optimization pipeline and generate a device object.
+  6) Load the object onto the GPU, run the kernel, and optionally profile.
+  7) Verify correctness by comparing epilogue vs prologue expectations.
+
+The pipeline is intentionally organized so that:
+  * verification can be done with minimal instrumentation,
+  * tracked runs collect timing/resource metrics, and
+  * worker processes can amortize initialization costs by reusing a single executor.
+
+Public API
+----------
+BaseExecutor:
+  Base class that owns GPU affinity, recorded state, and the build/run pipeline.
+
+TuneWorker:
+  Worker-process implementation used by the async tuning infrastructure.
+"""
+
 import os
 from datetime import datetime, timezone
 from multiprocessing import Event, Queue
@@ -23,6 +56,52 @@ from mneme.utils import cond_gpu_time, cond_time
 
 
 class BaseExecutor:
+    """
+    Base class for executing Mneme record–replay experiments.
+
+    A BaseExecutor instance is bound to:
+      * one recorded database file (record_db),
+      * one kernel instance inside that database (record_id),
+      * one GPU device (device_id),
+      * and an iteration count for measured runs.
+
+    Responsibilities
+    ---------------
+    * Load the recorded execution metadata (RecordedExecution) and select the
+      target KernelInstance (kernel_descr).
+    * Pin the current OS process to a specific GPU device (set_device()).
+    * Manage the replay address space and recorded snapshots:
+        - PageManagerRef selects/initializes the virtual address space.
+        - prologue/epilogue snapshots are opened and later compared.
+    * Provide a structured pipeline that takes IR -> object -> execution:
+        - _preprocess_ir(): apply specialization transforms and compute a variant hash
+        - _optimize(): run pass pipeline / O-level selection
+        - _codegen(): lower to a device object (MemBufferRef)
+        - _run(): load object, resolve kernel, execute and optionally profile
+        - _execute(): orchestrate verification + cleanup + tracked run
+
+    Lifecycle
+    ---------
+    BaseExecutor is designed to be used as a context manager:
+
+        executor = MyExecutor(record_db=..., record_id=..., device_id=...)
+        root_ir = executor.link_ir()
+        with executor:
+            res = executor.execute(...)
+
+    The context manager ensures GPU memory state (snapshots + page manager) is
+    opened exactly once and released even when execution raises.
+
+    Notes / invariants
+    ------------------
+    * A BaseExecutor instance is intended to be used within a single process.
+      (Workers should construct one executor per worker process.)
+    * open() must be called before any execution; _execute() assumes prologue and
+      epilogue states are loaded.
+    * link_ir() returns a linked IR module representing the recorded kernel; callers
+      should clone before mutation if reusing across experiments.
+    """
+
     def __init__(
         self,
         record_db: str = "",
