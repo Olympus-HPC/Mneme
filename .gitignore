@@ -4,3 +4,14 @@ build*/
 gpucore.*
 .cache/
 *.csv
+HecBench/
+Testing/
+miniconda3/
+venvs/
+__pycache__/
+*.py[cod]
+*$py.class
+*.bc
+*.mneme
+*.o
+*.egginfo/

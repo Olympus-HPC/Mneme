@@ -1,8 +1,11 @@
 import pathlib
 import subprocess
+from multiprocessing import Event
+from queue import Queue as ThreadQueue
 
 import pytest
 from mneme.cli import main as mneme_main
+from mneme.futures import EvalFuture
 from mneme.recorded_execution import RecordedExecution
 
 

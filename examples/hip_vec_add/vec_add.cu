@@ -1,13 +1,20 @@
 #include <hip/hip_runtime.h>
-#include <stdlib.h>
-#include <stdlib.h>
-#include <stdio.h>
 #include <iostream>
+#include <stdio.h>
+#include <stdlib.h>
 
-__device__ int some_value = 1.0;
+#define HIP_CHECK(cmd)                                                         \
+  do {                                                                         \
+    hipError_t e = cmd;                                                        \
+    if (e != hipSuccess) {                                                     \
+      fprintf(stderr, "HIP error: '%s' (%d) at %s:%d\n", hipGetErrorString(e), \
+              e, __FILE__, __LINE__);                                          \
+      exit(1);                                                                 \
+    }                                                                          \
+  } while (0)
 
-template <typename T> __global__ 
-void vecAdd_test(T *in, T *out, size_t size, int k) {
+template <typename T>
+__global__ void vecAdd_test(T *in, T *out, size_t size, int k) {
   auto tid = threadIdx.x + blockIdx.x * blockDim.x;
   if (tid >= size)
     return;
@@ -19,37 +26,35 @@ void vecAdd_test(T *in, T *out, size_t size, int k) {
 }
 
 int main(int argc, const char *argv[]) {
-
-  void* deviceAddress = nullptr;
-
-  // Get the address of the device variable
-  hipError_t err = hipGetSymbolAddress(&deviceAddress, HIP_SYMBOL(some_value));
-  std::cout << "Device address of deviceVar: " << deviceAddress << std::endl;
-
+  if (argc < 2) {
+    std::cout << "Wrong CLI, please provide:\n";
+    std::cout << argv[0] << " '<num-elements-for-vec-add>'\n";
+    return -1;
+  }
 
   size_t numElements = atoi(argv[1]);
   double *in, *out;
   double val = numElements;
-  hipMalloc((void **)&in, numElements * sizeof(double));
-  hipMalloc((void **)&out, numElements * sizeof(double));
+  HIP_CHECK(hipMalloc((void **)&in, numElements * sizeof(double)));
+  HIP_CHECK(hipMalloc((void **)&out, numElements * sizeof(double)));
 
-  for (int i = 0; i < 10 ; i++){
-    hipMemset(in, 0, numElements * sizeof(double));
-    hipMemset(out, 0, numElements * sizeof(double));
+  HIP_CHECK(hipMemset(in, 0, numElements * sizeof(double)));
+  HIP_CHECK(hipMemset(out, 0, numElements * sizeof(double)));
 
-    const int threads = 256;
-    int num_blocks = (numElements + threads - 1) / threads;
-    vecAdd_test<<< num_blocks, threads>>>(in, out, numElements, i % 2);
-    hipDeviceSynchronize();
-  }
+  const int threads = 256;
+  int num_blocks = (numElements + threads - 1) / threads;
+  vecAdd_test<<<num_blocks, threads>>>(in, out, numElements, 1);
+  HIP_CHECK(hipDeviceSynchronize());
 
   double *h_in = new double[numElements];
   double *h_out = new double[numElements];
-  hipMemcpy(h_in, in, sizeof(double)*numElements, hipMemcpyDeviceToHost);
-  hipMemcpy(h_out, out, sizeof(double)*numElements, hipMemcpyDeviceToHost);
+  HIP_CHECK(
+      hipMemcpy(h_in, in, sizeof(double) * numElements, hipMemcpyDeviceToHost));
+  HIP_CHECK(hipMemcpy(h_out, out, sizeof(double) * numElements,
+                      hipMemcpyDeviceToHost));
   int ret = 0;
-  for (int i = 0; i < numElements; i++){
-    if (h_in[i] + i != h_out[i]){
+  for (int i = 0; i < numElements; i++) {
+    if (h_in[i] + 1 != h_out[i]) {
       std::cout << "Values at " << i << " differ\n";
       std::cout << "Values " << h_in[i] << " " << h_out[i] << "differ\n";
       ret = -1;
@@ -57,9 +62,9 @@ int main(int argc, const char *argv[]) {
     }
   }
 
-  delete [] h_in;
-  delete [] h_out;
-  hipFree(in);
-  hipFree(out);
+  delete[] h_in;
+  delete[] h_out;
+  HIP_CHECK(hipFree(in));
+  HIP_CHECK(hipFree(out));
   return ret;
 }

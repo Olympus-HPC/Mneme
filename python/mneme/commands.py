@@ -1,32 +1,38 @@
+"""
+Mneme command-line interface implementation.
+
+This module defines the concrete subcommands exposed by the ``mneme`` CLI.
+Each command is implemented as a small class with two static entry points:
+
+  - ``set_cli_args(parser)``: declares command-specific arguments
+  - ``run(args, verbosity)``: executes the command
+
+The CLI supports workflows for:
+  * recording GPU executions (``record``)
+  * cleaning, copying, and moving recorded databases (``clean``, ``copy``, ``move``)
+  * querying Mneme configuration (``config``)
+  * replaying and executing recorded kernels with custom configurations (``execute``)
+
+This module is intentionally procedural and orchestration-focused.
+It delegates all heavy lifting to lower-level Mneme components such as
+``RecordedExecution``, ``BaseExecutor``, and ``PipelineManager``.
+"""
+
 import argparse
 import json
 import os
 import shutil
 import subprocess
-import sys
-import time
 from pathlib import Path
-from typing import Any, Dict, Iterable, Optional
 
-import numpy as np
-import pandas as pd
-from mneme.db import MnemeDB
-from mneme.llvm import debug, module, utils
+from mneme.llvm import utils
 from mneme.logging import logger
-from mneme.proteus import jit
+from mneme.mneme_types import ExperimentConfiguration, ExperimentResult, dim3
+from mneme.pipeline import PipelineManager
+from mneme.profile import init_profiler
 from mneme.recorded_execution import RecordedExecution
-from rich import box
-from rich.columns import Columns
-from rich.console import Console, Group
-from rich.measure import Measurement
-from rich.padding import Padding
-from rich.panel import Panel
-from rich.rule import Rule
-from rich.syntax import Syntax
-from rich.table import Table
-from rich.text import Text
-from rich.theme import Theme
-from rich.tree import Tree
+from mneme.replay_executor import BaseExecutor
+from mneme.utils import MnemeEncoder
 
 
 def _copy_or_move(sources, dest, move=False):
@@ -71,6 +77,17 @@ def _copy_or_move(sources, dest, move=False):
 
 
 class Clean:
+    """
+    Remove recorded Mneme databases and associated artifacts.
+
+    This command deletes:
+      - the specified Mneme JSON database files
+      - all referenced LLVM IR files
+      - all prologue/epilogue snapshot files
+
+    Use with care: this operation is destructive.
+    """
+
     @staticmethod
     def set_cli_args(parser):
         parser.add_argument(
@@ -106,6 +123,13 @@ class Clean:
 
 
 class Copy:
+    """
+    Copy one or more Mneme recording databases to a new directory.
+
+    All referenced artifacts (LLVM IR, prologue, epilogue snapshots)
+    are duplicated and the database is rewritten to point to the new locations.
+    """
+
     @staticmethod
     def set_cli_args(parser):
         parser.add_argument(
@@ -137,6 +161,13 @@ class Copy:
 
 
 class Move:
+    """
+    Move one or more Mneme recording databases to a new directory.
+
+    This is equivalent to ``copy`` followed by deletion of the original files.
+    All internal paths in the database are rewritten accordingly.
+    """
+
     @staticmethod
     def set_cli_args(parser):
         parser.add_argument(
@@ -168,615 +199,18 @@ class Move:
         return _copy_or_move(sources, dest, move=True)
 
 
-class Summary:
-    @staticmethod
-    def set_cli_args(parser):
-        parser.add_argument(
-            "-rdb",
-            "--record_database",
-            dest="record_database",
-            required=True,
-            help="Path to Mneme JSON/db file",
-        )
-
-        parser.add_argument(
-            "results",
-            help="CSV database containing the performance data of the tuning runs",
-        )
-
-        parser.add_argument(
-            "--json",
-            dest="json",
-            help="Emit to stdout as a json file",
-            action=argparse.BooleanOptionalAction,
-            required=False,
-        )
-
-        parser.set_defaults(json=False, func=Summary.analyze)
-
-    @staticmethod
-    def compute_speedups(df: pd.DataFrame):
-        def min_time_and_hash(df, mask):
-            # Restrict to rows where the mask is True
-            subset = df.loc[mask, ["exec_time_median", "hash"]]
-            # Drop NaNs/inf in the metric column
-            s = subset["exec_time_median"].astype(float)
-            s = s[np.isfinite(s)]
-            if s.empty:
-                return np.nan, None  # nothing matched
-            idx = s.idxmin()  # index (row label) of the minimum time
-            return df.at[idx, "exec_time_median"], df.at[idx, "hash"]
-
-        if (
-            "specialize" not in df.columns
-            or "max_threads" not in df.columns
-            or "min_blocks_per_sm" not in df.columns
-            or "exec_time_median" not in df.columns
-            or "passes" not in df.columns
-        ):
-            raise ValueError(f"DataFrame missing required columns. {df.columns}")
-
-        # Coerce types we rely on
-        spec = df["specialize"]
-        max_threads = df["max_threads"]
-        min_blocks_per_sm = df["min_blocks_per_sm"]
-        roi = df[["exec_time_median", "hash"]]
-        passes = df["passes"]
-        exp_hash = df["hash"]
-
-        # ---- Baseline: specialize == False AND max_threads == 0
-        baseline_mask = (
-            (spec == False) & (max_threads == 0) & (passes == "default<O3>,globaldce")
-        )
-        baseline_time, baseline_hash = min_time_and_hash(roi, baseline_mask)
-
-        if not np.isfinite(baseline_time):
-            return False, None
-
-        # ---- LB: max_threads != 0 AND min_blocks_per_sm == 0 AND specialize == False
-        lb_mask = (
-            (max_threads != 0)
-            & (min_blocks_per_sm == 0)
-            & (spec == False)
-            & (passes == "default<O3>,globaldce")
-        )
-        lb_time = min_time_and_hash(roi, lb_mask)
-
-        # ---- Spec: max_threads != 0 AND min_blocks_per_sm == 0 AND specialize == True
-        spec_mask = (
-            (max_threads == 0)
-            & (min_blocks_per_sm == 0)
-            & (spec == True)
-            & (passes == "default<O3>,globaldce")
-        )
-        spec_time = min_time_and_hash(roi, spec_mask)
-
-        spec_tunepipeline_mask = (
-            (max_threads == 0)
-            & (min_blocks_per_sm == 0)
-            & (spec == True)
-            & (passes != "default<O3>,globaldce")
-        )
-        spec_tunepipeline_time = min_time_and_hash(roi, spec_tunepipeline_mask)
-
-        spec_lb_mask = (
-            (max_threads != 0)
-            & (min_blocks_per_sm == 0)
-            & (spec == True)
-            & (passes == "default<O3>,globaldce")
-        )
-        spec_lb_time = min_time_and_hash(roi, spec_lb_mask)
-
-        # ---- Tune: max_threads != 0 AND min_blocks_per_sm != 0 AND specialize == True
-        tune_mask = (
-            (max_threads != 0)
-            & (min_blocks_per_sm != 0)
-            & (spec == True)
-            & (passes == "default<O3>,globaldce")
-        )
-        tune_time = min_time_and_hash(roi, tune_mask)
-
-        # ---- Tune: max_threads != 0 AND min_blocks_per_sm != 0 AND specialize == True
-        tune_mask_nospec = (
-            (max_threads != 0)
-            & (min_blocks_per_sm != 0)
-            & (spec == False)
-            & (passes == "default<O3>,globaldce")
-        )
-        tune_time_nospec = min_time_and_hash(roi, tune_mask_nospec)
-
-        pipeline_nospec_no_lb = (
-            (max_threads == 0) & (spec == False) & (passes != "default<O3>,globaldce")
-        )
-        pipeline_nospec_no_lb_time = min_time_and_hash(roi, pipeline_nospec_no_lb)
-
-        pipeline_nospec_with_lb = (
-            (max_threads != 0)
-            & (min_blocks_per_sm == 0)
-            & (spec == False)
-            & (passes != "default<O3>,globaldce")
-        )
-        pipeline_nospec_with_lb_time = min_time_and_hash(roi, pipeline_nospec_with_lb)
-
-        pipeline_nospec_with_tunelb = (
-            (max_threads != 0)
-            & (min_blocks_per_sm != 0)
-            & (spec == False)
-            & (passes != "default<O3>,globaldce")
-        )
-        pipeline_nospec_with_tunelb_time = min_time_and_hash(
-            roi, pipeline_nospec_with_tunelb
-        )
-
-        pipeline_withspec_with_lb = (
-            (max_threads != 0)
-            & (min_blocks_per_sm == 0)
-            & (spec == True)
-            & (passes != "default<O3>,globaldce")
-        )
-        pipeline_withspec_with_lb_time = min_time_and_hash(
-            roi, pipeline_withspec_with_lb
-        )
-
-        pipeline_withspec_with_tunelb = (
-            (max_threads != 0)
-            & (min_blocks_per_sm != 0)
-            & (spec == True)
-            & (passes != "default<O3>,globaldce")
-        )
-        pipeline_withspec_with_tunelb_time = min_time_and_hash(
-            roi, pipeline_withspec_with_tunelb
-        )
-
-        def speedup(candidate_time):
-            # speedup = baseline / candidate (higher is better)
-            if not np.isfinite(candidate_time) or candidate_time == 0:
-                return np.nan
-            return baseline_time / candidate_time
-
-        speedups = {
-            "Baseline": [baseline_time, baseline_hash],
-            "TunePipeline": [
-                speedup(pipeline_nospec_no_lb_time[0]),
-                pipeline_nospec_no_lb_time[1],
-            ],
-            "LB": [speedup(lb_time[0]), lb_time[1]],
-            "LB+TunePipeline": [
-                speedup(pipeline_nospec_with_lb_time[0]),
-                pipeline_nospec_with_lb_time[1],
-            ],
-            "TuneLB": [speedup(tune_time_nospec[0]), tune_time_nospec[1]],
-            "TuneLB+TunePipeline": [
-                speedup(pipeline_nospec_with_tunelb_time[0]),
-                pipeline_nospec_with_tunelb_time[1],
-            ],
-            "Spec": [speedup(spec_time[0]), spec_time[1]],
-            "Spec+TunePipeline": [
-                speedup(spec_tunepipeline_time[0]),
-                spec_tunepipeline_time[1],
-            ],
-            "Spec+LB": [speedup(spec_lb_time[0]), spec_lb_time[1]],
-            "Spec+LB+TunePipeline": [
-                speedup(pipeline_withspec_with_lb_time[0]),
-                pipeline_withspec_with_lb_time[1],
-            ],
-            "Spec+TuneLB": [speedup(tune_time[0]), tune_time[1]],
-            "Spec+TuneLB+TunePipeline": [
-                speedup(pipeline_withspec_with_tunelb_time[0]),
-                pipeline_withspec_with_tunelb_time[1],
-            ],
-        }
-        return True, speedups
-
-    @staticmethod
-    def measure_width(console, renderable, max_width=None):
-        # Measure the renderable’s preferred width in the current console
-        options = console.options
-        if max_width is not None:
-            options = options.update(width=max_width)
-        m = Measurement.get(console, options, renderable)
-        return m.maximum  # or (m.min, m.max) if you want a range
-
-    @staticmethod
-    def build_signature_panel(console, signature: str, file_path: str, line_no: int):
-        sig = Text(signature, style="bold yellow", no_wrap=False, overflow="fold")
-        return Panel(
-            sig,
-            title="[bold cyan]Analysis of GPU Kernel[/bold cyan]",
-            subtitle=f"[dim]{file_path}:{line_no}[/dim]",
-            subtitle_align="right",
-            border_style="blue",
-        )
-
-    @staticmethod
-    def build_summary_table(console, data: dict):
-        table = Table(
-            title=f"[bold magenta]Mneme Summary[/bold magenta] "
-            f"([bold yellow]Baseline Execution Time (ns): {data['Baseline'][0]}, Hash:{data['Baseline'][1]} [/bold yellow])",
-            box=box.ROUNDED,
-            header_style="bold magenta",
-            show_lines=True,
-            pad_edge=False,
-        )
-        table.add_column("Config", justify="left", no_wrap=True, overflow="fold")
-        table.add_column("Speedup (×)", justify="right", overflow="fold")
-        table.add_column("Hash", justify="right", overflow="fold")
-        table.add_section()
-        for k, v in data.items():
-            if k != "Baseline":
-                table.add_row(k, f"{v[0]:.3f}", f"{v[1]}")
-        return table
-
-    @staticmethod
-    def render_report(console, signature, file_path, line_no, data):
-        sig_panel = Summary.build_signature_panel(
-            console, signature, file_path, line_no
-        )
-        tbl = Summary.build_summary_table(console, data)
-
-        term_w = console.size.width
-        # Measure both, then choose a shared width (don’t exceed terminal)
-        w_sig = Summary.measure_width(console, sig_panel, max_width=term_w)
-        w_tbl = Summary.measure_width(console, tbl, max_width=term_w)
-        width = min(term_w, max(w_sig, w_tbl))  # big enough for both, but <= terminal
-
-        # Re-render with fixed width so they match
-        sig_panel.width = width
-        tbl.width = width
-        console.print(sig_panel)
-        console.print(tbl)
-
-    @staticmethod
-    def analyze(args):
-        kernel_descr = RecordedExecution.from_json(args.record_database)
-        OrigMod = jit.link_llvm_modules(
-            kernel_descr.llvm_files, kernel_descr.kernel_name, False, False
-        )
-        mod = None
-        src = None
-        root = None
-        loc = -1
-        for ll in kernel_descr.llvm_files:
-            with open(ll, "rb") as fd:
-                ir = fd.read()
-                mod = module.parse_bitcode(ir)
-                try:
-                    Func = mod.get_function(kernel_descr.kernel_name)
-                except NameError:
-                    logger.debug(
-                        f"Could not find function in {kernel_descr.kernel_name} in file {ll}"
-                    )
-                    continue
-
-                root, src, loc = Func.get_function_location()
-                break
-
-        if not MnemeDB.verify_db(args.results):
-            print("Missing DB fields, exiting")
-
-        fsrc = "[Unknown]-no-dbg-info."
-        if src is not None:
-            fsrc = (Path(root) / Path(src)).resolve()
-
-        df = pd.read_csv(str(args.results))
-        console = Console()
-        verified, data = Summary.compute_speedups(df)
-        if args.json:
-            baseline = data.pop("Baseline")
-            json_data = {}
-            json_data["speedup"] = data
-            json_data["Root directory"] = root
-            json_data["filename"] = src
-            json_data["Baseline Time (ns)"] = baseline[0]
-            json_data["Kernel Name"] = kernel_descr.demangled_name
-            json_data["line"] = loc
-            print(json.dumps(json_data, indent=2))
-            return
-        Summary.render_report(
-            console, kernel_descr.demangled_name, str(fsrc), loc, data
-        )
-
-
-class Serve:
-    theme = Theme(
-        {
-            "ok": "bold green",
-            "warn": "bold yellow",
-            "bad": "bold red",
-            "title": "bold cyan",
-            "dim": "grey62",
-            "hint": "italic dim",
-        }
-    )
-
-    @staticmethod
-    def _make_path_link(path: Path, line: Optional[int], style: str = "bold") -> Text:
-        """
-        Rich supports true hyperlinks. Different editors understand different URL schemes.
-        We'll include several in priority order; terminals/editors that support them will
-        make them clickable. Others will still see a readable path:line.
-        """
-        text = Text(f"{path}:{line if line else ''}".rstrip(":"), style=style)
-        # VS Code deep link
-        try:
-            vsc_url = f"vscode://file/{path}:{line or 1}"
-            text.stylize(f"link {vsc_url}", 0, len(text))
-        except Exception:
-            pass
-        # Fallback file:// (many terminals make file:// clickable)
-        try:
-            file_url = f"file://{path}"
-            text.append(" ", style="")
-            t2 = Text("(open file)", style=f"link {file_url} dim")
-            text += t2
-        except Exception:
-            pass
-        return text
-
-    @staticmethod
-    def _render_json_tree(data: Any, label: str = "result") -> Tree:
-        tree = Tree(Text(label, style="title"))
-
-        def add_branch(node: Any, parent: Tree, key: Optional[str] = None):
-            if isinstance(node, dict):
-                branch = parent.add(f"[bold]{key}[/]" if key else "[bold]{label}[/]")
-                for k, v in node.items():
-                    add_branch(v, branch, k)
-            elif isinstance(node, list):
-                branch = parent.add(
-                    f"[bold]{key}[/] [dim](list, {len(node)} items)[/]"
-                    if key
-                    else "[bold]list[/]"
-                )
-                for i, v in enumerate(node):
-                    add_branch(v, branch, f"[{i}]")
-            else:
-                parent.add(f"[dim]{key}[/]: {node!r}" if key else f"{node!r}")
-
-        add_branch(data, tree)
-        return tree
-
-    @staticmethod
-    def _attribute_line(params: Iterable[int]) -> str:
-        # e.g. __attribute__((annotate("jit", 16,17,...)))
-        parts = ",".join(str(p) for p in params)
-        return f'__attribute__((annotate("jit", {parts})))'
-
-    @staticmethod
-    def _cmake_snippet():
-        return "find_package(proteus CONFIG REQUIRED)\nadd_proteus(<target>)\n"
-
-    @staticmethod
-    def _makefile_snippet(install_path):
-        return (
-            f"CXXFLAGS += -I{install_path}/include \\\n"
-            f"    -fpass-plugin={install_path}/lib64/libProteusPass.so\n\n"
-            f"LDFLAGS += -L {install_path}/lib64 \\\n"
-            f"    -Wl,-rpath,{install_path}/lib64 \\\n"
-            f"    -lproteus $(llvm-config --libs) -lclang-cpp\n"
-        )
-
-    @staticmethod
-    def render_proteus_build_integration(
-        console: Console, install_path="<install_path>"
-    ):
-        cmake_code = Serve._cmake_snippet()
-        make_code = Serve._makefile_snippet(install_path)
-
-        cmake_view = Syntax(cmake_code, "cmake", word_wrap=False, line_numbers=False)
-        make_view = Syntax(make_code, "make", word_wrap=False, line_numbers=False)
-
-        # Minimal, copy-first layout
-        console.print(
-            Text("Install Proteus and point your build system at it.\n"),
-            style="bold cyan",
-        )
-        console.print(
-            Text(
-                "• CMake: ensure proteus is on CMAKE_PREFIX_PATH (or pass -Dproteus_DIR=…)\n"
-                "• Make : extend CXXFLAGS/LDFLAGS as shown.",
-            )
-        )
-        console.print()
-        console.print(Text("CMake — paste into CMakeLists.txt", style="bold cyan"))
-        console.print(cmake_view)
-        console.print()
-        console.print(Text("Make — paste into your Makefile", style="bold cyan"))
-        console.print(make_view)
-        return
-
-    @staticmethod
-    def render_output(
-        mneme_config,
-        exec_time,
-        console,
-        func,
-        file_path,
-        line,
-        params,
-        show_raw: bool = False,
-    ) -> None:
-        """
-        Render the 'mneme serve' optimal result payload with a clean, guided UI.
-        Expected shape (extend as needed):
-        {
-            "function": "my_kernel",
-            "file": "/path/to/source.cu",
-            "line": 123,
-            "annotation_params": [16,17,18, ...],
-            "speedup": 1.42,                # optional
-            "baseline_time_ms": 10.2,       # optional
-            "optimized_time_ms": 7.2,       # optional
-            "notes": "tuned on A100",       # optional
-            "extra": {...}                  # optional nested data
-        }
-        """
-
-        console.print(Text("Analyzed Function", style="bold cyan"))
-        console.print(Syntax(func, "c", word_wrap=True, line_numbers=False))
-        console.print(Text("Defined in file: ", style="bold cyan"))
-        console.print(Serve._make_path_link(file_path, line, style=""))
-
-        console.print()
-        Serve.render_proteus_build_integration(console)
-
-        # What to change in the source
-        console.print()
-        attr_line = Serve._attribute_line(params or [])
-        console.print(
-            Text(
-                "To specialize the kernel, add this attribute to the function definition:",
-                style="bold cyan",
-            ),
-        )
-
-        console.print(Syntax(attr_line, "c", word_wrap=True, line_numbers=False))
-
-        console.print()
-        console.print(
-            Text(
-                "After building the application expose the mneme identified optimal parameters to proteus by",
-                style="bold cyan",
-            )
-        )
-        console.print(Syntax(f"export PROTEUS_TUNED_KERNELS={mneme_config}", "bash"))
-
-        console.print(
-            Text(f"\nExpected execution time is {exec_time} ns", style="bold red")
-        )
-
-    @staticmethod
-    def set_cli_args(parser):
-        parser.add_argument(
-            "-rdb",
-            "--record_database",
-            dest="record_database",
-            required=True,
-            help="Path to Mneme JSON/db file",
-        )
-
-        parser.add_argument(
-            "--results",
-            dest="results",
-            required=True,
-            help="CSV database containing the performance data of the tuning runs",
-        )
-
-        parser.add_argument(
-            "proteus_json",
-            help="json file to store proteus configuration, if the file exists we append the configuration",
-        )
-
-        parser.add_argument(
-            "--hash",
-            required=False,
-            help="Experiment hash identifier, to be used to serve specific experiment to proteus",
-        )
-
-        parser.set_defaults(func=Serve.serve)
-
-    @staticmethod
-    def serve(args):
-        console = Console(theme=Serve.theme, soft_wrap=False)
-        kernel_descr = RecordedExecution.from_json(args.record_database)
-        jsFn = args.proteus_json
-        data = {}
-        if Path(jsFn).exists():
-            with open(jsFn, "r") as fd:
-                data = json.load(fd)
-
-        mod = None
-        src = None
-        root = None
-        loc = -1
-        for ll in kernel_descr.llvm_files:
-            with open(ll, "rb") as fd:
-                ir = fd.read()
-                mod = module.parse_bitcode(ir)
-                try:
-                    Func = mod.get_function(kernel_descr.kernel_name)
-                except NameError:
-                    logger.debug(
-                        f"Could not find function in {kernel_descr.kernel_name} in file {ll}"
-                    )
-                    continue
-
-                root, src, loc = Func.get_function_location()
-                break
-
-        df = pd.read_csv(str(args.results))
-        df = df.dropna()
-        df["verified"] = df["verified"].astype(bool)
-        df["failed"] = df["failed"].astype(bool)
-
-        # Filter verified=True and failed=False
-        filtered = df[(df["verified"])]
-        # print(filtered)
-        best_row = filtered.loc[filtered["exec_time_median"].idxmin()]
-        if args.hash is not None:
-            best_row = df.loc[df["hash"] == args.hash].iloc[0]
-            print(best_row)
-        best_row = best_row.to_dict()
-
-        res = {}
-        res["TunedMaxThreads"] = best_row["max_threads"]
-        res["MinBlocksPerSM"] = best_row["min_blocks_per_sm"]
-        res["Pipeline"] = best_row["passes"]
-        res["CodeGen"] = best_row["codegen_method"]
-        res["SpecializeArgs"] = best_row["specialize"]
-        res["SpecializeDims"] = best_row["specialize_dims"]
-        res["SpecializeDimsAssume"] = True
-        res["LaunchBounds"] = best_row["max_threads"] != 0
-        res["OptLevel"] = str(3)
-        res["CodeGenOptLevel"] = best_row["codegen_opt"]
-        data[kernel_descr.kernel_name] = res
-
-        fsrc = "[Unknown]-no-dbg-info."
-        if src is not None and root is not None:
-            fsrc = (Path(root) / Path(src)).resolve()
-
-        with open(jsFn, "w") as fd:
-            json.dump(data, fd, indent=2)
-
-        Serve.render_output(
-            str(Path(jsFn).resolve()),
-            best_row["exec_time_median"],
-            console,
-            kernel_descr.demangled_name,
-            fsrc,
-            loc,
-            [i + 1 for i, v in enumerate(kernel_descr.specializations) if v],
-            False,
-        )
-
-
-class Detail:
-    @staticmethod
-    def set_cli_args(parser):
-        parser.add_argument(
-            "--results",
-            dest="results",
-            required=True,
-            help="CSV database containing the performance data of the tuning runs",
-        )
-
-        parser.add_argument(
-            "hash",
-            help="Hash code to detail information for",
-        )
-
-        parser.set_defaults(func=Detail.detail)
-
-    @staticmethod
-    def detail(args):
-        df = pd.read_csv(str(args.results))
-
-        # Filter verified=True and failed=False
-        filtered = df[(df["hash"]) == args.hash]
-        print(json.dumps(filtered.iloc[0].to_dict(), indent=2))
-
-
 class Record:
+    """
+    Record GPU kernel executions using Mneme.
+
+    This command runs a user-provided executable under ``LD_PRELOAD`` with
+    the Mneme recording runtime enabled. Kernel launches, memory state,
+    and execution metadata are captured into one or more Mneme databases.
+
+    The command expects ``--`` to separate Mneme arguments from the target
+    executable and its arguments.
+    """
+
     @staticmethod
     def set_cli_args(parser):
         parser.add_argument(
@@ -849,6 +283,14 @@ class Record:
 
 
 class Config:
+    """
+    Query Mneme build-time configuration.
+
+    This command prints values from Mneme’s installation-time configuration
+    file, similar in spirit to ``llvm-config``.
+    """
+
+    @staticmethod
     def set_cli_args(parser):
         cfg_file = Path(utils.get_config_file())
         if not cfg_file.exists():
@@ -877,3 +319,348 @@ class Config:
             print(" ".join(value))
         else:
             print(value)
+
+
+class Execute(BaseExecutor):
+    """
+    Replay and execute a recorded kernel with a user-defined configuration.
+
+    This command allows:
+      - overriding grid/block dimensions
+      - enabling specialization and launch bounds
+      - selecting an LLVM optimization pipeline
+      - controlling code generation parameters
+      - executing the kernel multiple times for measurement
+
+    The execution reuses the recorded prologue/epilogue state to ensure
+    correctness and reproducibility.
+    """
+
+    @staticmethod
+    def set_cli_args(parser):
+        parser.add_argument(
+            "-rdb",
+            "--record-database",
+            dest="record_db",
+            required=True,
+            help="Path to Mneme JSON/db file",
+        )
+
+        parser.add_argument(
+            "-record-id",
+            "-rid",
+            dest="record_id",
+            required=True,
+            help="Kernel ID to operate on",
+        )
+
+        parser.add_argument(
+            "--grid-dim-x",
+            "-gidx",
+            dest="grid_dim_x",
+            type=int,
+            default=None,
+            help="Value of GridDim.x during kernel replay, when omitted the recorded value is used",
+        )
+
+        parser.add_argument(
+            "--grid-dim-y",
+            "-gidy",
+            dest="grid_dim_y",
+            type=int,
+            default=None,
+            help="Value of GridDim.y during kernel replay, when omitted the recorded value is used",
+        )
+
+        parser.add_argument(
+            "--grid-dim-z",
+            "-gidz",
+            dest="grid_dim_z",
+            type=int,
+            default=None,
+            help="Value of GridDim.z during kernel replay, when omitted the recorded value is used",
+        )
+
+        parser.add_argument(
+            "--block-dim-x",
+            "-bidx",
+            dest="block_dim_x",
+            type=int,
+            default=None,
+            help="Value of BlockDim.x during kernel replay, when omitted the recorded value is used",
+        )
+
+        parser.add_argument(
+            "--block-dim-y",
+            "-bidy",
+            dest="block_dim_y",
+            type=int,
+            default=None,
+            help="Value of BlockDim.y during kernel replay, when omitted the recorded value is used",
+        )
+
+        parser.add_argument(
+            "--block-dim-z",
+            "-bidz",
+            dest="block_dim_z",
+            type=int,
+            default=None,
+            help="Value of BlockDim.z during kernel replay, when omitted the recorded value is used",
+        )
+
+        parser.add_argument(
+            "--shared-mem",
+            "-shem",
+            dest="shared_mem",
+            type=int,
+            default=None,
+            help="Size of shared memory, if not set we default to recorded value",
+        )
+
+        parser.add_argument(
+            "--specialize",
+            default=False,
+            required=False,
+            action=argparse.BooleanOptionalAction,
+            dest="specialize",
+            help="Apply argument specialization on the kernel",
+        )
+
+        parser.add_argument(
+            "--set-launch-bounds",
+            "-slb",
+            dest="set_launch_bounds",
+            default=False,
+            required=False,
+            action=argparse.BooleanOptionalAction,
+            help="Set the launch bounds of the execution",
+        )
+
+        parser.add_argument(
+            "--max-threads",
+            default=None,
+            required=False,
+            type=int,
+            dest="max_threads",
+            help="Set launch bound 'max_threads' parameter of kernel to the executed number of threads",
+        )
+
+        parser.add_argument(
+            "--min-threads-per-block",
+            default=0,
+            type=int,
+            dest="min_blocks_per_sm",
+            help="Set launch bound 'min_blocks_per_sm' of kernel to the provided value",
+        )
+
+        parser.add_argument(
+            "--specialize-dims",
+            "-sdims",
+            dest="specialize_dims",
+            default=False,
+            required=False,
+            action=argparse.BooleanOptionalAction,
+            help="Specialize ThreadID.*, BlockDim.* and GridDim.* with constants",
+        )
+
+        parser.add_argument(
+            "passes",
+            help="Compilation pipeline of the kernel to execute",
+        )
+
+        parser.add_argument(
+            "--codegen-opt",
+            "-co",
+            dest="codegen_opt",
+            type=int,
+            default=3,
+            help="Optimization level to be used when generating machine code (back end optimizations)",
+        )
+
+        parser.add_argument(
+            "-cm",
+            "--codegen-method",
+            dest="codegen_method",
+            choices=["serial"],
+            default="serial",
+            help="Technology to use to lower to LLVM IR to a device object file instead of default Proteus Infrastructure",
+        )
+
+        parser.add_argument(
+            "--iterations",
+            "-it",
+            required=False,
+            type=int,
+            help="The number of iterations to run every execution, used to get statistical meaningful results",
+            default=3,
+        )
+
+        parser.add_argument(
+            "--output-ll",
+            "-ol",
+            dest="output_ll",
+            required=False,
+            default=None,
+            help="Store the output LLVM IR to this file",
+        )
+
+        parser.set_defaults(func=Execute.run)
+
+    def __init__(self, *args, **kwargs):
+        # NOTE: We need to instantiate the profiler here so
+        # that upcoming calls are going to be robust
+        init_profiler()
+        self.grid_dim_x = kwargs.pop("grid_dim_x", None)
+        self.grid_dim_y = kwargs.pop("grid_dim_y", None)
+        self.grid_dim_z = kwargs.pop("grid_dim_z", None)
+
+        self.block_dim_x = kwargs.pop("block_dim_x", None)
+        self.block_dim_y = kwargs.pop("block_dim_y", None)
+        self.block_dim_z = kwargs.pop("block_dim_z", None)
+
+        self.shared_mem = kwargs.pop("shared_mem", None)
+        self.specialize = kwargs.pop("specialize", False)
+        self.set_launch_bounds = kwargs.pop("set_launch_bounds", False)
+        self.max_threads = kwargs.pop("max_threads", None)
+        self.min_blocks_per_sm = kwargs.pop("min_blocks_per_sm", 0)
+        self.specialize_dims = kwargs.pop("specialize_dims", False)
+        self.passes = kwargs.pop("passes", None)
+        self.codegen_method = kwargs.pop("codegen_method", "serial")
+        self.codegen_opt = kwargs.pop("codegen_opt", 3)
+
+        self.output_ll = kwargs.pop("output_ll", None)
+
+        print(json.dumps(kwargs, indent=6))
+        super().__init__(*args, **kwargs)
+        self.pass_manager = PipelineManager()
+        print(self.passes)
+        if self.passes not in (
+            "default<O3>",
+            "default<O2>",
+            "default<O1>",
+            "default<O0>",
+            "default<Os>",
+            "default<Oz>",
+        ):
+            self.passes = self.pass_manager.to_string(
+                self.pass_manager.from_string(self.passes)
+            )
+        else:
+            self.passes = self.passes
+        self._db = None
+
+    def get_mneme_config(self, passes):
+        """
+        Construct an ExperimentConfiguration from CLI arguments and recorded defaults.
+
+        CLI-provided values override recorded values where present.
+        Missing values are filled from the original recorded execution.
+
+        Parameters
+        ----------
+        passes
+            Either a parsed pipeline (list of concrete passes) or a default pipeline string.
+
+        Returns
+        -------
+        ExperimentConfiguration
+            Fully specified configuration ready for execution.
+        """
+        self.block_dim_x = (
+            self.kernel_descr.block_dim.x
+            if (self.block_dim_x is None)
+            else self.block_dim_x
+        )
+        self.block_dim_y = (
+            self.kernel_descr.block_dim.y
+            if (self.block_dim_y is None)
+            else self.block_dim_y
+        )
+        self.block_dim_z = (
+            self.kernel_descr.block_dim.z
+            if (self.block_dim_z is None)
+            else self.block_dim_z
+        )
+
+        self.grid_dim_x = (
+            self.kernel_descr.grid_dim.x
+            if (self.grid_dim_x is None)
+            else self.grid_dim_x
+        )
+        self.grid_dim_y = (
+            self.kernel_descr.grid_dim.y
+            if (self.grid_dim_y is None)
+            else self.grid_dim_y
+        )
+        self.grid_dim_z = (
+            self.kernel_descr.grid_dim.z
+            if (self.grid_dim_z is None)
+            else self.grid_dim_z
+        )
+
+        max_threads = self.max_threads
+        print(f"max_threads is {max_threads} {self.set_launch_bounds}")
+        if self.set_launch_bounds:
+            if self.max_threads == -1 or self.max_threads is None:
+                max_threads = self.block_dim_x * self.block_dim_y * self.block_dim_z
+
+        self.shared_mem = (
+            self.kernel_descr.shared_mem if self.shared_mem is None else self.shared_mem
+        )
+
+        return ExperimentConfiguration(
+            grid=dim3(self.grid_dim_x, self.grid_dim_y, self.grid_dim_z),
+            block=dim3(self.block_dim_x, self.block_dim_y, self.block_dim_z),
+            shared_mem=self.shared_mem,
+            specialize=self.specialize,
+            set_launch_bounds=self.set_launch_bounds,
+            max_threads=max_threads,
+            min_blocks_per_sm=self.min_blocks_per_sm,
+            specialize_dims=self.specialize_dims,
+            passes=passes,
+            codegen_opt=self.codegen_opt,
+            codegen_method=self.codegen_method,
+            prune=True,
+            internalize=True,
+        )
+
+    def __str__(self):
+        return f"{self.__class__.__name__}"
+
+    def execute(self, config, ir_module, clone=False, orig=""):
+        result = ExperimentResult()
+        generated_ir = super()._execute(result, config, ir_module)
+        if self.output_ll is not None:
+            with open(self.output_ll, "w") as fd:
+                fd.write(str(generated_ir))
+        return result
+
+    @staticmethod
+    def run(args, verbosity):
+        kwargs = vars(args)
+        kwargs.pop("command")
+        kwargs.pop("func")
+        executor = Execute(**kwargs)
+
+        # We currently link all LLVM IR modules together
+        # NOTE: Does this break with externals on CUDA?
+        root_ir = executor.link_ir()
+
+        with executor as Memory:
+            exp = executor.get_mneme_config(executor.passes)
+            res = executor.execute(
+                exp,
+                root_ir.clone(),
+                True,
+            )
+            print(
+                "Execute configuration:\n",
+                json.dumps(exp.to_dict(), cls=MnemeEncoder, indent=2),
+            )
+
+            print(
+                "Result of experiment:\n",
+                json.dumps(res.to_dict(), cls=MnemeEncoder, indent=2),
+            )
+
+        return

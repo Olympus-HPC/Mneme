@@ -66,7 +66,7 @@ MnemePy_getLocalMemUsage(void *Func) {
 
 API_EXPORT(int)
 MnemePy_getConstMemUsage(void *Func) {
-  int ConstMemUsage = -1;
+  int ConstMemUsage = 0;
   auto DevFunc = reinterpret_cast<DeviceVendorTraits::DeviceFunction_t>(Func);
   auto EC = DeviceVendorTraits::DeviceErrorCheck(
       DeviceVendorTraits::deviceGetAttribute(

@@ -336,7 +336,7 @@ template <> struct DeviceTraits<DeviceVendors::HIP> {
   static hipError_t deviceGetAttribute(hipFunction_t &Func,
                                        FuncAttributes Attribute, int &Value) {
     LOG_DEBUG("Going to request attributes of {}", (void *)Func);
-
+    
     switch (Attribute) {
     case REGISTER_USAGE:
       return hipFuncGetAttribute(&Value, HIP_FUNC_ATTRIBUTE_NUM_REGS, Func);
@@ -350,7 +350,7 @@ template <> struct DeviceTraits<DeviceVendors::HIP> {
       LOG_FATAL("Request unknown attribute");
       break;
     }
-    return hipSuccess;
+    return hipErrorInvalidValue;
   }
 };
 #elif defined(MNEME_ENABLE_CUDA)
