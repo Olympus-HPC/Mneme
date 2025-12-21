@@ -8,7 +8,7 @@ OUTPUT_LANGUAGE        = English
 #---------------------------------------------------------------------------
 # Output
 #---------------------------------------------------------------------------
-OUTPUT_DIRECTORY       = doxygen_out/
+OUTPUT_DIRECTORY       = docs/cpp-api/
 GENERATE_HTML          = YES
 HTML_OUTPUT            = html
 CREATE_SUBDIRS         = NO

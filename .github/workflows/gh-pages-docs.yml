@@ -38,18 +38,13 @@ jobs:
       - name: Build Doxygen (C++ API)
         run: |
           doxygen doxygen/Doxyfile
-          ls -la doxygen_out/html
+          ls -la docs/cpp-api/index.html
 
       - name: Build MkDocs site
         env:
           PYTHONPATH: ${{ github.workspace }}/python
         run: |
           mkdocs build --clean
-
-      - name: Merge Doxygen into MkDocs site
-        run: |
-          mkdir -p site/cpp-api
-          cp -r doxygen_out/html/* site/cpp-api/
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3

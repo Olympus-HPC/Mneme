@@ -9,15 +9,18 @@ theme:
     - content.code.copy
     - search.highlight
 
+
 nav:
   - Home: index.md
-  - Install: install.md
+
   - Usage:
-      - Python: usage/python.md
-      - C++: usage/cpp.md
-  - API:
-      - Python API: api/python.md
-      - C++ API (Doxygen): cpp-api/index.html
+      - Install: usage/install.md
+      - Record: usage/record.md
+      - Replay: usage/replay.md
+
+  - Develop:
+      - Python: dev/python.md
+      - C++: dev/cpp.md
 
 plugins:
   - search
