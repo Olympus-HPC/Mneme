@@ -38,7 +38,7 @@ jobs:
       - name: Build Doxygen (C++ API)
         run: |
           doxygen doxygen/Doxyfile
-          ls -la docs/cpp-api/
+          ls -la docs/dev/html/index.html
 
       - name: Build MkDocs site
         env:
