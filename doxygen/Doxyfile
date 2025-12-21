@@ -8,11 +8,11 @@ OUTPUT_LANGUAGE        = English
 #---------------------------------------------------------------------------
 # Output
 #---------------------------------------------------------------------------
-OUTPUT_DIRECTORY       = Doxygen
-CREATE_SUBDIRS         = NO
+OUTPUT_DIRECTORY       = ../doxygen_out
 GENERATE_HTML          = YES
 HTML_OUTPUT            = html
-GENERATE_LATEX         = NO
+CREATE_SUBDIRS         = NO
+GENERATE_HTML          = YES
 
 # Nice defaults for browsing
 GENERATE_TREEVIEW      = YES
@@ -31,6 +31,7 @@ TIMESTAMP              = NO
 # NOTE: This file lives in root_path/doxygen/, so ../src etc is correct.
 INPUT                  = ../src ../include ../docs/mainpage.dox
 RECURSIVE              = YES
+USE_MDFILE_AS_MAINPAGE = ../docs/mainpage.dox
 
 # If you have generated code / build dirs, add excludes here (examples):
 # EXCLUDE                = ../build ../_deps
