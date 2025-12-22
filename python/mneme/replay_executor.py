@@ -529,7 +529,6 @@ class BaseExecutor:
             )
             if track:
                 result.reg_usage = device_func.reg_usage
-                print("Const mem usage is ", device_func.const_mem)
                 result.const_mem_usage = device_func.const_mem
                 result.local_mem_usage = device_func.local_mem
 

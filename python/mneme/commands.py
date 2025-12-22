@@ -321,7 +321,7 @@ class Config:
             print(value)
 
 
-class Execute(BaseExecutor):
+class Replay(BaseExecutor):
     """
     Replay and execute a recorded kernel with a user-defined configuration.
 
@@ -504,7 +504,7 @@ class Execute(BaseExecutor):
             help="Store the output LLVM IR to this file",
         )
 
-        parser.set_defaults(func=Execute.run)
+        parser.set_defaults(func=Replay.run)
 
     def __init__(self, *args, **kwargs):
         # NOTE: We need to instantiate the profiler here so
@@ -530,10 +530,8 @@ class Execute(BaseExecutor):
 
         self.output_ll = kwargs.pop("output_ll", None)
 
-        print(json.dumps(kwargs, indent=6))
         super().__init__(*args, **kwargs)
         self.pass_manager = PipelineManager()
-        print(self.passes)
         if self.passes not in (
             "default<O3>",
             "default<O2>",
@@ -599,7 +597,6 @@ class Execute(BaseExecutor):
         )
 
         max_threads = self.max_threads
-        print(f"max_threads is {max_threads} {self.set_launch_bounds}")
         if self.set_launch_bounds:
             if self.max_threads == -1 or self.max_threads is None:
                 max_threads = self.block_dim_x * self.block_dim_y * self.block_dim_z
@@ -640,7 +637,7 @@ class Execute(BaseExecutor):
         kwargs = vars(args)
         kwargs.pop("command")
         kwargs.pop("func")
-        executor = Execute(**kwargs)
+        executor = Replay(**kwargs)
 
         # We currently link all LLVM IR modules together
         # NOTE: Does this break with externals on CUDA?
@@ -653,14 +650,9 @@ class Execute(BaseExecutor):
                 root_ir.clone(),
                 True,
             )
+            out = {"Replay-config": exp.to_dict(), "Result": res.to_dict()}
             print(
-                "Execute configuration:\n",
-                json.dumps(exp.to_dict(), cls=MnemeEncoder, indent=2),
-            )
-
-            print(
-                "Result of experiment:\n",
-                json.dumps(res.to_dict(), cls=MnemeEncoder, indent=2),
+                json.dumps(out, cls=MnemeEncoder, indent=2),
             )
 
         return
