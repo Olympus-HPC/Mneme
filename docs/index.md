@@ -1,12 +1,10 @@
 <div style="display: flex; align-items: center; gap: 1.2rem;">
 
-<img src="assets/MnemeLogoNotext.svg"
+<img src="assets/images/MnemeLogoNotext.svg"
      alt="Mneme logo"
      style="height: 96px;"/>
 
 <div>
-
-# Mneme (Μνήμη)
 
 *Named after the Greek goddess of memory, Mneme preserves and replays the essence of your application's execution, allowing developers to revisit, analyze, and refine specific moments in code with precision.*
 
