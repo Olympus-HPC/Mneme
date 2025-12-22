@@ -1,9 +1,14 @@
-# Python Development
+# Python API
 
-This section covers the Python components of Mneme.
+## `mneme`
 
-Topics to be documented:
-- Python package structure
-- CLI entry points
-- Integration with tuning workflows
-- Interaction with recorded artifacts
+::: mneme
+    options:
+      show_root_heading: true
+      show_root_full_path: false
+
+## Core modules
+
+::: mneme.record
+
+::: mneme.replay

@@ -28,7 +28,7 @@ plugins:
       handlers:
         python:
           options:
-            docstring_style: google  # or "numpy"
+            docstring_style: "numpy"
             show_source: true
 
 markdown_extensions:
