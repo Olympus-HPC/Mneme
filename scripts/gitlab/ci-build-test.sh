@@ -15,6 +15,10 @@ build_proteus() {
   echo "Building PROTEUS"
   if [[ ! -d proteus ]]; then
   	git clone --depth 1 git@github.com:Olympus-HPC/proteus.git
+    pushd proteus 
+    git fetch --depth 1 origin 1d21c00008061704459a9b20300556e962c89043 
+    git checkout 1d21c00008061704459a9b20300556e962c89043 
+    popd
   fi
   pushd proteus 
   PROTEUS_ENABLE_HIP=$1
