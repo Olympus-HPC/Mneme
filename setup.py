@@ -166,6 +166,21 @@ class CMakeBuild(build_ext):
                     ],
                     cwd=self.build_scratch,
                 )
+                run_command(
+                    [
+                        "git",
+                        "fetch",
+                        "--depth",
+                        "1",
+                        "origin",
+                        "1d21c00008061704459a9b20300556e962c89043",
+                    ],
+                    cwd=str(Path(self.build_scratch) / "proteus"),
+                )
+                run_command(
+                    ["git", "checkout", "1d21c00008061704459a9b20300556e962c89043"],
+                    cwd=str(Path(self.build_scratch) / "proteus"),
+                )
 
         build_dir = os.path.join(proteus_path, "build")
         os.makedirs(build_dir, exist_ok=True)

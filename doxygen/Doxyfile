@@ -1,0 +1,123 @@
+# Doxyfile for Mneme (placed at: root_path/doxygen/Doxyfile)
+
+DOXYFILE_ENCODING      = UTF-8
+PROJECT_NAME           = "Mneme"
+PROJECT_BRIEF          = "Mneme a tool allowing recording the execution of a GPU (CUDA/HIP) kernel and replaying that kernel as an independent executable."
+OUTPUT_LANGUAGE        = English
+
+#---------------------------------------------------------------------------
+# Output
+#---------------------------------------------------------------------------
+OUTPUT_DIRECTORY       = docs/dev/
+GENERATE_HTML          = YES
+HTML_OUTPUT            = html
+CREATE_SUBDIRS         = NO
+GENERATE_HTML          = YES
+
+# Nice defaults for browsing
+GENERATE_TREEVIEW      = YES
+FULL_SIDEBAR           = YES
+TREEVIEW_WIDTH         = 300
+HTML_DYNAMIC_MENUS     = YES
+HTML_DYNAMIC_SECTIONS  = NO
+HTML_CODE_FOLDING      = YES
+HTML_COPY_CLIPBOARD    = YES
+SEARCHENGINE           = YES
+TIMESTAMP              = NO
+
+#---------------------------------------------------------------------------
+# Input
+#---------------------------------------------------------------------------
+# NOTE: This file lives in root_path/doxygen/, so ../src etc is correct.
+INPUT                  = src/ include/ docs/mainpage.dox
+RECURSIVE              = YES
+USE_MDFILE_AS_MAINPAGE = docs/mainpage.dox
+
+# If you have generated code / build dirs, add excludes here (examples):
+# EXCLUDE                = ../build ../_deps
+EXCLUDE                =
+
+# If you want to exclude tests, use patterns like:
+# EXCLUDE_PATTERNS       = */test/* */tests/* */third_party/*
+EXCLUDE_PATTERNS       =
+
+FILE_PATTERNS          = *.c \
+                         *.cc \
+                         *.cxx \
+                         *.cpp \
+                         *.h \
+                         *.hh \
+                         *.hxx \
+                         *.hpp \
+                         *.ipp \
+                         *.inl \
+                         *.dox \
+                         *.md
+
+# Images referenced from dox/markdown
+IMAGE_PATH             = assets
+
+# Strip paths so docs don’t show huge absolute prefixes
+FULL_PATH_NAMES        = YES
+STRIP_FROM_PATH        = ../
+STRIP_FROM_INC_PATH    =
+
+#---------------------------------------------------------------------------
+# Extraction / what to document
+#---------------------------------------------------------------------------
+EXTRACT_ALL            = YES
+EXTRACT_PRIVATE        = NO
+EXTRACT_STATIC         = NO
+EXTRACT_LOCAL_CLASSES  = YES
+HIDE_UNDOC_MEMBERS     = NO
+HIDE_UNDOC_CLASSES     = NO
+HIDE_UNDOC_NAMESPACES  = YES
+
+BRIEF_MEMBER_DESC      = YES
+REPEAT_BRIEF           = YES
+ALWAYS_DETAILED_SEC    = NO
+INLINE_INHERITED_MEMB  = NO
+
+# Markdown support for README-style docs
+MARKDOWN_SUPPORT       = YES
+TOC_INCLUDE_HEADINGS   = 6
+MARKDOWN_ID_STYLE      = DOXYGEN
+AUTOLINK_SUPPORT       = YES
+
+#---------------------------------------------------------------------------
+# Warnings
+#---------------------------------------------------------------------------
+QUIET                  = NO
+WARNINGS               = YES
+WARN_IF_DOC_ERROR      = YES
+WARN_IF_INCOMPLETE_DOC = YES
+WARN_IF_UNDOCUMENTED   = YES
+WARN_NO_PARAMDOC       = NO
+WARN_AS_ERROR          = NO
+WARN_FORMAT            = "$file:$line: $text"
+
+#---------------------------------------------------------------------------
+# Preprocessor
+#---------------------------------------------------------------------------
+ENABLE_PREPROCESSING   = YES
+MACRO_EXPANSION        = NO
+EXPAND_ONLY_PREDEF     = NO
+SKIP_FUNCTION_MACROS   = YES
+SEARCH_INCLUDES        = YES
+INCLUDE_PATH           =
+
+# If you have compile-time defines that affect APIs, list them here:
+# PREDEFINED             = MNEME_ENABLE_HIP=1 MNEME_ENABLE_CUDA=1
+PREDEFINED             =
+
+#---------------------------------------------------------------------------
+# Graphs (Graphviz)
+#---------------------------------------------------------------------------
+HAVE_DOT               = NO
+CLASS_GRAPH            = NO
+INCLUDE_GRAPH          = NO
+INCLUDED_BY_GRAPH      = NO
+CALL_GRAPH             = NO
+CALLER_GRAPH           = NO
+DIRECTORY_GRAPH        = NO
+

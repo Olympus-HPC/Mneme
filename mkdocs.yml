@@ -1,31 +1,43 @@
-site_name: mneme
-
-nav:
-  - Home: index.md
-  - User's guide:
-      - Installation: user/install.md
-      - Integration: user/integration.md
-      - Runtime Configuration: user/config.md
-      - User Usage: user/usage.md
-      - Resources: user/resources.md
-  - Developer's manual:
-      - Concepts: dev/concepts.md
-      - Creating a PR: dev/pr.md
-      - API Reference: dev/api.md
-repo_url: https://github.com/Olympus-HPC/mneme
+site_name: Mneme
+repo_url: https://github.com/Olympus-HPC/Mneme
+repo_name: Olympus-HPC/Mneme 
 theme:
   name: material
   features:
-    - toc.integrate
-  palette:
-    scheme: default
-    primary: light blue
-  logo: assets/MnemeLogoNotext.svg
-  favicon: assets/MnemeLogoNotext.svg
+    - navigation.tabs
+    - navigation.sections
+    - content.code.copy
+    - search.highlight
+
+
+nav:
+  - Home: index.md
+
+  - Usage:
+      - Install: usage/install.md
+      - Record: usage/record.md
+      - Replay: usage/replay.md
+
+  - Develop:
+      - Python: dev/python.md
+      - C++: dev/cpp.md
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          options:
+            docstring_style: google  # or "numpy"
+            show_source: true
+
 markdown_extensions:
   - admonition
-  - pymdownx.details
+  - toc:
+      permalink: true
   - pymdownx.superfences
-extra_css:
-  - stylesheets/extra.css
+  - pymdownx.details
+  - pymdownx.highlight
+
+
 copyright: Copyright &copy; 2024 - 2025 Lawrence Livermore National Security, LLC and mneme project contributors.
