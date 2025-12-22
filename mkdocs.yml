@@ -3,9 +3,13 @@ repo_url: https://github.com/Olympus-HPC/Mneme
 repo_name: Olympus-HPC/Mneme 
 theme:
   name: material
+  logo: assets/images/MnemeLogoNotext.svg
+  favicon: assets/images/MnemeLogoNotext.svg
+
   features:
     - navigation.tabs
     - navigation.sections
+    - navigation.expand
     - content.code.copy
     - search.highlight
 
