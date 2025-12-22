@@ -1,9 +1,32 @@
-# Python Development
+# Python API
 
-This section covers the Python components of Mneme.
+::: mneme
+    options:
+      show_root_heading: true
+      show_root_full_path: false
 
-Topics to be documented:
-- Python package structure
-- CLI entry points
-- Integration with tuning workflows
-- Interaction with recorded artifacts
+## Core modules
+
+::: mneme.recorded_execution
+::: mneme.cli
+::: mneme.device
+::: mneme.replay_executor
+::: mneme.async_executor
+::: mneme.mneme_types
+::: mneme.profile
+
+## proteus
+
+::: mneme.proteus.jit
+
+## Tuning
+
+::: mneme.tuning.sample_strategy
+::: mneme.tuning.search_space
+
+## LLVM
+
+::: mneme.llvm.value
+::: mneme.llvm.typeref
+::: mneme.llvm.module
+::: mneme.llvm.attribute
