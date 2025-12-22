@@ -1,7 +1,17 @@
-# The Mneme documentation
+<div style="display: flex; align-items: center; gap: 1.2rem;">
 
-# Mneme (Μνήμη)  
-*Named after the Greek goddess of memory, Mneme preserves and replays the essence of your application's execution, allowing developers to revisit, analyze, and refine specific moments in code with precision.* 
+<img src="assets/MnemeLogoNotext.svg"
+     alt="Mneme logo"
+     style="height: 96px;"/>
+
+<div>
+
+# Mneme (Μνήμη)
+
+*Named after the Greek goddess of memory, Mneme preserves and replays the essence of your application's execution, allowing developers to revisit, analyze, and refine specific moments in code with precision.*
+
+</div>
+</div>
 
 ## High-Level Overview
 [Mneme](https://en.wikipedia.org/wiki/Mneme) is a tool allowing recording the execution of a GPU (CUDA/HIP) kernel and replaying that kernel as an independent executable.
