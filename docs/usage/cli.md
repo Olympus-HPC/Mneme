@@ -22,7 +22,6 @@ mneme <command> [options] [arguments]
 Commands are subcommand-oriented (e.g., record, replay, clean)
 and expose stable, explicit flags.
 
-
 ## mneme record
 
 ```bash
