@@ -442,7 +442,7 @@ class Replay(BaseExecutor):
             required=False,
             type=int,
             dest="max_threads",
-            help="Set launch bound 'max_threads' parameter of kernel to the executed number of threads",
+            help="Set launch bound 'max_threads' parameter to the provided value",
         )
 
         parser.add_argument(
