@@ -12,7 +12,7 @@ from mneme.commands import (
     Clean,
     Config,
     Copy,
-    Execute,
+    Replay,
     Move,
     Record,
 )
@@ -37,7 +37,7 @@ def main(argv=None):
         description="The mneme available commands",
     )
 
-    p_exec = subparsers.add_parser("execute", parents=[], help="Run a recorded kernel")
+    p_exec = subparsers.add_parser("replay", parents=[], help="Run a recorded kernel")
 
     p_clean = subparsers.add_parser(
         "clean", parents=[], help="clean mneme generated files"
@@ -63,7 +63,7 @@ def main(argv=None):
         "config", parents=[], help="Get mneme config options"
     )
 
-    Execute.set_cli_args(p_exec)
+    Replay.set_cli_args(p_exec)
     Clean.set_cli_args(p_clean)
     Copy.set_cli_args(p_copy)
     Move.set_cli_args(p_move)

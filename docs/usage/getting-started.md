@@ -1,0 +1,120 @@
+# Getting Started
+
+This guide walks through recording and replaying a simple GPU kernel
+using Mneme.
+
+## Prerequisites
+
+- A HIP-capable system supporting ROCM 6.3 or 6.4.
+- CMake and a C++ compiler
+- Python 3.9+
+
+For full installation details, see **Usage → Install**.
+
+## Install Mneme (quick path)
+
+```bash
+git clone https://github.com/Olympus-HPC/Mneme.git
+cd Mneme
+LLVM_INSTALL_PATH=${ROCM_PATH} pip install -e .
+```
+
+## Execute Example Code
+
+### Phase 1: Instrumentation (compile time) 
+
+Build the provided example code:
+
+```bash
+cmake -B build-example -S examples/hip_vec_add/ -DCMAKE_C_COMPILER=$(mneme config cc) -DCMAKE_CXX_COMPILER=$(mneme config cxx) -DCMAKE_PREFIX_PATH=$(mneme config cmakedir)
+cmake --build build-example/
+```
+
+!!! note
+    The `cmake` build command will emit a warning `clang++: warning: argument unused during compilation: '-Xoffload-linker --load-pass-plugin=<path-to>/libProteusPass.so'`. It is safe to ignore the warning.
+
+### Phase 2: Record Executable (runtime)
+
+To record the previously built example code you can run:
+
+```bash
+mkdir record-example-dir/
+mneme record -rdb record-example-dir/ -- ./build-example/vecAdd 1024
+```
+After the execution of the example you can check the generated recorded artifacts under the `record-example-dir` directory. For example:
+
+```bash
+./record-example-dir/
+├── 15941914485064662553.json
+├── DeviceState.epilogue.15941914485064662553.18248140455151687155.mneme
+├── DeviceState.prologue.15941914485064662553.18248140455151687155.mneme
+└── RecordedIR_15941914485064662553.bc
+```
+
+!!! note
+    The exact filenames will differ depending on your compiler versions and Mneme versions. However, there should be a single `*.json` file, `DeviceState.epilogue.*` and a `DeviceState.prologue.*` file and a `RecordedIR_*.bc` file.
+
+### Phase 3: Replay kernel 
+
+```bash
+mneme replay -rdb record-example-dir/15941914485064662553.json -rid 16313427880266313990 "default<O3>"
+```
+
+This command will execute the kernel and **replay** the exact same execution as the recorded one. If the command completes successfully and produces a JSON file, recording worked. The output will be similar to:
+
+```json
+{
+  "Replay-config": {
+    "grid": {
+      "x": 40000,
+      "y": 1,
+      "z": 1
+    },
+    "block": {
+      "x": 256,
+      "y": 1,
+      "z": 1
+    },
+    "shared_mem": 0,
+    "specialize": false,
+    "set_launch_bounds": false,
+    "max_threads": null,
+    "min_blocks_per_sm": 0,
+    "specialize_dims": false,
+    "passes": "default<O3>",
+    "codegen_opt": 3,
+    "codegen_method": "serial",
+    "prune": true,
+    "internalize": true
+  },
+  "Result": {
+    "preprocess_ir_time": 9.2298723757267e-06,
+    "opt_time": 0.006206092890352011,
+    "codegen_time": 0.01226967596448958,
+    "obj_size": 4792,
+    "exec_time": [
+      84040,
+      82561,
+      81761,
+      83360,
+      76520
+    ],
+    "verified": true,
+    "executed": true,
+    "failed": false,
+    "start_time": "",
+    "end_time": "",
+    "gpu_id": 0,
+    "const_mem_usage": -1,
+    "local_mem_usage": 0,
+    "reg_usage": 12,
+    "error": ""
+  }
+}
+```
+
+!!! note
+    The exact names of the `-rdb` and `-rid` parameters will differ and the user should discover them. The former (`-rdb`) points to the json file under the `./record-example-dir/` and the latter (`-rid`) should take the key value of the entries under the `instances` config. The user should discover them.
+
+!!! note
+    If verified on the *Result* entry is true and executed is true, **Congratulations** you have replayed successfully a vector addition.
