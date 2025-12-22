@@ -1,4 +1,27 @@
-# Mneme Command line Interface
+# Command-line interface
+
+Mneme provides a unified command-line interface for recording, replaying,
+and managing GPU kernel execution artifacts.
+
+This page documents the available commands, their options, and expected
+behavior. Each command is designed to be composable, scriptable, and
+safe to use in automated workflows.
+
+---
+
+## CLI overview & conventions
+
+### General form
+
+All Mneme commands follow the form:
+
+```bash
+mneme <command> [options] [arguments]
+```
+
+Commands are subcommand-oriented (e.g., record, replay, clean)
+and expose stable, explicit flags.
+
 
 ## mneme record
 
