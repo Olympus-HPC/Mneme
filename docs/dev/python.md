@@ -1,7 +1,5 @@
 # Python API
 
-## `mneme`
-
 ::: mneme
     options:
       show_root_heading: true
