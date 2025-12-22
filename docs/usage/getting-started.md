@@ -115,3 +115,6 @@ This command will execute the kernel and **replay** the exact same execution as 
 
 !!! note
     The exact names of the `-rdb` and `-rid` parameters will differ and the user should discover them. The former (`-rdb`) points to the json file under the `./record-example-dir/` and the latter (`-rid`) should take the key value of the entries under the `instances` config. The user should discover them.
+
+!!! note
+    If verified on the *Result* entry is true and executed is true, **Congratulations** you have replayed successfully a vector addition.
