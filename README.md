@@ -2,7 +2,7 @@
 [![codecov](https://codecov.io/gh/Olympus-HPC/Mneme/graph/badge.svg?token=N8CELEZ277)](https://codecov.io/gh/Olympus-HPC/Mneme)
 ![License: Apache 2.0 with LLVM exceptions](https://img.shields.io/badge/license-Apache%202.0%20with%20LLVM%20exceptions-blue.svg)
 
-# <img src="docs/assets/MnemeLogoNoText.png" width="128" align="middle" /> Mneme (Μνήμη)
+# <img src="docs/assets/images/MnemeLogoNoText.png" width="128" align="middle" /> Mneme (Μνήμη)
 
 *Named after the Greek goddess of memory, preserves and replays the essence of your application's execution, allowing developers to revisit, analyze, and refine specific moments in code with precision.* 
 

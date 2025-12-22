@@ -18,7 +18,9 @@ nav:
   - Home: index.md
   - Getting Started: usage/getting-started.md
   - Usage:
+      - Getting Started: usage/getting-started.md
       - CLI: usage/cli.md
+      - Artifacts: usage/artifacts.md
       - Install: usage/install.md
       - Record: usage/record.md
       - Replay: usage/replay.md
