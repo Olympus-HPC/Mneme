@@ -18,6 +18,7 @@ nav:
   - Home: index.md
 
   - Usage:
+      - CLI: usage/cli.md
       - Install: usage/install.md
       - Record: usage/record.md
       - Replay: usage/replay.md
