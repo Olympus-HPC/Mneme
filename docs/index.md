@@ -12,18 +12,68 @@
 </div>
 
 ## High-Level Overview
-[Mneme](https://en.wikipedia.org/wiki/Mneme) is a tool allowing recording the execution of a GPU (CUDA/HIP) kernel and replaying that kernel as an independent executable.
+[Mneme](https://en.wikipedia.org/wiki/Mneme) is a framework for **recording and replaying GPU kernel executions**
+(HIP) as **standalone, reproducible executables**.
 
-Mneme operates in 3 phases. First, during compile time, the user needs to apply a provided LLVM pass to instrument the code. This pass detects the global variables
-and functions on the GPU device, and stores this information with the respective LLVM-IR in the global device memory. The compilation generates a _recordable_ executable. 
+It enables developers and researchers to:
+- capture the full execution context of a GPU kernel,
+- replay kernels independently of the original application, and
+- experiment with compiler transformations and runtime parameters in isolation.
 
-The second phase involves running the _recordable_ executable with a desired input and using `LD_PRELOAD` to enable recording. When recording, before invoking a device kernel, 
-the pre-loaded library stores device memory in persistent storage and associates the memory with the device kernel and an LLVM IR file. At the end of the recorded execution,
-the pre-loaded library generates a database in the form of a collection of `json` files, each containing information regarding the LLVM-IR files and the snapshots of device memory for a single GPU kernel.
 
-During the third and last phase, the user can replay the execution of a kernel as a separate independent executable. In addition to executing the kernel, the user can also modify the LLVM IR file and
-auto-tune parameters such as kernel launch-bounds or kernel runtime execution parameters (e.g. Kernel Block and Grid Dimensions).
+---
 
-This documentation contains the user guide and  developers' manual for
-[Mneme](https://github.com/Olympus-HPC/Mneme).
+## Execution model
+
+Mneme operates in **three distinct phases**:
+
+### 1. Instrumentation (compile time)
+
+At compile time, the user applies a provided **LLVM instrumentation pass**.
+This pass:
+- detects GPU global variables and device functions,
+- associates them with the corresponding LLVM IR, and
+- embeds this information into device memory.
+
+The result is a **recordable executable**.
+
+### 2. Recording (runtime)
+
+The recordable executable is run with representative inputs using the
+`mneme record` command.
+
+During recording, Mneme transparently intercepts GPU kernel launches and
+captures the required device memory state before execution.
+All interception and instrumentation mechanisms are handled internally by Mneme
+and do not require changes to the application or runtime environment from the user.
+
+For each recorded kernel, Mneme stores:
+- the associated LLVM IR, and
+- snapshots of the device memory required to replay the kernel.
+
+At the end of execution, Mneme produces a persistent database of artifacts
+(e.g., JSON metadata and memory snapshots) describing each recorded kernel.
+
+---
+
+### 3. Replay and experimentation
+
+In the final phase, kernels can be **replayed as independent executables**.
+
+During replay, users can:
+- modify the LLVM IR,
+- experiment with compiler transformations,
+- autotune kernel launch parameters (e.g., grid and block dimensions), and
+- evaluate performance changes in isolation.
+
+---
+
+## Documentation structure
+
+This site contains:
+- a **User Guide** covering installation and usage,
+- a **Developer Guide** describing internal architecture, and
+- API references for both **Python** and **C++** components.
+
+Start with **Usage → Install** to get up and running.
 
