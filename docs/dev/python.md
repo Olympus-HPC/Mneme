@@ -9,6 +9,26 @@
 
 ## Core modules
 
-::: mneme.record
+::: mneme.recorded_execution
+::: mneme.cli
+::: mneme.device
+::: mneme.replay_executor
+::: mneme.async_executor
+::: mneme.mneme_types
+::: mneme.profile
 
-::: mneme.replay
+## proteus
+
+::: mneme.proteus.jit
+
+## Tuning
+
+::: mneme.tuning.sample_strategy
+::: mneme.tuning.search_space
+
+## LLVM
+
+::: mneme.llvm.value
+::: mneme.llvm.typeref
+::: mneme.llvm.module
+::: mneme.llvm.attribute
