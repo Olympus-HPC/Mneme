@@ -25,7 +25,8 @@ nav:
       - Install: usage/install.md
       - Record: usage/record.md
       - Replay: usage/replay.md
-
+  - Concepts:
+    - Overview: concepts/overview.md
   - Develop:
       - Python: dev/python.md
       - C++: dev/cpp.md
