@@ -43,7 +43,7 @@ kernel inputs.
 ---
 
 
-## Record vs replay
+## Mneme phases 
 
 Mneme workflows are split into three phases, a single compile time phase and two runtime phases (**record** and **replay**).
 
