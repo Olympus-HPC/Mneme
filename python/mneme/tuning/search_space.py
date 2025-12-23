@@ -487,7 +487,6 @@ class SearchSpace(ABC):
 
         for _ in range(MAX_RETRIES):
             trial = study.ask()
-            print("Asked trial", id(trial))
             config = {}
 
             # Step 1: primary dimension sampling
@@ -551,5 +550,6 @@ class SearchSpace(ABC):
 
         for combo in product(*value_lists):
             params = dict(zip(keys, combo))
-            if self.constraints(params):
-                yield {"parameters": params}
+            derived_config = self.derived(params)
+            if self.constraints(derived_config):
+                yield derived_config
