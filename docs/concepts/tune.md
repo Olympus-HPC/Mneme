@@ -6,6 +6,7 @@ that minimizes a user-defined objective, typically **execution time**, while
 preserving **correctness**.
 
 The key idea is to separate:
+
 - **what you want to tune** (your tunable parameters), from
 - **what Mneme can execute** (a concrete replay configuration).
 
@@ -37,6 +38,7 @@ Tuning always starts from recorded data:
 - a selected kernel instance (`--record-id` / `-rid`)
 
 This provides:
+
 - a stable kernel identity,
 - a “known-good” launch configuration,
 - recorded device memory state for correctness checking, and
@@ -47,6 +49,7 @@ This provides:
 A **replay configuration** is what Mneme can actually execute.
 
 It controls:
+
 - launch dimensions (`grid`, `block`, `shared_mem`)
 - specialization toggles (`specialize`, `specialize_dims`)
 - compilation/codegen settings (`passes`, `codegen_opt`, `codegen_method`)
@@ -82,6 +85,7 @@ In the Python API, this is expressed as a `SearchSpace` object with:
 Many tuning problems require a different parameterization than “raw replay knobs”.
 
 Examples:
+
 - You want to tune a **fractional** knob (e.g., 0.0–1.0) and map it to a **discrete**
   device-legal value (e.g., `max_threads` must be a multiple of 64 and ≥ threads/block).
 - You want to tune only *one* dimension (`block_dim_x`) and keep everything else fixed.
@@ -126,6 +130,7 @@ Once a replay configuration has been derived from a search-space sample,
 Mneme executes it through an **executor abstraction**.
 
 The executor is responsible for:
+
 - submitting replay configurations for execution,
 - managing concurrency and resource utilization, and
 - collecting and returning execution results.
@@ -196,6 +201,7 @@ configurations are expected to fail.
 ### Scaling across devices
 
 Executors can be configured to:
+
 - use multiple GPUs,
 - control the number of concurrent workers, and
 
@@ -212,6 +218,7 @@ Mneme separates *what to sample* from *how to sample*.
 
 
 This enables:
+
 - exhaustive search for small spaces,
 - randomized exploration,
 - Bayesian/TPE optimization,
@@ -233,6 +240,7 @@ A key feature is that evaluation includes **correctness validation**:
 - `result.verified` indicates whether replay matched the expected recorded behavior.
 
 Typical tuning logic is:
+
 - if invalid config: assign worst score and continue
 - if replay fails or not verified: penalize and continue
 - otherwise: measure performance and report the objective value
@@ -249,6 +257,7 @@ Most users start with:
   `avg_time = mean(result.exec_time)`
 
 But Mneme does not enforce the objective. You can optimize:
+
 - median time,
 - percentile time,
 - codegen time vs exec time tradeoffs,

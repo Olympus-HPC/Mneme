@@ -19,9 +19,10 @@ Recording and replay require a stable handle to the kernel code itself. Rather t
 trying to reconstruct this information from source code—which is difficult due to
 language semantics, translation units, and type-system complexity—Mneme operates
 at the LLVM IR level, where:
-* the type system is explicit and normalized,
-* translation units are well defined, and
-* kernel boundaries and dependencies are clear.
+
+- the type system is explicit and normalized,
+- translation units are well defined, and
+- kernel boundaries and dependencies are clear.
 
 Instrumentation provides a single, unified analysis point—the executable—where
 kernel code, metadata, and runtime hooks are consistently available.
@@ -35,9 +36,11 @@ During compilation, Mneme (via Proteus) applies an LLVM instrumentation pass tha
 #### 1. **Kernel code capture**
 
 For each GPU kernel, the pass:
-    - identifies the kernel entry point,
-    - collects the kernel’s LLVM IR along with its entire transitive dependency graph, and
-    - embeds this information into a dedicated ELF section of the device object.
+
+- identifies the kernel entry point,
+- collects the kernel’s LLVM IR along with its entire transitive dependency graph, and
+- embeds this information into a dedicated ELF section of the device object.
+
 Each embedded data segment corresponds to a single kernel and contains everything
 required to later recompile and specialize that kernel in isolation.
 
