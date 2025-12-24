@@ -29,6 +29,7 @@ nav:
     - Overview: concepts/overview.md
     - Execution Phases: concepts/mneme-phases.md
     - Static & Dynamic Hashes: concepts/static-dynamic.md
+    - Artifacts: concepts/artifacts.md
   - Develop:
       - Python: dev/python.md
       - C++: dev/cpp.md
