@@ -31,6 +31,7 @@ nav:
     - Static & Dynamic Hashes: concepts/static-dynamic.md
     - Artifacts: concepts/artifacts.md
     - Why LLVM IR as a boundary : concepts/llvm-boundary.md
+    - Replay Configuration: concepts/replay-configuration.md 
   - Develop:
       - Python: dev/python.md
       - C++: dev/cpp.md
