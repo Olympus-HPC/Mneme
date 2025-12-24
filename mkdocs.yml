@@ -30,6 +30,7 @@ nav:
     - Execution Phases: concepts/mneme-phases.md
     - Static & Dynamic Hashes: concepts/static-dynamic.md
     - Artifacts: concepts/artifacts.md
+    - Why LLVM IR as a boundary : concepts/llvm-boundary.md
   - Develop:
       - Python: dev/python.md
       - C++: dev/cpp.md
