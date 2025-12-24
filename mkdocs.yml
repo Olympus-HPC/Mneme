@@ -32,6 +32,7 @@ nav:
     - Artifacts: concepts/artifacts.md
     - Why LLVM IR as a boundary : concepts/llvm-boundary.md
     - Replay Configuration: concepts/replay-configuration.md 
+    - Tune: concepts/tune.md
   - Develop:
       - Python: dev/python.md
       - C++: dev/cpp.md
