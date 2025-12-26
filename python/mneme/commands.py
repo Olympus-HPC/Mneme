@@ -299,6 +299,11 @@ class Config:
         with open(cfg_file) as fd:
             cfg = json.load(fd)
 
+        runtime_prefix = str(cfg_file.parent.resolve())
+        for k, v in cfg.items():
+            if isinstance(v, str):
+                cfg[k] = v.replace("@PREFIX@", runtime_prefix)
+
         parser.add_argument("key", choices=list(cfg.keys()), help="Config key to query")
         parser.set_defaults(func=Config.run, mneme_config=cfg)
 
