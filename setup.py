@@ -133,12 +133,12 @@ MNEME_CONFIG_FILE = str(_NATIVE / "config.json")
         cfg = {
             "cc": self.cc,
             "cxx": self.cxx,
-            "prefix": str(prefix),
-            "libdir": str(libdir),
-            "includedir": str(includedir),
-            "cmakedir": str(cmake_dir),
-            "cflags": f"-fpass-plugin={prefix}/lib64/libProteusPass.so -fplugin={prefix}/lib64/libProteusPass.so -fno-discard-value-names -ftrivial-auto-var-init=zero -Xclang -mllvm -Xclang -force-proteus-jit-annotate-all",
-            "ldflags": f"-L{self.llvm_dir}/lib -L{self.llvm_dir}/llvm/lib {llvm_config['libs']} {llvm_config['system_libs']} -L{libdir}/ -Wl,-rpath,{libdir}/ -llldCommon -llldELF -lproteus",
+            "prefix": "@PREFIX@",
+            "libdir": "@PREFIX@/lib64",
+            "includedir": "@PREFIX@/include",
+            "cmakedir": "@PREFIX@/lib64/cmake",
+            "cflags": f"-fpass-plugin=@PREFIX@/lib64/libProteusPass.so -fplugin=@PREFIX@/lib64/libProteusPass.so -fno-discard-value-names -ftrivial-auto-var-init=zero -Xclang -mllvm -Xclang -force-proteus-jit-annotate-all",
+            "ldflags": f"-L{self.llvm_dir}/lib -L{self.llvm_dir}/llvm/lib {llvm_config['libs']} {llvm_config['system_libs']} -L@PREFIX@/lib64/ -Wl,-rpath,@PREFIX@/lib64/ -llldCommon -llldELF -lproteus",
         }
         if not prefix.exists():
             prefix.mkdir(parents=True, exist_ok=True)
