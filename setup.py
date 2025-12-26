@@ -17,7 +17,8 @@ from setuptools.command.develop import develop
 # Helper function to run shell commands
 def run_command(command, cwd=None):
     sys.stderr.write(f"Running: {' '.join(command)} in {cwd or os.getcwd()}")
-    result = subprocess.run(command, cwd=cwd, check=True)
+    result = subprocess.run(command, cwd=cwd, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    sys.stderr.write(result.stdout)
     if result.returncode != 0:
         raise RuntimeError(f"Command {' '.join(command)} failed")
 
@@ -88,7 +89,7 @@ MNEME_CONFIG_FILE = str(_NATIVE / "config.json")
         super().initialize_options()
         self.root_dir = Path(__file__).resolve().parent
         build_cmd = self.get_finalized_command("build")
-        self.build_lib = Path(build_cmd.build_lib)
+        self.build_lib = Path(build_cmd.build_lib).resolve()
         build_pkg_dir = (self.build_lib / "mneme")
 
         src_pkg_dir = self.root_dir / "python" / "mneme"
@@ -103,7 +104,10 @@ MNEME_CONFIG_FILE = str(_NATIVE / "config.json")
 
         self.install_dir.mkdir(parents=True, exist_ok=True)
         (self.install_dir / "lib64").mkdir(parents=True, exist_ok=True)
+        (self.install_dir / "include").mkdir(parents=True, exist_ok=True)
+        (self.install_dir / "lib64" / "cmake").mkdir(parents=True, exist_ok=True)
         (self.install_dir / "llvm").mkdir(parents=True, exist_ok=True)
+        self.config_py_path.parent.mkdir(parents=True, exist_ok=True)
 
 
         self.has_nvidia = "On" if has_nvidia_gpu() else "Off"
@@ -197,7 +201,7 @@ MNEME_CONFIG_FILE = str(_NATIVE / "config.json")
             "-DCMAKE_BUILD_TYPE=Relwithdebinfo",
             "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
             "-DBUILD_SHARED=On",
-            r"-DCMAKE_INSTALL_RPATH=\$ORIGIN",
+            "-DCMAKE_INSTALL_RPATH=$ORIGIN",
             "-DCMAKE_SKIP_INSTALL_RPATH=OFF",
             "-DCMAKE_INSTALL_RPATH_USE_LINK_PATH=ON",
             "-DCMAKE_POSITION_INDEPENDENT_CODE=On",
@@ -246,7 +250,7 @@ MNEME_CONFIG_FILE = str(_NATIVE / "config.json")
         run_command(
             [
                 "cmake",
-                f"-DCMAKE_INSTALL_PREFIX={self.install_dir}",
+                f"-DCMAKE_INSTALL_PREFIX={str(Path(self.install_dir).resolve())}",
                 "-DCMAKE_INSTALL_LIBDIR=lib64",
                 "-DCMAKE_INSTALL_BINDIR=bin",
                 "-DCMAKE_INSTALL_INCLUDEDIR=include",
@@ -278,12 +282,13 @@ MNEME_CONFIG_FILE = str(_NATIVE / "config.json")
             f"-DMNEME_ENABLE_HIP={self.has_amd}",
             "-DMNEME_ENABLE_TESTS=Off",
             "-DMNEME_ENABLE_AUTOTUNE=On",
-            r"-DCMAKE_INSTALL_RPATH=\$ORIGIN",
+            "-DCMAKE_INSTALL_RPATH=$ORIGIN",
             "-DCMAKE_SKIP_INSTALL_RPATH=OFF",
             "-DCMAKE_INSTALL_RPATH_USE_LINK_PATH=ON",
             "-DMNEME_ENABLE_LOGGER=On",
-            f"-Dproteus_DIR={proteus_dir}",
-            f"-Dspdlog_DIR={spdlog_dir}",
+            #f"-Dproteus_DIR={proteus_dir}",
+            #f"-Dspdlog_DIR={spdlog_dir}",
+            f"-DCMAKE_PREFIX_PATH={str(Path(self.install_dir).resolve())}",
         ]
 
         run_command(["cmake", mneme_path] + cmake_options, cwd=build_dir)
