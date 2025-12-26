@@ -15,8 +15,7 @@ from setuptools.command.develop import develop
 # Helper function to run shell commands
 def run_command(command, cwd=None):
     sys.stderr.write(f"Running: {' '.join(command)} in {cwd or os.getcwd()}")
-    result = subprocess.run(command, cwd=cwd, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-    sys.stderr.write(result.stdout)
+    result = subprocess.run(command, cwd=cwd, check=True)
     if result.returncode != 0:
         raise RuntimeError(f"Command {' '.join(command)} failed")
 
