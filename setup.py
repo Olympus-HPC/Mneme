@@ -4,8 +4,6 @@ import tempfile
 import os
 import subprocess
 import sys
-#from distutils.sysconfig import get_python_lib
-import shutil
 from pathlib import Path
 
 from setuptools import Extension, find_packages, setup
