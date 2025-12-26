@@ -41,7 +41,7 @@ inline std::string getLogFileName() {
 inline spdlog::level::level_enum getLogLevelFromEnv() {
   const char *env_p = std::getenv("MNEME_LOG_LEVEL");
   if (!env_p)
-    return spdlog::level::off; // Default level
+    return spdlog::level::critical;
 
   static const std::unordered_map<std::string, spdlog::level::level_enum>
       logLevels = {{"trace", spdlog::level::trace},
