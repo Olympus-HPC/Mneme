@@ -87,6 +87,7 @@ class TuneWorkerHandle:
         device_id: int,
         iterations: int,
         results_db_dir: str,
+        new_ir_candidate: str = "",
     ):
         """
         Construct a worker handle and start the worker process + monitor thread.
@@ -108,6 +109,8 @@ class TuneWorkerHandle:
             Number of kernel iterations used by the worker for the tracked execution.
         results_db_dir : str
             Directory where the worker writes logs and optional artifacts.
+        new_ir_candidate : str
+            Path to the new LLVM IR file to be used for replay. If empty, uses the recorded IR.
 
         Notes
         -----
@@ -129,6 +132,7 @@ class TuneWorkerHandle:
         self.device_id = device_id
         self.iterations = iterations
         self.results_db_dir = results_db_dir
+        self.new_ir_candidate = new_ir_candidate
 
         self._state = None  # ProcessEvent
         self._process = None  # Process
@@ -172,6 +176,7 @@ class TuneWorkerHandle:
                 self.device_id,
                 self.iterations,
                 self.results_db_dir,
+                self.new_ir_candidate,
                 self._state,
             ),
             daemon=False,
@@ -364,6 +369,7 @@ class AsyncReplayExecutor:
         iterations: int,
         results_db_dir: str,
         num_workers: int,
+        new_ir_candidate: str = "",
     ):
         """
         Construct an asynchronous executor with a fixed-size worker pool.
@@ -380,6 +386,8 @@ class AsyncReplayExecutor:
             Directory where workers write logs and optional output artifacts.
         num_workers : int
             Number of worker processes to launch.
+        new_ir_candidate : str
+            Path to the new LLVM IR file to be used for replay. If empty, uses the recorded IR.
         """
         self.global_q = ThreadQueue()
         self._futures: Dict[int, EvalFuture] = {}
@@ -395,6 +403,7 @@ class AsyncReplayExecutor:
                 i,
                 iterations,
                 results_db_dir,
+                new_ir_candidate,
             )
             for i in range(num_workers)
         ]
@@ -469,3 +478,51 @@ class AsyncReplayExecutor:
         future = self.submit(config)
 
         return future.result()
+
+
+class AlternateIRReplayExecutor(AsyncReplayExecutor):
+    """
+    This executor subclass allows testing source-level transformations by replaying
+    kernels with an alternate LLVM IR module (provided as a file path) while still
+    using the recorded state from a different execution.
+
+    Right now just passes new_ir_candidate to superclass. Created as its own
+    class in case we want to add more here in the future.
+    """
+
+    def __init__(
+        self,
+        record_db: str,
+        record_id: str,
+        new_ir_candidate: str,
+        iterations: int,
+        results_db_dir: str,
+        num_workers: int,
+    ):
+        """
+        Construct the AlternateIRReplayExecutor.
+
+        Parameters
+        ----------
+        record_db : str
+            Path to the recorded execution database/file.
+        record_id : str
+            Identifier of the recorded kernel instance inside ``record_db``.
+        new_ir_candidate : str
+            Path to the new LLVM IR file to be used for replay.
+        iterations : int
+            Number of kernel iterations performed by each worker per tracked run.
+        results_db_dir : str
+            Directory where workers write logs and optional output artifacts.
+        num_workers : int
+            Number of worker processes to launch.
+        """
+        super().__init__(
+            record_db,
+            record_id,
+            iterations,
+            results_db_dir,
+            num_workers,
+            new_ir_candidate=new_ir_candidate,
+        )
+

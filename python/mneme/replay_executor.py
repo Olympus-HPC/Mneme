@@ -44,7 +44,7 @@ from mneme.device import (
     set_device,
 )
 from mneme.llvm.buffer import MemBufferRef
-from mneme.llvm.module import ModuleRef
+from mneme.llvm.module import ModuleRef, parse_assembly, parse_bitcode
 from mneme.logging import logger
 from mneme.mneme_types import ExperimentConfiguration, ExperimentResult
 from mneme.page_manager import PageManagerRef
@@ -713,6 +713,7 @@ class TuneWorker(BaseExecutor):
         device_id: int,
         iterations: int,
         results_db_dir: str,
+        new_ir_candidate: str,
         state: Event,
     ):
         """
@@ -758,6 +759,8 @@ class TuneWorker(BaseExecutor):
             on the executor pipeline).
         results_db_dir : str
             Directory where per-worker logs and output artifacts are written.
+        new_ir_candidate : str
+            Path to the new LLVM IR file to be used for replay. If empty, uses the recorded IR.
         state : multiprocessing.Event
             Event used to signal to the parent process that initialization is complete
             and the worker is ready to accept requests.
@@ -787,7 +790,19 @@ class TuneWorker(BaseExecutor):
         )
         # Open GPU memory, setup prologue epilogue and create a single
         # LLVM IR file to start working on optimizations
-        root_ir = worker.link_ir()
+        if new_ir_candidate:
+            with open(new_ir_candidate, "rb") as f:
+                content = f.read()
+
+            if new_ir_candidate.endswith(".ll"):
+                # parse_assembly expects a string
+                root_ir = parse_assembly(content.decode("utf-8"))
+            else:
+                # parse_bitcode expects bytes
+                root_ir = parse_bitcode(content)
+            logger.debug(f"Worker {device_id} loaded alternate IR from {new_ir_candidate}")
+        else:
+            root_ir = worker.link_ir()
 
         with worker as Memory:
             state.set()
