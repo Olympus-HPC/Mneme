@@ -791,7 +791,7 @@ class TuneWorker(BaseExecutor):
 
         with worker as Memory:
             state.set()
-            logger.debug("Worker running on {worker.device_id} starts busy loop")
+            logger.debug(f"Worker running on {worker.device_id} starts busy loop")
             while True:
                 msg = request_q.get()
                 if msg["payload"] == "terminate":
