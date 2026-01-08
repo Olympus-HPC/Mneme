@@ -35,7 +35,7 @@
 
 #include <assert.h>
 #include <chrono>
-#include <hip/hip_runtime.h>
+#include "device_traits.hpp"
 #include <iostream>
 #include <math.h>
 #include <stdio.h>
@@ -67,7 +67,7 @@ struct Params {
 
   Params(int argc, char **argv) {
     work_group_size = 256;
-    file_name = "input/control.txt";
+    file_name = nullptr;
     in_size_i = in_size_j = 3;
     out_size_i = out_size_j = 300;
     int opt;
@@ -95,6 +95,7 @@ struct Params {
         exit(0);
       }
     }
+    if (!file_name){usage(); exit(0);}
   }
 
   void usage() {
@@ -108,7 +109,7 @@ struct Params {
             "\n"
             "\nBenchmark-specific options:"
             "\n    -f <F>    name of input file with control points "
-            "(default=input/control.txt)"
+            "(mandatory)"
             "\n    -m <N>    input size in both dimensions (default=3)"
             "\n    -n <R>    output resolution in both dimensions (default=300)"
             "\n");
@@ -280,28 +281,28 @@ void run(XYZ *in, int in_size_i, int in_size_j, int out_size_i, int out_size_j,
   int in_size = (in_size_i + 1) * (in_size_j + 1) * sizeof(XYZ);
   int out_size = out_size_i * out_size_j * sizeof(XYZ);
 
-  hipMalloc((void **)&d_in, in_size);
-  hipMalloc((void **)&d_out, out_size);
+  DEVICE_CHECK(Device::deviceMalloc((void **)&d_in, in_size));
+  DEVICE_CHECK(Device::deviceMalloc((void **)&d_out, out_size));
 
-  hipMemcpy(d_in, in, in_size, hipMemcpyHostToDevice);
+  DEVICE_CHECK(Device::deviceCopy(d_in, in, in_size, Device::memcpyHostToDeviceKind()));
 
   dim3 block(p.work_group_size);
   dim3 grid((out_size_i + p.work_group_size - 1) / p.work_group_size);
 
-  hipDeviceSynchronize();
+  DEVICE_CHECK(Device::deviceSynchronize());
   auto kstart = std::chrono::steady_clock::now();
 
-  hipLaunchKernelGGL(BezierGPU, grid, block, 0, 0, d_in, d_out, in_size_i,
+  BezierGPU<<<grid, block, 0, 0>>> (d_in, d_out, in_size_i,
                      in_size_j, out_size_i, out_size_j);
 
-  hipDeviceSynchronize();
+  DEVICE_CHECK(Device::deviceSynchronize());
   auto kend = std::chrono::steady_clock::now();
   auto ktime =
       std::chrono::duration_cast<std::chrono::milliseconds>(kend - kstart)
           .count();
   std::cout << "kernel execution time: " << ktime << " ms" << std::endl;
 
-  hipMemcpy(gpu_out, d_out, out_size, hipMemcpyDeviceToHost);
+  DEVICE_CHECK(Device::deviceCopy(gpu_out, d_out, out_size, Device::memcpyDeviceToHostKind()));
 
   // Verify
   int status = compare_output(gpu_out, cpu_out, in_size_i, in_size_j,
@@ -310,8 +311,8 @@ void run(XYZ *in, int in_size_i, int in_size_j, int out_size_i, int out_size_j,
 
   free(cpu_out);
   free(gpu_out);
-  hipFree(d_in);
-  hipFree(d_out);
+  DEVICE_CHECK(Device::deviceFree(d_in));
+  DEVICE_CHECK(Device::deviceFree(d_out));
 }
 
 int main(int argc, char **argv) {

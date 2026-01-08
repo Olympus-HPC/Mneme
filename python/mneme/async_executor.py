@@ -385,6 +385,7 @@ class AsyncReplayExecutor:
         self._futures: Dict[int, EvalFuture] = {}
         self._next_id = 0
         self._lock = threading.Lock()
+        self.iterations = iterations
 
         self.workers = [
             TuneWorkerHandle(
