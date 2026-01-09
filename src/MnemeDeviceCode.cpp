@@ -13,19 +13,33 @@ using DeviceVendorTraits = DeviceTraits<DeviceVendors::HIP>;
 using DeviceVendorTraits = DeviceTraits<DeviceVendors::CUDA>;
 #endif
 
+constexpr int NUM_THREADS_PER_BLOCK = 256;
+
 __global__ void compareDevBlobs(const char *Blob1, const char *Blob2,
                                 unsigned long long *GSame, uint64_t MemSize) {
-  size_t ID = threadIdx.x + blockDim.x * blockIdx.x;
-  size_t GridSize = blockDim.x * gridDim.x;
-  unsigned long long NumEqual = 0;
+  uint64_t tid = (uint64_t)threadIdx.x;
+  uint64_t ID  = tid + (uint64_t)blockDim.x * (uint64_t)blockIdx.x;
+  uint64_t GridSize = (uint64_t)blockDim.x * (uint64_t)gridDim.x;
 
-  if (ID >= MemSize)
-    return;
-
-  for (int id = ID; id < MemSize; id += GridSize) {
-    NumEqual += (uint64_t)(Blob1[id] == Blob2[id]);
+  unsigned long long local = 0;
+  for (uint64_t i = ID; i < MemSize; i += GridSize) {
+    local += (Blob1[i] == Blob2[i]);
   }
-  atomicAdd(GSame, NumEqual);
+
+  __shared__ unsigned long long shmem[NUM_THREADS_PER_BLOCK];
+  shmem[threadIdx.x] = local;
+  __syncthreads();
+
+  for (int offset = blockDim.x / 2; offset > 0; offset >>= 1) {
+    if (threadIdx.x < offset) {
+      shmem[threadIdx.x] += shmem[threadIdx.x + offset];
+    }
+    __syncthreads();
+  }
+
+  if (threadIdx.x == 0) {
+    atomicAdd(GSame, shmem[0]);
+  }
 }
 
 bool DeviceVendorTraits::compareDeviceBlobs(const char *Blob1,
@@ -44,9 +58,9 @@ bool DeviceVendorTraits::compareDeviceBlobs(const char *Blob1,
   if (EC)
     LOG_FATAL("Error in comparing blobs " + EC.value());
 
-  constexpr int NumThreads = 256;
-  size_t NumBlocks = (NumBytes + NumThreads - 1) / NumThreads;
-  compareDevBlobs<<<NumBlocks, NumThreads>>>(Blob1, Blob2, NumEqualBytes,
+  uint64_t NumBlocks = min( (NumBytes + NUM_THREADS_PER_BLOCK - 1)/NUM_THREADS_PER_BLOCK,
+                  (uint64_t)8192 );   // DN -- you could also set this to something like SMs*20 to be more device dependent
+  compareDevBlobs<<<NumBlocks, NUM_THREADS_PER_BLOCK>>>(Blob1, Blob2, NumEqualBytes,
                                              NumBytes);
 
   EC = DeviceVendorTraits::DeviceErrorCheck(
