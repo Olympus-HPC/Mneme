@@ -119,6 +119,8 @@ ProteusPY_linkModules(const char **LLVMIRFiles, int size,
     internalize(*Mod.get(), KernelSym);
   }
 
+  proteus::runCleanupPassPipeline(*Mod.get());
+
   return wrap(Mod.release());
 }
 
