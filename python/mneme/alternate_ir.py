@@ -80,10 +80,7 @@ class AlternateIRRecordDB:
             # parse assembly string and write bitcode
             ir_str = str(self.new_ir)
             mod = parse_assembly(ir_str)
-            try:
-                mod.to_bitcode(str(new_bc_path))
-            finally:
-                mod._dispose()
+            mod.to_bitcode(str(new_bc_path))
         else:
             ir_path = Path(self.new_ir)
             if ir_path.suffix == '.bc':
@@ -93,10 +90,7 @@ class AlternateIRRecordDB:
                 with open(ir_path, 'r') as f:
                     ir_content = f.read()
                 mod = parse_assembly(ir_content)
-                try:
-                    mod.to_bitcode(str(new_bc_path))
-                finally:
-                    mod._dispose()
+                mod.to_bitcode(str(new_bc_path))
 
         # update modules in existing record db
         existing_modules = data.get("Modules", [])
