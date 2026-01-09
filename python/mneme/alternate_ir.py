@@ -10,6 +10,7 @@ from mneme.llvm.module import parse_assembly
 class AlternateIRRecordDB:
     """
     Context manager for creating a temporary record database with alternate LLVM IR.
+    Creates a *shallow copy* of the record DB and replaces the IR module with the new one.
     
     This class creates a temporary copy of a Mneme record database (JSON file)
     and modifies it to point to a new LLVM IR module. This is useful for
@@ -23,19 +24,25 @@ class AlternateIRRecordDB:
                 ...
             )
     """
-    def __init__(self, record_db: Union[str, Path], new_ir: Union[str, Path]):
+    def __init__(self, record_db: Union[str, Path], new_ir: Union[str, Path], deep_copy: bool = False):
         """
         Initialize the AlternateIRRecordDB context manager.
         
         Args:
             record_db: Path to the existing record database JSON file (or directory containing one).
             new_ir: Path to an LLVM IR file (.ll or .bc) or a string containing LLVM IR.
+            deep_copy: [Not Implemented] If True, create a deep copy of the record DB. Otherwise, create a shallow copy.
         """
         self.record_db = Path(record_db).absolute()
         self.new_ir = new_ir
         self.temp_dir: Optional[str] = None
         self.path: Optional[str] = None
         self.rids: List[str] = []
+        self.deep_copy = deep_copy
+
+    def __post_init__(self):
+        if self.deep_copy:
+            raise NotImplementedError("Deep copy not implemented yet")
         
     def __enter__(self):
         self.temp_dir = tempfile.mkdtemp(prefix="mneme_alternate_ir_")
