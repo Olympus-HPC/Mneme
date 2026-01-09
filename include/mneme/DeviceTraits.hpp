@@ -187,7 +187,7 @@ template <> struct DeviceTraits<DeviceVendors::HIP> {
     auto EC = DeviceErrorCheck(
         hipModuleGetFunction(&KernelFunc, HipModule, KernelName.c_str()));
     if (EC)
-      LOG_FATAL("Error with loading kernel from Module");
+      LOG_FATAL("Error with loading kernel {} from Module {}", EC.value(), KernelName.c_str());
 
     return KernelFunc;
   }
