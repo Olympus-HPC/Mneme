@@ -1,15 +1,27 @@
-add_executable(bezier main.cpp)
-add_mneme(bezier)
-target_compile_definitions(bezier PRIVATE MKX=4)
+function(BUILD target-name test-name)
+target_compile_definitions(${target-name} PRIVATE MKX=4)
 if (WITH_MNEME_EXAMPLE_HIP)
   set_source_files_properties(main.cpp PROPERTIES LANGUAGE HIP)
-  target_link_libraries(bezier PRIVATE hip::device hip::host)
-  target_include_directories(bezier PRIVATE ${PROJECT_SOURCE_DIR}/include)
-  target_compile_definitions(bezier PRIVATE MNEME_EXAMPLE_ENABLE_HIP)
+  target_link_libraries(${target-name} PRIVATE hip::device hip::host)
+  target_include_directories(${target-name} PRIVATE ${PROJECT_SOURCE_DIR}/include)
+  target_compile_definitions(${target-name} PRIVATE MNEME_EXAMPLE_ENABLE_HIP)
 elseif(WITH_MNEME_EXAMPLE_CUDA)
 endif()
-
 add_test(
-  NAME BEZIER 
-  COMMAND bezier -f ${CMAKE_CURRENT_SOURCE_DIR}/input/control.txt  -n 8192 
+  NAME ${test-name} 
+  COMMAND ${target-name} -f ${CMAKE_CURRENT_SOURCE_DIR}/input/control.txt  -n 8192 
 )
+endfunction()
+
+
+add_executable(bezier-mneme main.cpp)
+add_mneme(bezier-mneme)
+BUILD(bezier-mneme BEZIER::MNEME)
+
+add_executable(bezier-orig main.cpp)
+BUILD(bezier-orig BEZIER::ORIG)
+
+add_executable(bezier-proteus main.cpp)
+target_compile_definitions(bezier-proteus PRIVATE ENABLE_PROTEUS)
+add_proteus(bezier-proteus)
+BUILD(bezier-proteus BEZIER::PROTEUS)

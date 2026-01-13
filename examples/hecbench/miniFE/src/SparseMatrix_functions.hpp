@@ -487,8 +487,9 @@ namespace miniFE {
         const typename MatrixType::ScalarType *xcoefs,
         typename MatrixType::ScalarType *ycoefs)
     {
-      MINIFE_LOCAL_ORDINAL row = blockIdx.x * blockDim.x + threadIdx.x;
-      if (row < rows_size) {
+      MINIFE_LOCAL_ORDINAL stride = blockDim.x * gridDim.x;
+      MINIFE_LOCAL_ORDINAL start = blockIdx.x * blockDim.x + threadIdx.x;
+      for(MINIFE_LOCAL_ORDINAL row = start; row < rows_size; row+=stride) {
         MINIFE_GLOBAL_ORDINAL row_start = Arowoffsets[row];
         MINIFE_GLOBAL_ORDINAL row_end   = Arowoffsets[row+1];
         MINIFE_SCALAR sum = 0;

@@ -14,6 +14,7 @@ option(WITH_MNEME_EXAMPLE_CUDA  "Option to enable CUDA" Off)
 option(WITH_MNEME_EXAMPLE_HIP "Option to enable HIP" Off)
 
 find_package(mneme REQUIRED)
+find_package(proteus REQUIRED)
 
 if(WITH_MNEME_EXAMPLE_CUDA AND WITH_MNEME_EXAMPLE_HIP)
   message(FATAL_ERROR
