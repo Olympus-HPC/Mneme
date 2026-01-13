@@ -63,11 +63,11 @@ class EntireSpace(SearchSpace):
             "passes": CategoricalParam(
                 "passes",
                 [
-                    "default<O3>",
-                    "default<O2>",
-                    "default<O1>",
-                    "default<Os>",
-                    "default<Oz>",
+                    "3",
+                    "2",
+                    "1",
+                    "s",
+                    "z",
                 ],
             ),
         }
@@ -76,12 +76,6 @@ class EntireSpace(SearchSpace):
         return self._search_space
 
     def derived(self, params) -> ExperimentConfiguration:
-        """
-        Convert sampled parameters into a concrete ExperimentConfiguration.
-
-        If launch bounds are enabled, this example maps max_threads_fraction into a
-        proper max_threads integer in [block_dim_x, 1024] (rounded to multiples of 64).
-        """
         derived_config = {
             "block": {
                 "x": self.block_dim_x,
@@ -93,7 +87,7 @@ class EntireSpace(SearchSpace):
             "specialize": params["specialize"],
             "set_launch_bounds": params["set_launch_bounds"],
             "specialize_dims": params["specialize_dims"],
-            "passes": params["passes"],
+            "passes": f"default<O{params['passes']}>",
         }
 
         return ExperimentConfiguration.from_dict(derived_config)

@@ -747,6 +747,10 @@ class PipelineManager:
         current_state = None
         passes = list()
         skip = {
+            "lowerswitch",
+            "flattencfg",
+            "loop-reroll",
+            "loweratomic",
             "instrorderfile",
             "rewrite-statepoints-for-gc",
             "guard-widening",
