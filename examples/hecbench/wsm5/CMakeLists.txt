@@ -1,15 +1,29 @@
-add_executable(wsm5 main.cpp)
-add_mneme(wsm5)
-target_compile_definitions(wsm5 PRIVATE MKX=4)
+
+function(BUILD target-name test-name)
+target_compile_definitions(${target-name} PRIVATE MKX=4)
 if (WITH_MNEME_EXAMPLE_HIP)
   set_source_files_properties(main.cpp PROPERTIES LANGUAGE HIP)
-  target_link_libraries(wsm5 PRIVATE hip::device hip::host)
-  target_include_directories(wsm5 PRIVATE ${PROJECT_SOURCE_DIR}/include)
-  target_compile_definitions(wsm5 PRIVATE MNEME_EXAMPLE_ENABLE_HIP)
+  target_link_libraries(${target-name} PRIVATE hip::device hip::host)
+  target_include_directories(${target-name} PRIVATE ${PROJECT_SOURCE_DIR}/include)
+  target_compile_definitions(${target-name} PRIVATE MNEME_EXAMPLE_ENABLE_HIP)
 elseif(WITH_MNEME_EXAMPLE_CUDA)
 endif()
 
 add_test(
-  NAME WSM5 
-  COMMAND wsm5 1 
+  NAME ${test-name} 
+  COMMAND ${target-name} 1 
 )
+endfunction()
+
+
+add_executable(wsm5-orig main.cpp)
+BUILD(wsm5-orig WSM5::ORIG)
+
+add_executable(wsm5-mneme main.cpp)
+add_mneme(wsm5-mneme)
+BUILD(wsm5-mneme WSM5::MNEME)
+
+add_executable(wsm5-proteus main.cpp)
+target_compile_definitions(wsm5-proteus PRIVATE ENABLE_PROTEUS)
+add_mneme(wsm5-proteus)
+BUILD(wsm5-proteus WSM5::PROTEUS)

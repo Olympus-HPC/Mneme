@@ -47,7 +47,6 @@ endif()
 
 message(STATUS "LLVM Libraries are: ${llvm_libs}")
 
-
 if (MNEME_ENABLE_HIP)
   set_source_files_properties(MnemeDeviceCode.cpp PROPERTIES LANGUAGE HIP)
 elseif(MNEME_ENABLE_CUDA)
@@ -57,7 +56,7 @@ endif()
 
 target_include_directories(record SYSTEM PRIVATE ${LLVM_INCLUDE_DIRS} ${CMAKE_SOURCE_DIR}/include)
 target_include_directories(replay SYSTEM PRIVATE ${LLVM_INCLUDE_DIRS} ${CMAKE_SOURCE_DIR}/include)
-target_link_libraries(replay PRIVATE proteusCore)
+target_link_libraries(replay PRIVATE proteus)
 target_link_libraries(record PRIVATE proteus)
 
 if (MNEME_ENABLE_LOGGER)
@@ -73,7 +72,6 @@ target_link_libraries(record PRIVATE ${llvm_libs})
 set_target_properties(record PROPERTIES INSTALL_RPATH_USE_LINK_PATH TRUE)
 
    target_link_libraries(replay PRIVATE hip::host)
-   target_link_libraries(replay PRIVATE ${llvm_libs})
    set_target_properties(replay PROPERTIES INSTALL_RPATH_USE_LINK_PATH TRUE)
 elseif(MNEME_ENABLE_CUDA)
 target_link_libraries(record PRIVATE CUDA::cudart CUDA::cuda_driver)
@@ -82,9 +80,8 @@ set_target_properties(record PROPERTIES INSTALL_RPATH_USE_LINK_PATH TRUE)
 
 
 	target_link_libraries(replay PRIVATE CUDA::cudart CUDA::cuda_driver)
-	target_link_libraries(replay PRIVATE ${llvm_libs})
+  target_link_libraries(replay INTERFACE ${llvm_libs})
 
-	target_link_libraries(replay PRIVATE ${llvm_libs})
 	set_target_properties(replay PROPERTIES INSTALL_RPATH_USE_LINK_PATH TRUE)
 endif()
 

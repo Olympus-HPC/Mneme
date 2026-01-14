@@ -480,6 +480,9 @@ namespace miniFE {
   //
 #if defined(MINIFE_CSR_MATRIX)
   template<typename MatrixType>
+#ifdef ENABLE_PROTEUS
+__attribute__((annotate("jit", 1)))
+#endif
     __global__ void matvec_kernel(const MINIFE_LOCAL_ORDINAL rows_size,
         const typename MatrixType::LocalOrdinalType *Arowoffsets,
         const typename MatrixType::GlobalOrdinalType *Acols,
