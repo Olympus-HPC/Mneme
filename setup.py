@@ -182,12 +182,12 @@ MNEME_CONFIG_FILE = str(_NATIVE / "config.json")
                         "--depth",
                         "1",
                         "origin",
-                        "1d21c00008061704459a9b20300556e962c89043",
+                        "53304d087f0dae2618439565c87a6d3fe82eb36d",
                     ],
                     cwd=str(Path(self.build_scratch) / "proteus"),
                 )
                 run_command(
-                    ["git", "checkout", "1d21c00008061704459a9b20300556e962c89043"],
+                    ["git", "checkout", "53304d087f0dae2618439565c87a6d3fe82eb36d"],
                     cwd=str(Path(self.build_scratch) / "proteus"),
                 )
 
