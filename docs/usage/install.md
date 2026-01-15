@@ -21,8 +21,8 @@ on internal test systems.
 | ROCm version | Python 3.9 | Python 3.10 | Python 3.11 | Python 3.12 |
 |-------------|------------|-------------|-------------|-------------|
 | **6.3**     | ✅         | ✅          | ✅          | ✅          |
-| **6.4**     | ✅         | ✅          | ✅          | ✅          | 
-| **7.0**     | ⏳         | ⏳          | ⏳          | ⏳          | 
+| **6.4**     | ✅         | ✅          | ✅          | ✅          |
+| **7.0**     | ⏳         | ⏳          | ⏳          | ⏳          |
 
 #### Notes
 
@@ -58,7 +58,7 @@ use the corresponding Proteus commit to avoid incompatibilities.
 #### Tested Proteus commit
 
 - Repository: https://github.com/Olympus-HPC/Proteus
-- Commit: `1d21c00008061704459a9b20300556e962c89043`  
+- Commit: `53304d087f0dae2618439565c87a6d3fe82eb36d`
 - Tested with: Mneme `develop`
 
 !!! note
@@ -197,4 +197,3 @@ Python bindings are correctly installed.
 Once Mneme is installed and the test suite completes successfully,
 proceed to **Getting Started** for a guided, end-to-end example of
 building, recording, and replaying a GPU kernel with Mneme.
-
