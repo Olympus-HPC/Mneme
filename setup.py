@@ -10,6 +10,7 @@ from setuptools import Extension, find_packages, setup
 from setuptools.command.build_ext import build_ext
 from setuptools.command.build_py import build_py
 from setuptools.command.develop import develop
+from setuptools.command.egg_info import egg_info
 
 
 # Helper function to run shell commands
@@ -63,23 +64,24 @@ class CMakeBuild(build_ext):
         self.root_dir = Path(__file__).resolve().parent
         build_cmd = self.get_finalized_command("build")
         self.build_lib = Path(build_cmd.build_lib).resolve()
-        build_pkg_dir = (self.build_lib / "mneme")
+        build_pkg_dir = self.build_lib / "mneme"
 
         src_pkg_dir = self.root_dir / "python" / "mneme"
         inplace = bool(getattr(self, "inplace", False))
-        self.editable = "editable_wheel" in sys.argv or inplace # include editable_wheel to be pep 660 compliant
+        self.editable = (
+            "editable_wheel" in sys.argv or inplace
+        )  # include editable_wheel to be pep 660 compliant
 
         pkg_dir = src_pkg_dir if self.editable else build_pkg_dir
 
         self.install_dir = pkg_dir / "native"
-        self.config_json = (self.install_dir / "config.json")
+        self.config_json = self.install_dir / "config.json"
 
         self.install_dir.mkdir(parents=True, exist_ok=True)
         (self.install_dir / "lib64").mkdir(parents=True, exist_ok=True)
         (self.install_dir / "include").mkdir(parents=True, exist_ok=True)
         (self.install_dir / "lib64" / "cmake").mkdir(parents=True, exist_ok=True)
         (self.install_dir / "llvm").mkdir(parents=True, exist_ok=True)
-
 
         self.has_nvidia = "On" if has_nvidia_gpu() else "Off"
         self.has_amd = "On" if has_amd_gpu() else "Off"
@@ -256,8 +258,8 @@ class CMakeBuild(build_ext):
             "-DCMAKE_SKIP_INSTALL_RPATH=OFF",
             "-DCMAKE_INSTALL_RPATH_USE_LINK_PATH=ON",
             "-DMNEME_ENABLE_LOGGER=On",
-            #f"-Dproteus_DIR={proteus_dir}",
-            #f"-Dspdlog_DIR={spdlog_dir}",
+            # f"-Dproteus_DIR={proteus_dir}",
+            # f"-Dspdlog_DIR={spdlog_dir}",
             f"-DCMAKE_PREFIX_PATH={str(Path(self.install_dir).resolve())}",
         ]
 
@@ -270,6 +272,21 @@ class CustomDevelop(develop):
     def run(self):
         super().run()
         self.run_command("build_ext")
+
+
+class CustomEggInfo(egg_info):
+    def run(self):
+        try:
+            from pathlib import Path
+
+            root = Path(__file__).resolve().parent
+            so = root / "python" / "mneme" / "native" / "lib64" / "libmneme.so"
+            if not so.exists():
+                self.run_command("build_ext")
+        except Exception:
+            # if anything goes wrong, don't block egg_info
+            pass
+        super().run()
 
 
 class CustomBuildPy(build_py):
@@ -308,6 +325,7 @@ setup(
         "build_ext": CMakeBuild,
         "build_py": CustomBuildPy,
         "develop": CustomDevelop,
+        "egg_info": CustomEggInfo,
     },
     classifiers=[
         "Programming Language :: Python :: 3",
