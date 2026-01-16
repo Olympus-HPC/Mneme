@@ -8,13 +8,21 @@ else
   echo "CODECOV_TOKEN is not set"
 fi
 
-mneme_src=$(pwd)
+test_dir="$TMP/mneme-ci-${CI_JOB_ID}"
+mkdir -p ${test_dir}
+
+# Make a copy of src to local FS to accelerate building etc. 
+mneme_orig_src=$(pwd)
+mkdir -p $test_dir/mneme_src/
+rsync -a --delete "$mneme_orig_src" "$test_dir/mneme_src/"
+mneme_src=$test_dir/mneme_src/
+
 ml load python/${MNEME_CI_PYTHON_VERSION}
 ml load rocm/${MNEME_CI_ROCM_VERSION}
 export LLVM_INSTALL_DIR=${ROCM_PATH}/
-test_dir="$TMP/mneme-ci-${CI_JOB_ID}"
-mkdir -p ${test_dir}
 echo "Test dir is ${test_dir}"
+
+# Make a copy of preinstalled deps to local FS for fast installation
 VENV_NAME="/usr/workspace/LExperts/ci/gitlab/venv-${LCSCHEDCLUSTER}-${MNEME_CI_ROCM_VERSION}-${MNEME_CI_PYTHON_VERSION}/"
 echo ${VENV_NAME}
 rm -rf ${VENV_NAME}/lib*/python*/site-packages/mneme
