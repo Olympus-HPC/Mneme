@@ -15,12 +15,12 @@ build_proteus() {
   echo "Building PROTEUS"
   if [[ ! -d proteus ]]; then
   	git clone --depth 1 git@github.com:Olympus-HPC/proteus.git
-    pushd proteus 
-    git fetch --depth 1 origin 1d21c00008061704459a9b20300556e962c89043 
-    git checkout 1d21c00008061704459a9b20300556e962c89043 
+    pushd proteus
+    git fetch --depth 1 origin v2026.01.0
+    git checkout v2026.01.0
     popd
   fi
-  pushd proteus 
+  pushd proteus
   PROTEUS_ENABLE_HIP=$1
   PROTEUS_ENABLE_CUDA=$2
   PROTEUS_INSTALL_DIR=$3
@@ -68,7 +68,7 @@ build_spdlog() {
   -DCMAKE_C_COMPILER=${LLVM_INSTALL_DIR}/bin/clang \
   -DCMAKE_CXX_COMPILER=${LLVM_INSTALL_DIR}/bin/clang++ \
   -DCMAKE_INSTALL_PREFIX=${SPDLOG_INSTALL_DIR} \
-  .. 
+  ..
 
   make -j 10
   make install -j 10
@@ -94,7 +94,7 @@ conda create -y -n mneme -c conda-forge \
 else
 source ./${MINICONDA_DIR}/bin/activate
 fi
-conda activate mneme 
+conda activate mneme
 
 LLVM_INSTALL_DIR=$(llvm-config --prefix)
 export LLVM_INSTALL_DIR=$(llvm-config --prefix)
@@ -107,7 +107,7 @@ echo "After proteus Current directory is $(pwd)"
 build_spdlog $installDir
 mneme_src=$(pwd)
 set -x
-pushd $build_dir 
+pushd $build_dir
 echo "Current dir is $(pwd)"
 cmake \
 -DCMAKE_BUILD_TYPE=Debug \
@@ -137,7 +137,7 @@ echo "After proteus Current directory is $(pwd)"
 build_spdlog $installDir
 echo "After spdlog Current directory is $(pwd)"
 mneme_src=$(pwd)
-pushd $build_dir 
+pushd $build_dir
 cmake \
 -DCMAKE_BUILD_TYPE=Relwithdebinfo \
 -Dproteus_DIR=$installDir \

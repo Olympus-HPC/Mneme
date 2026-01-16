@@ -10,9 +10,9 @@
 #include <mneme/MnemeLogger.hpp>
 #include <proteus/CompilerInterfaceRuntimeConstantInfo.h>
 #include <proteus/CompilerInterfaceTypes.h>
-#include <proteus/CoreLLVM.hpp>
-#include <proteus/CoreLLVMDevice.hpp>
-#include <proteus/Hashing.hpp>
+#include <proteus/CoreLLVM.h>
+#include <proteus/CoreLLVMDevice.h>
+#include <proteus/Hashing.h>
 
 using namespace proteus;
 

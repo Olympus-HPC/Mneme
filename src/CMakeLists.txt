@@ -54,7 +54,9 @@ endif()
 
 
 target_include_directories(record SYSTEM PRIVATE ${LLVM_INCLUDE_DIRS} ${CMAKE_SOURCE_DIR}/include)
-target_link_libraries(record PRIVATE proteus)
+# Link the record preload shared library with proteus shared library to avoid
+# LLVM static initialization issues.
+target_link_libraries(record PRIVATE proteus_shared)
 
 if (MNEME_ENABLE_LOGGER)
         target_link_libraries(record PRIVATE spdlog::spdlog_header_only)
