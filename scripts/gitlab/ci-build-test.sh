@@ -16,8 +16,8 @@ build_proteus() {
   if [[ ! -d proteus ]]; then
   	git clone --depth 1 git@github.com:Olympus-HPC/proteus.git
     pushd proteus
-    git fetch --depth 1 origin 53304d087f0dae2618439565c87a6d3fe82eb36d
-    git checkout 53304d087f0dae2618439565c87a6d3fe82eb36d
+    git fetch --depth 1 origin v2026.01.0
+    git checkout v2026.01.0
     popd
   fi
   pushd proteus

@@ -58,7 +58,7 @@ use the corresponding Proteus commit to avoid incompatibilities.
 #### Tested Proteus commit
 
 - Repository: https://github.com/Olympus-HPC/Proteus
-- Commit: `53304d087f0dae2618439565c87a6d3fe82eb36d`
+- Commit: `v2026.01.0`
 - Tested with: Mneme `develop`
 
 !!! note
