@@ -15,7 +15,8 @@ mkdir -p ${test_dir}
 mneme_orig_src=$(pwd)
 mkdir -p $test_dir/mneme_src/
 rsync -a --delete "$mneme_orig_src" "$test_dir/mneme_src/"
-mneme_src=$test_dir/mneme_src/
+mneme_src=$test_dir/mneme_src/Mneme
+echo "Mneme copied src is ${mneme_src} vs ${mneme_orig_src}"
 
 ml load python/${MNEME_CI_PYTHON_VERSION}
 ml load rocm/${MNEME_CI_ROCM_VERSION}
@@ -78,3 +79,4 @@ mneme config cxx || exit $?
 python -m pip uninstall -y mneme
 
 deactivate
+rm -rf ${test_dir}
