@@ -53,6 +53,8 @@ rm -f coverage-${CI_JOB_ID}.xml
 
 
 python -m pip uninstall -y mneme
+python -m pip install -U pip setuptools wheel
+
 # Try a editable install
 echo "Removed mneme"
 echo "Mneme src is ${mneme_src}"
