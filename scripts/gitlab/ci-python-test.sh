@@ -16,13 +16,18 @@ test_dir="$TMP/mneme-ci-${CI_JOB_ID}"
 mkdir -p ${test_dir}
 echo "Test dir is ${test_dir}"
 VENV_NAME="/usr/workspace/LExperts/ci/gitlab/venv-${LCSCHEDCLUSTER}-${MNEME_CI_ROCM_VERSION}-${MNEME_CI_PYTHON_VERSION}/"
-mkdir -p ${VENV_NAME}
-pushd ${test_dir}
-python -m venv ${VENV_NAME}
-source ${VENV_NAME}/bin/activate
-python -m pip uninstall -y mneme
+echo ${VENV_NAME}
 rm -rf ${VENV_NAME}/lib*/python*/site-packages/mneme
-python -m pip install ${mneme_src}
+
+LOCAL_VENV_NAME="${test_dir}/venv/"
+mkdir -p ${LOCAL_VENV_NAME}
+rsync -a --delete "$VENV_NAME/" "$LOCAL_VENV_NAME"
+
+pushd ${test_dir}
+source ${LOCAL_VENV_NAME}/bin/activate
+
+python -m pip uninstall -y mneme
+python -m pip  -v install ${mneme_src}
 python -m pip install pytest pytest-cov
 pytest -v -s ${mneme_src}/python/tests/ || exit $? 
 pushd ${mneme_src}
@@ -62,5 +67,6 @@ python -m pip install -e ${mneme_src}
 echo "Install mneme in dev mode"
 # If everything is properly installed this command will not fail
 mneme config cxx || exit $?
+python -m pip uninstall -y mneme
 
 deactivate
