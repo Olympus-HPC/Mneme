@@ -50,4 +50,12 @@ else
 fi
 
 rm -f coverage-${CI_JOB_ID}.xml
+
+
+python -m pip uninstall -y mneme
+# Try a editable install
+python -m pip install -e ${mneme_src}
+# If everything is properly installed this command will not fail
+mneme config cxx || exit $?
+
 deactivate
