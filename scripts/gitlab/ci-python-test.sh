@@ -54,7 +54,10 @@ rm -f coverage-${CI_JOB_ID}.xml
 
 python -m pip uninstall -y mneme
 # Try a editable install
+echo "Removed mneme"
+echo "Mneme src is ${mneme_src}"
 python -m pip install -e ${mneme_src}
+echo "Install mneme in dev mode"
 # If everything is properly installed this command will not fail
 mneme config cxx || exit $?
 
