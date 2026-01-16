@@ -22,7 +22,7 @@
 #include <mutex>
 
 #include <proteus/CompilerInterfaceDevice.h>
-#include <proteus/JitEngineDevice.hpp>
+#include <proteus/JitEngineDevice.h>
 
 #include "mneme/DeviceTraits.hpp"
 #include "mneme/MnemeKernelInfo.hpp"

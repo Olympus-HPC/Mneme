@@ -16,8 +16,8 @@
 #include <sys/types.h>
 
 #include "proteus/CompilerInterfaceDevice.h"
-#include "proteus/Hashing.hpp"
-#include <proteus/JitEngineDevice.hpp>
+#include "proteus/Hashing.h"
+#include <proteus/JitEngineDevice.h>
 
 #include "mneme/DeviceTraits.hpp"
 #include "mneme/MnemeKernelInfo.hpp"
