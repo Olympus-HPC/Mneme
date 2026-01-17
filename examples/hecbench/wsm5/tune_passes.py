@@ -1,20 +1,16 @@
 #!/usr/bin/env python3
 """
-Mneme tuning example (Optuna)
+Mneme tuning example (Exhaustive Search)
 
 This example demonstrates how to run a tuning session on a
-previously recorded kernel execution.
+previously recorded kernel execution using an exhaustive search strategy.
 
 Workflow:
   1) Load a recorded execution (record-db) and select a kernel (record-id).
-  2) Define a (Exhaustive) SearchSpace that exposes tunable parameters.
+  2) Define a SearchSpace that exposes tunable parameters.
   3) Run a baseline configuration to verify replay correctness and measure baseline time.
-  4) Print the best configuration and its result.
-
-Notes:
-  - This example intentionally keeps the API usage explicit and minimal.
-  - The Optuna objective is configured as direction="minimize" and the script
-    reports a speedup value to Optuna, exactly as shown in the original example.
+  4) Exhaustively explore the defined search space.
+  5) Print the best configuration and its result.
 """
 
 import argparse
@@ -40,8 +36,8 @@ class EntireSpace(SearchSpace):
 
     This SearchSpace:
       - Uses the recorded grid/block dims as fixed reference values where needed.
-      - Exposes a set of tunable parameters (block_dim_x, specialization toggles,
-        min_blocks_per_sm, launch bounds, codegen choices, and pass pipeline).
+      - Exposes a set of tunable parameters (specialization toggles,
+        launch bounds, and optimization pass pipeline).
       - Produces an ExperimentConfiguration via derived(params).
     """
 

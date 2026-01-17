@@ -3,18 +3,14 @@
 Mneme tuning example (Optuna)
 
 This example demonstrates how to run a tuning session on a
-previously recorded kernel execution.
+previously recorded kernel execution using Optuna.
 
 Workflow:
   1) Load a recorded execution (record-db) and select a kernel (record-id).
-  2) Define a (Exhaustive) SearchSpace that exposes tunable parameters.
+  2) Define a SearchSpace that exposes tunable parameters.
   3) Run a baseline configuration to verify replay correctness and measure baseline time.
-  4) Print the best configuration and its result.
-
-Notes:
-  - This example intentionally keeps the API usage explicit and minimal.
-  - The Optuna objective is configured as direction="minimize" and the script
-    reports a speedup value to Optuna, exactly as shown in the original example.
+  4) Use Optuna to explore the search space and minimize execution time.
+  5) Print the best configuration and its result.
 """
 
 import argparse
@@ -47,6 +43,12 @@ class EntireSpace(SearchSpace):
         return self._search_space
 
     def derived(self, params) -> ExperimentConfiguration:
+        """
+        Convert sampled parameters into a concrete ExperimentConfiguration.
+
+        Maps the search space parameters (warp_fraction, grid_fraction, max_threads)
+        to the ExperimentConfiguration fields.
+        """
         # Compute the number of active Warps and map that to the numThreads.
         maxWarpsInBlock = 1024 / 64
         numActiveWarps = min(
