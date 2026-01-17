@@ -16,7 +16,8 @@ For full installation details, see **Usage → Install**.
 ```bash
 git clone https://github.com/Olympus-HPC/Mneme.git
 cd Mneme
-LLVM_INSTALL_DIR=${ROCM_PATH} pip install -e .
+export LLVM_INSTALL_DIR=${ROCM_PATH}
+pip install -e .
 ```
 
 ## Execute Example Code

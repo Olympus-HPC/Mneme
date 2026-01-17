@@ -107,7 +107,8 @@ to record and replay kernels.
 ```bash
 git clone https://github.com/Olympus-HPC/Mneme.git
 cd Mneme
-LLVM_INSTALL_DIR=${ROCM_PATH} pip install .
+export LLVM_INSTALL_DIR=${ROCM_PATH}
+pip install .
 ```
 
 This installs the Mneme CLI (mneme) and Python bindings along with all
