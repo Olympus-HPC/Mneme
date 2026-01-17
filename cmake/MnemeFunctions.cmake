@@ -1,3 +1,6 @@
+# Copyright (c) 2021-2024. LLNL-CODE-2000766 and Mneme Contributors
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+
 function(add_mneme target)
     # Link proteus as a shared library for preloading.
     # TODO: Change to static linking and use linker wrapper flags for interposing.

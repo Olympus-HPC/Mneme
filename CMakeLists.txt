@@ -13,34 +13,14 @@ set(CMAKE_CXX_EXTENSIONS NO)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 string(TOUPPER "${CMAKE_BUILD_TYPE}" BUILD_TYPE_UPPER)
-if(BUILD_TYPE_UPPER STREQUAL "DEBUG")
-  set(CMAKE_CXX_FLAGS_DEBUG_INIT
-      "-gdwarf-4"
-      CACHE STRING "Flags used by the compiler during debug builds" FORCE)
-  set(CMAKE_C_FLAGS_DEBUG_INIT
-      "-gdwarf-4"
-      CACHE STRING "Flags used by the compiler during debug builds" FORCE)
-  set(CMAKE_CUDA_FLAGS_DEBUG_INIT
-      "-gdwarf-4"
-      CACHE STRING "Flags used by the compiler during debug builds" FORCE)
-  message(STATUS "CMAKE_CXX_FLAGS_DEBUG: ${CMAKE_CXX_FLAGS_DEBUG_INIT}")
-  message(STATUS "CMAKE_C_FLAGS_DEBUG: ${CMAKE_C_FLAGS_DEBUG_INIT}")
-  message(STATUS "CMAKE_CUDA_FLAGS_DEBUG: ${CMAKE_CUDA_FLAGS_DEBUG_INIT}")
+if(BUILD_TYPE_UPPER STREQUAL "DEBUG" OR BUILD_TYPE_UPPER STREQUAL
+                                         "RELWITHDEBINFO")
   add_compile_options("-gdwarf-4")
-elseif(BUILD_TYPE_UPPER STREQUAL "RELWITHDEBINFO")
-  set(CMAKE_CXX_FLAGS_DEBUG_INIT
-      "-gdwarf-4"
-      CACHE STRING "Flags used by the compiler during debug builds" FORCE)
-  set(CMAKE_C_FLAGS_DEBUG_INIT
-      "-gdwarf-4"
-      CACHE STRING "Flags used by the compiler during debug builds" FORCE)
-  set(CMAKE_CUDA_FLAGS_DEBUG_INIT
-      "-gdwarf-4"
-      CACHE STRING "Flags used by the compiler during debug builds" FORCE)
-  message(STATUS "CMAKE_CXX_FLAGS_DEBUG: ${CMAKE_CXX_FLAGS_DEBUG_INIT}")
-  message(STATUS "CMAKE_C_FLAGS_DEBUG: ${CMAKE_C_FLAGS_DEBUG_INIT}")
-  message(STATUS "CMAKE_CUDA_FLAGS_DEBUG: ${CMAKE_CUDA_FLAGS_DEBUG_INIT}")
-  add_compile_options("-gdwarf-4")
+  foreach(lang CXX C CUDA)
+    set(CMAKE_${lang}_FLAGS_${BUILD_TYPE_UPPER}_INIT
+        "-gdwarf-4"
+        CACHE STRING "Flags used by the compiler during debug builds" FORCE)
+  endforeach()
 endif()
 
 option(MNEME_ENABLE_CUDA "Enable CUDA" OFF)

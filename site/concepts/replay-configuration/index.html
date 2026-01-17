@@ -1,0 +1,1628 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+      
+        <link rel="prev" href="../llvm-boundary/">
+      
+      
+        <link rel="next" href="../tune/">
+      
+      
+      <link rel="icon" href="../../assets/images/MnemeLogoNotext.svg">
+      <meta name="generator" content="mkdocs-1.6.0, mkdocs-material-9.5.33">
+    
+    
+      
+        <title>Replay Configuration - Mneme</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.3cba04c6.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce((e,_)=>(e<<5)-e+_.charCodeAt(0),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+    
+  </head>
+  
+  
+    <body dir="ltr">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#replay-configuration" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Mneme" class="md-header__button md-logo" aria-label="Mneme" data-md-component="logo">
+      
+  <img src="../../assets/images/MnemeLogoNotext.svg" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3V6m0 5h18v2H3v-2m0 5h18v2H3v-2Z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Mneme
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Replay Configuration
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+    
+      <script>var media,input,key,value,palette=__md_get("__palette");if(palette&&palette.color){"(prefers-color-scheme)"===palette.color.media&&(media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']"),palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent"));for([key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      <label class="md-header__button md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.516 6.516 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5Z"/></svg>
+      </label>
+      <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.516 6.516 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5Z"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11h12Z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41Z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/Olympus-HPC/Mneme" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.6.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M439.55 236.05 244 40.45a28.87 28.87 0 0 0-40.81 0l-40.66 40.63 51.52 51.52c27.06-9.14 52.68 16.77 43.39 43.68l49.66 49.66c34.23-11.8 61.18 31 35.47 56.69-26.49 26.49-70.21-2.87-56-37.34L240.22 199v121.85c25.3 12.54 22.26 41.85 9.08 55a34.34 34.34 0 0 1-48.55 0c-17.57-17.6-11.07-46.91 11.25-56v-123c-20.8-8.51-24.6-30.74-18.64-45L142.57 101 8.45 235.14a28.86 28.86 0 0 0 0 40.81l195.61 195.6a28.86 28.86 0 0 0 40.8 0l194.69-194.69a28.86 28.86 0 0 0 0-40.81z"/></svg>
+  </div>
+  <div class="md-source__repository">
+    Olympus-HPC/Mneme
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../usage/getting-started/" class="md-tabs__link">
+        
+  
+    
+  
+  Getting Started
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../usage/getting-started/" class="md-tabs__link">
+          
+  
+  Usage
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../overview/" class="md-tabs__link">
+          
+  
+  Concepts
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../dev/python/" class="md-tabs__link">
+          
+  
+  Develop
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../examples/" class="md-tabs__link">
+        
+  
+    
+  
+  Examples
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Mneme" class="md-nav__button md-logo" aria-label="Mneme" data-md-component="logo">
+      
+  <img src="../../assets/images/MnemeLogoNotext.svg" alt="logo">
+
+    </a>
+    Mneme
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/Olympus-HPC/Mneme" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.6.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M439.55 236.05 244 40.45a28.87 28.87 0 0 0-40.81 0l-40.66 40.63 51.52 51.52c27.06-9.14 52.68 16.77 43.39 43.68l49.66 49.66c34.23-11.8 61.18 31 35.47 56.69-26.49 26.49-70.21-2.87-56-37.34L240.22 199v121.85c25.3 12.54 22.26 41.85 9.08 55a34.34 34.34 0 0 1-48.55 0c-17.57-17.6-11.07-46.91 11.25-56v-123c-20.8-8.51-24.6-30.74-18.64-45L142.57 101 8.45 235.14a28.86 28.86 0 0 0 0 40.81l195.61 195.6a28.86 28.86 0 0 0 40.8 0l194.69-194.69a28.86 28.86 0 0 0 0-40.81z"/></svg>
+  </div>
+  <div class="md-source__repository">
+    Olympus-HPC/Mneme
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Home
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../usage/getting-started/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Getting Started
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  <span class="md-ellipsis">
+    Usage
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            Usage
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../usage/getting-started/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Getting Started
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../usage/cli/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    CLI
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../usage/artifacts/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Artifacts
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../usage/tune/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Tune
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../usage/install/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Install
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../usage/record/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Record
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../usage/replay/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Replay
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  <span class="md-ellipsis">
+    Concepts
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            Concepts
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../overview/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Overview
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../mneme-phases/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Execution Phases
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../static-dynamic/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Static & Dynamic Hashes
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../artifacts/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Artifacts
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../llvm-boundary/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Why LLVM IR as a boundary
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  <span class="md-ellipsis">
+    Replay Configuration
+  </span>
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  <span class="md-ellipsis">
+    Replay Configuration
+  </span>
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#mental-model" class="md-nav__link">
+    <span class="md-ellipsis">
+      Mental model
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#configuration-object" class="md-nav__link">
+    <span class="md-ellipsis">
+      Configuration object
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#launch-configuration-knobs" class="md-nav__link">
+    <span class="md-ellipsis">
+      Launch configuration knobs
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Launch configuration knobs">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#grid-and-block-dimensions" class="md-nav__link">
+    <span class="md-ellipsis">
+      Grid and block dimensions
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#dynamic-shared-memory" class="md-nav__link">
+    <span class="md-ellipsis">
+      Dynamic shared memory
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#specialization-knobs" class="md-nav__link">
+    <span class="md-ellipsis">
+      Specialization knobs
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Specialization knobs">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#specialize-arguments" class="md-nav__link">
+    <span class="md-ellipsis">
+      Specialize arguments
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#specialize-launch-dimensions" class="md-nav__link">
+    <span class="md-ellipsis">
+      Specialize launch dimensions
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#launch-bounds-controls" class="md-nav__link">
+    <span class="md-ellipsis">
+      Launch bounds controls
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Launch bounds controls">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#validity-constraints" class="md-nav__link">
+    <span class="md-ellipsis">
+      Validity constraints
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#grounding-unused-values" class="md-nav__link">
+    <span class="md-ellipsis">
+      Grounding unused values
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#compilation-and-code-generation-knobs" class="md-nav__link">
+    <span class="md-ellipsis">
+      Compilation and code generation knobs
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Compilation and code generation knobs">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#pass-pipeline" class="md-nav__link">
+    <span class="md-ellipsis">
+      Pass pipeline
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#codegen-optimization-level" class="md-nav__link">
+    <span class="md-ellipsis">
+      Codegen optimization level
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#codegen-method" class="md-nav__link">
+    <span class="md-ellipsis">
+      Codegen method
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#mandatory-replay-hygiene" class="md-nav__link">
+    <span class="md-ellipsis">
+      Mandatory replay hygiene
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#configuration-identity-and-hashing" class="md-nav__link">
+    <span class="md-ellipsis">
+      Configuration identity and hashing
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#how-this-maps-to-the-cli" class="md-nav__link">
+    <span class="md-ellipsis">
+      How this maps to the CLI
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#recommended-usage-patterns" class="md-nav__link">
+    <span class="md-ellipsis">
+      Recommended usage patterns
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#summary" class="md-nav__link">
+    <span class="md-ellipsis">
+      Summary
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tune/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Tune
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  <span class="md-ellipsis">
+    Develop
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            Develop
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../dev/python/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Python
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../dev/cpp/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    C++
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Examples
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#mental-model" class="md-nav__link">
+    <span class="md-ellipsis">
+      Mental model
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#configuration-object" class="md-nav__link">
+    <span class="md-ellipsis">
+      Configuration object
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#launch-configuration-knobs" class="md-nav__link">
+    <span class="md-ellipsis">
+      Launch configuration knobs
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Launch configuration knobs">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#grid-and-block-dimensions" class="md-nav__link">
+    <span class="md-ellipsis">
+      Grid and block dimensions
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#dynamic-shared-memory" class="md-nav__link">
+    <span class="md-ellipsis">
+      Dynamic shared memory
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#specialization-knobs" class="md-nav__link">
+    <span class="md-ellipsis">
+      Specialization knobs
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Specialization knobs">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#specialize-arguments" class="md-nav__link">
+    <span class="md-ellipsis">
+      Specialize arguments
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#specialize-launch-dimensions" class="md-nav__link">
+    <span class="md-ellipsis">
+      Specialize launch dimensions
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#launch-bounds-controls" class="md-nav__link">
+    <span class="md-ellipsis">
+      Launch bounds controls
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Launch bounds controls">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#validity-constraints" class="md-nav__link">
+    <span class="md-ellipsis">
+      Validity constraints
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#grounding-unused-values" class="md-nav__link">
+    <span class="md-ellipsis">
+      Grounding unused values
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#compilation-and-code-generation-knobs" class="md-nav__link">
+    <span class="md-ellipsis">
+      Compilation and code generation knobs
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Compilation and code generation knobs">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#pass-pipeline" class="md-nav__link">
+    <span class="md-ellipsis">
+      Pass pipeline
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#codegen-optimization-level" class="md-nav__link">
+    <span class="md-ellipsis">
+      Codegen optimization level
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#codegen-method" class="md-nav__link">
+    <span class="md-ellipsis">
+      Codegen method
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#mandatory-replay-hygiene" class="md-nav__link">
+    <span class="md-ellipsis">
+      Mandatory replay hygiene
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#configuration-identity-and-hashing" class="md-nav__link">
+    <span class="md-ellipsis">
+      Configuration identity and hashing
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#how-this-maps-to-the-cli" class="md-nav__link">
+    <span class="md-ellipsis">
+      How this maps to the CLI
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#recommended-usage-patterns" class="md-nav__link">
+    <span class="md-ellipsis">
+      Recommended usage patterns
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#summary" class="md-nav__link">
+    <span class="md-ellipsis">
+      Summary
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+  
+  
+
+
+<h1 id="replay-configuration">Replay Configuration<a class="headerlink" href="#replay-configuration" title="Permanent link">&para;</a></h1>
+<p>Mneme replay is controlled by an explicit <strong>replay configuration</strong>: a compact
+set of parameters that determines <strong>how a recorded kernel is recompiled and
+executed</strong> during <code>mneme replay</code> and during tuning.</p>
+<p>Replay configurations are first-class objects in Mneme. They can be:
+- created from recorded defaults,
+- overridden from the CLI,
+- generated programmatically (Python API), and
+- hashed to obtain a stable identifier for experiments.</p>
+<hr />
+<h2 id="mental-model">Mental model<a class="headerlink" href="#mental-model" title="Permanent link">&para;</a></h2>
+<p>A replay configuration answers two questions:</p>
+<ol>
+<li>
+<p><strong>How should the kernel be launched?</strong><br />
+   (grid/block dimensions, shared memory)</p>
+</li>
+<li>
+<p><strong>How should the kernel be recompiled?</strong><br />
+   (IR pipeline, specialization options, codegen settings)</p>
+</li>
+</ol>
+<p>Mneme uses the recorded execution as a baseline. When options are omitted,
+the <strong>recorded values are reused</strong>.</p>
+<hr />
+<h2 id="configuration-object">Configuration object<a class="headerlink" href="#configuration-object" title="Permanent link">&para;</a></h2>
+<p>In the Python API, replay configurations are represented by:</p>
+<ul>
+<li><code>mneme.mneme_types.ExperimentConfiguration</code></li>
+</ul>
+<p>This object is intentionally:
+- <strong>serializable</strong> (<code>to_dict()</code> / <code>from_dict()</code>),
+- <strong>validatable</strong> (<code>is_valid()</code>),
+- <strong>groundable</strong> (<code>ground()</code>), and
+- <strong>hashable</strong> (<code>hash()</code>), so configurations can be tracked persistently
+  across runs.</p>
+<hr />
+<h2 id="launch-configuration-knobs">Launch configuration knobs<a class="headerlink" href="#launch-configuration-knobs" title="Permanent link">&para;</a></h2>
+<p>These fields control the concrete kernel launch:</p>
+<h3 id="grid-and-block-dimensions">Grid and block dimensions<a class="headerlink" href="#grid-and-block-dimensions" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>grid: dim3</code><br />
+  Grid dimensions (x, y, z).  </li>
+<li><code>block: dim3</code><br />
+  Block dimensions (x, y, z).</li>
+</ul>
+<p>By default, Mneme uses the recorded dimensions for the selected instance
+(dynamic hash). Users may override them to explore alternative launch
+geometries.</p>
+<blockquote>
+<p>In many kernels, <code>block.x</code> is the primary tuning dimension; Mneme supports
+overriding any of x/y/z.</p>
+</blockquote>
+<h3 id="dynamic-shared-memory">Dynamic shared memory<a class="headerlink" href="#dynamic-shared-memory" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>shared_mem: int</code><br />
+  Dynamic shared memory bytes for the launch.</li>
+</ul>
+<p>If not set explicitly, Mneme defaults to the recorded shared memory size.</p>
+<hr />
+<h2 id="specialization-knobs">Specialization knobs<a class="headerlink" href="#specialization-knobs" title="Permanent link">&para;</a></h2>
+<p>Mneme can apply specialization when replaying a kernel. These options
+control <em>what is treated as constant</em> during replay compilation.</p>
+<h3 id="specialize-arguments">Specialize arguments<a class="headerlink" href="#specialize-arguments" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>specialize: bool</code><br />
+  Enables specialization based on the recorded execution context.</li>
+</ul>
+<p>Conceptually, this allows Mneme to propagate recorded values into the IR,
+enabling constant folding and simplification. The exact specialization
+surface is backend-dependent and evolves over time. Briefly, any custom specialization 
+supported in <code>proteus</code> is also exposed in this parameter.</p>
+<h3 id="specialize-launch-dimensions">Specialize launch dimensions<a class="headerlink" href="#specialize-launch-dimensions" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>specialize_dims: bool</code><br />
+  Specializes <code>ThreadID.*</code>, <code>BlockDim.*</code>, <code>GridDim.*</code> as constants.</li>
+</ul>
+<p>This is useful when the kernel’s control flow depends on launch geometry
+(e.g., bounds checks, tiling, unrolling decisions).</p>
+<hr />
+<h2 id="launch-bounds-controls">Launch bounds controls<a class="headerlink" href="#launch-bounds-controls" title="Permanent link">&para;</a></h2>
+<p>Launch bounds affect register allocation and occupancy. Mneme can
+optionally inject launch bounds into the generated kernel.</p>
+<ul>
+<li><code>set_launch_bounds: bool</code><br />
+  Enable launch bounds injection.</li>
+<li><code>max_threads: int</code><br />
+  Launch bound <code>max_threads</code> parameter.</li>
+<li><code>min_blocks_per_sm: int</code><br />
+  Launch bound <code>min_blocks_per_sm</code> parameter.</li>
+</ul>
+<h3 id="validity-constraints">Validity constraints<a class="headerlink" href="#validity-constraints" title="Permanent link">&para;</a></h3>
+<p>Mneme enforces a basic constraint:</p>
+<blockquote>
+<p>If launch bounds are enabled, <code>max_threads</code> must be ≥ total threads per block.</p>
+</blockquote>
+<p>In other words:</p>
+<p><code>max_threads &gt;= block.x * block.y * block.z</code></p>
+<p>The Python API exposes this via:</p>
+<ul>
+<li><code>ExperimentConfiguration.is_valid()</code></li>
+</ul>
+<h3 id="grounding-unused-values">Grounding unused values<a class="headerlink" href="#grounding-unused-values" title="Permanent link">&para;</a></h3>
+<p>When launch bounds are disabled, Mneme treats <code>max_threads</code> and
+<code>min_blocks_per_sm</code> as unused knobs. To make hashing stable and reduce
+configuration ambiguity, Mneme supports “grounding”:</p>
+<ul>
+<li><code>ExperimentConfiguration.ground()</code></li>
+</ul>
+<p>This sets unused launch-bounds fields to zero when <code>set_launch_bounds=False</code>.</p>
+<hr />
+<h2 id="compilation-and-code-generation-knobs">Compilation and code generation knobs<a class="headerlink" href="#compilation-and-code-generation-knobs" title="Permanent link">&para;</a></h2>
+<p>These fields control how Mneme recompiles LLVM IR into a device object.</p>
+<h3 id="pass-pipeline">Pass pipeline<a class="headerlink" href="#pass-pipeline" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>passes: str</code><br />
+  The IR optimization pipeline specification, e.g. <code>default&lt;O3&gt;</code>.</li>
+</ul>
+<p>This is the primary “compiler pipeline” knob for replay and tuning. It
+controls the sequence of transformations applied to the recorded LLVM IR
+before code generation.</p>
+<h3 id="codegen-optimization-level">Codegen optimization level<a class="headerlink" href="#codegen-optimization-level" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>codegen_opt: int</code><br />
+  Backend optimization level (typically 0–3).</li>
+</ul>
+<p>This influences backend passes during machine code generation (register
+allocation heuristics, scheduling, etc.), distinct from IR-level pipelines.</p>
+<h3 id="codegen-method">Codegen method<a class="headerlink" href="#codegen-method" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>codegen_method: str</code><br />
+  Code generation strategy. Mneme currently supports:</li>
+<li><code>"serial"</code>: compile in a single-threaded codegen path.</li>
+</ul>
+<blockquote>
+<p>Mneme exposes this knob because Proteus can support different backends
+over time; Mneme currently restricts it to what is supported and tested.</p>
+</blockquote>
+<h3 id="mandatory-replay-hygiene">Mandatory replay hygiene<a class="headerlink" href="#mandatory-replay-hygiene" title="Permanent link">&para;</a></h3>
+<p>Mneme currently enforces two IR hygiene options:</p>
+<ul>
+<li><code>prune: bool</code> (currently mandatory <code>True</code>)<br />
+  Enables IR pruning / dead-code elimination.</li>
+<li><code>internalize: bool</code> (currently mandatory <code>True</code>)<br />
+  Internalizes symbols to reduce visibility and improve replay isolation.</li>
+</ul>
+<p>These are exposed as fields because Mneme intends to explore and document
+their performance/correctness tradeoffs in the future, but today they are
+treated as always-on.</p>
+<hr />
+<h2 id="configuration-identity-and-hashing">Configuration identity and hashing<a class="headerlink" href="#configuration-identity-and-hashing" title="Permanent link">&para;</a></h2>
+<p>Replay configurations are designed to be tracked and compared across runs.</p>
+<ul>
+<li><code>ExperimentConfiguration.to_dict()</code> produces a JSON-serializable view.</li>
+<li><code>ExperimentConfiguration.hash()</code> computes a stable SHA-256 digest over the
+  normalized representation.</li>
+</ul>
+<p>This enables:
+- stable experiment IDs,
+- caching of replay results,
+- reproducing “best configs” from tuning runs.</p>
+<hr />
+<h2 id="how-this-maps-to-the-cli">How this maps to the CLI<a class="headerlink" href="#how-this-maps-to-the-cli" title="Permanent link">&para;</a></h2>
+<p>The <code>mneme replay</code> CLI flags correspond directly to configuration fields:</p>
+<ul>
+<li><code>--grid-dim-*</code> → <code>grid.{x,y,z}</code></li>
+<li><code>--block-dim-*</code> → <code>block.{x,y,z}</code></li>
+<li><code>--shared-mem</code> → <code>shared_mem</code></li>
+<li><code>--specialize / --no-specialize</code> → <code>specialize</code></li>
+<li><code>--set-launch-bounds</code> + <code>--max-threads</code> + <code>--min-threads-per-block</code>
+  → launch bounds fields</li>
+<li><code>--specialize-dims</code> → <code>specialize_dims</code></li>
+<li><code>passes</code> positional argument → <code>passes</code></li>
+<li><code>--codegen-opt</code> → <code>codegen_opt</code></li>
+<li><code>--codegen-method</code> → <code>codegen_method</code></li>
+</ul>
+<p>For CLI details, see <strong>Usage → CLI</strong>.</p>
+<hr />
+<h2 id="recommended-usage-patterns">Recommended usage patterns<a class="headerlink" href="#recommended-usage-patterns" title="Permanent link">&para;</a></h2>
+<ul>
+<li>
+<p><strong>Start from a recorded instance</strong> (dynamic hash) and replay with defaults.<br />
+  This gives a correctness baseline.</p>
+</li>
+<li>
+<p><strong>Change one family of knobs at a time</strong>:</p>
+</li>
+<li>launch geometry (block/grid),</li>
+<li>specialization toggles,</li>
+<li>
+<p>pipeline (<code>passes</code>) and codegen opt.</p>
+</li>
+<li>
+<p><strong>Use hashing for reproducibility</strong>:
+  persist the config dict and hash alongside performance results.</p>
+</li>
+</ul>
+<hr />
+<h2 id="summary">Summary<a class="headerlink" href="#summary" title="Permanent link">&para;</a></h2>
+<p>Replay configuration is Mneme’s “control surface” for:
+- reproducing recorded kernel executions,
+- enabling controlled experimentation,
+- defining tuning search spaces.</p>
+<p>A single recorded kernel instance can be replayed under many
+configurations, but each configuration remains explicit, serializable,
+and reproducible.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+    <div class="md-copyright__highlight">
+      Copyright &copy; 2024 - 2025 Lawrence Livermore National Security, LLC and mneme project contributors.
+    </div>
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    <script id="__config" type="application/json">{"base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "content.code.copy", "search.highlight"], "search": "../../assets/javascripts/workers/search.b8dbb3d2.min.js", "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.af256bd8.min.js"></script>
+      
+    
+  </body>
+</html>

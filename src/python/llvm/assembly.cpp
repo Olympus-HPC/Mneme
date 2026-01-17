@@ -1,3 +1,6 @@
+// Copyright (c) 2021-2024. LLNL-CODE-2000766 and Mneme Contributors
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+
 #include "llvm/AsmParser/Parser.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"

@@ -1,0 +1,1755 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+      
+        <link rel="prev" href="../overview/">
+      
+      
+        <link rel="next" href="../static-dynamic/">
+      
+      
+      <link rel="icon" href="../../assets/images/MnemeLogoNotext.svg">
+      <meta name="generator" content="mkdocs-1.6.0, mkdocs-material-9.5.33">
+    
+    
+      
+        <title>Execution Phases - Mneme</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.3cba04c6.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce((e,_)=>(e<<5)-e+_.charCodeAt(0),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+    
+  </head>
+  
+  
+    <body dir="ltr">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#mneme-execution-phases" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Mneme" class="md-header__button md-logo" aria-label="Mneme" data-md-component="logo">
+      
+  <img src="../../assets/images/MnemeLogoNotext.svg" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3V6m0 5h18v2H3v-2m0 5h18v2H3v-2Z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Mneme
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Execution Phases
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+    
+      <script>var media,input,key,value,palette=__md_get("__palette");if(palette&&palette.color){"(prefers-color-scheme)"===palette.color.media&&(media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']"),palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent"));for([key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      <label class="md-header__button md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.516 6.516 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5Z"/></svg>
+      </label>
+      <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.516 6.516 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5Z"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11h12Z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41Z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/Olympus-HPC/Mneme" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.6.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M439.55 236.05 244 40.45a28.87 28.87 0 0 0-40.81 0l-40.66 40.63 51.52 51.52c27.06-9.14 52.68 16.77 43.39 43.68l49.66 49.66c34.23-11.8 61.18 31 35.47 56.69-26.49 26.49-70.21-2.87-56-37.34L240.22 199v121.85c25.3 12.54 22.26 41.85 9.08 55a34.34 34.34 0 0 1-48.55 0c-17.57-17.6-11.07-46.91 11.25-56v-123c-20.8-8.51-24.6-30.74-18.64-45L142.57 101 8.45 235.14a28.86 28.86 0 0 0 0 40.81l195.61 195.6a28.86 28.86 0 0 0 40.8 0l194.69-194.69a28.86 28.86 0 0 0 0-40.81z"/></svg>
+  </div>
+  <div class="md-source__repository">
+    Olympus-HPC/Mneme
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../usage/getting-started/" class="md-tabs__link">
+        
+  
+    
+  
+  Getting Started
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../usage/getting-started/" class="md-tabs__link">
+          
+  
+  Usage
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../overview/" class="md-tabs__link">
+          
+  
+  Concepts
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../dev/python/" class="md-tabs__link">
+          
+  
+  Develop
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../examples/" class="md-tabs__link">
+        
+  
+    
+  
+  Examples
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Mneme" class="md-nav__button md-logo" aria-label="Mneme" data-md-component="logo">
+      
+  <img src="../../assets/images/MnemeLogoNotext.svg" alt="logo">
+
+    </a>
+    Mneme
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/Olympus-HPC/Mneme" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.6.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M439.55 236.05 244 40.45a28.87 28.87 0 0 0-40.81 0l-40.66 40.63 51.52 51.52c27.06-9.14 52.68 16.77 43.39 43.68l49.66 49.66c34.23-11.8 61.18 31 35.47 56.69-26.49 26.49-70.21-2.87-56-37.34L240.22 199v121.85c25.3 12.54 22.26 41.85 9.08 55a34.34 34.34 0 0 1-48.55 0c-17.57-17.6-11.07-46.91 11.25-56v-123c-20.8-8.51-24.6-30.74-18.64-45L142.57 101 8.45 235.14a28.86 28.86 0 0 0 0 40.81l195.61 195.6a28.86 28.86 0 0 0 40.8 0l194.69-194.69a28.86 28.86 0 0 0 0-40.81z"/></svg>
+  </div>
+  <div class="md-source__repository">
+    Olympus-HPC/Mneme
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Home
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../usage/getting-started/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Getting Started
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  <span class="md-ellipsis">
+    Usage
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            Usage
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../usage/getting-started/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Getting Started
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../usage/cli/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    CLI
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../usage/artifacts/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Artifacts
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../usage/tune/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Tune
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../usage/install/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Install
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../usage/record/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Record
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../usage/replay/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Replay
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  <span class="md-ellipsis">
+    Concepts
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            Concepts
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../overview/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Overview
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  <span class="md-ellipsis">
+    Execution Phases
+  </span>
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  <span class="md-ellipsis">
+    Execution Phases
+  </span>
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#phase-1-instrumentation-build-time" class="md-nav__link">
+    <span class="md-ellipsis">
+      Phase 1: Instrumentation (build time)
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phase 1: Instrumentation (build time)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#purpose" class="md-nav__link">
+    <span class="md-ellipsis">
+      Purpose
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-happens" class="md-nav__link">
+    <span class="md-ellipsis">
+      What happens
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="What happens">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-kernel-code-capture" class="md-nav__link">
+    <span class="md-ellipsis">
+      1. Kernel code capture
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-kernel-launch-interception" class="md-nav__link">
+    <span class="md-ellipsis">
+      2. Kernel launch interception
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-fatbinary-and-global-variable-registration" class="md-nav__link">
+    <span class="md-ellipsis">
+      3. Fatbinary and global variable registration
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-is-produced" class="md-nav__link">
+    <span class="md-ellipsis">
+      What is produced
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-has-not-happened-yet" class="md-nav__link">
+    <span class="md-ellipsis">
+      What has not happened yet
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#summary" class="md-nav__link">
+    <span class="md-ellipsis">
+      Summary
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-2-recording-runtime" class="md-nav__link">
+    <span class="md-ellipsis">
+      Phase 2: Recording (runtime)
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phase 2: Recording (runtime)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#purpose_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      Purpose
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#core-idea-capture-code-and-memory" class="md-nav__link">
+    <span class="md-ellipsis">
+      Core idea: capture code and memory
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#device-memory-tracking" class="md-nav__link">
+    <span class="md-ellipsis">
+      Device memory tracking
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#capturing-kernel-memory-state" class="md-nav__link">
+    <span class="md-ellipsis">
+      Capturing kernel memory state
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#kernel-identity-and-code-association" class="md-nav__link">
+    <span class="md-ellipsis">
+      Kernel identity and code association
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-is-produced_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      What is produced
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#summary_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      Summary
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-3-replay-runtime" class="md-nav__link">
+    <span class="md-ellipsis">
+      Phase 3: Replay (runtime)
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phase 3: Replay (runtime)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#purpose_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      Purpose
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#core-idea-restore-recompile-execute" class="md-nav__link">
+    <span class="md-ellipsis">
+      Core idea: restore, recompile, execute
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#restoring-device-memory-state" class="md-nav__link">
+    <span class="md-ellipsis">
+      Restoring device memory state
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#kernel-recompilation-from-llvm-ir" class="md-nav__link">
+    <span class="md-ellipsis">
+      Kernel recompilation from LLVM IR
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#replay-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      Replay configuration
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#execution-and-validation" class="md-nav__link">
+    <span class="md-ellipsis">
+      Execution and validation
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../static-dynamic/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Static & Dynamic Hashes
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../artifacts/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Artifacts
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../llvm-boundary/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Why LLVM IR as a boundary
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../replay-configuration/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Replay Configuration
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tune/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Tune
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  <span class="md-ellipsis">
+    Develop
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            Develop
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../dev/python/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Python
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../dev/cpp/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    C++
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Examples
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#phase-1-instrumentation-build-time" class="md-nav__link">
+    <span class="md-ellipsis">
+      Phase 1: Instrumentation (build time)
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phase 1: Instrumentation (build time)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#purpose" class="md-nav__link">
+    <span class="md-ellipsis">
+      Purpose
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-happens" class="md-nav__link">
+    <span class="md-ellipsis">
+      What happens
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="What happens">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-kernel-code-capture" class="md-nav__link">
+    <span class="md-ellipsis">
+      1. Kernel code capture
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-kernel-launch-interception" class="md-nav__link">
+    <span class="md-ellipsis">
+      2. Kernel launch interception
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-fatbinary-and-global-variable-registration" class="md-nav__link">
+    <span class="md-ellipsis">
+      3. Fatbinary and global variable registration
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-is-produced" class="md-nav__link">
+    <span class="md-ellipsis">
+      What is produced
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-has-not-happened-yet" class="md-nav__link">
+    <span class="md-ellipsis">
+      What has not happened yet
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#summary" class="md-nav__link">
+    <span class="md-ellipsis">
+      Summary
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-2-recording-runtime" class="md-nav__link">
+    <span class="md-ellipsis">
+      Phase 2: Recording (runtime)
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phase 2: Recording (runtime)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#purpose_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      Purpose
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#core-idea-capture-code-and-memory" class="md-nav__link">
+    <span class="md-ellipsis">
+      Core idea: capture code and memory
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#device-memory-tracking" class="md-nav__link">
+    <span class="md-ellipsis">
+      Device memory tracking
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#capturing-kernel-memory-state" class="md-nav__link">
+    <span class="md-ellipsis">
+      Capturing kernel memory state
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#kernel-identity-and-code-association" class="md-nav__link">
+    <span class="md-ellipsis">
+      Kernel identity and code association
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-is-produced_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      What is produced
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#summary_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      Summary
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-3-replay-runtime" class="md-nav__link">
+    <span class="md-ellipsis">
+      Phase 3: Replay (runtime)
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phase 3: Replay (runtime)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#purpose_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      Purpose
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#core-idea-restore-recompile-execute" class="md-nav__link">
+    <span class="md-ellipsis">
+      Core idea: restore, recompile, execute
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#restoring-device-memory-state" class="md-nav__link">
+    <span class="md-ellipsis">
+      Restoring device memory state
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#kernel-recompilation-from-llvm-ir" class="md-nav__link">
+    <span class="md-ellipsis">
+      Kernel recompilation from LLVM IR
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#replay-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      Replay configuration
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#execution-and-validation" class="md-nav__link">
+    <span class="md-ellipsis">
+      Execution and validation
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+  
+  
+
+
+<h1 id="mneme-execution-phases">Mneme Execution Phases<a class="headerlink" href="#mneme-execution-phases" title="Permanent link">&para;</a></h1>
+<p>This page describes the three execution phases of Mneme and how they
+work together to enable kernel record, replay, and tuning.</p>
+<hr />
+<h2 id="phase-1-instrumentation-build-time">Phase 1: Instrumentation (build time)<a class="headerlink" href="#phase-1-instrumentation-build-time" title="Permanent link">&para;</a></h2>
+<h3 id="purpose">Purpose<a class="headerlink" href="#purpose" title="Permanent link">&para;</a></h3>
+<p>Purpose</p>
+<p>The purpose of the instrumentation phase is to produce a recordable executable:
+a binary that self-describes its GPU kernels and can be observed by Mneme at runtime.</p>
+<p>Recording and replay require a stable handle to the kernel code itself. Rather than
+trying to reconstruct this information from source code—which is difficult due to
+language semantics, translation units, and type-system complexity—Mneme operates
+at the LLVM IR level, where:</p>
+<ul>
+<li>the type system is explicit and normalized,</li>
+<li>translation units are well defined, and</li>
+<li>kernel boundaries and dependencies are clear.</li>
+</ul>
+<p>Instrumentation provides a single, unified analysis point—the executable—where
+kernel code, metadata, and runtime hooks are consistently available.</p>
+<h3 id="what-happens">What happens<a class="headerlink" href="#what-happens" title="Permanent link">&para;</a></h3>
+<p>What happens</p>
+<p>During compilation, Mneme (via Proteus) applies an LLVM instrumentation pass that performs two complementary actions:</p>
+<h4 id="1-kernel-code-capture">1. <strong>Kernel code capture</strong><a class="headerlink" href="#1-kernel-code-capture" title="Permanent link">&para;</a></h4>
+<p>For each GPU kernel, the pass:</p>
+<ul>
+<li>identifies the kernel entry point,</li>
+<li>collects the kernel’s LLVM IR along with its entire transitive dependency graph, and</li>
+<li>embeds this information into a dedicated ELF section of the device object.</li>
+</ul>
+<p>Each embedded data segment corresponds to a single kernel and contains everything
+required to later recompile and specialize that kernel in isolation.</p>
+<h4 id="2-kernel-launch-interception">2. <strong>Kernel launch interception</strong><a class="headerlink" href="#2-kernel-launch-interception" title="Permanent link">&para;</a></h4>
+<p>During host-side compilation, all GPU kernel launches are redirected to pass
+through the Proteus runtime system. </p>
+<p>Instead of invoking the vendor runtime API directly (e.g., CUDA or HIP launch calls),
+the application <em>enters the Proteus runtime</em> which provides a controlled interception point used by Mneme during recording and replay.
+This redirection is transparent to the application and preserves original behavior
+when Mneme is not actively recording.</p>
+<h4 id="3-fatbinary-and-global-variable-registration">3. <strong>Fatbinary and global variable registration</strong><a class="headerlink" href="#3-fatbinary-and-global-variable-registration" title="Permanent link">&para;</a></h4>
+<p>During host-side compilation, the instrumentation pass performs registration of the fatbinary global variable and kernel stub handles to the
+proteus runtime system.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>The instrumentation pass is not developed by Mneme, instead we completely rely on proteus instrumentation pass maintained and developed for the
+<a href="https://olympus-hpc.github.io/proteus/user/interface/#code-annotations">annotation based JIT interface</a>.</p>
+</div>
+<h3 id="what-is-produced">What is produced<a class="headerlink" href="#what-is-produced" title="Permanent link">&para;</a></h3>
+<p>The instrumentation phase produces a recordable executable with the following properties:
+- it contains embedded GPU kernel LLVM IR stored in ELF sections,
+- it launches GPU kernels through the Proteus runtime rather than directly through
+the vendor API, and
+- it behaves identically to the original application when executed normally.</p>
+<h3 id="what-has-not-happened-yet">What has <strong>not happened</strong> yet<a class="headerlink" href="#what-has-not-happened-yet" title="Permanent link">&para;</a></h3>
+<p>At this stage:</p>
+<ul>
+<li>no recording occurs, and</li>
+<li>no device memory is captured.</li>
+</ul>
+<h3 id="summary">Summary<a class="headerlink" href="#summary" title="Permanent link">&para;</a></h3>
+<p>Instrumentation simply enables the subsequent runtime phases by making kernel code
+and execution observable. This executable is the input to the record phase, where actual kernel executions
+and device memory state are captured.</p>
+<hr />
+<h2 id="phase-2-recording-runtime">Phase 2: Recording (runtime)<a class="headerlink" href="#phase-2-recording-runtime" title="Permanent link">&para;</a></h2>
+<h3 id="purpose_1">Purpose<a class="headerlink" href="#purpose_1" title="Permanent link">&para;</a></h3>
+<p>The purpose of the record phase is to capture everything required to
+re-execute a GPU kernel as an independent executable, without the
+original application. At runtime, Mneme records a concrete kernel invocation, consisting of:</p>
+<ul>
+<li>the kernel code (LLVM IR),</li>
+<li>the complete device memory state the kernel can observe, and</li>
+<li>the kernel launch configuration.</li>
+</ul>
+<p>Together, these form a self-contained description of a single kernel
+execution.</p>
+<h3 id="core-idea-capture-code-and-memory">Core idea: capture code and memory<a class="headerlink" href="#core-idea-capture-code-and-memory" title="Permanent link">&para;</a></h3>
+<p>To faithfully replay a kernel, Mneme must capture both:</p>
+<ol>
+<li>the code being executed, and</li>
+<li>the memory state the kernel operates on.</li>
+</ol>
+<p>The recorded LLVM IR provides a stable representation of the kernel
+code, while the device memory snapshots provide realistic and
+reproducible inputs.</p>
+<blockquote>
+<p>Code + Memory = concrete kernel invocation</p>
+</blockquote>
+<h3 id="device-memory-tracking">Device memory tracking<a class="headerlink" href="#device-memory-tracking" title="Permanent link">&para;</a></h3>
+<p>During recording, Mneme intercepts all device memory allocations and
+deallocations performed by the application.</p>
+<p>To do this, Mneme provides its own device memory allocator, which:</p>
+<ol>
+<li>tracks the size and device address of every allocation,</li>
+<li>maintains a virtual view of the device address space, and</li>
+<li>records allocation lifetimes across kernel launches.</li>
+</ol>
+<p>Internally, this allocator is implemented as a virtual page-based
+memory manager, allowing Mneme to reason about device memory layout
+independently of the underlying vendor runtime.</p>
+<p>This mechanism enables Mneme to precisely identify which regions of
+device memory may be accessed by a kernel.</p>
+<h3 id="capturing-kernel-memory-state">Capturing kernel memory state<a class="headerlink" href="#capturing-kernel-memory-state" title="Permanent link">&para;</a></h3>
+<p>Before each kernel launch, Mneme captures the prologue memory state:
+a snapshot of all relevant device memory regions.</p>
+<p>After kernel execution completes, Mneme captures the epilogue memory
+state.</p>
+<p>These snapshots include:</p>
+<ul>
+<li>device heap allocations,</li>
+<li>device global variables, and</li>
+<li>kernel argument memory.</li>
+</ul>
+<p>The closure of kernel arguments, global variables and heap memory represents a
+superset of the memory the kernel may access during execution, ensuring
+that replay has all required inputs available.</p>
+<h3 id="kernel-identity-and-code-association">Kernel identity and code association<a class="headerlink" href="#kernel-identity-and-code-association" title="Permanent link">&para;</a></h3>
+<p>The instrumentation phase provides Mneme with:
+access to the kernel’s LLVM IR (embedded in ELF sections), and
+metadata describing kernel identity and global variables.</p>
+<p>During recording, Mneme querries <em>proteus</em> for LLVM IR and associates each observed kernel launch with:</p>
+<ul>
+<li>its static kernel identity (LLVM IR code),</li>
+<li>a dynamic execution identity (launch configuration and runtime parameters), and</li>
+<li>the corresponding memory snapshots.</li>
+</ul>
+<p>This association is stored in the recording database, which serves as
+the entry point for replay and tuning workflows.</p>
+<h3 id="what-is-produced_1">What is produced<a class="headerlink" href="#what-is-produced_1" title="Permanent link">&para;</a></h3>
+<p>The record phase produces a set of recording artifacts, including:</p>
+<ul>
+<li>a recording database (JSON) describing a single static kernel and all the dynamic instances being recorded</li>
+<li>device memory snapshots (prologue and epilogue) for every static kernel and dynamic instance being recorded</li>
+<li>references to the recorded LLVM IR modules.</li>
+</ul>
+<p>These artifacts are immutable and can be reused indefinitely for replay,
+verification, and tuning.</p>
+<h3 id="summary_1">Summary<a class="headerlink" href="#summary_1" title="Permanent link">&para;</a></h3>
+<p>The record phase transforms a live kernel execution into a portable,
+replayable description by capturing:</p>
+<ul>
+<li>the kernel’s LLVM IR,</li>
+<li>the complete device memory state it observes, and</li>
+<li>its execution configuration.</li>
+</ul>
+<p>Once recorded, kernels can be replayed and tuned without rerunning the
+original application or re-recording inputs.</p>
+<hr />
+<h2 id="phase-3-replay-runtime">Phase 3: Replay (runtime)<a class="headerlink" href="#phase-3-replay-runtime" title="Permanent link">&para;</a></h2>
+<h3 id="purpose_2">Purpose<a class="headerlink" href="#purpose_2" title="Permanent link">&para;</a></h3>
+<p>The purpose of the replay phase is to re-execute a recorded GPU kernel
+in isolation, under controlled and configurable conditions, without
+running the original application.</p>
+<p>Replay allows users to:</p>
+<ul>
+<li>faithfully reproduce recorded kernel executions,</li>
+<li>validate correctness against recorded memory state,</li>
+<li>modify compilation and launch parameters, and</li>
+<li>systematically explore performance optimizations.</li>
+</ul>
+<p>Replay operates entirely on the artifacts produced during recording.</p>
+<h3 id="core-idea-restore-recompile-execute">Core idea: restore, recompile, execute<a class="headerlink" href="#core-idea-restore-recompile-execute" title="Permanent link">&para;</a></h3>
+<p>Replay consists of three fundamental steps:</p>
+<ul>
+<li>Restore device memory</li>
+<li>Recompile the kernel using proteus</li>
+<li>Execute and validate</li>
+</ul>
+<p>Together, these steps reconstruct a concrete kernel execution that is
+equivalent to the recorded one, while allowing controlled variation.</p>
+<p>All of these steps are exposed a C-bindings to python, as such we hide from
+the user the system level intricancies and we provide a fast prototyping core
+environment. </p>
+<h3 id="restoring-device-memory-state">Restoring device memory state<a class="headerlink" href="#restoring-device-memory-state" title="Permanent link">&para;</a></h3>
+<p>At the beginning of replay, Mneme restores the prologue device memory
+state recorded during the record phase.</p>
+<p>This involves:</p>
+<ol>
+<li>recreating the virtual device address space,</li>
+<li>remapping recorded memory regions to replay-time allocations, and</li>
+<li>populating device memory with the recorded contents of:<ul>
+<li>heap allocations,</li>
+<li>device global variables, and</li>
+<li>kernel argument buffers.</li>
+</ul>
+</li>
+</ol>
+<p>Memory restoration ensures that the kernel observes the same initial
+state as during recording, independent of the replay environment.</p>
+<h3 id="kernel-recompilation-from-llvm-ir">Kernel recompilation from LLVM IR<a class="headerlink" href="#kernel-recompilation-from-llvm-ir" title="Permanent link">&para;</a></h3>
+<p>Once memory is restored, Mneme recompiles the kernel from recorded LLVM
+IR, not from the original application binary.</p>
+<p>During recompilation, users may optionally apply:</p>
+<ul>
+<li>different optimization pipelines,</li>
+<li>LLVM transformation passes,</li>
+<li>code generation optimization levels,</li>
+<li>argument specialization, and</li>
+<li>launch-bound modifications.</li>
+</ul>
+<p>LLVM IR serves as the stable transformation boundary, enabling replay-time
+code modification without rebuilding the original application.</p>
+<h3 id="replay-configuration">Replay configuration<a class="headerlink" href="#replay-configuration" title="Permanent link">&para;</a></h3>
+<p>Kernel replay is driven by an explicit replay configuration, which
+controls both compilation and execution parameters, including:</p>
+<ul>
+<li>grid and block dimensions,</li>
+<li>shared memory size,</li>
+<li>specialization flags,</li>
+<li>compilation pipelines and optimization levels, and</li>
+<li>execution iteration counts.</li>
+</ul>
+<p>Replay configurations are first-class objects and can be constructed
+manually or generated programmatically during tuning.</p>
+<h3 id="execution-and-validation">Execution and validation<a class="headerlink" href="#execution-and-validation" title="Permanent link">&para;</a></h3>
+<p>After recompilation, Mneme executes the kernel using the restored memory
+state and selected replay configuration.</p>
+<p>Every kernel execution is profiled through the vendor profiling tooling for example in AMD, 
+Mneme uses the <code>rocprofiler-sdk</code> to provide highly accurate performance metrics that can be used as feedback
+for future decisions.</p>
+<p>Following execution, Mneme:</p>
+<ul>
+<li>captures the resulting device memory state, and</li>
+<li>compares it against the recorded epilogue snapshot.</li>
+</ul>
+<p>This comparison enables:</p>
+<ul>
+<li>correctness verification,</li>
+<li>detection of miscompilations or invalid transformations, and</li>
+<li>safe exploration of optimization spaces as replay executions that fail validation can be automatically discarded
+during tuning workflows.</li>
+</ul>
+<h1 id="tuning-and-experimentation">Tuning and experimentation<a class="headerlink" href="#tuning-and-experimentation" title="Permanent link">&para;</a></h1>
+<p>Replay is the foundation of Mneme’s tuning model.</p>
+<p>Because replay is:</p>
+<ul>
+<li>isolated from the original application,</li>
+<li>driven by explicit configurations, and</li>
+<li>validated against recorded memory state,</li>
+</ul>
+<p>it can be executed repeatedly and efficiently across large configuration
+spaces without requiring the entire application to be recompiled and re-executed.</p>
+<p>Replay supports integration with automated tuning frameworks, such as
+Optuna, and enables reproducible performance experimentation.</p>
+<h3 id="what-replay-does-not-do">What replay does not do<a class="headerlink" href="#what-replay-does-not-do" title="Permanent link">&para;</a></h3>
+<p>During replay:</p>
+<ul>
+<li>host-side application logic is not executed,</li>
+<li>CPU memory state is not restored,</li>
+<li>external side effects are not reproduced.</li>
+<li>Replay focuses exclusively on GPU kernel behavior.</li>
+</ul>
+<h3 id="summary_2">Summary<a class="headerlink" href="#summary_2" title="Permanent link">&para;</a></h3>
+<p>The replay phase reconstructs a recorded kernel execution by:</p>
+<ul>
+<li>restoring recorded device memory state,</li>
+<li>recompiling the kernel from LLVM IR, and</li>
+<li>executing it under controlled conditions.</li>
+</ul>
+<p>This enables reproducible validation, optimization, and tuning of GPU
+kernels without rerunning the original application.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+    <div class="md-copyright__highlight">
+      Copyright &copy; 2024 - 2025 Lawrence Livermore National Security, LLC and mneme project contributors.
+    </div>
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    <script id="__config" type="application/json">{"base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "content.code.copy", "search.highlight"], "search": "../../assets/javascripts/workers/search.b8dbb3d2.min.js", "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.af256bd8.min.js"></script>
+      
+    
+  </body>
+</html>

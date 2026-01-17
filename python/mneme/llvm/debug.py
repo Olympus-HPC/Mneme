@@ -1,3 +1,6 @@
+# Copyright (c) 2021-2024. LLNL-CODE-2000766 and Mneme Contributors
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+
 from mneme.llvm.common import _encode_string
 
 from . import ffi, module

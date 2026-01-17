@@ -1,3 +1,6 @@
+# Copyright (c) 2021-2024. LLNL-CODE-2000766 and Mneme Contributors
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+
 
 # This file helps to compute a version number in source trees obtained from
 # git-archive tarball (such as those provided by githubs download-from-tag
