@@ -66,6 +66,7 @@ stages:
   - prerequisites
   - build-and-test
   - test-python-cov
+  - examples
 
 # Template for jobs triggering a build-and-test sub-pipeline:
 .build-and-test:
@@ -83,6 +84,19 @@ stages:
       # - artifact: '${CI_MACHINE}-jobs.yml'
       #   job: 'generate-job-file'
       # (See Umpire CI setup for an example).
+    strategy: depend
+    forward:
+      pipeline_variables: true
+
+.examples:
+  stage: examples
+  trigger:
+    include:
+      - local: '.gitlab/custom-jobs-and-variables.yml'
+      - project: 'radiuss/radiuss-shared-ci'
+        ref: 'v2025.06.0'
+        file: 'pipelines/${CI_MACHINE}.yml'
+      - local: '.gitlab/jobs/${CI_MACHINE}-examples.yml'
     strategy: depend
     forward:
       pipeline_variables: true

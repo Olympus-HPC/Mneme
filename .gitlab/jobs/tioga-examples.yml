@@ -1,0 +1,5 @@
+
+examples:
+  variables:
+    JOB_CMD: scripts/gitlab/ci-examples.sh
+  extends: .job-toss_4_x86_64_ib_cray

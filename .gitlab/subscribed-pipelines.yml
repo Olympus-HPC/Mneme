@@ -64,6 +64,24 @@ tuolumne-build-and-test:
   needs: [tuolumne-up-check]
   extends: [.build-and-test]
 
+tioga-examples:
+  variables:
+    CI_MACHINE: "tioga"
+  needs: [tioga-up-check]
+  extends: [.examples]
+
+lassen-build-and-test:
+  variables:
+    CI_MACHINE: "lassen"
+  needs: [lassen-up-check]
+  extends: [.build-and-test]
+
+lassen-examples:
+  variables:
+    CI_MACHINE: "lassen"
+  needs: [lassen-up-check]
+  extends: [.examples]
+
 
 ## Python tests
 tioga-test-python-cov:
