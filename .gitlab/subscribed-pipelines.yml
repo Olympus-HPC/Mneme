@@ -81,7 +81,7 @@ tuolumne-test-python-cov:
     JOB_CMD:
       value: "scripts/gitlab/ci-python-test.sh"
       expand: false
-  needs: [tioga-up-check]
+  needs: [tuolumne-up-check]
   extends: [.test-python-cov]
 
 

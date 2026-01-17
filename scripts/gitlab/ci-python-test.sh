@@ -27,12 +27,13 @@ echo "Test dir is ${test_dir}"
 
 
 # Make a copy of preinstalled deps to local FS for fast installation
-VENV_NAME="/usr/workspace/LExperts/ci/gitlab/venv-${LCSCHEDCLUSTER}-${MNEME_CI_ROCM_VERSION}-${MNEME_CI_PYTHON_VERSION}/"
-rm -rf ${VENV_NAME}/lib*/python*/site-packages/mneme
+#VENV_NAME="/usr/workspace/LExperts/ci/gitlab/venv-${LCSCHEDCLUSTER}-${MNEME_CI_ROCM_VERSION}-${MNEME_CI_PYTHON_VERSION}/"
+#rm -rf ${VENV_NAME}/lib*/python*/site-packages/mneme
 
 LOCAL_VENV_NAME="${test_dir}/venv/"
 mkdir -p ${LOCAL_VENV_NAME}
-rsync -a "$VENV_NAME/" "$LOCAL_VENV_NAME"
+python -m venv "${LOCAL_VENV_NAME}"
+#rsync -a "$VENV_NAME/" "$LOCAL_VENV_NAME"
 
 pushd ${test_dir}
 source ${LOCAL_VENV_NAME}/bin/activate
