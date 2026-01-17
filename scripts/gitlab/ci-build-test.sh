@@ -1,15 +1,17 @@
 #!/bin/bash
 
-set -e
+set -ex
 
-temp_dir=$(pwd) #$(mktemp -d)
+temp_dir=$(mktemp -d)
 echo "Temporary directory created at: $temp_dir"
 host=$(hostname)
 host=${host//[0-9]/}
 mkdir -p ${temp_dir}/build-${host};
 build_dir=${temp_dir}/build-${host}
-installDir="/dev/shm/install"
+installDir=$(mktemp -d)
 
+mneme_src=$(pwd)
+pushd $build_dir
 
 build_proteus() {
   echo "Building PROTEUS"
@@ -105,9 +107,6 @@ echo "Setting root dir to be ${LLVM_INSTALL_DIR}"
 build_proteus "OFF" "ON" $installDir ON
 echo "After proteus Current directory is $(pwd)"
 build_spdlog $installDir
-mneme_src=$(pwd)
-set -x
-pushd $build_dir
 echo "Current dir is $(pwd)"
 cmake \
 -DCMAKE_BUILD_TYPE=Debug \
@@ -136,8 +135,8 @@ build_proteus "ON" "OFF" $installDir OFF
 echo "After proteus Current directory is $(pwd)"
 build_spdlog $installDir
 echo "After spdlog Current directory is $(pwd)"
-mneme_src=$(pwd)
-pushd $build_dir
+
+
 cmake \
 -DCMAKE_BUILD_TYPE=Relwithdebinfo \
 -Dproteus_DIR=$installDir \
