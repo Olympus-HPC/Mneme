@@ -157,12 +157,12 @@ class CMakeBuild(build_ext):
                         "--depth",
                         "1",
                         "origin",
-                        "v2026.01.0",
+                        "features/cuda-shared",
                     ],
                     cwd=str(Path(self.build_scratch) / "proteus"),
                 )
                 run_command(
-                    ["git", "checkout", "v2026.01.0"],
+                    ["git", "checkout", "-b", "features/cuda-shared", "FETCH_HEAD"],
                     cwd=str(Path(self.build_scratch) / "proteus"),
                 )
 
