@@ -162,7 +162,7 @@ class CMakeBuild(build_ext):
                     cwd=str(Path(self.build_scratch) / "proteus"),
                 )
                 run_command(
-                    ["git", "checkout", "v2026.01.0"],
+                    ["git", "checkout", "-b", "v2026.01.0", "FETCH_HEAD"],
                     cwd=str(Path(self.build_scratch) / "proteus"),
                 )
 
