@@ -18,8 +18,8 @@ build_proteus() {
   if [[ ! -d proteus ]]; then
   	git clone --depth 1 git@github.com:Olympus-HPC/proteus.git
     pushd proteus
-    git fetch --depth 1 origin v2026.01.0
-    git checkout v2026.01.0
+    git fetch --depth 1 origin features/cuda-shared 
+    git checkout -b features/cuda-shared FETCH_HEAD
     popd
   fi
   pushd proteus
@@ -42,6 +42,7 @@ build_proteus() {
   -DPROTEUS_LINK_SHARED_LLVM=${LINK_SHARED_LLVM} \
   -DPROTEUS_ENABLE_CUDA=${PROTEUS_ENABLE_CUDA} \
   -DCMAKE_EXPORT_COMPILE_COMMANDS=on \
+  -DCMAKE_CUDA_ARCHITECTURES=90 \
   -DENABLE_TESTS=Off \
   -DCMAKE_INSTALL_PREFIX=${PROTEUS_INSTALL_DIR}
   make -j 10
@@ -78,7 +79,7 @@ build_spdlog() {
   popd
 }
 
-if [[ "$SYS_TYPE" == "blueos_3_ppc64le_ib_p9" ]]; then
+if [[ "$SYS_TYPE" == "toss_4_x86_64_ib" ]]; then
 ml load gcc/11.2.1
 ml load cmake/3.23
 ml load cuda/12.2
@@ -90,7 +91,8 @@ mkdir -p ${MINICONDA_DIR}
 wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-$(uname -m).sh -O ./${MINICONDA_DIR}/miniconda.sh
 bash ./${MINICONDA_DIR}/miniconda.sh -b -u -p ./${MINICONDA_DIR}
 rm ./${MINICONDA_DIR}/miniconda.sh
-source ./${MINICONDA_DIR}/bin/activate
+source "${MINICONDA_DIR}/etc/profile.d/conda.sh"
+conda activate base
 conda create -y -n mneme -c conda-forge \
     python=3.10 clang=18.1.8 clangxx=18.1.8 llvmdev=18.1.8 lit=18.1.8 clangdev=18.1.8
 else
@@ -117,7 +119,7 @@ cmake \
 -DCMAKE_C_COMPILER=${cc} \
 -DMNEME_LINK_SHARED_LLVM=ON \
 -DCMAKE_CUDA_COMPILER=${cpp} \
--DCMAKE_CUDA_ARCHITECTURES=70 \
+-DCMAKE_CUDA_ARCHITECTURES=90 \
 -DLLVM_INSTALL_DIR=${LLVM_INSTALL_DIR} \
 -DMNEME_ENABLE_HIP=Off \
 -DMNEME_ENABLE_CUDA=On \
