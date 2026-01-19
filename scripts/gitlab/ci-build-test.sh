@@ -80,9 +80,9 @@ build_spdlog() {
 }
 
 if [[ "$SYS_TYPE" == "toss_4_x86_64_ib" ]]; then
-ml load gcc/11.2.1
-ml load cmake/3.23
-ml load cuda/12.2
+ml load cmake/3.30
+ml load cuda/12.2.2
+PYTHON_VERSION=3.12
 
 # Install Clang/LLVM through conda.
 MINICONDA_DIR=miniconda3
@@ -94,9 +94,11 @@ rm ./${MINICONDA_DIR}/miniconda.sh
 source "${MINICONDA_DIR}/etc/profile.d/conda.sh"
 conda activate base
 conda create -y -n mneme -c conda-forge \
-    python=3.10 clang=18.1.8 clangxx=18.1.8 llvmdev=18.1.8 lit=18.1.8 clangdev=18.1.8
+    python=${PYTHON_VERSION} clang=${MNEME_CI_LLVM_VERSION} clangxx=${MNEME_CI_LLVM_VERSION} \
+      clangdev=${MNEME_CI_LLVM_VERSION} llvmdev=${MNEME_CI_LLVM_VERSION} lit=${MNEME_CI_LLVM_VERSION} \
+      gcc=12 gxx=12
 else
-source ./${MINICONDA_DIR}/bin/activate
+source "${MINICONDA_DIR}/etc/profile.d/conda.sh"
 fi
 conda activate mneme
 
@@ -112,6 +114,7 @@ build_spdlog $installDir
 echo "Current dir is $(pwd)"
 cmake \
 -DCMAKE_BUILD_TYPE=Debug \
+-CMAKE_OPTIONS_MACHINE+=" -DCMAKE_CUDA_FLAGS=-std=c++17" \
 -DCMAKE_PREFIX_PATH="$CONDA_PREFIX;$CONDA_PREFIX/lib/cmake" \
 -Dproteus_DIR=$installDir \
 -DCMAKE_INSTALL_PREFIX=$installDir \

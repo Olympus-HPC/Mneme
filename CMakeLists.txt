@@ -12,49 +12,12 @@ set(CMAKE_CXX_STANDARD_REQUIRED YES)
 set(CMAKE_CXX_EXTENSIONS NO)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-string(TOUPPER "${CMAKE_BUILD_TYPE}" BUILD_TYPE_UPPER)
-if(BUILD_TYPE_UPPER STREQUAL "DEBUG")
-  set(CMAKE_CXX_FLAGS_DEBUG_INIT
-      "-gdwarf-4"
-      CACHE STRING "Flags used by the compiler during debug builds" FORCE)
-  set(CMAKE_C_FLAGS_DEBUG_INIT
-      "-gdwarf-4"
-      CACHE STRING "Flags used by the compiler during debug builds" FORCE)
-  set(CMAKE_CUDA_FLAGS_DEBUG_INIT
-      "-gdwarf-4"
-      CACHE STRING "Flags used by the compiler during debug builds" FORCE)
-  message(STATUS "CMAKE_CXX_FLAGS_DEBUG: ${CMAKE_CXX_FLAGS_DEBUG_INIT}")
-  message(STATUS "CMAKE_C_FLAGS_DEBUG: ${CMAKE_C_FLAGS_DEBUG_INIT}")
-  message(STATUS "CMAKE_CUDA_FLAGS_DEBUG: ${CMAKE_CUDA_FLAGS_DEBUG_INIT}")
-  add_compile_options("-gdwarf-4")
-elseif(BUILD_TYPE_UPPER STREQUAL "RELWITHDEBINFO")
-  set(CMAKE_CXX_FLAGS_DEBUG_INIT
-      "-gdwarf-4"
-      CACHE STRING "Flags used by the compiler during debug builds" FORCE)
-  set(CMAKE_C_FLAGS_DEBUG_INIT
-      "-gdwarf-4"
-      CACHE STRING "Flags used by the compiler during debug builds" FORCE)
-  set(CMAKE_CUDA_FLAGS_DEBUG_INIT
-      "-gdwarf-4"
-      CACHE STRING "Flags used by the compiler during debug builds" FORCE)
-  message(STATUS "CMAKE_CXX_FLAGS_DEBUG: ${CMAKE_CXX_FLAGS_DEBUG_INIT}")
-  message(STATUS "CMAKE_C_FLAGS_DEBUG: ${CMAKE_C_FLAGS_DEBUG_INIT}")
-  message(STATUS "CMAKE_CUDA_FLAGS_DEBUG: ${CMAKE_CUDA_FLAGS_DEBUG_INIT}")
-  add_compile_options("-gdwarf-4")
-endif()
-
 option(MNEME_ENABLE_CUDA "Enable CUDA" OFF)
 option(MNEME_ENABLE_HIP "Enable CUDA" OFF)
 option(MNEME_ENABLE_TESTS "Enable Testing" OFF)
 option(MNEME_ENABLE_LOGGER "Enable logging on mneme" OFF)
 option(MNEME_ENABLE_AUTOTUNE "Enable autotuning and generate python" OFF)
 option(MNEME_LINK_SHARED_LLVM "Link with the LLVM shared library" OFF)
-
-include(cmake/SetupLLVM.cmake)
-find_package(proteus REQUIRED)
-include(cmake/MnemeFunctions.cmake)
-get_target_property(proteus_link_dirs proteus INTERFACE_LINK_DIRECTORIES)
-message(STATUS "Proteus Link Directories: ${proteus_link_dirs}")
 
 if(MNEME_ENABLE_LOGGER)
   find_package(spdlog REQUIRED)
@@ -66,23 +29,24 @@ include(CMakePackageConfigHelpers)
 include(GNUInstallDirs)
 
 if(MNEME_ENABLE_CUDA)
-  set(LLVM_VERSION
-      "18.1.8"
-      CACHE STRING "LLVM version")
-  enable_language(CUDA)
   add_definitions("-DMNEME_ENABLE_CUDA")
   find_package(CUDAToolkit REQUIRED)
   find_package(CUDA REQUIRED)
+  enable_language(CUDA)
   message(STATUS "Cuda Libraries: ${CUDA_LIBRARIES}")
   message(STATUS "Cuda Library: ${CUDA_LIBRARY}")
 elseif(MNEME_ENABLE_HIP)
-  set(LLVM_VERSION
-      "18"
-      CACHE STRING "LLVM version")
-  enable_language(HIP)
   find_package(HIP REQUIRED)
+  enable_language(HIP)
   add_definitions("-DMNEME_ENABLE_HIP")
 endif()
+
+include(cmake/SetupLLVM.cmake)
+find_package(proteus REQUIRED)
+include(cmake/MnemeFunctions.cmake)
+get_target_property(proteus_link_dirs proteus INTERFACE_LINK_DIRECTORIES)
+message(STATUS "Proteus Link Directories: ${proteus_link_dirs}")
+
 
 add_subdirectory(src)
 
