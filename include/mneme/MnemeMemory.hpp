@@ -145,6 +145,7 @@ llvm::raw_ostream &operator<<(llvm::raw_ostream &OS,
             (void *)Blob.BlobAddr,
             reinterpret_cast<void *>(Blob.getHostData().get()), Blob.getSize(),
             Blob.getActualSize());
+
   auto EC = DeviceTraits<VendorTypes>::DeviceErrorCheck(
       DeviceTraits<VendorTypes>::DeviceCopy(
           static_cast<void *>(Blob.getHostData().get()),
