@@ -12,9 +12,9 @@
 # definition of these variables in a generic fashion. By overriding the
 # following section, projects can specify the variables to define in the
 # reproducer to exactly reproduce the CI build.
-.lassen_reproducer_vars:
+.matrix_reproducer_vars:
   script:
-    - echo -e "Running on Lassen\n"
+    - echo -e "Running on matrix\n"
 
 # With GitLab CI, included files cannot be empty.
 # TODO: remove when you have at least on job defined.
@@ -39,12 +39,12 @@ variables:
 ## Note: placing the extends section first allows you to override part of the
 ## shared implementation if needed (and if you know what you are doing).
 #<job-name (typically build target description)>:
-#  extends: .job_on_lassen
+#  extends: .job_on_matrix
 #  variables:
 #    <A_VARIABLE>: "<with job specific value>"
 
 .base-job:
-  extends: .job_on_lassen
+  extends: .job_on_matrix
   before_script:
     - echo "=== Start CI Build and Test==="
   after_script:
@@ -54,7 +54,8 @@ variables:
 .build-variants:
   parallel:
     matrix:
-      - MNEME_CI_ENABLE_DEBUG: ["on", "off"]
+      - MNEME_CI_ENABLE_LOGGER: ["on", "off"]
+      - MNEME_CI_LLVM_VERSION: ["18.1.8", "19.1.7"]
 
-build-and-test-lassen:
+build-and-test-matrix:
   extends: [.base-job, .build-variants]
