@@ -19,7 +19,7 @@ build_proteus() {
   	git clone --depth 1 git@github.com:Olympus-HPC/proteus.git
     pushd proteus
     git fetch --depth 1 origin v2026.01.0
-    git checkout v2026.01.0
+    git checkout -b v2026.01.0 FETCH_HEAD
     popd
   fi
   pushd proteus
