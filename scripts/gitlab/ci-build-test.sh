@@ -114,7 +114,7 @@ build_spdlog $installDir
 echo "Current dir is $(pwd)"
 cmake \
 -DCMAKE_BUILD_TYPE=Debug \
--CMAKE_OPTIONS_MACHINE+=" -DCMAKE_CUDA_FLAGS=-std=c++17" \
+-DCMAKE_CUDA_FLAGS=-std=c++17 \
 -DCMAKE_PREFIX_PATH="$CONDA_PREFIX;$CONDA_PREFIX/lib/cmake" \
 -Dproteus_DIR=$installDir \
 -DCMAKE_INSTALL_PREFIX=$installDir \
