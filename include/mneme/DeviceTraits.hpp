@@ -456,6 +456,7 @@ template <> struct DeviceTraits<DeviceVendors::CUDA> {
 
   static DeviceError_t DeviceCopy(void *Dest, void *Src, size_t SizeBytes,
                                   cudaMemcpyKind Kind) {
+    printf("Dest :%p src: %p Size : %ld Kind %d\n", Dest, Src, SizeBytes, Kind);
     return cudaMemcpy(Dest, Src, SizeBytes, Kind);
   }
 
