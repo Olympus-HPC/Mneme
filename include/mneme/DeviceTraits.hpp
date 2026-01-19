@@ -456,7 +456,6 @@ template <> struct DeviceTraits<DeviceVendors::CUDA> {
 
   static DeviceError_t DeviceCopy(void *Dest, void *Src, size_t SizeBytes,
                                   cudaMemcpyKind Kind) {
-    printf("Dest :%p src: %p Size : %ld Kind %d\n", Dest, Src, SizeBytes, Kind);
     return cudaMemcpy(Dest, Src, SizeBytes, Kind);
   }
 
@@ -643,7 +642,6 @@ template <> struct DeviceTraits<DeviceVendors::CUDA> {
     auto Ret = cuMemAddressFree((DevicePtr_t)Addr, Size);
     LOG_DEBUG("Done from driver call ({} {})", Addr, Size);
     auto EC = DeviceErrorCheck(Ret);
-    std::cout << "Got error code\n";
     if (EC) {
       LOG_FATAL("Could not release VA addresses " + EC.value());
     }

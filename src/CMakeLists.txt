@@ -59,8 +59,9 @@ target_include_directories(record SYSTEM PRIVATE ${LLVM_INCLUDE_DIRS} ${CMAKE_SO
 target_link_libraries(record PRIVATE proteus_shared)
 
 if (MNEME_ENABLE_LOGGER)
-        target_link_libraries(record PRIVATE spdlog::spdlog_header_only)
-target_compile_definitions(record PRIVATE MNEME_ENABLE_LOGGER)
+  message(STATUS "Adding SPDLOG in recording")
+  target_link_libraries(record PRIVATE spdlog::spdlog_header_only)
+  target_compile_definitions(record PRIVATE MNEME_ENABLE_LOGGER)
 endif()
 
 if(MNEME_ENABLE_HIP)

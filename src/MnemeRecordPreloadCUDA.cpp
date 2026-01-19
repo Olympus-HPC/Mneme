@@ -74,4 +74,14 @@ cudaError_t cudaGetDevice(int *deviceID) {
   auto &mneme = MnemeRecorderCUDAPreload::instance();
   return mneme.rtGetDevice(deviceID);
 }
+
+cudaError_t __jit_launch_kernel(void *Kernel, dim3 GridDim, dim3 BlockDim,
+                               void **KernelArgs, uint64_t ShmemSize,
+                               void *Stream) {
+  LOG_DEBUG("Enetering Mneme to launch kernel");
+  auto &mneme = MnemeRecorderCUDAPreload::instance();
+  return mneme.rtLaunchKernel(Kernel, GridDim, BlockDim, KernelArgs, ShmemSize,
+                              static_cast<cudaStream_t>(Stream));
+}
+
 }

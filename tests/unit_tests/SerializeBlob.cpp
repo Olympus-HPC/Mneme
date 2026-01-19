@@ -33,7 +33,6 @@ int main(int argc, char **argv) {
 
   auto EC = MnemeDeviceRT::DeviceErrorCheck(
       MnemeDeviceRT::DeviceMalloc((void **)&DData, 128));
-  printf("Device malloc returned %p\n", DData);
   if (EC)
     LOG_FATAL("Could not allocate device data");
 
