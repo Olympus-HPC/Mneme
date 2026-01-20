@@ -9,6 +9,33 @@ from mneme.futures import EvalFuture
 from mneme.recorded_execution import RecordedExecution
 
 
+def has_nvidia_gpu():
+    try:
+        subprocess.check_output("nvidia-smi", shell=True, text=True)
+        return True
+    except subprocess.CalledProcessError:
+        return False
+
+
+def has_amd_gpu():
+    try:
+        output = subprocess.check_output("rocminfo", shell=True, text=True)
+        return "AMD" in output or "gfx" in output
+    except subprocess.CalledProcessError:
+        return False
+
+
+def detect_local_sm_via_nvidia_smi() -> int:
+    out = subprocess.check_output(
+        ["nvidia-smi", "--query-gpu=compute_cap", "--format=csv,noheader"],
+        text=True,
+    ).strip()
+    # If multiple GPUs, take the first line
+    cc = out.splitlines()[0].strip()  # e.g. "9.0"
+    major, minor = cc.split(".")
+    return int(major + minor)  # "9"+"0" -> 90
+
+
 # This is correct, as any tests that uses "subprocess" to test the cli will not be affected by "autoreuse"
 @pytest.fixture(autouse=True)
 def disable_all_dispose(monkeypatch):
@@ -71,6 +98,13 @@ def build_cache():
 
 
 def build_vecadd(rdc_value, tmp_path_factory, call_mneme_config):
+    has_nvidia = has_nvidia_gpu()
+    has_amd = has_amd_gpu()
+    cuda_arch = "native"
+
+    if has_nvidia:
+        cuda_arch = detect_local_sm_via_nvidia_smi()
+
     key = f"vecadd_{rdc_value.lower()}"
     tmpdir = tmp_path_factory.mktemp(key)
 
@@ -79,11 +113,23 @@ def build_vecadd(rdc_value, tmp_path_factory, call_mneme_config):
     mneme_cc = call_mneme_config("cc")
     mneme_cxx = call_mneme_config("cxx")
     mneme_cmake_dir = call_mneme_config("cmakedir")
+    if has_nvidia and has_amd:
+        raise RuntimeError("Cannot build test on system with 2 GPU architectures")
+    if not has_nvidia and not has_amd:
+        raise RuntimeError("Cannot build test on system with no GPU available")
+
+    nv_flag = "On" if has_nvidia else "Off"
+    amd_flag = "On" if has_amd else "Off"
 
     subprocess.run(
         [
             "cmake",
             f"-DCMAKE_C_COMPILER={mneme_cc}",
+            f"-DENABLE_CUDA={nv_flag}",
+            f"-DCMAKE_CUDA_COMPILER={mneme_cxx}",
+            "-DCMAKE_CUDA_FLAGS=-std=c++17",
+            f"-DCMAKE_CUDA_ARCHITECTURES={cuda_arch}",
+            f"-DENABLE_HIP={amd_flag}",
             f"-DCMAKE_CXX_COMPILER={mneme_cxx}",
             f"-DCMAKE_PREFIX_PATH={mneme_cmake_dir}",
             f"-DRDC={rdc_value}",

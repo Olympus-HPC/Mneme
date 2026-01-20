@@ -3,6 +3,16 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#define CAT2(a, b) a##b
+#define CAT(a, b) CAT2(a, b)
+
+#ifdef __ENABLE_CUDA__
+#define DEV_PREFIX cuda
+#elif defined(__ENABLE_HIP__)
+#define DEV_PREFIX hip
+#endif
+
+#define prefix(name) CAT(DEV_PREFIX, name)
 
 template <typename T>
 __global__ void vecAdd_test(T *in, T *out, size_t size, int k) {
@@ -29,26 +39,27 @@ int main(int argc, const char *argv[]) {
   size_t numElements = atoi(argv[1]);
   double *in, *out;
   double val = numElements;
-  hipMalloc((void **)&in, numElements * sizeof(double));
-  hipMalloc((void **)&out, numElements * sizeof(double));
+  prefix(Malloc)((void **)&in, numElements * sizeof(double));
+  prefix(Malloc)((void **)&out, numElements * sizeof(double));
 
   for (int i = 0; i < 10; i++) {
-    hipMemset(in, 0, numElements * sizeof(double));
-    hipMemset(out, 0, numElements * sizeof(double));
+    prefix(Memset)(in, 0, numElements * sizeof(double));
+    prefix(Memset)(out, 0, numElements * sizeof(double));
 
     const int threads = 256;
     int num_blocks = (numElements + threads - 1) / threads;
     vecAdd_test<<<num_blocks, threads>>>(in, out, numElements, i % 2);
-    hipDeviceSynchronize();
+    prefix(DeviceSynchronize)();
   }
 
   double *h_in = new double[numElements];
   double *h_out = new double[numElements];
-  hipMemcpy(h_in, in, sizeof(double) * numElements, hipMemcpyDeviceToHost);
-  hipMemcpy(h_out, out, sizeof(double) * numElements, hipMemcpyDeviceToHost);
+  prefix(Memcpy)(h_in, in, sizeof(double) * numElements, hipMemcpyDeviceToHost);
+  prefix(Memcpy)(h_out, out, sizeof(double) * numElements,
+                 hipMemcpyDeviceToHost);
   delete[] h_in;
   delete[] h_out;
-  hipFree(in);
-  hipFree(out);
+  prefix(Free)(in);
+  prefix(Free)(out);
   return 0;
 }
