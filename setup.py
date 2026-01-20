@@ -21,6 +21,17 @@ def run_command(command, cwd=None):
         raise RuntimeError(f"Command {' '.join(command)} failed")
 
 
+def detect_local_sm_via_nvidia_smi() -> int:
+    out = subprocess.check_output(
+        ["nvidia-smi", "--query-gpu=compute_cap", "--format=csv,noheader"],
+        text=True,
+    ).strip()
+    # If multiple GPUs, take the first line
+    cc = out.splitlines()[0].strip()  # e.g. "9.0"
+    major, minor = cc.split(".")
+    return int(major + minor)  # "9"+"0" -> 90
+
+
 def has_nvidia_gpu():
     try:
         subprocess.check_output("nvidia-smi", shell=True, text=True)
@@ -85,6 +96,9 @@ class CMakeBuild(build_ext):
         (self.install_dir / "llvm").mkdir(parents=True, exist_ok=True)
 
         self.has_nvidia = "On" if has_nvidia_gpu() else "Off"
+        self.cuda_arch = "native"
+        if self.has_nvidia == "On":
+            self.cuda_arch = detect_local_sm_via_nvidia_smi()
         self.has_amd = "On" if has_amd_gpu() else "Off"
         self.llvm_dir = os.getenv("LLVM_INSTALL_DIR", None)
         if self.has_amd == "On":
@@ -188,6 +202,12 @@ class CMakeBuild(build_ext):
             f"-DLLVM_INSTALL_DIR={self.llvm_dir}",
             f"-DPROTEUS_ENABLE_CUDA={self.has_nvidia}",
             f"-DPROTEUS_ENABLE_HIP={self.has_amd}",
+        ]
+
+        if self.has_nvidia == "On":
+            cmake_options.append(f"-DCMAKE_CUDA_ARCHITECTURES={self.cuda_arch}")
+
+        cmake_options += [
             "-DENABLE_TESTS=Off",
             f"-DCMAKE_C_COMPILER={self.cc}",
             f"-DCMAKE_CXX_COMPILER={self.cxx}",
@@ -263,8 +283,12 @@ class CMakeBuild(build_ext):
             "-DCMAKE_SKIP_INSTALL_RPATH=OFF",
             "-DCMAKE_INSTALL_RPATH_USE_LINK_PATH=ON",
             "-DMNEME_ENABLE_LOGGER=On",
-            # f"-Dproteus_DIR={proteus_dir}",
-            # f"-Dspdlog_DIR={spdlog_dir}",
+        ]
+
+        if self.has_nvidia == "On":
+            cmake_options.append(f"-DCMAKE_CUDA_ARCHITECTURES={self.cuda_arch}")
+
+        cmake_options += [
             f"-DCMAKE_PREFIX_PATH={str(Path(self.install_dir).resolve())}",
         ]
 
