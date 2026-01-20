@@ -20,6 +20,8 @@ endif()
 
 
 target_include_directories(mneme SYSTEM PRIVATE ${LLVM_INCLUDE_DIRS} ${CMAKE_SOURCE_DIR}/include)
+# FIXME: Here now we need to be "careful". If LLVM brings in the bundled .so we need to 
+# link in proteusCore and be done with it.
 target_link_libraries(mneme PRIVATE proteusCore)
 
 if (MNEME_ENABLE_LOGGER)
