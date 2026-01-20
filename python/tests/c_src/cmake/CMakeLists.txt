@@ -9,6 +9,7 @@ option(ENABLE_HIP "Enable HIP" OFF)
 set(CMAKE_BUILD_TYPE RelWithDebInfo)
 
 if(ENABLE_CUDA)
+  enable_language(CUDA)
   find_package(CUDAToolkit REQUIRED)
   find_package(CUDA REQUIRED)
   add_definitions("-D__ENABLE_CUDA__")
@@ -20,9 +21,6 @@ endif()
 
 find_package(mneme REQUIRED)
 add_executable(vecAdd vec_add.cu)
-
-get_cmake_property(_targets TARGETS)
-message(STATUS "Available targets: ${_targets}")
 
 add_mneme(vecAdd)
 

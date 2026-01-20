@@ -1,14 +1,13 @@
-#include <hip/hip_runtime.h>
 #include <iostream>
-#include <stdio.h>
-#include <stdlib.h>
 
 #define CAT2(a, b) a##b
 #define CAT(a, b) CAT2(a, b)
 
 #ifdef __ENABLE_CUDA__
+#include <cuda_runtime.h>
 #define DEV_PREFIX cuda
 #elif defined(__ENABLE_HIP__)
+#include <hip/hip_runtime.h>
 #define DEV_PREFIX hip
 #endif
 
@@ -54,9 +53,10 @@ int main(int argc, const char *argv[]) {
 
   double *h_in = new double[numElements];
   double *h_out = new double[numElements];
-  prefix(Memcpy)(h_in, in, sizeof(double) * numElements, hipMemcpyDeviceToHost);
+  prefix(Memcpy)(h_in, in, sizeof(double) * numElements,
+                 prefix(MemcpyDeviceToHost));
   prefix(Memcpy)(h_out, out, sizeof(double) * numElements,
-                 hipMemcpyDeviceToHost);
+                 prefix(MemcpyDeviceToHost));
   delete[] h_in;
   delete[] h_out;
   prefix(Free)(in);
