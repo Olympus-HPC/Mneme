@@ -51,6 +51,7 @@ def get_llvm_paths(llvm_dir):
         "libs": run("--libs"),
         "ldflags": run("--ldflags"),
         "system_libs": run("--system-libs"),
+        "lib_names": run("--libnames"),
     }
 
 
@@ -104,6 +105,7 @@ class CMakeBuild(build_ext):
         includedir = prefix / "include"
         cmake_dir = libdir / "cmake"
         llvm_config = get_llvm_paths(self.llvm_dir)
+        self.llvm_has_shared = "On" if ".so" in llvm_config["lib_names"] else "Off"
 
         cfg = {
             "cc": self.cc,
@@ -115,6 +117,7 @@ class CMakeBuild(build_ext):
             "cflags": f"-fpass-plugin=@PREFIX@/lib64/libProteusPass.so -fplugin=@PREFIX@/lib64/libProteusPass.so -fno-discard-value-names -ftrivial-auto-var-init=zero -Xclang -mllvm -Xclang -force-proteus-jit-annotate-all",
             "ldflags": f"-L{self.llvm_dir}/lib -L{self.llvm_dir}/llvm/lib {llvm_config['libs']} {llvm_config['system_libs']} -L@PREFIX@/lib64/ -Wl,-rpath,@PREFIX@/lib64/ -llldCommon -llldELF -lproteus",
         }
+
         if not prefix.exists():
             prefix.mkdir(parents=True, exist_ok=True)
         with open(self.config_json, "w") as fd:
@@ -252,8 +255,10 @@ class CMakeBuild(build_ext):
             f"-DCMAKE_CXX_COMPILER={self.cxx}",
             f"-DLLVM_INSTALL_DIR={self.llvm_dir}",
             f"-DMNEME_ENABLE_HIP={self.has_amd}",
+            f"-DMNEME_ENABLE_CUDA={self.has_nvidia}",
             "-DMNEME_ENABLE_TESTS=Off",
             "-DMNEME_ENABLE_AUTOTUNE=On",
+            "-DMNEME_LINK_SHARED_LLVM=On",
             "-DCMAKE_INSTALL_RPATH=$ORIGIN",
             "-DCMAKE_SKIP_INSTALL_RPATH=OFF",
             "-DCMAKE_INSTALL_RPATH_USE_LINK_PATH=ON",

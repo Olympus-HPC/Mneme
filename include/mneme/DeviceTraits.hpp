@@ -514,7 +514,7 @@ template <> struct DeviceTraits<DeviceVendors::CUDA> {
   }
 
   static std::pair<void *, size_t>
-  getGlobalAddrFromModule(DeviceModule_t &cudaModule, std::string &GlobalName) {
+  getGlobalAddrFromModule(DeviceModule_t &cudaModule, const std::string &GlobalName) {
     size_t Size;
     DevicePtr_t DevPtr;
     auto EC = DeviceErrorCheck(
@@ -698,6 +698,34 @@ template <> struct DeviceTraits<DeviceVendors::CUDA> {
                                               const void *symbol) {
     return cudaGetSymbolAddress(devPtr, symbol);
   }
+
+  static DeviceError_t deviceGetAttribute(cudaFunction_t &Func,
+                                       FuncAttributes Attribute, int &Value) {
+    LOG_DEBUG("Going to request attributes of {}", (void *)Func);
+    cudaFuncAttributes Attr;
+    auto Ret = cudaFuncGetAttributes(&Attr, Func);
+    if (Ret != CUDA_SUCCESS)
+      return Ret;
+    
+    switch (Attribute) {
+    case REGISTER_USAGE:
+      Value = Attr.numRegs;
+      break;
+
+    case LOCALMEM_USAGE:
+        Value = Attr.localSizeBytes; 
+        break;
+    case CONSTMEM_USAGE:
+        Value = Attr.constSizeBytes; 
+        break;
+    default:
+      LOG_FATAL("Request unknown attribute");
+      break;
+    }
+    return cudaSuccess;
+  }
+
+
 };
 #else
 #endif

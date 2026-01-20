@@ -1,6 +1,5 @@
 #include "llvm/core.h"
 #include <cstring>
-#include <hip/hip_runtime_api.h>
 #include <llvm/Support/CBindingWrapping.h>
 #include <llvm/Support/MemoryBuffer.h>
 #include <mneme/MnemePython.hpp>
@@ -14,7 +13,7 @@ API_EXPORT(void *) MnemePY_getDeviceObject(LLVMMemoryBufferRef Buffer) {
   llvm::MemoryBuffer *DeviceObject = llvm::unwrap(Buffer);
   auto VendorModule = DeviceVendorTraits::getDeviceModuleFromImage(
       DeviceObject->getBufferStart());
-  // NOTE: HIP modules are effectively a  pointer to some structure.
+  // NOTE: Device modules are effectively a  pointer to some structure.
   // so we can do this. We need to check also what happens in cuda.
   return reinterpret_cast<void *>(VendorModule);
 }
@@ -33,7 +32,7 @@ MnemePY_getKernelFunctionFromImage(void *WrappedModule,
       reinterpret_cast<DeviceVendorTraits::DeviceModule_t>(WrappedModule);
   std::string KName(KernelName);
   auto Func = DeviceVendorTraits::getKernelFunctionFromImage(Module, KName);
-  // NOTE: HIP modules are effectively a  pointer to some structure.
+  // NOTE: Device modules are effectively a  pointer to some structure.
   // so we can do this. We need to check also what happens in cuda.
   auto DevFunc = reinterpret_cast<void *>(Func);
   LOG_DEBUG("Device Function pointer is {}", DevFunc);
