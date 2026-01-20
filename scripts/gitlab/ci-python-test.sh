@@ -1,6 +1,9 @@
 #!/bin/bash
 
-set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/mneme-common-ci.sh"
+
+set -ex
 trap 'echo "[ERROR] line $LINENO" >&2' ERR
 
 log() { echo " #### [$(date +%T)] $* ###" >&2; }
@@ -26,11 +29,16 @@ rsync -a --delete "$mneme_orig_src" "$test_dir/mneme_src/"
 mneme_src=$test_dir/mneme_src/Mneme
 log "End copying mneme src to ${mneme_src} from ${mneme_orig_src}"
 
+if [[ "$SYS_TYPE" == "toss_4_x86_64_ib" ]]; then
+setup_conda_env "miniconda3" "${MNEME_CI_LLVM_VERSION}" "$PYTHON_VERSION"
+export LLVM_INSTALL_DIR=$(llvm-config --prefix)
+elif [[ "$SYS_TYPE" == "toss_4_x86_64_ib_cray" ]]; then
 ml load python/${MNEME_CI_PYTHON_VERSION}
 ml load rocm/${MNEME_CI_ROCM_VERSION}
 export LLVM_INSTALL_DIR=${ROCM_PATH}/
+fi
 log "Test dir is ${test_dir}"
-
+log "Using LLVM under ${LLVM_INSTALL_DIR}"
 
 # Make a copy of preinstalled deps to local FS for fast installation
 #VENV_NAME="/usr/workspace/LExperts/ci/gitlab/venv-${LCSCHEDCLUSTER}-${MNEME_CI_ROCM_VERSION}-${MNEME_CI_PYTHON_VERSION}/"

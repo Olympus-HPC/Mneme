@@ -1,6 +1,9 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 set -ex
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/mneme-common-ci.sh"
 
 temp_dir=$(mktemp -d)
 echo "Temporary directory created at: $temp_dir"
@@ -85,22 +88,7 @@ if [[ "$SYS_TYPE" == "toss_4_x86_64_ib" ]]; then
   PYTHON_VERSION=3.12
 
 # Install Clang/LLVM through conda.
-MINICONDA_DIR=miniconda3
-if [[ ! -d ${MINICONDA_DIR} ]]; then
-  mkdir -p ${MINICONDA_DIR}
-  wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-$(uname -m).sh -O ./${MINICONDA_DIR}/miniconda.sh
-  bash ./${MINICONDA_DIR}/miniconda.sh -b -u -p ./${MINICONDA_DIR}
-  rm ./${MINICONDA_DIR}/miniconda.sh
-  source "${MINICONDA_DIR}/etc/profile.d/conda.sh"
-  conda activate base
-  conda create -y -n mneme -c conda-forge \
-    python=${PYTHON_VERSION} clang=${MNEME_CI_LLVM_VERSION} clangxx=${MNEME_CI_LLVM_VERSION} \
-    clangdev=${MNEME_CI_LLVM_VERSION} llvmdev=${MNEME_CI_LLVM_VERSION} lit=${MNEME_CI_LLVM_VERSION} \
-    gcc=12 gxx=12
-else
-  source "${MINICONDA_DIR}/etc/profile.d/conda.sh"
-fi
-conda activate mneme
+setup_conda_env "miniconda3" "${MNEME_CI_LLVM_VERSION}" "$PYTHON_VERSION"
 
 LLVM_INSTALL_DIR=$(llvm-config --prefix)
 export LLVM_INSTALL_DIR=$(llvm-config --prefix)
