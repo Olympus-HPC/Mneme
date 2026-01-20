@@ -119,7 +119,6 @@ class CMakeBuild(build_ext):
         includedir = prefix / "include"
         cmake_dir = libdir / "cmake"
         llvm_config = get_llvm_paths(self.llvm_dir)
-        self.llvm_has_shared = "On" if ".so" in llvm_config["lib_names"] else "Off"
 
         cfg = {
             "cc": self.cc,
@@ -192,7 +191,6 @@ class CMakeBuild(build_ext):
             "-DBUILD_SHARED=On",
             "-DCMAKE_INSTALL_RPATH=$ORIGIN",
             "-DCMAKE_SKIP_INSTALL_RPATH=OFF",
-            "-DCMAKE_INSTALL_RPATH_USE_LINK_PATH=ON",
             "-DCMAKE_POSITION_INDEPENDENT_CODE=On",
             "-DCMAKE_BUILD_TYPE=Relwithdebinfo",
             f"-DCMAKE_INSTALL_PREFIX={self.install_dir}",
@@ -281,7 +279,6 @@ class CMakeBuild(build_ext):
             "-DMNEME_LINK_SHARED_LLVM=On",
             "-DCMAKE_INSTALL_RPATH=$ORIGIN",
             "-DCMAKE_SKIP_INSTALL_RPATH=OFF",
-            "-DCMAKE_INSTALL_RPATH_USE_LINK_PATH=ON",
             "-DMNEME_ENABLE_LOGGER=On",
         ]
 
