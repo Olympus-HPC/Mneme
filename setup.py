@@ -192,10 +192,7 @@ class CMakeBuild(build_ext):
             "-DCMAKE_INSTALL_RPATH=$ORIGIN",
             "-DCMAKE_SKIP_INSTALL_RPATH=OFF",
             "-DCMAKE_POSITION_INDEPENDENT_CODE=On",
-            "-DCMAKE_BUILD_TYPE=Relwithdebinfo",
             f"-DCMAKE_INSTALL_PREFIX={self.install_dir}",
-            f"-DCMAKE_C_COMPILER={self.cc}",
-            f"-DCMAKE_CXX_COMPILER={self.cxx}",
             "-DCMAKE_INSTALL_LIBDIR=lib64",
             "-DCMAKE_INSTALL_BINDIR=bin",
             "-DCMAKE_INSTALL_INCLUDEDIR=include",
@@ -208,12 +205,10 @@ class CMakeBuild(build_ext):
             cmake_options.append(f"-DCMAKE_CUDA_ARCHITECTURES={self.cuda_arch}")
             cmake_options.append(f"-DCMAKE_CUDA_COMPILER={self.cxx}")
 
-        cmake_options += [
-            "-DENABLE_TESTS=Off",
-            f"-DCMAKE_C_COMPILER={self.cc}",
-            f"-DCMAKE_CXX_COMPILER={self.cxx}",
-            "..",
-        ]
+        cmake_options.append("-DENABLE_TESTS=Off")
+        cmake_options.append(f"-DCMAKE_C_COMPILER={self.cc}")
+        cmake_options.append(f"-DCMAKE_CXX_COMPILER={self.cxx}")
+        cmake_options.append("..")
 
         run_command(
             ["cmake"] + cmake_options,
@@ -289,6 +284,7 @@ class CMakeBuild(build_ext):
         if self.has_nvidia == "On":
             cmake_options.append(f"-DCMAKE_CUDA_ARCHITECTURES={self.cuda_arch}")
             cmake_options.append(f"-DCMAKE_CUDA_COMPILER={self.cxx}")
+            cmake_options.append("-DCMAKE_CUDA_FLAGS=-std=c++17")
 
         cmake_options += [
             f"-DCMAKE_PREFIX_PATH={str(Path(self.install_dir).resolve())}",
