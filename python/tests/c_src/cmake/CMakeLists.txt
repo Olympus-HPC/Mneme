@@ -5,6 +5,12 @@ option(RDC "Enable RDC compilation" OFF)
 option(ENABLE_CUDA "Enable CUDA" OFF)
 option(ENABLE_HIP "Enable HIP" OFF)
 
+set(CMAKE_CXX_STANDARD
+    17
+    CACHE STRING "")
+set(CMAKE_CXX_STANDARD_REQUIRED YES)
+set(CMAKE_CXX_EXTENSIONS NO)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 set(CMAKE_BUILD_TYPE RelWithDebInfo)
 
@@ -22,7 +28,7 @@ endif()
 find_package(mneme REQUIRED)
 add_executable(vecAdd vec_add.cu)
 
-#add_mneme(vecAdd)
+add_mneme(vecAdd)
 
 if (RDC)
 if(ENABLE_CUDA)
