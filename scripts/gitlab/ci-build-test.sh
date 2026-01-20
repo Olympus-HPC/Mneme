@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-set -ex
+set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/mneme-common-ci.sh"
@@ -21,8 +21,8 @@ build_proteus() {
   if [[ ! -d proteus ]]; then
     git clone --depth 1 git@github.com:Olympus-HPC/proteus.git
     pushd proteus
-    git fetch --depth 1 origin features/cuda-shared 
-    git checkout -b features/cuda-shared FETCH_HEAD
+    git fetch --depth 1 origin cuda-proteus-core-shared-llvm
+    git checkout -b cuda-proteus-core-shared-llvm FETCH_HEAD
     popd
   fi
   pushd proteus
@@ -44,6 +44,8 @@ build_proteus() {
     -DPROTEUS_ENABLE_HIP=${PROTEUS_ENABLE_HIP} \
     -DPROTEUS_LINK_SHARED_LLVM=${LINK_SHARED_LLVM} \
     -DPROTEUS_ENABLE_CUDA=${PROTEUS_ENABLE_CUDA} \
+    -DCMAKE_CUDA_COMPILER=$LLVM_INSTALL_DIR/bin/clang++ \
+    -DCMAKE_CUDA_FLAGS=-std=c++17 \
     -DCMAKE_EXPORT_COMPILE_COMMANDS=on \
     -DCMAKE_CUDA_ARCHITECTURES=90 \
     -DENABLE_TESTS=Off \
