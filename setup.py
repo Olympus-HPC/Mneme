@@ -137,7 +137,7 @@ class CMakeBuild(build_ext):
             json.dump(cfg, fd, indent=2)
 
     def run(self):
-        self.build_scratch = tempfile.mkdtemp()
+        self.build_scratch = self.build_temp
 
         if "PROTEUS_DIR" in os.environ:
             proteus_dir = os.environ["PROTEUS_DIR"]
@@ -204,6 +204,7 @@ class CMakeBuild(build_ext):
         if self.has_nvidia == "On":
             cmake_options.append(f"-DCMAKE_CUDA_ARCHITECTURES={self.cuda_arch}")
             cmake_options.append(f"-DCMAKE_CUDA_COMPILER={self.cxx}")
+            cmake_options.append("-DCMAKE_CUDA_FLAGS=-std=c++17")
 
         cmake_options.append("-DENABLE_TESTS=Off")
         cmake_options.append(f"-DCMAKE_C_COMPILER={self.cc}")
