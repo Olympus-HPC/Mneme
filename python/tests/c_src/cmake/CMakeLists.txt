@@ -40,7 +40,7 @@ endif()
 
 if(ENABLE_CUDA)
 set_source_files_properties(vec_add.cu PROPERTIES LANGUAGE CUDA)
-target_link_libraries(vecAdd PRIVATE CUDA::cudart)
+target_link_libraries(vecAdd PRIVATE CUDA::cudart CUDA::cuda_driver)
 elseif(ENABLE_HIP)
 set_source_files_properties(vec_add.cu PROPERTIES LANGUAGE HIP)
 target_include_directories(vecAdd PRIVATE ${HIP_INCLUDE_DIRS})
