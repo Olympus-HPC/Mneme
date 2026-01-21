@@ -1,9 +1,28 @@
 #!/usr/bin/bash
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/mneme-common-ci.sh"
-
 set -ex
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+if [[ -f "$SCRIPT_DIR/mneme-common-ci.sh" ]] then
+  source "$SCRIPT_DIR/mneme-common-ci.sh"
+else
+  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+  # Prefer GitLab project dir if available, else fall back to git to find repo root.
+  if [[ -n "${CI_PROJECT_DIR:-}" && -f "${CI_PROJECT_DIR}/scripts/gitlab/mneme-common-ci.sh" ]]; then
+    source "${CI_PROJECT_DIR}/scripts/gitlab/mneme-common-ci.sh"
+  else
+    REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+    if [[ -n "${REPO_ROOT}" && -f "${REPO_ROOT}/scripts/gitlab/mneme-common-ci.sh" ]]; then
+      source "${REPO_ROOT}/scripts/gitlab/mneme-common-ci.sh"
+    else
+      echo "ERROR: cannot find mneme-common-ci.sh (SCRIPT_DIR=${SCRIPT_DIR}, CI_PROJECT_DIR=${CI_PROJECT_DIR:-unset})"
+      exit 1
+    fi
+  fi
+fi
+
 trap 'echo "[ERROR] line $LINENO" >&2' ERR
 
 log() { echo " #### [$(date +%T)] $* ###" >&2; }
