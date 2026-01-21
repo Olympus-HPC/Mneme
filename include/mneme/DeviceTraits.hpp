@@ -704,7 +704,7 @@ template <> struct DeviceTraits<DeviceVendors::CUDA> {
     LOG_DEBUG("Going to request attributes of {}", (void *)Func);
     cudaFuncAttributes Attr;
     auto Ret = cudaFuncGetAttributes(&Attr, Func);
-    if (Ret != CUDA_SUCCESS)
+    if (Ret != cudaSuccess)
       return Ret;
     
     switch (Attribute) {
