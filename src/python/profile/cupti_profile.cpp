@@ -9,6 +9,7 @@
 #define API_EXPORT(RTYPE) RTYPE
 #endif
 
+extern "C" {
 API_EXPORT(uint64_t) MnemePy_startProfile(const char *KernelName) {
   return 0;
 }
@@ -26,4 +27,5 @@ API_EXPORT(uint64_t) MnemePy_getNumRecords(uint64_t token) {
 }
 
 API_EXPORT(void) MnemePy_initProfiler() {
+}
 }
