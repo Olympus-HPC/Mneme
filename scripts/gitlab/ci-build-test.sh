@@ -5,7 +5,7 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 
-if [[ -f "$SCRIPT_DIR/mneme-common-ci.sh" ]] then
+if [[ -f "$SCRIPT_DIR/mneme-common-ci.sh" ]]; then
   source "$SCRIPT_DIR/mneme-common-ci.sh"
 else
   SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
