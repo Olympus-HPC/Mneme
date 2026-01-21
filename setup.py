@@ -48,7 +48,7 @@ def has_amd_gpu():
         return False
 
 
-def get_llvm_paths(llvm_dir):
+def get_llvm_config(llvm_dir):
     llvm_config = Path(llvm_dir) / "bin" / "llvm-config"
     if not llvm_config.exists():
         raise RuntimeError(f"llvm-config not found at {llvm_config}")
@@ -63,6 +63,7 @@ def get_llvm_paths(llvm_dir):
         "ldflags": run("--ldflags"),
         "system_libs": run("--system-libs"),
         "lib_names": run("--libnames"),
+        "shared_mode": run("--shared-mode"),
     }
 
 
@@ -118,7 +119,7 @@ class CMakeBuild(build_ext):
         libdir = prefix / "lib64"
         includedir = prefix / "include"
         cmake_dir = libdir / "cmake"
-        llvm_config = get_llvm_paths(self.llvm_dir)
+        self.llvm_config = get_llvm_config(self.llvm_dir)
 
         cfg = {
             "cc": self.cc,
@@ -128,7 +129,7 @@ class CMakeBuild(build_ext):
             "includedir": "@PREFIX@/include",
             "cmakedir": "@PREFIX@/lib64/cmake",
             "cflags": f"-fpass-plugin=@PREFIX@/lib64/libProteusPass.so -fplugin=@PREFIX@/lib64/libProteusPass.so -fno-discard-value-names -ftrivial-auto-var-init=zero -Xclang -mllvm -Xclang -force-proteus-jit-annotate-all",
-            "ldflags": f"-L{self.llvm_dir}/lib -L{self.llvm_dir}/llvm/lib {llvm_config['libs']} {llvm_config['system_libs']} -L@PREFIX@/lib64/ -Wl,-rpath,@PREFIX@/lib64/ -llldCommon -llldELF -lproteus",
+            "ldflags": f"-L{self.llvm_dir}/lib -L{self.llvm_dir}/llvm/lib {self.llvm_config['libs']} {self.llvm_config['system_libs']} -L@PREFIX@/lib64/ -Wl,-rpath,@PREFIX@/lib64/ -llldCommon -llldELF -lproteus",
         }
 
         if not prefix.exists():
@@ -278,11 +279,13 @@ class CMakeBuild(build_ext):
             f"-DMNEME_ENABLE_CUDA={self.has_nvidia}",
             "-DMNEME_ENABLE_TESTS=Off",
             "-DMNEME_ENABLE_AUTOTUNE=On",
-            "-DMNEME_LINK_SHARED_LLVM=On",
             "-DCMAKE_INSTALL_RPATH=$ORIGIN",
             "-DCMAKE_SKIP_INSTALL_RPATH=OFF",
             "-DMNEME_ENABLE_LOGGER=On",
         ]
+
+        if self.llvm_config["shared_mode"] == "shared":
+            cmake_options.append("-DMNEME_LINK_SHARED_LLVM=On")
 
         if self.has_nvidia == "On":
             cmake_options.append(f"-DCMAKE_CUDA_ARCHITECTURES={self.cuda_arch}")
