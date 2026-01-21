@@ -11,6 +11,7 @@ function(BUILD target-name test-name)
     target_link_libraries(${target-name} PRIVATE CUDA::cudart CUDA::cuda_driver)
     target_include_directories(${target-name} PRIVATE ${PROJECT_SOURCE_DIR}/include)
     target_compile_definitions(${target-name} PRIVATE MNEME_EXAMPLE_ENABLE_CUDA)
+    set_target_properties(${target-name} PROPERTIES CUDA_RUNTIME_LIBRARY Shared)
   endif()
 
   add_test(
@@ -29,5 +30,5 @@ BUILD(wsm5-mneme WSM5::MNEME)
 
 add_executable(wsm5-proteus main.cpp)
 target_compile_definitions(wsm5-proteus PRIVATE ENABLE_PROTEUS)
-add_mneme(wsm5-proteus)
+add_proteus(wsm5-proteus LINK_SHARED)
 BUILD(wsm5-proteus WSM5::PROTEUS)

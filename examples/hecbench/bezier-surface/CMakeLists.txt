@@ -6,6 +6,11 @@ if (WITH_MNEME_EXAMPLE_HIP)
   target_include_directories(${target-name} PRIVATE ${PROJECT_SOURCE_DIR}/include)
   target_compile_definitions(${target-name} PRIVATE MNEME_EXAMPLE_ENABLE_HIP)
 elseif(WITH_MNEME_EXAMPLE_CUDA)
+    set_source_files_properties(main.cpp PROPERTIES LANGUAGE CUDA)
+    target_link_libraries(${target-name} PRIVATE CUDA::cudart CUDA::cuda_driver)
+    target_include_directories(${target-name} PRIVATE ${PROJECT_SOURCE_DIR}/include)
+    target_compile_definitions(${target-name} PRIVATE MNEME_EXAMPLE_ENABLE_CUDA)
+    set_target_properties(${target-name} PROPERTIES CUDA_RUNTIME_LIBRARY Shared)
 endif()
 add_test(
   NAME ${test-name} 
@@ -23,5 +28,5 @@ BUILD(bezier-orig BEZIER::ORIG)
 
 add_executable(bezier-proteus main.cpp)
 target_compile_definitions(bezier-proteus PRIVATE ENABLE_PROTEUS)
-add_proteus(bezier-proteus)
+add_proteus(bezier-proteus LINK_SHARED)
 BUILD(bezier-proteus BEZIER::PROTEUS)

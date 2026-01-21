@@ -184,8 +184,9 @@ struct DeviceTraits<DeviceVendors::CUDA> {
 
   static DeviceError_t deviceFree(void *ptr) { return cudaFree(ptr); }
 
-  static DeviceError_t deviceCopy(void *Dest,
-                                  void *Src,
+  template<typename T, typename P>
+  static DeviceError_t deviceCopy(T *Dest,
+                                  P *Src,
                                   size_t SizeBytes,
                                   cudaMemcpyKind Kind)
   {

@@ -14,6 +14,7 @@ elseif(WITH_MNEME_EXAMPLE_CUDA)
     target_link_libraries(${target-name} PRIVATE CUDA::cudart CUDA::cuda_driver)
     target_include_directories(${target-name} PRIVATE ${PROJECT_SOURCE_DIR}/include)
     target_compile_definitions(${target-name} PRIVATE MNEME_EXAMPLE_ENABLE_CUDA)
+    set_target_properties(${target-name} PROPERTIES CUDA_RUNTIME_LIBRARY Shared)
 endif()
 
 add_test(
@@ -35,5 +36,5 @@ BUILD(miniFE-mneme MINIFE::MNEME)
 
 add_executable(miniFE-proteus ${miniFE_src})
 target_compile_definitions(miniFE-proteus PRIVATE ENABLE_PROTEUS)
-add_mneme(miniFE-proteus)
+add_proteus(miniFE-proteus LINK_SHARED)
 BUILD(miniFE-proteus MINIFE::PROTEUS)
