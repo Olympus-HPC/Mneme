@@ -55,7 +55,7 @@ variables:
   parallel:
     matrix:
       - MNEME_CI_ENABLE_LOGGER: ["on", "off"]
-      - MNEME_CI_LLVM_VERSION: ["18.1.8", "19.1.7"]
+        MNEME_CI_LLVM_VERSION: ["18.1.8", "19.1.7"]
 
 build-and-test-matrix:
   extends: [.base-job, .build-variants]
