@@ -10,6 +10,10 @@ if (WITH_MNEME_EXAMPLE_HIP)
   target_include_directories(${target-name} PRIVATE ${PROJECT_SOURCE_DIR}/include)
   target_compile_definitions(${target-name} PRIVATE MNEME_EXAMPLE_ENABLE_HIP)
 elseif(WITH_MNEME_EXAMPLE_CUDA)
+    set_source_files_properties(${miniFE_src} PROPERTIES LANGUAGE CUDA)
+    target_link_libraries(${target-name} PRIVATE CUDA::cudart CUDA::cuda_driver)
+    target_include_directories(${target-name} PRIVATE ${PROJECT_SOURCE_DIR}/include)
+    target_compile_definitions(${target-name} PRIVATE MNEME_EXAMPLE_ENABLE_CUDA)
 endif()
 
 add_test(

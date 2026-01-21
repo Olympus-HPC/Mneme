@@ -1,18 +1,22 @@
 
 function(BUILD target-name test-name)
-target_compile_definitions(${target-name} PRIVATE MKX=4)
-if (WITH_MNEME_EXAMPLE_HIP)
-  set_source_files_properties(main.cpp PROPERTIES LANGUAGE HIP)
-  target_link_libraries(${target-name} PRIVATE hip::device hip::host)
-  target_include_directories(${target-name} PRIVATE ${PROJECT_SOURCE_DIR}/include)
-  target_compile_definitions(${target-name} PRIVATE MNEME_EXAMPLE_ENABLE_HIP)
-elseif(WITH_MNEME_EXAMPLE_CUDA)
-endif()
+  target_compile_definitions(${target-name} PRIVATE MKX=4)
+  if (WITH_MNEME_EXAMPLE_HIP)
+    set_source_files_properties(main.cpp PROPERTIES LANGUAGE HIP)
+    target_link_libraries(${target-name} PRIVATE hip::device hip::host)
+    target_include_directories(${target-name} PRIVATE ${PROJECT_SOURCE_DIR}/include)
+    target_compile_definitions(${target-name} PRIVATE MNEME_EXAMPLE_ENABLE_HIP)
+  elseif(WITH_MNEME_EXAMPLE_CUDA)
+    set_source_files_properties(main.cpp PROPERTIES LANGUAGE CUDA)
+    target_link_libraries(${target-name} PRIVATE CUDA::cudart CUDA::cuda_driver)
+    target_include_directories(${target-name} PRIVATE ${PROJECT_SOURCE_DIR}/include)
+    target_compile_definitions(${target-name} PRIVATE MNEME_EXAMPLE_ENABLE_CUDA)
+  endif()
 
-add_test(
+  add_test(
   NAME ${test-name} 
   COMMAND ${target-name} 1 
-)
+  )
 endfunction()
 
 
