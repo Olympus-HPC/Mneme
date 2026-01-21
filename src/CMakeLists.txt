@@ -67,14 +67,12 @@ endif()
 if(MNEME_ENABLE_HIP)
 target_link_libraries(record PRIVATE hip::host)
 target_link_libraries(record PRIVATE ${llvm_libs})
-set_target_properties(record PROPERTIES INSTALL_RPATH_USE_LINK_PATH TRUE)
-
 elseif(MNEME_ENABLE_CUDA)
 target_link_libraries(record PRIVATE CUDA::cudart CUDA::cuda_driver)
 target_link_libraries(record PRIVATE ${llvm_libs})
-set_target_properties(record PROPERTIES INSTALL_RPATH_USE_LINK_PATH TRUE)
 endif()
 
+set_target_properties(record PROPERTIES INSTALL_RPATH_USE_LINK_PATH TRUE)
 
 if (MNEME_ENABLE_AUTOTUNE)
   add_subdirectory(python)

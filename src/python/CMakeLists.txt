@@ -66,3 +66,4 @@ target_link_libraries(mneme PRIVATE spdlog::spdlog_header_only)
 target_compile_definitions(mneme PRIVATE MNEME_ENABLE_LOGGER)
 endif()
 
+set_target_properties(mneme PROPERTIES INSTALL_RPATH_USE_LINK_PATH TRUE)
