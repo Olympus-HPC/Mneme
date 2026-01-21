@@ -4,9 +4,9 @@ set(RecordLibSRC "")
 set(ReplaySRC MnemeReplay.cpp MnemePageManager.cpp MnemeDeviceCode.cpp)
 
 if (MNEME_ENABLE_HIP)
-	list(APPEND RecordLibSRC MnemeRecordPreloadHIP.cpp MnemePageManager.cpp)
+  list(APPEND RecordLibSRC MnemeRecordPreloadHIP.cpp MnemePageManager.cpp)
 elseif(MNEME_ENABLE_CUDA)
-	list(APPEND RecordLibSRC MnemeRecordPreloadCUDA.cpp MnemePageManager.cpp)
+  list(APPEND RecordLibSRC MnemeRecordPreloadCUDA.cpp MnemePageManager.cpp)
 endif()
 
 add_library(record SHARED ${RecordLibSRC})
@@ -37,10 +37,10 @@ else()
     Change MNEME_LINK_SHARED_LLVM to ON.")
   endif()
   set(llvm_libs ${LLVM_AVAILABLE_LIBS} CACHE INTERNAL "Points to the actual LLVM LIBS to be linked with")
-    # Some LLVM installations include in the LLVM_AVAILABLE_LIBS both an LLVM
-    # shared library AND static libraries. The LLVM shared library bundles those
-    # static libraries and we have to remove it to avoid static initialization
-    # errors from linking with both.
+  # Some LLVM installations include in the LLVM_AVAILABLE_LIBS both an LLVM
+  # shared library AND static libraries. The LLVM shared library bundles those
+  # static libraries and we have to remove it to avoid static initialization
+  # errors from linking with both.
   list(REMOVE_ITEM llvm_libs "LLVM")
 endif()
 
@@ -65,11 +65,11 @@ if (MNEME_ENABLE_LOGGER)
 endif()
 
 if(MNEME_ENABLE_HIP)
-target_link_libraries(record PRIVATE hip::host)
-target_link_libraries(record PRIVATE ${llvm_libs})
+  target_link_libraries(record PRIVATE hip::host)
+  target_link_libraries(record PRIVATE ${llvm_libs})
 elseif(MNEME_ENABLE_CUDA)
-target_link_libraries(record PRIVATE CUDA::cudart CUDA::cuda_driver)
-target_link_libraries(record PRIVATE ${llvm_libs})
+  target_link_libraries(record PRIVATE CUDA::cudart CUDA::cuda_driver)
+  target_link_libraries(record PRIVATE ${llvm_libs})
 endif()
 
 set_target_properties(record PROPERTIES INSTALL_RPATH_USE_LINK_PATH TRUE)

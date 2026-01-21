@@ -29,23 +29,24 @@ include(CMakePackageConfigHelpers)
 include(GNUInstallDirs)
 
 if(MNEME_ENABLE_CUDA)
-  add_definitions("-DMNEME_ENABLE_CUDA")
   find_package(CUDAToolkit REQUIRED)
   find_package(CUDA REQUIRED)
   enable_language(CUDA)
   message(STATUS "Cuda Libraries: ${CUDA_LIBRARIES}")
   message(STATUS "Cuda Library: ${CUDA_LIBRARY}")
+  add_definitions("-DMNEME_ENABLE_CUDA")
 elseif(MNEME_ENABLE_HIP)
   find_package(HIP REQUIRED)
   enable_language(HIP)
   add_definitions("-DMNEME_ENABLE_HIP")
+else()
+  message(FATAL "Mneme supports either CUDA OR HIP")
 endif()
 
 include(cmake/SetupLLVM.cmake)
 find_package(proteus REQUIRED)
 include(cmake/MnemeFunctions.cmake)
 get_target_property(proteus_link_dirs proteus INTERFACE_LINK_DIRECTORIES)
-message(STATUS "Proteus Link Directories: ${proteus_link_dirs}")
 
 
 add_subdirectory(src)
@@ -70,7 +71,7 @@ write_basic_package_version_file(
 
 set(MNEME_TARGETS record)
 if(MNEME_ENABLE_AUTOTUNE)
-list(APPEND MNEME_TARGETS mneme_profile mneme)
+  list(APPEND MNEME_TARGETS mneme_profile mneme)
 endif()
 
 install(
@@ -89,5 +90,5 @@ install(
 
 install(FILES "${PROJECT_BINARY_DIR}/mnemeConfigVersion.cmake"
               "${PROJECT_BINARY_DIR}/mnemeConfig.cmake"
-	      "${PROJECT_SOURCE_DIR}/cmake/MnemeFunctions.cmake"
+        "${PROJECT_SOURCE_DIR}/cmake/MnemeFunctions.cmake"
         DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/mneme)

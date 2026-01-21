@@ -15,6 +15,7 @@ message(STATUS "LLVM LIBS are found to be : ${llvm_libs}")
 
 if (MNEME_ENABLE_HIP)
   set_source_files_properties(${MnemeCoreSrcDir}/MnemeDeviceCode.cpp PROPERTIES LANGUAGE HIP)
+  set_target_properties(mneme PROPERTIES LINKER_LANGUAGE HIP)
 elseif(MNEME_ENABLE_CUDA)
   set_source_files_properties(${MnemeCoreSrcDir}/MnemeDeviceCode.cpp PROPERTIES LANGUAGE CUDA)
 endif()
@@ -47,10 +48,10 @@ else()
     Change MNEME_LINK_SHARED_LLVM to ON.")
   endif()
   set(llvm_libs ${LLVM_AVAILABLE_LIBS} CACHE INTERNAL "Points to the actual LLVM LIBS to be linked with")
-    # Some LLVM installations include in the LLVM_AVAILABLE_LIBS both an LLVM
-    # shared library AND static libraries. The LLVM shared library bundles those
-    # static libraries and we have to remove it to avoid static initialization
-    # errors from linking with both.
+  # Some LLVM installations include in the LLVM_AVAILABLE_LIBS both an LLVM
+  # shared library AND static libraries. The LLVM shared library bundles those
+  # static libraries and we have to remove it to avoid static initialization
+  # errors from linking with both.
   list(REMOVE_ITEM llvm_libs "LLVM")
   target_link_libraries(mneme PRIVATE ${llvm_libs})
 endif()
@@ -62,8 +63,15 @@ target_include_directories(mneme SYSTEM PRIVATE ${LLVM_INCLUDE_DIRS} ${CMAKE_SOU
 target_link_libraries(mneme PRIVATE proteusCore)
 
 if (MNEME_ENABLE_LOGGER)
-target_link_libraries(mneme PRIVATE spdlog::spdlog_header_only)
-target_compile_definitions(mneme PRIVATE MNEME_ENABLE_LOGGER)
+  target_link_libraries(mneme PRIVATE spdlog::spdlog_header_only)
+  target_compile_definitions(mneme PRIVATE MNEME_ENABLE_LOGGER)
 endif()
+
+if(MNEME_ENABLE_HIP)
+  target_link_libraries(mneme PRIVATE hip::host)
+elseif(MNEME_ENABLE_CUDA)
+  target_link_libraries(mneme PRIVATE CUDA::cudart CUDA::cuda_driver)
+endif()
+
 
 set_target_properties(mneme PROPERTIES INSTALL_RPATH_USE_LINK_PATH TRUE)

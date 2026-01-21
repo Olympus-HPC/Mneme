@@ -49,7 +49,7 @@ mneme_src=$test_dir/mneme_src/Mneme
 log "End copying mneme src to ${mneme_src} from ${mneme_orig_src}"
 
 if [[ "$SYS_TYPE" == "toss_4_x86_64_ib" ]]; then
-  setup_conda_env "miniconda3" "${MNEME_CI_LLVM_VERSION}" "$PYTHON_VERSION"
+  setup_conda_env "miniconda3" "${MNEME_CI_LLVM_VERSION}" "$MNEME_CI_PYTHON_VERSION"
   export LLVM_INSTALL_DIR=$(llvm-config --prefix)
 elif [[ "$SYS_TYPE" == "toss_4_x86_64_ib_cray" ]]; then
   ml load python/${MNEME_CI_PYTHON_VERSION}
