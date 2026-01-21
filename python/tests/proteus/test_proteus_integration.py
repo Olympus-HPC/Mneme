@@ -1,5 +1,6 @@
 import pytest
 import os
+import re
 import subprocess
 
 from mneme.proteus import jit
@@ -14,6 +15,120 @@ from mneme.mneme_types import dim3
 # ----------------------------
 # GPU detection / backend selection
 # ----------------------------
+
+
+def _get_complex_ir(gpu_backend):
+    if gpu_backend == "amd":
+        return r"""
+; ModuleID = 'test'
+target triple = "amdgcn-amd-amdhsa"
+define amdgpu_kernel void @kernel_add(i32 addrspace(1)* %ptr, i32 %val) {
+entry:
+  ; threadIdx.x
+  %tid_x = call i32 @llvm.amdgcn.workitem.id.x()
+
+  ; blockDim.x / y / z
+  %bdx = call i32 @llvm.amdgcn.workgroup.size.x()
+  %bdy = call i32 @llvm.amdgcn.workgroup.size.y()
+  %bdz = call i32 @llvm.amdgcn.workgroup.size.z()
+
+  ; ------ compute global linear thread id ------
+  ; global_tid = tid_x + blockIdx.x * blockDim.x
+  ; but since we don't have blockIdx here, we just fold dims into tid
+
+  ; compute  threads_per_block = blockDim.x * blockDim.y * blockDim.z
+  %tmp1 = mul i32 %bdx, %bdy
+  %threads_per_block = mul i32 %tmp1, %bdz
+
+  ; global_tid = tid_x + threads_per_block  (fake linearization to use all dims)
+  %global_tid = add i32 %tid_x, %threads_per_block
+
+  ; branch: if (global_tid > 512) early return
+  %cmp = icmp ugt i32 %global_tid, 512
+  br i1 %cmp, label %early_return, label %continue
+
+early_return:
+  ret void
+
+continue:
+  ; main kernel body: ptr[global_tid] += val
+  %elem = getelementptr inbounds i32, i32 addrspace(1)* %ptr, i32 %global_tid
+  %old = load i32, i32 addrspace(1)* %elem
+  %new = add i32 %old, %val
+  store i32 %new, i32 addrspace(1)* %elem
+  ret void
+}
+
+; intrinsics
+declare i32 @llvm.amdgcn.workitem.id.x()
+declare i32 @llvm.amdgcn.workgroup.size.x()
+declare i32 @llvm.amdgcn.workgroup.size.y()
+declare i32 @llvm.amdgcn.workgroup.size.z()
+"""
+    elif gpu_backend == "cuda":
+        return r"""
+        ; ModuleID = 'block_dim.cpp'
+source_filename = "block_dim.cpp"
+target datalayout = "e-i64:64-i128:128-v16:16-v32:32-n16:32:64"
+target triple = "nvptx64-nvidia-cuda"
+
+; Function Attrs: mustprogress nofree norecurse nosync nounwind willreturn memory(argmem: readwrite)
+define dso_local void @kernel_add(ptr nocapture noundef %0, i32 noundef %1) local_unnamed_addr #0 {
+  %3 = tail call noundef i32 @llvm.nvvm.read.ptx.sreg.tid.x()
+  %4 = tail call noundef i32 @llvm.nvvm.read.ptx.sreg.ntid.x()
+  %5 = tail call noundef i32 @llvm.nvvm.read.ptx.sreg.ntid.y()
+  %6 = mul i32 %4, %5
+  %7 = tail call noundef i32 @llvm.nvvm.read.ptx.sreg.ntid.z()
+  %8 = mul i32 %6, %7
+  %9 = add nsw i32 %8, %3
+  %10 = icmp sgt i32 %9, 512
+  br i1 %10, label %16, label %11
+
+11:                                               ; preds = %2
+  %12 = sext i32 %9 to i64
+  %13 = getelementptr inbounds i32, ptr %0, i64 %12
+  %14 = load i32, ptr %13, align 4, !tbaa !8
+  %15 = add nsw i32 %14, %1
+  store i32 %15, ptr %13, align 4, !tbaa !8
+  br label %16
+
+16:                                               ; preds = %2, %11
+  ret void
+}
+
+; Function Attrs: mustprogress nocallback nofree nosync nounwind speculatable willreturn memory(none)
+declare noundef i32 @llvm.nvvm.read.ptx.sreg.tid.x() #1
+
+; Function Attrs: mustprogress nocallback nofree nosync nounwind speculatable willreturn memory(none)
+declare noundef i32 @llvm.nvvm.read.ptx.sreg.ntid.x() #1
+
+; Function Attrs: mustprogress nocallback nofree nosync nounwind speculatable willreturn memory(none)
+declare noundef i32 @llvm.nvvm.read.ptx.sreg.ntid.y() #1
+
+; Function Attrs: mustprogress nocallback nofree nosync nounwind speculatable willreturn memory(none)
+declare noundef i32 @llvm.nvvm.read.ptx.sreg.ntid.z() #1
+
+attributes #0 = { mustprogress nofree norecurse nosync nounwind willreturn memory(argmem: readwrite) "frame-pointer"="all" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="sm_90" "target-features"="+ptx82,+sm_90" "uniform-work-group-size"="true" }
+attributes #1 = { mustprogress nocallback nofree nosync nounwind speculatable willreturn memory(none) }
+
+!llvm.module.flags = !{!0, !1, !2, !3}
+!nvvm.annotations = !{!4}
+!llvm.ident = !{!5, !6}
+!nvvmir.version = !{!7}
+
+!0 = !{i32 2, !"SDK Version", [2 x i32] [i32 12, i32 2]}
+!1 = !{i32 1, !"wchar_size", i32 4}
+!2 = !{i32 4, !"nvvm-reflect-ftz", i32 0}
+!3 = !{i32 7, !"frame-pointer", i32 2}
+!4 = !{ptr @kernel_add, !"kernel", i32 1}
+!5 = !{!"clang version 18.1.8 (https://github.com/conda-forge/clangdev-feedstock 12303b10a39c08f9cf71b2fb4eadbd70e3f8dd6b)"}
+!6 = !{!"clang version 3.8.0 (tags/RELEASE_380/final)"}
+!7 = !{i32 2, i32 0}
+!8 = !{!9, !9, i64 0}
+!9 = !{!"int", !10, i64 0}
+!10 = !{!"omnipotent char", !11, i64 0}
+!11 = !{!"Simple C++ TBAA"}
+"""
 
 
 def _get_add_ir(gpu_backend):
@@ -252,55 +367,9 @@ def test_specialize_dims_assume(gpu_backend):
         )
 
 
-def test_specialize_dims():
+def test_specialize_dims(gpu_backend, native_arch):
     # 1. Construct minimal IR
-    IR = r"""
-; ModuleID = 'test'
-target triple = "amdgcn-amd-amdhsa"
-define amdgpu_kernel void @kernel_add(i32 addrspace(1)* %ptr, i32 %val) {
-entry:
-  ; threadIdx.x
-  %tid_x = call i32 @llvm.amdgcn.workitem.id.x()
-
-  ; blockDim.x / y / z
-  %bdx = call i32 @llvm.amdgcn.workgroup.size.x()
-  %bdy = call i32 @llvm.amdgcn.workgroup.size.y()
-  %bdz = call i32 @llvm.amdgcn.workgroup.size.z()
-
-  ; ------ compute global linear thread id ------
-  ; global_tid = tid_x + blockIdx.x * blockDim.x
-  ; but since we don't have blockIdx here, we just fold dims into tid
-
-  ; compute  threads_per_block = blockDim.x * blockDim.y * blockDim.z
-  %tmp1 = mul i32 %bdx, %bdy
-  %threads_per_block = mul i32 %tmp1, %bdz
-
-  ; global_tid = tid_x + threads_per_block  (fake linearization to use all dims)
-  %global_tid = add i32 %tid_x, %threads_per_block
-
-  ; branch: if (global_tid > 512) early return
-  %cmp = icmp ugt i32 %global_tid, 512
-  br i1 %cmp, label %early_return, label %continue
-
-early_return:
-  ret void
-
-continue:
-  ; main kernel body: ptr[global_tid] += val
-  %elem = getelementptr inbounds i32, i32 addrspace(1)* %ptr, i32 %global_tid
-  %old = load i32, i32 addrspace(1)* %elem
-  %new = add i32 %old, %val
-  store i32 %new, i32 addrspace(1)* %elem
-  ret void
-}
-
-; intrinsics
-declare i32 @llvm.amdgcn.workitem.id.x()
-declare i32 @llvm.amdgcn.workgroup.size.x()
-declare i32 @llvm.amdgcn.workgroup.size.y()
-declare i32 @llvm.amdgcn.workgroup.size.z()
-"""
-
+    IR = _get_complex_ir(gpu_backend)
     mod = parse_assembly(IR)
     old_mod = str(mod)
 
@@ -311,71 +380,49 @@ declare i32 @llvm.amdgcn.workgroup.size.z()
     new_hash = jit.specialize_dims(mod, mod_hash, "kernel_add", grid, block)
 
     assert new_hash != mod_hash
-    opt_hash = jit.optimize(mod, "gfx942", "default<O3>", 3)
+    opt_hash = jit.optimize(mod, native_arch, "default<O3>", 3)
+    print(mod)
     assert "%bdx = call i32 @llvm.amdgcn.workgroup.size.x()" not in str(mod)
     assert "%bdy = call i32 @llvm.amdgcn.workgroup.size.y()" not in str(mod)
     assert "%bdz = call i32 @llvm.amdgcn.workgroup.size.z()" not in str(mod)
-    print(mod)
+
+    assert "%4 = tail call noundef i32 @llvm.nvvm.read.ptx.sreg.ntid.x()" not in str(
+        mod
+    )
+    assert "%5 = tail call noundef i32 @llvm.nvvm.read.ptx.sreg.ntid.y()" not in str(
+        mod
+    )
+    assert "%7 = tail call noundef i32 @llvm.nvvm.read.ptx.sreg.ntid.z()" not in str(
+        mod
+    )
+
+    assert "%bdx = call i32 @llvm.amdgcn.workgroup.size.x()" not in str(mod)
+    assert "%bdy = call i32 @llvm.amdgcn.workgroup.size.y()" not in str(mod)
+    assert "%bdz = call i32 @llvm.amdgcn.workgroup.size.z()" not in str(mod)
 
 
-def test_launch_bounds():
+def test_launch_bounds(gpu_backend, native_arch):
     # 1. Construct minimal IR
-    IR = r"""
-; ModuleID = 'test'
-target triple = "amdgcn-amd-amdhsa"
-
-define amdgpu_kernel void @kernel_add(i32 addrspace(1)* %ptr, i32 %val) {
-entry:
-  ; thread id
-  %tid = call i32 @llvm.amdgcn.workitem.id.x()
-
-  ; blockDim.x / y / z  (workgroup size)
-  %bdx = call i32 @llvm.amdgcn.workgroup.size.x()
-  %bdy = call i32 @llvm.amdgcn.workgroup.size.y()
-  %bdz = call i32 @llvm.amdgcn.workgroup.size.z()
-
-  ; branch: if tid > 512 return
-  %cmp = icmp ugt i32 %tid, 512
-  br i1 %cmp, label %early_return, label %continue
-
-early_return:
-  ret void
-
-continue:
-  ; original kernel body: ptr[tid] += val
-  %elem = getelementptr inbounds i32, i32 addrspace(1)* %ptr, i32 %tid
-  %old = load i32, i32 addrspace(1)* %elem
-  %new = add i32 %old, %val
-  store i32 %new, i32 addrspace(1)* %elem
-
-  ; optionally use blockDim values to avoid dead code elimination
-  ; (useful for testing prune)
-  %sum_dims = add i32 %bdx, %bdy
-  %sum_dims2 = add i32 %sum_dims, %bdz
-  %_unused = add i32 %new, %sum_dims2
-
-  ret void
-}
-
-; intrinsics
-declare i32 @llvm.amdgcn.workitem.id.x()
-declare i32 @llvm.amdgcn.workgroup.size.x()
-declare i32 @llvm.amdgcn.workgroup.size.y()
-declare i32 @llvm.amdgcn.workgroup.size.z()
-"""
-
+    IR = _get_complex_ir(gpu_backend)
     mod = parse_assembly(IR)
     old_mod = str(mod)
 
     mod_hash = 0
     new_hash = jit.set_launch_bounds(mod, mod_hash, "kernel_add", 128, 2)
+    print(mod)
 
     assert new_hash != mod_hash
-    opt_hash = jit.optimize(mod, "gfx942", "default<O3>", 3)
-    assert (
-        'attributes #0 = { "amdgpu-flat-work-group-size"="1,128" "amdgpu-waves-per-eu"="2,2" }'
-        in str(mod)
-    )
+    opt_hash = jit.optimize(mod, native_arch, "default<O3>", 3)
+    if gpu_backend == "amd":
+        assert (
+            'attributes #0 = { "amdgpu-flat-work-group-size"="1,128" "amdgpu-waves-per-eu"="2,2" }'
+            in str(mod)
+        )
+    elif gpu_backend == "cuda":
+        assert '!5 = !{ptr @kernel_add, !"maxntid", i32 128}' in str(mod)
+        assert '!6 = !{ptr @kernel_add, !"minctasm", i32 2}' in str(mod)
+    else:
+        raise RuntimeError("Unknown backend")
 
 
 def test_link_llvm_modules(tmp_path):
