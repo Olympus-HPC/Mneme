@@ -137,7 +137,9 @@ class CMakeBuild(build_ext):
             json.dump(cfg, fd, indent=2)
 
     def run(self):
-        self.build_scratch = self.build_temp
+        self.build_scratch = Path(self.build_temp).resolve()
+        self.build_scratch.mkdir(parents=True, exist_ok=True)
+        self.build_scratch = str(self.build_scratch)
 
         if "PROTEUS_DIR" in os.environ:
             proteus_dir = os.environ["PROTEUS_DIR"]
