@@ -5,6 +5,7 @@ from enum import IntEnum
 from multiprocessing import Event as ProcessEvent
 from multiprocessing import Process
 from multiprocessing import Queue as ProcessQueue
+from pathlib import Path
 from queue import Queue as ThreadQueue
 from threading import Event as ThreadEvent
 from typing import Dict
@@ -399,6 +400,26 @@ class AsyncReplayExecutor:
             )
             for i in range(num_workers)
         ]
+
+    def set_ir(self, ir: str | Path):
+        """ Sets the LLVM IR for all workers to this IR.
+            Async, returns before the IR is set; But is guaranteed to set the IR
+            before any submit or evaluate calls after set_ir is called.
+
+        Parameters
+        ----------
+        ir : str | Path
+            Path to the LLVM IR file (.bc or .ll) or the IR as a string.
+        """
+        if isinstance(ir, Path):
+            ir_data = str(ir.absolute())
+        else:
+            ir_data = ir
+
+        msg = {"payload": "set_ir", "data": ir_data}
+        for w in self.workers:
+            w._ipc_write_q.put(msg)
+
 
     # ------------------------------------------------------------------
     # Submit new job (non-blocking)
