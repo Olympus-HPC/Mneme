@@ -486,7 +486,7 @@ class Replay(BaseExecutor):
             "-cm",
             "--codegen-method",
             dest="codegen_method",
-            choices=["serial"],
+            choices=["serial", "rtc"],
             default="serial",
             help="Technology to use to lower to LLVM IR to a device object file instead of default Proteus Infrastructure",
         )
