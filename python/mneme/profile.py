@@ -23,7 +23,7 @@ Notes:
   - The native library and its ABI are considered the source of truth.
 """
 
-from ctypes import POINTER, c_char_p, c_uint64
+from ctypes import POINTER, c_char_p, c_uint64, c_int64
 
 from mneme.mneme_logging import logger
 
@@ -53,18 +53,18 @@ def _init_profile():
         profile_lib = ffi.load_library_so(get_profile_library())
 
         profile_lib.MnemePy_startProfile.argtypes = [c_char_p]
-        profile_lib.MnemePy_startProfile.restype = c_uint64
+        profile_lib.MnemePy_startProfile.restype = c_int64
 
         profile_lib.MnemePy_stopProfile.argtypes = [
             c_uint64,
-            POINTER(c_uint64),
+            POINTER(c_int64),
             c_uint64,
         ]
 
         profile_lib.MnemePy_getNumRecords.argtypes = [
             c_uint64,
         ]
-        profile_lib.MnemePy_getNumRecords.restype = c_uint64
+        profile_lib.MnemePy_getNumRecords.restype = c_int64
 
         profile_lib.MnemePy_initProfiler.argtypes = []
 
@@ -117,6 +117,10 @@ def gpu_profile_stop(correlation_id: int):
         raise RuntimeError("Profile library is not initialized")
 
     num_records = profile_lib.MnemePy_getNumRecords(correlation_id)
+
+    if num_records <= 0 or num_records > 10_000_000:
+        raise RuntimeError(f"Bad num_records={num_records} for token={token}")
+
     logger.debug(f"Profiler contains {num_records} records")
     arr = (c_uint64 * num_records)()
 
