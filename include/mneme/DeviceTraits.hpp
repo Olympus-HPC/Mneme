@@ -699,30 +699,23 @@ template <> struct DeviceTraits<DeviceVendors::CUDA> {
     return cudaGetSymbolAddress(devPtr, symbol);
   }
 
-  static DeviceError_t deviceGetAttribute(cudaFunction_t &Func,
+  static DeviceDriverError_t deviceGetAttribute(cudaFunction_t &Func,
                                        FuncAttributes Attribute, int &Value) {
     LOG_DEBUG("Going to request attributes of {}", (void *)Func);
-    cudaFuncAttributes Attr;
-    auto Ret = cudaFuncGetAttributes(&Attr, Func);
-    if (Ret != cudaSuccess)
-      return Ret;
     
     switch (Attribute) {
     case REGISTER_USAGE:
-      Value = Attr.numRegs;
-      break;
+      return cuFuncGetAttribute(&Value, CU_FUNC_ATTRIBUTE_NUM_REGS, Func);
 
     case LOCALMEM_USAGE:
-        Value = Attr.localSizeBytes; 
-        break;
+      return cuFuncGetAttribute(&Value, CU_FUNC_ATTRIBUTE_LOCAL_SIZE_BYTES, Func);
+
     case CONSTMEM_USAGE:
-        Value = Attr.constSizeBytes; 
-        break;
+      return cuFuncGetAttribute(&Value, CU_FUNC_ATTRIBUTE_CONST_SIZE_BYTES, Func);
     default:
       LOG_FATAL("Request unknown attribute");
       break;
     }
-    return cudaSuccess;
   }
 
 
