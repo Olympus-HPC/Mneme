@@ -34,6 +34,7 @@ TuneWorker:
 import os
 from datetime import datetime, timezone
 from multiprocessing import Event, Queue
+from pathlib import Path
 from typing import Optional, Tuple
 
 from mneme.device import (
@@ -44,7 +45,7 @@ from mneme.device import (
     set_device,
 )
 from mneme.llvm.buffer import MemBufferRef
-from mneme.llvm.module import ModuleRef
+from mneme.llvm.module import ModuleRef, parse_assembly, parse_bitcode
 from mneme.mneme_logging import logger
 from mneme.mneme_types import ExperimentConfiguration, ExperimentResult
 from mneme.page_manager import PageManagerRef
@@ -177,6 +178,23 @@ class BaseExecutor:
 
     def link_ir(self):
         return self.records.link_llvm_modules(prune=True, internalize=True)
+
+    def set_new_ir(self, ir_path_or_asm: str):
+        if isinstance(ir_path_or_asm, str) and (ir_path_or_asm.endswith('.ll') or ir_path_or_asm.endswith('.bc')):
+            ir_path = Path(ir_path_or_asm)
+            if ir_path.suffix == '.bc':
+                with open(ir_path, 'rb') as f:
+                    new_ir = parse_bitcode(f.read())
+            else: # .ll
+                with open(ir_path, 'r') as f:
+                    new_ir = parse_assembly(f.read())
+        else:
+            # assume str is text IR
+            new_ir = parse_assembly(ir_path_or_asm)
+
+        # apply internalization and pruning
+        jit.internalize(new_ir, self.kernel_descr.kernel_name)
+        jit.pruneIR(new_ir)
 
     @cond_time("preprocess_ir_time")
     def _preprocess_ir(
@@ -817,6 +835,13 @@ class TuneWorker(BaseExecutor):
                         f"Worker {worker.device_id} received terminate request, exiting ..."
                     )
                     break
+                elif msg["payload"] == "set_ir":
+                    # update the root_ir for subsequent requests
+                    logger.debug(f"Worker {worker.device_id} received set_ir request")
+                    new_ir_data = msg["data"]
+
+                    root_ir = worker.set_new_ir(new_ir_data)
+
                 elif msg["payload"] == "process":
                     logger.debug(
                         f"Worker {worker.device_id} received processing request {msg['exp_id']}"
