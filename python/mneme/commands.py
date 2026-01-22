@@ -26,7 +26,7 @@ import subprocess
 from pathlib import Path
 
 from mneme.llvm import utils
-from mneme.logging import logger
+from mneme.mneme_logging import logger
 from mneme.mneme_types import ExperimentConfiguration, ExperimentResult, dim3
 from mneme.pipeline import PipelineManager
 from mneme.profile import init_profiler

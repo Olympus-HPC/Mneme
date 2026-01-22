@@ -46,8 +46,8 @@ MnemePy_getRegisterUsage(void *Func) {
   auto EC = DeviceVendorTraits::DeviceErrorCheck(
       DeviceVendorTraits::deviceGetAttribute(
           DevFunc, FuncAttributes::REGISTER_USAGE, UsedRegisters));
-//  if (EC)
-//    LOG_FATAL("Error when reading register usage: " + EC.value());
+  if (EC)
+    LOG_FATAL("Error when reading register usage: " + EC.value());
   return UsedRegisters;
 }
 
@@ -58,8 +58,8 @@ MnemePy_getLocalMemUsage(void *Func) {
   auto EC = DeviceVendorTraits::DeviceErrorCheck(
       DeviceVendorTraits::deviceGetAttribute(
           DevFunc, FuncAttributes::LOCALMEM_USAGE, LocalMemUsage));
-//  if (EC)
-//    LOG_FATAL("Error when reading register usage: " + EC.value());
+  if (EC)
+    LOG_FATAL("Error when reading register usage: " + EC.value());
   return LocalMemUsage;
 }
 
@@ -70,8 +70,8 @@ MnemePy_getConstMemUsage(void *Func) {
   auto EC = DeviceVendorTraits::DeviceErrorCheck(
       DeviceVendorTraits::deviceGetAttribute(
           DevFunc, FuncAttributes::CONSTMEM_USAGE, ConstMemUsage));
-//  if (EC)
-//    LOG_FATAL("Error when reading register usage: " + EC.value());
+  if (EC)
+    LOG_FATAL("Error when reading register usage: " + EC.value());
   return ConstMemUsage;
 }
 

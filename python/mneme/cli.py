@@ -16,7 +16,7 @@ from mneme.commands import (
     Move,
     Record,
 )
-from mneme.logging import configure_replay_logging
+from mneme.mneme_logging import configure_replay_logging
 
 
 def main(argv=None):

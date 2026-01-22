@@ -3,7 +3,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Iterator, Any
 
-from mneme.logging import logger
+from mneme.mneme_logging import logger
 from mneme.mneme_types import ExperimentConfiguration
 
 

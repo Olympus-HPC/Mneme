@@ -25,7 +25,7 @@ Notes:
 
 from ctypes import POINTER, c_char_p, c_uint64
 
-from mneme.logging import logger
+from mneme.mneme_logging import logger
 
 from .llvm import ffi
 from .llvm.common import _encode_string
