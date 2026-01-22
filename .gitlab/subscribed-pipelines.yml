@@ -87,4 +87,12 @@ tuolumne-test-python-cov:
   needs: [tuolumne-up-check]
   extends: [.test-python-cov]
 
+matrix-test-python-cov:
+  variables:
+    CI_MACHINE: "matrix"
+    JOB_CMD:
+      value: "scripts/gitlab/ci-python-test.sh"
+      expand: false
+  needs: [matrix-up-check]
+  extends: [.test-python-cov]
 
