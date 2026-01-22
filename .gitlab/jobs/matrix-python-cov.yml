@@ -54,7 +54,7 @@ variables:
 .build-variants:
   parallel:
     matrix:
-      - MNEME_CI_LLVM_VERSION: ["18.1.8", "19.1.7"]
+      - MNEME_CI_LLVM_VERSION: ["18.1.8"]
         MNEME_CI_PYTHON_VERSION: ["3.10"]
 
 build-and-test-matrix:
