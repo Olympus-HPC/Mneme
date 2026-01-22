@@ -119,10 +119,10 @@ def gpu_profile_stop(correlation_id: int):
     num_records = profile_lib.MnemePy_getNumRecords(correlation_id)
 
     if num_records <= 0 or num_records > 10_000_000:
-        raise RuntimeError(f"Bad num_records={num_records} for token={token}")
+        raise RuntimeError(f"Bad num_records={num_records} for token={correlation_id}")
 
     logger.debug(f"Profiler contains {num_records} records")
-    arr = (c_uint64 * num_records)()
+    arr = (c_int64 * num_records)()
 
     _ = profile_lib.MnemePy_stopProfile(correlation_id, arr, num_records)
     return [int(r) for r in arr]

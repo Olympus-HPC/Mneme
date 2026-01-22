@@ -14,6 +14,23 @@
 #include <cuda.h>
 #include <cuda_runtime.h>
 #include <cupti.h>
+#include <cupti_activity.h>
+
+#if defined(CUpti_ActivityKernel9)
+using KernelRec = CUpti_ActivityKernel9;
+#elif defined(CUpti_ActivityKernel8)
+using KernelRec = CUpti_ActivityKernel8;
+#elif defined(CUpti_ActivityKernel7)
+using KernelRec = CUpti_ActivityKernel7;
+#elif defined(CUpti_ActivityKernel6)
+using KernelRec = CUpti_ActivityKernel6;
+#elif defined(CUpti_ActivityKernel5)
+using KernelRec = CUpti_ActivityKernel5;
+#elif defined(CUpti_ActivityKernel4)
+using KernelRec = CUpti_ActivityKernel4;
+#else
+using KernelRec = CUpti_ActivityKernel9;
+#endif
 
 #include "mneme/MnemeLogger.hpp"
 
@@ -38,7 +55,7 @@ do {                                                                        \
   if (_e != cudaSuccess) {                                                  \
     fprintf(stderr, "CUDA error %d (%s) at %s:%d: %s\n",                     \
             (int)_e, cudaGetErrorString(_e), __FILE__, __LINE__, #call);    \
-                 std::abort();                                                           \
+                                                             std::abort();                                                           \
   }                                                                         \
 } while (0)
 
@@ -54,7 +71,7 @@ do {                                                                        \
   if (_r != CUPTI_SUCCESS) {                                                \
     fprintf(stderr, "CUPTI error %d (%s) at %s:%d: %s\n",                    \
             (int)_r, cuptiGetResultString(_r), __FILE__, __LINE__, #call);  \
-                 std::abort();                                                           \
+                                                             std::abort();                                                           \
   }                                                                         \
 } while (0)
 
@@ -78,7 +95,7 @@ private:
   // Token -> *target* kernel name (empty means accept any)
   std::unordered_map<u64, std::string> targetByToken_;
   // Token -> durations (ns)
-  std::unordered_map<u64, std::vector<u64>> profilesByToken_;
+  std::unordered_map<u64, std::vector<int64_t>> profilesByToken_;
 
   // CUPTI correlationId (uint32) -> our token (u64)
   // Filled by CUPTI_ACTIVITY_KIND_EXTERNAL_CORRELATION records.
@@ -118,82 +135,41 @@ private:
     *maxNumRecords = 0; // let CUPTI decide
   }
 
-  static void CUPTIAPI bufferCompleted(CUcontext /*ctx*/, uint32_t /*streamId*/,
-                                       uint8_t* buffer, size_t size, size_t validSize) {
+  static void CUPTIAPI bufferCompleted(CUcontext, uint32_t,
+                                       uint8_t* buffer, size_t, size_t validSize)
+  {
     auto& inst = instance();
 
-    // Dropped records check (important if you see gaps)
+    // dropped check
     size_t dropped = 0;
     CHECK_CUPTI(cuptiActivityGetNumDroppedRecords(nullptr, 0, &dropped));
-    if (dropped > 0) {
-      LOG_WARN("CUPTI dropped {} activity records (increase buffers / reduce load)", dropped);
-    }
+    if (dropped) LOG_WARN("CUPTI dropped {} records", dropped);
 
-    // First pass: harvest EXTERNAL_CORRELATION mappings that may appear in this buffer
-    {
-      CUpti_Activity* rec = nullptr;
-      CUptiResult st = CUPTI_SUCCESS;
-      while ((st = cuptiActivityGetNextRecord(buffer, validSize, &rec)) == CUPTI_SUCCESS) {
-        if (!rec) break;
-        if (rec->kind == CUPTI_ACTIVITY_KIND_EXTERNAL_CORRELATION) {
-          auto* e = reinterpret_cast<const CUpti_ActivityExternalCorrelation*>(rec);
-          if (e->externalKind == kExtKind) {
-            std::lock_guard<std::mutex> lk(inst.mtx_);
-            inst.corrIdToToken_[e->correlationId] = static_cast<u64>(e->externalId);
-          }
-        }
-      }
-      if (st != CUPTI_SUCCESS && st != CUPTI_ERROR_MAX_LIMIT_REACHED) {
-        LOG_WARN("cuptiActivityGetNextRecord returned {}", (int)st);
-      }
-    }
-
-    // Second pass: iterate again (need reset iteration; easiest is manual loop by re-calling from start)
-    // CUPTI doesn't provide a "reset iterator", so we just do a single pass and handle both kinds in one.
-    // To keep this correct, we re-iterate by scanning records again using a fresh loop:
-    {
-      // We can re-scan by using cuptiActivityGetNextRecord again only if we restart from scratch,
-      // but CUPTI's iterator is stateless per call; it uses internal cursor in user code.
-      // So instead, do the *real* single-pass logic here and remove the earlier pass.
-      //
-      // Practical approach: do it as a single pass with a local map, then merge.
-    }
-
-    // Correct single-pass implementation with local staging:
     std::unordered_map<uint32_t, u64> localCorr;
     struct KernelSample { uint32_t corr; const char* name; uint64_t start; uint64_t end; bool ok; };
     std::vector<KernelSample> kernels;
     kernels.reserve(256);
 
+    size_t nExt = 0, nKer = 0;
+
     CUpti_Activity* rec = nullptr;
     CUptiResult st = CUPTI_SUCCESS;
-    size_t offsetGuard = 0;
 
-    // Iterate records once, collect local correlation + kernel samples
     while ((st = cuptiActivityGetNextRecord(buffer, validSize, &rec)) == CUPTI_SUCCESS) {
       if (!rec) break;
-      ++offsetGuard;
-      if (offsetGuard > 10'000'000) break; // paranoia guard
 
       switch (rec->kind) {
         case CUPTI_ACTIVITY_KIND_EXTERNAL_CORRELATION: {
           auto* e = reinterpret_cast<const CUpti_ActivityExternalCorrelation*>(rec);
-          if (e->externalKind == kExtKind) {
-            localCorr[e->correlationId] = static_cast<u64>(e->externalId);
-          }
+          localCorr[e->correlationId] = (u64)e->externalId;
+          nExt++;
           break;
         }
 
-        case CUPTI_ACTIVITY_KIND_CONCURRENT_KERNEL: { 
-          auto* k = reinterpret_cast<const CUpti_ActivityKernel*>(rec);
-          kernels.push_back(KernelSample{
-            k->correlationId,
-            k->name ? k->name : "<unknown>",
-            static_cast<uint64_t>(k->start),
-            static_cast<uint64_t>(k->end),
-            k->end >= k->start
-            LOG_DEBUG("CUPTI bufferCompleted: ext_corr={} kernels={} validSize={}", nExt, nKer, validSize);
-          });
+        case CUPTI_ACTIVITY_KIND_CONCURRENT_KERNEL: {
+          auto* k = reinterpret_cast<const KernelRec*>(rec);
+          kernels.push_back({k->correlationId, k->name, (uint64_t)k->start, (uint64_t)k->end, k->end >= k->start});
+          nKer++;
           break;
         }
 
@@ -206,13 +182,14 @@ private:
       LOG_WARN("cuptiActivityGetNextRecord returned {}", (int)st);
     }
 
-    // Merge local correlation into global map
+
+    // merge corr map
     if (!localCorr.empty()) {
       std::lock_guard<std::mutex> lk(inst.mtx_);
       for (auto& kv : localCorr) inst.corrIdToToken_[kv.first] = kv.second;
     }
 
-    // Consume kernel samples
+    // associate kernels -> token
     for (const auto& s : kernels) {
       u64 token = 0;
       {
@@ -220,30 +197,28 @@ private:
         auto it = inst.corrIdToToken_.find(s.corr);
         if (it != inst.corrIdToToken_.end()) token = it->second;
       }
-      if (token == 0) continue;
 
-      std::string kname = s.name ? std::string(s.name) : std::string("<unknown>");
-      u64 dur = (s.ok) ? static_cast<u64>(s.end - s.start) : 0;
+      if (!token) continue;
 
+      u64 dur = (s.ok) ? (u64)(s.end - s.start) : 0;
+      if (!dur) continue;
+
+      // NOTE: don't construct std::string from s.name inside callback until you're sure it's safe.
+      // For now, only do name filtering if want is empty.
       std::lock_guard<std::mutex> lk(inst.mtx_);
 
-      // token must be active
       auto tgtIt = inst.targetByToken_.find(token);
       if (tgtIt == inst.targetByToken_.end()) continue;
 
-      // optional name filter
       const std::string& want = tgtIt->second;
-      if (!want.empty() && kname != want) continue;
 
-      if (dur > 0) {
-        LOG_DEBUG("Associating {} with token id {}", kname, token);
-        inst.profilesByToken_[token].push_back(dur);
-      }
+      inst.profilesByToken_[token].push_back(dur);
     }
 
-    // NOTE: buffer is from our pool; CUPTI doesn't own it. Nothing to free here.
-    (void)buffer;
-    (void)size;
+    for (auto &PD : inst.profilesByToken_)
+      for (auto &Dur : PD.second) 
+        LOG_DEBUG("CUPTI Token: {} Received duration {}", PD.first, (int64_t) Dur);
+    LOG_DEBUG("CUPTI Returning");
   }
 
 public:
@@ -265,6 +240,8 @@ public:
     // Enable activities we need
     CHECK_CUPTI(cuptiActivityEnable(CUPTI_ACTIVITY_KIND_EXTERNAL_CORRELATION));
     CHECK_CUPTI(cuptiActivityEnable(CUPTI_ACTIVITY_KIND_CONCURRENT_KERNEL));
+    CHECK_CUPTI(cuptiActivityEnable(CUPTI_ACTIVITY_KIND_RUNTIME));
+    CHECK_CUPTI(cuptiActivityEnable(CUPTI_ACTIVITY_KIND_DRIVER));
     // Some setups only emit KERNEL (non-concurrent); enabling doesn't hurt
 
     initialized_ = true;
@@ -305,12 +282,16 @@ public:
     initIfNeeded();
 
     // Pop the correlation id
-    CHECK_CUPTI(cuptiActivityPopExternalCorrelationId(kExtKind, nullptr));
+    uint64_t popped = 0;
+    CHECK_CUPTI(cuptiActivityPopExternalCorrelationId(kExtKind, &popped));
+    if (popped != token) {
+      LOG_WARN("CUPTI popped token {} but expected {}", (u64)popped, token);
+    }
 
     CHECK_CUDA(cudaDeviceSynchronize());
     CHECK_CUPTI(cuptiActivityFlushAll(0));
 
-    std::vector<u64> out;
+    std::vector<int64_t> out;
     {
       std::lock_guard<std::mutex> lk(mtx_);
       if (auto it = profilesByToken_.find(token); it != profilesByToken_.end()) {
