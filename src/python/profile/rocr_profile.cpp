@@ -5,6 +5,7 @@
 #include <hip/hip_runtime.h>
 #include <mutex>
 #include <unordered_map>
+#include <condition_variable>
 #include <utility>
 #include <vector>
 
@@ -34,7 +35,6 @@ constexpr mneme::DeviceVendors Vendor = mneme::DeviceVendors::HIP;
 #define API_EXPORT(RTYPE) RTYPE
 #endif
 
-using u64 = unsigned long long;
 #define CHECK_ROCP(x)                                                          \
   do {                                                                         \
     auto _st = (x);                                                            \
@@ -53,14 +53,15 @@ private:
   rocprofiler_context_id_t rocrCtx{};
   rocprofiler_buffer_id_t rocrGBuf{};
   std::mutex rocrMutex;
-  std::atomic<u64> rocrNextToken{0};
-  // Token -> *target* kernel name (what to keep for this measurement window)
-  std::unordered_map<u64, std::string> rocrTargetByToken;
-
-  // Per-token collected durations (ns)
-  std::unordered_map<u64, std::vector<u64>> profilesByToken;
-
+  std::atomic<int64_t> rocrNextToken{0};
+  std::unordered_map<int64_t, std::string> rocrTargetByToken;
+  std::unordered_map<int64_t, std::vector<int64_t>> profilesByToken;
   std::unordered_map<rocprofiler_kernel_id_t, std::string> rocrKernelNames;
+
+  std::mutex drainMutex;
+  std::condition_variable drainCv;
+  std::atomic<uint64_t> cbTotalRecords{0};
+  std::atomic<uint64_t> cbTotalBatches{0};
 
   MnemeRocProfiler() {};
 
@@ -68,6 +69,42 @@ public:
   static MnemeRocProfiler &instance() {
     static MnemeRocProfiler Profiler;
     return Profiler;
+  }
+
+    // called from buffer_cb after processing a batch
+  void notifyBatch(unsigned long nrecs) {
+    cbTotalRecords.fetch_add(nrecs, std::memory_order_release);
+    cbTotalBatches.fetch_add(1, std::memory_order_release);
+    drainCv.notify_all();
+  }
+
+  // Flush + wait until callback thread drains buffered work.
+  // We drain until cbTotalRecords stops changing after a flush.
+  void flushDrain() {
+    // We may see unrelated activity; we only care that *everything currently
+    // buffered* has been delivered. Draining until stable achieves that.
+    uint64_t prev = cbTotalRecords.load(std::memory_order_acquire);
+
+    for (int iter = 0; iter < 32; ++iter) {
+      CHECK_ROCP(rocprofiler_flush_buffer(rocrGBuf));
+
+      // Wait until we observe at least one batch, or timeout.
+      // Timeout keeps us from deadlocking if flush produces no callbacks.
+      std::unique_lock<std::mutex> lk(drainMutex);
+      drainCv.wait_for(lk, std::chrono::milliseconds(10), [&] {
+        return cbTotalRecords.load(std::memory_order_acquire) != prev;
+      });
+
+      uint64_t now = cbTotalRecords.load(std::memory_order_acquire);
+      if (now == prev) {
+        // No new records observed after flush => stable => drained
+        return;
+      }
+      prev = now;
+    }
+    // If we get here, system is still producing records constantly.
+    // We still proceed, but counts may be non-deterministic.
+    LOG_WARN("rocprofiler flushDrain reached iteration limit; records still changing");
   }
 
   // Callback to get the kernel-id->Name mapping
@@ -85,8 +122,6 @@ public:
       if (Record.phase == ROCPROFILER_CALLBACK_PHASE_LOAD) {
         rocrKernelNames[PayloadData->kernel_id] =
             PayloadData->kernel_name ? PayloadData->kernel_name : "<unknown>";
-      } else if (Record.phase == ROCPROFILER_CALLBACK_PHASE_UNLOAD) {
-        rocrKernelNames.erase(PayloadData->kernel_id);
       }
     } else if (Record.operation == ROCPROFILER_CODE_OBJECT_LOAD &&
                Record.phase == ROCPROFILER_CALLBACK_PHASE_UNLOAD) {
@@ -101,36 +136,41 @@ public:
       auto *Record = static_cast<
           const rocprofiler_buffer_tracing_kernel_dispatch_record_t *>(
           headers[i]->payload);
+
       std::string KName{"<unknown>"};
-      // Resolve kernel name via code-object map
       {
         std::lock_guard<std::mutex> lk(rocrMutex);
         if (auto it = rocrKernelNames.find(Record->dispatch_info.kernel_id);
             it != rocrKernelNames.end())
           KName = it->second;
       }
-      u64 token = Record->correlation_id.external.value;
-      if (Record->end_timestamp >= Record->start_timestamp) {
-        LOG_DEBUG("Associating {} with token id {}", KName, token);
-        u64 dur = Record->end_timestamp - Record->start_timestamp;
-        std::lock_guard<std::mutex> lk(rocrMutex);
 
-        // 1) Token must be active for us
-        auto tgt = rocrTargetByToken.find(token);
+      int64_t token = Record->correlation_id.external.value;
+      if (Record->end_timestamp >= Record->start_timestamp) {
+        LOG_DEBUG("Received Log of {} associated with token {}", KName, token);
+        int64_t dur = Record->end_timestamp - Record->start_timestamp;
+
+        std::lock_guard<std::mutex> lk(rocrMutex);
+        int64_t token2 = Record->correlation_id.external.value;
+        LOG_DEBUG("dispatch: kernel_id={} name={} ext_token={}",
+                  (uint64_t)Record->dispatch_info.kernel_id, KName, token2);
+
+        auto tgt = rocrTargetByToken.find(token2);
         if (tgt == rocrTargetByToken.end())
           continue;
 
-        // 2) Name must match (empty target means "accept any")
         const std::string &want = tgt->second;
         if (!want.empty() && KName != want)
           continue;
-        profilesByToken[token].push_back(dur);
+
+        LOG_DEBUG("Associating {} with token id {} and duration {}", KName, token2, dur);
+        profilesByToken[token2].push_back(dur);
       }
     }
   }
 
-  u64 start(const char *KernelName) {
-    u64 tok = rocrNextToken.fetch_add(1, std::memory_order_relaxed) + 1;
+  int64_t start(const char *KernelName) {
+    int64_t tok = rocrNextToken.fetch_add(1, std::memory_order_relaxed) + 1;
     rocprofiler_thread_id_t tid{};
     CHECK_ROCP(rocprofiler_get_thread_id(&tid));
     rocprofiler_user_data_t ud{};
@@ -140,23 +180,23 @@ public:
       std::lock_guard<std::mutex> lk(rocrMutex);
       rocrTargetByToken[tok] =
           KernelName ? std::string(KernelName) : std::string();
-      profilesByToken.erase(
-          tok); // just in case a previous run crashed mid-stop
+      profilesByToken.erase(tok);
     }
     LOG_DEBUG("Kernel {} matched with token {} assigned to thread id {}",
               KernelName, tok, tid);
     return tok;
   }
 
-  u64 numRecords(u64 Token) {
+  int64_t numRecords(int64_t Token) {
     rocprofiler_thread_id_t tid{};
     CHECK_ROCP(rocprofiler_get_thread_id(&tid));
 
-    CHECK_ROCP(rocprofiler_flush_buffer(rocrGBuf));
     auto EC = DeviceVendorTraits::DeviceErrorCheck(
         DeviceVendorTraits::DeviceSynchronize());
     if (EC)
       LOG_FATAL("Error When Launching Kernel: " + EC.value());
+    
+    flushDrain();
 
     {
       std::lock_guard<std::mutex> lk(rocrMutex);
@@ -168,11 +208,10 @@ public:
     LOG_DEBUG("Error Num Records could not be found Token {} assigned to "
               "thread id {}",
               Token, tid);
-
     return -1;
   }
 
-  std::vector<u64> stop(u64 Token) {
+  std::vector<int64_t> stop(int64_t Token) {
     rocprofiler_thread_id_t tid{};
     CHECK_ROCP(rocprofiler_get_thread_id(&tid));
     rocprofiler_user_data_t popped{};
@@ -183,9 +222,7 @@ public:
     if (EC)
       LOG_FATAL("Error When Launching Kernel: " + EC.value());
 
-    CHECK_ROCP(rocprofiler_flush_buffer(rocrGBuf));
-
-    std::vector<u64> out;
+    std::vector<int64_t> out;
     {
       std::lock_guard<std::mutex> lk(rocrMutex);
       if (auto it = profilesByToken.find(Token); it != profilesByToken.end()) {
@@ -207,10 +244,12 @@ public:
 static void buffer_cb(rocprofiler_context_id_t, rocprofiler_buffer_id_t,
                       rocprofiler_record_header_t **headers, unsigned long n,
                       void *, uint64_t) {
-
   auto &instance = mneme::MnemeRocProfiler::instance();
   LOG_DEBUG("Logging duration");
   instance.logDuration(headers, n);
+
+  // ---- NOTIFY FLUSH BARRIER (ADD) ----
+  instance.notifyBatch(n);
 }
 
 static void codeobj_cb(rocprofiler_callback_tracing_record_t rec,
@@ -269,14 +308,14 @@ rocprofiler_configure(uint32_t version, const char *runtime_version,
   return &result;
 }
 
-API_EXPORT(u64) MnemePy_startProfile(const char *KernelName) {
+API_EXPORT(int64_t) MnemePy_startProfile(const char *KernelName) {
   LOG_DEBUG("Requested to start profile {}", KernelName);
   auto &instance = mneme::MnemeRocProfiler::instance();
   return instance.start(KernelName);
 }
 
 API_EXPORT(void)
-MnemePy_stopProfile(u64 Token, u64 *ProfileData, u64 Size) {
+MnemePy_stopProfile(int64_t Token, int64_t *ProfileData, int64_t Size) {
   LOG_DEBUG("Requested to stop profile {}", Token);
   auto &instance = mneme::MnemeRocProfiler::instance();
   auto prof = instance.stop(Token);
@@ -292,7 +331,7 @@ MnemePy_stopProfile(u64 Token, u64 *ProfileData, u64 Size) {
   }
 }
 
-API_EXPORT(u64) MnemePy_getNumRecords(u64 token) {
+API_EXPORT(int64_t) MnemePy_getNumRecords(int64_t token) {
   LOG_DEBUG("Requested to get number of profile records {}", token);
   auto &instance = mneme::MnemeRocProfiler::instance();
   auto records = instance.numRecords(token);
