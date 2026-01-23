@@ -10,7 +10,7 @@ from threading import Event as ThreadEvent
 from typing import Dict
 
 from mneme.futures import EvalFuture
-from mneme.logging import logger
+from mneme.mneme_logging import logger
 from mneme.replay_executor import TuneWorker
 from mneme.mneme_types import ExperimentConfiguration, ExperimentResult
 

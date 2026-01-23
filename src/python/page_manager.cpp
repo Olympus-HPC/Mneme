@@ -12,6 +12,9 @@ using namespace llvm;
 #ifdef MNEME_ENABLE_HIP
 using DeviceVendorTraits = DeviceTraits<DeviceVendors::HIP>;
 constexpr DeviceVendors Vendor = DeviceVendors::HIP;
+#elif defined(MNEME_ENABLE_CUDA)
+using DeviceVendorTraits = DeviceTraits<DeviceVendors::CUDA>;
+constexpr DeviceVendors Vendor = DeviceVendors::CUDA;
 #endif
 
 extern "C" {

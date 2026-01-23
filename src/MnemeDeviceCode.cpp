@@ -58,7 +58,7 @@ bool DeviceVendorTraits::compareDeviceBlobs(const char *Blob1,
   if (EC)
     LOG_FATAL("Error in comparing blobs " + EC.value());
 
-  uint64_t NumBlocks = min( (NumBytes + NUM_THREADS_PER_BLOCK - 1)/NUM_THREADS_PER_BLOCK,
+  uint64_t NumBlocks = std::min( (NumBytes + NUM_THREADS_PER_BLOCK - 1)/NUM_THREADS_PER_BLOCK,
                   (uint64_t)8192 );   // DN -- you could also set this to something like SMs*20 to be more device dependent
   compareDevBlobs<<<NumBlocks, NUM_THREADS_PER_BLOCK>>>(Blob1, Blob2, NumEqualBytes,
                                              NumBytes);

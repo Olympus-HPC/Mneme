@@ -5,7 +5,7 @@ import re
 from enum import IntEnum
 from typing import Dict, List, Tuple, Union
 
-from mneme.logging import logger
+from mneme.mneme_logging import logger
 
 __all_passes__ = """Module passes:
   always-inline

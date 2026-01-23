@@ -1,7 +1,7 @@
 from mneme.recorded_execution import RecordedExecution
 from mneme.mneme_types import ExperimentConfiguration
 from mneme.llvm import module
-from mneme.logging import logger
+from mneme.mneme_logging import logger
 from typing import List, Iterable
 from pathlib import Path
 import json

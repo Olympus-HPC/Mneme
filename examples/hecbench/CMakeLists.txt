@@ -6,6 +6,13 @@
 cmake_minimum_required(VERSION 3.24)
 cmake_policy(SET CMP0104 NEW)
 
+set(CMAKE_CXX_STANDARD
+    17
+    CACHE STRING "")
+set(CMAKE_CXX_STANDARD_REQUIRED YES)
+set(CMAKE_CXX_EXTENSIONS NO)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
 # Define the project
 project(MNEMEExamples LANGUAGES CXX)
 

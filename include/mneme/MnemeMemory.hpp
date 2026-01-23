@@ -132,7 +132,7 @@ template <DeviceVendors VendorTypes>
 llvm::raw_ostream &operator<<(llvm::raw_ostream &OS,
                               const MnemeMemoryBlob<VendorTypes> &Blob) {
   // The format in the binary is the following:
-  // | Var-Name-Size | Var-Name | Var-Size | Device Address | Var Data |
+  // | Var Actual Size | Var-Size | Device Address | Var Data |
   OS << llvm::StringRef(reinterpret_cast<const char *>(&Blob.ActualSize),
                         sizeof(Blob.ActualSize));
   OS << llvm::StringRef(reinterpret_cast<const char *>(&Blob.Size),
@@ -145,11 +145,12 @@ llvm::raw_ostream &operator<<(llvm::raw_ostream &OS,
             (void *)Blob.BlobAddr,
             reinterpret_cast<void *>(Blob.getHostData().get()), Blob.getSize(),
             Blob.getActualSize());
+
   auto EC = DeviceTraits<VendorTypes>::DeviceErrorCheck(
-      DeviceTraits<VendorTypes>::DeviceCopy(
-          static_cast<void *>(Blob.getHostData().get()),
-          reinterpret_cast<void *>(Blob.BlobAddr), Blob.Size,
-          DeviceTraits<VendorTypes>::MemcpyHostToDeviceKind()));
+      DeviceTraits<VendorTypes>::DeviceCopy(static_cast<void *>(Blob.getHostData().get()),
+          reinterpret_cast<void *>(Blob.BlobAddr),
+          Blob.getSize(),
+          DeviceTraits<VendorTypes>::MemcpyDeviceToHostKind()));
   if (EC)
     LOG_FATAL("Error in copying data from device when serializing context on "
               "output stream\nDevice Error Msg: " +

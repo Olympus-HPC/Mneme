@@ -45,7 +45,7 @@ from mneme.device import (
 )
 from mneme.llvm.buffer import MemBufferRef
 from mneme.llvm.module import ModuleRef
-from mneme.logging import logger
+from mneme.mneme_logging import logger
 from mneme.mneme_types import ExperimentConfiguration, ExperimentResult
 from mneme.page_manager import PageManagerRef
 from mneme.profile import init_profiler

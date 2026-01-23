@@ -26,7 +26,7 @@ void initializeRandomBuffer(uint8_t *Buffer, size_t Size) {
 }
 
 int main(int argc, char **argv) {
-  // We allocate some "fake" globals
+  // We allocate some "fake" data 
   uint8_t *HData = new uint8_t[128];
   initializeRandomBuffer(HData, 128);
   uint8_t *DData;

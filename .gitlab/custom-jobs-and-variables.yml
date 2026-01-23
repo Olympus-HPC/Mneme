@@ -46,11 +46,13 @@ variables:
 # Add variables that should apply to all the jobs on a machine:
 #  TIOGA_MY_VAR: "..."
 
-# Lassen uses a different job scheduler (spectrum lsf) that does not allow
-# pre-allocation the same way slurm does. Arguments for job level allocation
-  LASSEN_JOB_ALLOC: "1 -W 60 -q pci"
-# Add variables that should apply to all the jobs on a machine:
-#  LASSEN_MY_VAR: "..."
+# Matrix
+# Time in minutes.
+# Arguments for top level allocation
+# Note: can be set to "OFF" to prevent allocation sharing.
+  MATRIX_SHARED_ALLOC: "--exclusive --nodes=1 --time=60 --partition=pdebug"
+# Arguments for job level allocation
+  MATRIX_JOB_ALLOC: "--gpus=1 --nodes=1"
 
 # Tuo
 # Arguments for top level allocation

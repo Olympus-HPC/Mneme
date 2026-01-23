@@ -10,6 +10,7 @@ using MnemeDeviceRT = DeviceTraits<DeviceVendors::HIP>;
 constexpr auto Vendor = DeviceVendors::HIP;
 #elif defined(MNEME_ENABLE_CUDA)
 using MnemeDeviceRT = DeviceTraits<DeviceVendors::CUDA>;
+constexpr auto Vendor = DeviceVendors::CUDA;
 #endif
 
 void initializeRandomBuffer(uint8_t *Buffer, size_t Size) {

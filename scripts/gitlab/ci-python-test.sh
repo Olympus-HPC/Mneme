@@ -1,6 +1,28 @@
-#!/bin/bash
+#!/usr/bin/bash
 
-set -euo pipefail
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+if [[ -f "$SCRIPT_DIR/mneme-common-ci.sh" ]]; then
+  source "$SCRIPT_DIR/mneme-common-ci.sh"
+else
+  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+  # Prefer GitLab project dir if available, else fall back to git to find repo root.
+  if [[ -n "${CI_PROJECT_DIR:-}" && -f "${CI_PROJECT_DIR}/scripts/gitlab/mneme-common-ci.sh" ]]; then
+    source "${CI_PROJECT_DIR}/scripts/gitlab/mneme-common-ci.sh"
+  else
+    REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+    if [[ -n "${REPO_ROOT}" && -f "${REPO_ROOT}/scripts/gitlab/mneme-common-ci.sh" ]]; then
+      source "${REPO_ROOT}/scripts/gitlab/mneme-common-ci.sh"
+    else
+      echo "ERROR: cannot find mneme-common-ci.sh (SCRIPT_DIR=${SCRIPT_DIR}, CI_PROJECT_DIR=${CI_PROJECT_DIR:-unset})"
+      exit 1
+    fi
+  fi
+fi
+
 trap 'echo "[ERROR] line $LINENO" >&2' ERR
 
 log() { echo " #### [$(date +%T)] $* ###" >&2; }
@@ -26,11 +48,17 @@ rsync -a --delete "$mneme_orig_src" "$test_dir/mneme_src/"
 mneme_src=$test_dir/mneme_src/Mneme
 log "End copying mneme src to ${mneme_src} from ${mneme_orig_src}"
 
-ml load python/${MNEME_CI_PYTHON_VERSION}
-ml load rocm/${MNEME_CI_ROCM_VERSION}
-export LLVM_INSTALL_DIR=${ROCM_PATH}/
+if [[ "$SYS_TYPE" == "toss_4_x86_64_ib" ]]; then
+  ml load cuda/12.2
+  setup_conda_env "${test_dir}/miniconda3" "${MNEME_CI_LLVM_VERSION}" "${MNEME_CI_PYTHON_VERSION}"
+  export LLVM_INSTALL_DIR=$(llvm-config --prefix)
+elif [[ "$SYS_TYPE" == "toss_4_x86_64_ib_cray" ]]; then
+  ml load python/${MNEME_CI_PYTHON_VERSION}
+  ml load rocm/${MNEME_CI_ROCM_VERSION}
+  export LLVM_INSTALL_DIR=${ROCM_PATH}/
+fi
 log "Test dir is ${test_dir}"
-
+log "Using LLVM under ${LLVM_INSTALL_DIR}"
 
 # Make a copy of preinstalled deps to local FS for fast installation
 #VENV_NAME="/usr/workspace/LExperts/ci/gitlab/venv-${LCSCHEDCLUSTER}-${MNEME_CI_ROCM_VERSION}-${MNEME_CI_PYTHON_VERSION}/"
@@ -65,8 +93,8 @@ pytest --cov-report=xml:coverage-${CI_JOB_ID}.xml --cov-config=.coveragerc pytho
 
 # we only need to upload reports once and we only need to test editable installs once.
 if [[ "${MNEME_CI_PYTHON_VERSION}" == "3.10" && "${MNEME_CI_ROCM_VERSION}" == "6.4.2" ]]; then 
-# Upload to Codecov (only if token is available)
-if [[ -n "$CODECOV_TOKEN" ]]; then
+  # Upload to Codecov (only if token is available)
+  if [[ -n "$CODECOV_TOKEN" ]]; then
     log "Uploading coverage to Codecov..."
     log "SHA is $CI_COMMIT_SHA"
     log "Branch is $CI_COMMIT_BRANCH"
@@ -75,22 +103,22 @@ if [[ -n "$CODECOV_TOKEN" ]]; then
     curl -k -Os https://uploader.codecov.io/latest/linux/codecov
     chmod +x codecov
     ./codecov \
-        -t "$CODECOV_TOKEN" \
-        -f coverage-${CI_JOB_ID}.xml \
-        -C "$CI_COMMIT_SHA" \
-        -B "$CI_COMMIT_BRANCH" \
-        --insecure \
-        --disable-ci-detection \
-        --slug=gh/Olympus-HPC/Mneme || echo "Codecov upload failed"
-else
+      -t "$CODECOV_TOKEN" \
+      -f coverage-${CI_JOB_ID}.xml \
+      -C "$CI_COMMIT_SHA" \
+      -B "$CI_COMMIT_BRANCH" \
+      --insecure \
+      --disable-ci-detection \
+      --slug=gh/Olympus-HPC/Mneme || echo "Codecov upload failed"
+  else
     echo "No CODECOV_TOKEN set, skipping upload."
-fi
+  fi
 
-rm -f coverage-${CI_JOB_ID}.xml
+  rm -f coverage-${CI_JOB_ID}.xml
 
 
-python -m pip uninstall -y mneme
-python -m pip install -U pip setuptools wheel
+  python -m pip uninstall -y mneme
+  python -m pip install -U pip setuptools wheel
 
 # Try a editable install
 log "Removed mneme"

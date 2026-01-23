@@ -514,7 +514,7 @@ template <> struct DeviceTraits<DeviceVendors::CUDA> {
   }
 
   static std::pair<void *, size_t>
-  getGlobalAddrFromModule(DeviceModule_t &cudaModule, std::string &GlobalName) {
+  getGlobalAddrFromModule(DeviceModule_t &cudaModule, const std::string &GlobalName) {
     size_t Size;
     DevicePtr_t DevPtr;
     auto EC = DeviceErrorCheck(
@@ -642,7 +642,6 @@ template <> struct DeviceTraits<DeviceVendors::CUDA> {
     auto Ret = cuMemAddressFree((DevicePtr_t)Addr, Size);
     LOG_DEBUG("Done from driver call ({} {})", Addr, Size);
     auto EC = DeviceErrorCheck(Ret);
-    std::cout << "Got error code\n";
     if (EC) {
       LOG_FATAL("Could not release VA addresses " + EC.value());
     }
@@ -699,6 +698,27 @@ template <> struct DeviceTraits<DeviceVendors::CUDA> {
                                               const void *symbol) {
     return cudaGetSymbolAddress(devPtr, symbol);
   }
+
+  static DeviceDriverError_t deviceGetAttribute(cudaFunction_t &Func,
+                                       FuncAttributes Attribute, int &Value) {
+    LOG_DEBUG("Going to request attributes of {}", (void *)Func);
+    
+    switch (Attribute) {
+    case REGISTER_USAGE:
+      return cuFuncGetAttribute(&Value, CU_FUNC_ATTRIBUTE_NUM_REGS, Func);
+
+    case LOCALMEM_USAGE:
+      return cuFuncGetAttribute(&Value, CU_FUNC_ATTRIBUTE_LOCAL_SIZE_BYTES, Func);
+
+    case CONSTMEM_USAGE:
+      return cuFuncGetAttribute(&Value, CU_FUNC_ATTRIBUTE_CONST_SIZE_BYTES, Func);
+    default:
+      LOG_FATAL("Request unknown attribute");
+      break;
+    }
+  }
+
+
 };
 #else
 #endif

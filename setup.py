@@ -21,6 +21,17 @@ def run_command(command, cwd=None):
         raise RuntimeError(f"Command {' '.join(command)} failed")
 
 
+def detect_local_sm_via_nvidia_smi() -> int:
+    out = subprocess.check_output(
+        ["nvidia-smi", "--query-gpu=compute_cap", "--format=csv,noheader"],
+        text=True,
+    ).strip()
+    # If multiple GPUs, take the first line
+    cc = out.splitlines()[0].strip()  # e.g. "9.0"
+    major, minor = cc.split(".")
+    return int(major + minor)  # "9"+"0" -> 90
+
+
 def has_nvidia_gpu():
     try:
         subprocess.check_output("nvidia-smi", shell=True, text=True)
@@ -37,7 +48,7 @@ def has_amd_gpu():
         return False
 
 
-def get_llvm_paths(llvm_dir):
+def get_llvm_config(llvm_dir):
     llvm_config = Path(llvm_dir) / "bin" / "llvm-config"
     if not llvm_config.exists():
         raise RuntimeError(f"llvm-config not found at {llvm_config}")
@@ -51,6 +62,8 @@ def get_llvm_paths(llvm_dir):
         "libs": run("--libs"),
         "ldflags": run("--ldflags"),
         "system_libs": run("--system-libs"),
+        "lib_names": run("--libnames"),
+        "shared_mode": run("--shared-mode"),
     }
 
 
@@ -84,6 +97,9 @@ class CMakeBuild(build_ext):
         (self.install_dir / "llvm").mkdir(parents=True, exist_ok=True)
 
         self.has_nvidia = "On" if has_nvidia_gpu() else "Off"
+        self.cuda_arch = "native"
+        if self.has_nvidia == "On":
+            self.cuda_arch = detect_local_sm_via_nvidia_smi()
         self.has_amd = "On" if has_amd_gpu() else "Off"
         self.llvm_dir = os.getenv("LLVM_INSTALL_DIR", None)
         if self.has_amd == "On":
@@ -103,7 +119,7 @@ class CMakeBuild(build_ext):
         libdir = prefix / "lib64"
         includedir = prefix / "include"
         cmake_dir = libdir / "cmake"
-        llvm_config = get_llvm_paths(self.llvm_dir)
+        self.llvm_config = get_llvm_config(self.llvm_dir)
 
         cfg = {
             "cc": self.cc,
@@ -113,15 +129,18 @@ class CMakeBuild(build_ext):
             "includedir": "@PREFIX@/include",
             "cmakedir": "@PREFIX@/lib64/cmake",
             "cflags": f"-fpass-plugin=@PREFIX@/lib64/libProteusPass.so -fplugin=@PREFIX@/lib64/libProteusPass.so -fno-discard-value-names -ftrivial-auto-var-init=zero -Xclang -mllvm -Xclang -force-proteus-jit-annotate-all",
-            "ldflags": f"-L{self.llvm_dir}/lib -L{self.llvm_dir}/llvm/lib {llvm_config['libs']} {llvm_config['system_libs']} -L@PREFIX@/lib64/ -Wl,-rpath,@PREFIX@/lib64/ -llldCommon -llldELF -lproteus",
+            "ldflags": f"-L{self.llvm_dir}/lib -L{self.llvm_dir}/llvm/lib {self.llvm_config['libs']} {self.llvm_config['system_libs']} -L@PREFIX@/lib64/ -Wl,-rpath,@PREFIX@/lib64/ -llldCommon -llldELF -lproteus",
         }
+
         if not prefix.exists():
             prefix.mkdir(parents=True, exist_ok=True)
         with open(self.config_json, "w") as fd:
             json.dump(cfg, fd, indent=2)
 
     def run(self):
-        self.build_scratch = tempfile.mkdtemp()
+        self.build_scratch = Path(self.build_temp).resolve()
+        self.build_scratch.mkdir(parents=True, exist_ok=True)
+        self.build_scratch = str(self.build_scratch)
 
         if "PROTEUS_DIR" in os.environ:
             proteus_dir = os.environ["PROTEUS_DIR"]
@@ -157,12 +176,12 @@ class CMakeBuild(build_ext):
                         "--depth",
                         "1",
                         "origin",
-                        "v2026.01.0",
+                        "features/cuda-shared",
                     ],
                     cwd=str(Path(self.build_scratch) / "proteus"),
                 )
                 run_command(
-                    ["git", "checkout", "-b", "v2026.01.0", "FETCH_HEAD"],
+                    ["git", "checkout", "-b", "features/cuda-shared", "FETCH_HEAD"],
                     cwd=str(Path(self.build_scratch) / "proteus"),
                 )
 
@@ -175,9 +194,7 @@ class CMakeBuild(build_ext):
             "-DBUILD_SHARED=On",
             "-DCMAKE_INSTALL_RPATH=$ORIGIN",
             "-DCMAKE_SKIP_INSTALL_RPATH=OFF",
-            "-DCMAKE_INSTALL_RPATH_USE_LINK_PATH=ON",
             "-DCMAKE_POSITION_INDEPENDENT_CODE=On",
-            "-DCMAKE_BUILD_TYPE=Relwithdebinfo",
             f"-DCMAKE_INSTALL_PREFIX={self.install_dir}",
             "-DCMAKE_INSTALL_LIBDIR=lib64",
             "-DCMAKE_INSTALL_BINDIR=bin",
@@ -185,11 +202,17 @@ class CMakeBuild(build_ext):
             f"-DLLVM_INSTALL_DIR={self.llvm_dir}",
             f"-DPROTEUS_ENABLE_CUDA={self.has_nvidia}",
             f"-DPROTEUS_ENABLE_HIP={self.has_amd}",
-            "-DENABLE_TESTS=Off",
-            f"-DCMAKE_C_COMPILER={self.cc}",
-            f"-DCMAKE_CXX_COMPILER={self.cxx}",
-            "..",
         ]
+
+        if self.has_nvidia == "On":
+            cmake_options.append(f"-DCMAKE_CUDA_ARCHITECTURES={self.cuda_arch}")
+            cmake_options.append(f"-DCMAKE_CUDA_COMPILER={self.cxx}")
+            cmake_options.append("-DCMAKE_CUDA_FLAGS=-std=c++17")
+
+        cmake_options.append("-DENABLE_TESTS=Off")
+        cmake_options.append(f"-DCMAKE_C_COMPILER={self.cc}")
+        cmake_options.append(f"-DCMAKE_CXX_COMPILER={self.cxx}")
+        cmake_options.append("..")
 
         run_command(
             ["cmake"] + cmake_options,
@@ -226,7 +249,6 @@ class CMakeBuild(build_ext):
                 "-DCMAKE_INSTALL_LIBDIR=lib64",
                 "-DCMAKE_INSTALL_BINDIR=bin",
                 "-DCMAKE_INSTALL_INCLUDEDIR=include",
-                f"-DCMAKE_C_COMPILER={self.cc}",
                 f"-DCMAKE_CXX_COMPILER={self.cxx}",
                 "..",
             ],
@@ -252,14 +274,23 @@ class CMakeBuild(build_ext):
             f"-DCMAKE_CXX_COMPILER={self.cxx}",
             f"-DLLVM_INSTALL_DIR={self.llvm_dir}",
             f"-DMNEME_ENABLE_HIP={self.has_amd}",
+            f"-DMNEME_ENABLE_CUDA={self.has_nvidia}",
             "-DMNEME_ENABLE_TESTS=Off",
             "-DMNEME_ENABLE_AUTOTUNE=On",
             "-DCMAKE_INSTALL_RPATH=$ORIGIN",
             "-DCMAKE_SKIP_INSTALL_RPATH=OFF",
-            "-DCMAKE_INSTALL_RPATH_USE_LINK_PATH=ON",
             "-DMNEME_ENABLE_LOGGER=On",
-            # f"-Dproteus_DIR={proteus_dir}",
-            # f"-Dspdlog_DIR={spdlog_dir}",
+        ]
+
+        if self.llvm_config["shared_mode"] == "shared":
+            cmake_options.append("-DMNEME_LINK_SHARED_LLVM=On")
+
+        if self.has_nvidia == "On":
+            cmake_options.append(f"-DCMAKE_CUDA_ARCHITECTURES={self.cuda_arch}")
+            cmake_options.append(f"-DCMAKE_CUDA_COMPILER={self.cxx}")
+            cmake_options.append("-DCMAKE_CUDA_FLAGS=-std=c++17")
+
+        cmake_options += [
             f"-DCMAKE_PREFIX_PATH={str(Path(self.install_dir).resolve())}",
         ]
 
