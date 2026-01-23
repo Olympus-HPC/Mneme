@@ -9,6 +9,7 @@ from mneme.futures import EvalFuture
 from mneme.recorded_execution import RecordedExecution
 
 
+@pytest.fixture
 def has_nvidia_gpu():
     try:
         subprocess.check_output("nvidia-smi", shell=True, text=True)
@@ -17,6 +18,7 @@ def has_nvidia_gpu():
         return False
 
 
+@pytest.fixture
 def has_amd_gpu():
     try:
         output = subprocess.check_output("rocminfo", shell=True, text=True)
@@ -97,9 +99,11 @@ def build_cache():
     return {}
 
 
-def build_vecadd(rdc_value, tmp_path_factory, call_mneme_config):
-    has_nvidia = has_nvidia_gpu()
-    has_amd = has_amd_gpu()
+def build_vecadd(
+    rdc_value, tmp_path_factory, call_mneme_config, has_amd_gpu, has_nvidia_gpu
+):
+    has_nvidia = has_nvidia_gpu
+    has_amd = has_amd_gpu
     cuda_arch = "native"
 
     if has_nvidia:
@@ -153,12 +157,16 @@ def build_vecadd(rdc_value, tmp_path_factory, call_mneme_config):
 
 
 @pytest.fixture(params=["On", "Off"])
-def build_test_program(request, tmp_path_factory, build_cache):
+def build_test_program(
+    request, tmp_path_factory, build_cache, has_amd_gpu, has_nvidia_gpu
+):
     rdc = request.param
     key = f"vecadd_cached_{rdc}"
 
     if key not in build_cache:
-        build_cache[key] = build_vecadd(rdc, tmp_path_factory, call_mneme_config)
+        build_cache[key] = build_vecadd(
+            rdc, tmp_path_factory, call_mneme_config, has_amd_gpu, has_nvidia_gpu
+        )
 
     return build_cache[key]
 

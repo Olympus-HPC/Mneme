@@ -660,4 +660,4 @@ class Replay(BaseExecutor):
                 json.dumps(out, cls=MnemeEncoder, indent=2),
             )
 
-        return
+        return 0
