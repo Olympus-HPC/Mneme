@@ -51,9 +51,9 @@ int main() {
 // CHECK:ThreadId: (0 0 31) BlockID: (0 0 0) BlockDim: (1 1 32) GridDim: (1 1 1)
 // CHECK:ThreadId: (0 0 63) BlockID: (0 0 1) BlockDim: (1 1 64) GridDim: (1 1 2)
 //
-// CHECK-RR:BlockDims:(1, 1, 64)
-// CHECK-RR:GridDims:(1, 1, 2)
-// CHECK-RR:BlockDims:(1, 1, 32)
-// CHECK-RR:GridDims:(1, 1, 1)
+// CHECK-RR-DAG:BlockDims:(1, 1, 64)
+// CHECK-RR-DAG:GridDims:(1, 1, 2)
+// CHECK-RR-DAG:BlockDims:(1, 1, 32)
+// CHECK-RR-DAG:GridDims:(1, 1, 1)
 
 // clang-format on
