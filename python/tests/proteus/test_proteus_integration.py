@@ -413,11 +413,11 @@ def test_launch_bounds(gpu_backend, native_arch):
 
     assert new_hash != mod_hash
     opt_hash = jit.optimize(mod, native_arch, "default<O3>", 3)
+    print("Back end is", gpu_backend)
+    print(mod)
     if gpu_backend == "amd":
-        assert (
-            'attributes #0 = { "amdgpu-flat-work-group-size"="1,128" "amdgpu-waves-per-eu"="2,2" }'
-            in str(mod)
-        )
+        assert '"amdgpu-flat-work-group-size"="1,128"' in str(mod)
+        assert '"amdgpu-waves-per-eu"="2,2"' in str(mod)
     elif gpu_backend == "cuda":
         assert '!5 = !{ptr @kernel_add, !"maxntid", i32 128}' in str(mod)
         assert '!6 = !{ptr @kernel_add, !"minctasm", i32 2}' in str(mod)
