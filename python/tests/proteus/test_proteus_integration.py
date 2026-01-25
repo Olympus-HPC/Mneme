@@ -361,10 +361,10 @@ def test_specialize_dims_assume(gpu_backend):
         ) or "%tid = call range(i32 0, 4) i32 @llvm.amdgcn.workitem.id.x()" in str(mod)
     else:
         assert (
-            "%2 = tail call noundef i32 @llvm.nvvm.read.ptx.sreg.tid.x(), !range !8"
-            in str(mod)
-            and "!8 = !{i32 0, i32 4}" in str(mod)
-        )
+            ("%2 = tail call noundef i32 @llvm.nvvm.read.ptx.sreg.tid.x(), !range !8"
+            in str(mod) and "!8 = !{i32 0, i32 4}" in str(mod) ) 
+            or ("%2 = tail call noundef range(i32 0, 4) i32 @llvm.nvvm.read.ptx.sreg.tid.x()" in str(mod)
+        ))
 
 
 def test_specialize_dims(gpu_backend, native_arch):
