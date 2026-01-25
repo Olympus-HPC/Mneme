@@ -24,11 +24,7 @@ def test_tune(recorded_execution, has_amd_gpu, has_nvidia_gpu):
         "set_launch_bounds": True,
         "specialize_dims": True,
         "passes": "default<O3>",
-        "codegen_method": "rtc",
     }
-
-    if has_amd_gpu:
-        baseline_config["codegen_method"] = "serial"
 
     executor = AsyncReplayExecutor(
         record_db=recorded_execution,
@@ -49,15 +45,10 @@ def test_tune(recorded_execution, has_amd_gpu, has_nvidia_gpu):
 def test_replay(recorded_execution, has_amd_gpu, has_nvidia_gpu):
     recorded_kernel = RecordedExecution.from_json(str(recorded_execution))
     dynamic_hash = list(recorded_kernel.kernel_instances.keys())[0]
-    codegen = "rtc"
-    if has_amd_gpu:
-        codegen = "serial"
 
     result = mneme_main(
         [
             "replay",
-            "-cm",
-            codegen,
             "-rdb",
             str(recorded_execution),
             "-rid",

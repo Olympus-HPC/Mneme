@@ -2,6 +2,7 @@ from mneme.recorded_execution import RecordedExecution
 from mneme.mneme_types import ExperimentConfiguration
 from mneme.llvm import module
 from mneme.mneme_logging import logger
+from mneme.proteus.jit import get_proteus_codegen_method
 from typing import List, Iterable
 from pathlib import Path
 import json
@@ -41,7 +42,7 @@ def convert_to_json(
             break
 
     res = {}
-    res["CodeGen"] = config.codegen_method
+    res["CodeGen"] = get_proteus_codegen_method() 
     res["LaunchBounds"] = config.set_launch_bounds
     res["SpecializeDims"] = config.specialize_dims
     res["SpecializeDimsRange"] = config.specialize_dims

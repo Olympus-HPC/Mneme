@@ -106,14 +106,14 @@ def test_codegen_object_returns_MemBufferRef(fake_buflib):
     with patch("mneme.proteus.jit.ffi.lib") as fake_lib:
         fn = fake_lib.ProteusPY_codeGenObject = MagicMock()
 
-        buf = jit.codegen_object(m, "gfx942", "serial", 3)
+        buf = jit.codegen_object(m, "gfx942", 3)
         assert isinstance(buf, MemBufferRef)
 
 
 def test_codegen_object_invalid_opt_level():
     m = DummyModule()
     with pytest.raises(RuntimeError):
-        jit.codegen_object(m, "gfx942", "serial", 0)
+        jit.codegen_object(m, "gfx942", 0)
 
 
 # ------------------------------------------------------------

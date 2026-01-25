@@ -44,7 +44,6 @@ def test_to_serializable_handles_nested_containers_and_dataclasses():
         specialize_dims=True,
         passes="default<O2>",
         codegen_opt=2,
-        codegen_method="serial",
         prune=True,
         internalize=True,
     )

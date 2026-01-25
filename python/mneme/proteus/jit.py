@@ -36,7 +36,6 @@ ffi.lib.ProteusPY_internalize.argtypes = [ffi.LLVMModuleRef, c_char_p]
 ffi.lib.ProteusPY_codeGenObject.argtypes = [
     ffi.LLVMModuleRef,
     c_char_p,
-    c_char_p,
     c_uint,
 ]
 ffi.lib.ProteusPY_codeGenObject.restype = ffi.LLVMMemBufferRef
@@ -87,6 +86,9 @@ ffi.lib.ProteusPY_setLaunchBounds.argtypes = [
 ]
 
 ffi.lib.ProteusPY_setLaunchBounds.restype = c_uint64
+
+ffi.lib.ProteusPY_getCodegenMethod.argtypes = []
+ffi.lib.ProteusPY_getCodegenMethod.restype = c_char_p
 
 
 def pruneIR(mod: ModuleRef):
@@ -182,7 +184,7 @@ def internalize(mod: ModuleRef, kernel_name: str):
 
 
 def codegen_object(
-    mod: ModuleRef, device_arch, codegen_type="serial", codegen_opt_level: int = 3
+    mod: ModuleRef, device_arch, codegen_opt_level: int = 3
 ):
     """
     Generate a compiled device code object from an LLVM module.
@@ -196,8 +198,6 @@ def codegen_object(
         LLVM module to compile.
     device_arch : str
         Target architecture string.
-    codegen_type : str, optional
-        Codegen mode (e.g., ``"serial"``). Defaults to ``"serial"``.
     codegen_opt_level : int, optional
         Backend optimization level in ``[1, 3]``. Defaults to ``3``.
 
@@ -224,7 +224,6 @@ def codegen_object(
         ffi.lib.ProteusPY_codeGenObject(
             mod,
             _encode_string(device_arch),
-            _encode_string(codegen_type),
             codegen_opt_level,
         )
     )
@@ -450,3 +449,13 @@ def set_launch_bounds(
             min_blocks_per_sm,
         )
     )
+
+def get_proteus_codegen_method():
+    """
+    Returns the codegen method used by proteus to generate objects.
+    """
+    s = ffi.lib.ProteusPY_getCodegenMethod()
+    if not s:
+        raise RuntimeError("ProteusPY_getCodegenMethod returned NULL")
+    # ctypes gives us bytes for c_char_p
+    return s.decode("utf-8")
