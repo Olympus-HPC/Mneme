@@ -47,7 +47,6 @@ def _mk_kernel_descr(kernel_name="K", specializations=None):
 def _mk_config():
     # ExperimentConfiguration is only used by attribute access.
     return types.SimpleNamespace(
-        codegen_method="LLVM",
         set_launch_bounds=True,
         specialize_dims=[1, 2, 3],
         passes=["p1", "p2"],
@@ -91,7 +90,6 @@ def test_convert_to_json_writes_expected_json_no_location(
     data = json.loads(out_json.read_text())
     assert "KERNEL" in data
     res = data["KERNEL"]
-    assert res["CodeGen"] == cfg.codegen_method
     assert res["LaunchBounds"] == cfg.set_launch_bounds
     assert res["SpecializeDims"] == cfg.specialize_dims
     assert res["SpecializeDimsRange"] == cfg.specialize_dims  # matches current code

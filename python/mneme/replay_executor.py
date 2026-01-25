@@ -320,8 +320,6 @@ class BaseExecutor:
             modified from the decorator (``cond_time``).
         config : ExperimentConfiguration
             Experiment configuration specifying code-generation parameters:
-            * ``codegen_method`` – Backend or strategy used for code generation
-              (e.g., ``"serial"`` or alternative compilation modes).
             * ``codegen_opt`` – Optimization level for the code-generation backend.
         ir_module : ModuleRef
             Optimized IR module to be lowered into an executable object. Must be the
@@ -344,7 +342,7 @@ class BaseExecutor:
 
         """
         return jit.codegen_object(
-            ir_module, self.device_arch, config.codegen_method, config.codegen_opt
+            ir_module, self.device_arch, config.codegen_opt
         )
 
     @cond_gpu_time("exec_time")

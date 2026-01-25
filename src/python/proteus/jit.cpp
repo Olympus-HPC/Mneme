@@ -14,6 +14,13 @@
 #include <proteus/CoreLLVMDevice.h>
 #include <proteus/Hashing.h>
 
+
+#ifdef MNEME_ENABLE_HIP
+constexpr const char *getRTCMethod() { return "serial"; }
+#else
+constexpr const char *getRTCMethod() { return "rtc"; }
+#endif
+
 using namespace proteus;
 
 namespace {
@@ -54,11 +61,10 @@ ProteusPY_optimize(LLVMModuleRef Mod, const char *DeviceArch,
 }
 
 API_EXPORT(LLVMMemoryBufferRef)
-ProteusPY_codeGenObject(LLVMModuleRef Mod, const char *DeviceArch,
-                        const char *rtc, unsigned CodegenOptLevel) {
-  auto proteus_rtc = fromString(rtc);
+ProteusPY_codeGenObject(LLVMModuleRef Mod, const char *DeviceArch, unsigned CodegenOptLevel) {
+  auto proteus_rtc = fromString(getRTCMethod());
   if (!proteus_rtc)
-    LOG_FATAL("Unknown RTC value of {}", rtc);
+    LOG_FATAL("Unknown RTC value of {}", getRTCMethod());
 
   llvm::SmallPtrSet<void *, 8> GlobalLinkedBinaries;
   auto *M = llvm::unwrap(Mod);
@@ -183,5 +189,9 @@ ProteusPY_setLaunchBounds(LLVMModuleRef Mod, uint64_t CurrentHash,
   LOG_INFO("Was called with {} and {}", MaxThreadsPerBlock, MinBlocksPerSM);
   proteus::setLaunchBoundsForKernel(*F, MaxThreadsPerBlock, MinBlocksPerSM);
   return Hash.getValue();
+}
+
+API_EXPORT(const char*) ProteusPY_getCodegenMethod(){
+  return getRTCMethod();
 }
 }

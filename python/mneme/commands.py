@@ -483,15 +483,6 @@ class Replay(BaseExecutor):
         )
 
         parser.add_argument(
-            "-cm",
-            "--codegen-method",
-            dest="codegen_method",
-            choices=["serial", "rtc"],
-            default="serial",
-            help="Technology to use to lower to LLVM IR to a device object file instead of default Proteus Infrastructure",
-        )
-
-        parser.add_argument(
             "--iterations",
             "-it",
             required=False,
@@ -530,7 +521,6 @@ class Replay(BaseExecutor):
         self.min_blocks_per_sm = kwargs.pop("min_blocks_per_sm", 0)
         self.specialize_dims = kwargs.pop("specialize_dims", False)
         self.passes = kwargs.pop("passes", None)
-        self.codegen_method = kwargs.pop("codegen_method", "serial")
         self.codegen_opt = kwargs.pop("codegen_opt", 3)
 
         self.output_ll = kwargs.pop("output_ll", None)
@@ -621,7 +611,6 @@ class Replay(BaseExecutor):
             specialize_dims=self.specialize_dims,
             passes=passes,
             codegen_opt=self.codegen_opt,
-            codegen_method=self.codegen_method,
             prune=True,
             internalize=True,
         )

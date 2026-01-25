@@ -85,9 +85,6 @@ class ExperimentConfiguration:
         Optimization pass pipeline specification, e.g. ``"default<O3>"``.
     codegen_opt : int
         Code generation optimization level (e.g., 0–3).
-    codegen_method : str
-        Code generation strategy, e.g. ``"serial"`` or other ``proteus`` backend-specific
-        modes. Currently only serial is supported from Mneme
     prune : bool
         Whether to enable IR pruning / dead-code elimination in the generated
         kernel. This is mandatory always true. We will explore later the impact of it.
@@ -106,7 +103,6 @@ class ExperimentConfiguration:
     specialize_dims: bool = False
     passes: str = "default<O3>"
     codegen_opt: int = 3
-    codegen_method: str = "serial"
     prune: bool = True
     internalize: bool = True
 
