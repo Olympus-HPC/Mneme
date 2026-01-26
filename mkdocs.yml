@@ -37,6 +37,7 @@ nav:
       - Python: dev/python.md
       - C++: dev/cpp.md
   - Examples: examples.md
+  - Limitations: limitations.md
 plugins:
   - search
   - mkdocstrings:
