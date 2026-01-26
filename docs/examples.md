@@ -23,11 +23,14 @@ All examples are built using CMake. For each benchmark, the build system generat
 ### Requirements
 
 To build the examples, you need to provide the installation paths for **Mneme**, **Proteus**, and your **LLVM** installation (if not in standard paths).
+All benchmarks are "portable" to both HIP and CUDA and use a thin shim layer to target the respective vendor.
 
 ### Build Command
 
-You can build the examples by configuring with CMake. You must enable HIP backend support using the`WITH_MNEME_EXAMPLE_HIP` flags.
+You can build the examples by configuring with CMake. You must enable HIP or CUDA backend support using the`WITH_MNEME_EXAMPLE_HIP` or `WITH_MNEME_EXAMPLE_CUDA` flags.
 
+
+#### AMD Systems 
 ```bash
 mkdir build && cd build
 cmake -DCMAKE_C_COMPILER=$(mneme config cc) \
@@ -36,6 +39,18 @@ cmake -DCMAKE_C_COMPILER=$(mneme config cc) \
       -DWITH_MNEME_EXAMPLE_HIP=On \
       ../examples/hecbench
 make -j
+```
+#### NVIDIA Systems
+```bash
+cmake -DCMAKE_CUDA_FLAGS=-std=c++17 \
+        -DCMAKE_CUDA_ARCHITECTURES=90  \
+        -DWITH_MNEME_EXAMPLE_CUDA=On \
+        -DCMAKE_CUDA_COMPILER=$(mneme config cxx) \
+        -DCMAKE_C_COMPILER=$(mneme config cc) \
+        -DCMAKE_CXX_COMPILER=$(mneme config cxx) \
+        -DCMAKE_PREFIX_PATH=$(mneme config cmakedir) \
+        -DCMAKE_BUILD_TYPE=Release \
+        ../
 ```
 
 ## WSM5

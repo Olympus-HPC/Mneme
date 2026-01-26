@@ -12,24 +12,34 @@ Mneme depends on a small set of external components. Compatibility is
 defined in terms of supported ROCm versions, Python versions, and a
 specific Proteus commit.
 
-### ROCm and Python compatibility matrix
+### Compatibility matrix
 
 The following table summarizes the configurations that are regularly tested
 and known to work with Mneme. These combinations are validated in CI and/or
 on internal test systems.
 
+#### AMD Systems
+
 | ROCm version | Python 3.9 | Python 3.10 | Python 3.11 | Python 3.12 |
 |-------------|------------|-------------|-------------|-------------|
 | **6.3**     | ✅         | ✅          | ✅          | ✅          |
 | **6.4**     | ✅         | ✅          | ✅          | ✅          |
-| **7.0**     | ⏳         | ⏳          | ⏳          | ⏳          |
+| **7.1**     | ✅         | ✅          | ✅          | ✅          |
+
+#### NVIDIA Systems
+
+For NVIDIA systems we assume `cuda@12.2`, yet newer versions should also be functional,
+but not tested.
+
+| LLVM version | Python 3.9 | Python 3.10 | Python 3.11 | Python 3.12 |
+|-------------|------------|-------------|-------------|-------------|
+| **18**     | ✅         | ✅          | ✅          | ✅          |
+| **19**     | ✅         | ✅          | ✅          | ✅          |
+| **20**     | ✅         | ✅          | ✅          | ✅          |
 
 #### Notes
 
 - ✅ **Supported**: configuration is tested and fully supported.
-- ⚠️ **Experimental**: expected to work, but not yet covered by continuous
-  integration or full test coverage.
-- ⏳ **Coming soon**: planned support; not yet available.
 - Mneme relies on the LLVM/Clang toolchain shipped with the corresponding
   ROCm release.
 - Python support refers to the Python version used to run the Mneme CLI and
@@ -58,7 +68,7 @@ use the corresponding Proteus commit to avoid incompatibilities.
 #### Tested Proteus commit
 
 - Repository: https://github.com/Olympus-HPC/Proteus
-- Commit: `v2026.01.0`
+- Branch: `cuda-proteus-core-shared-llvm`
 - Tested with: Mneme `develop`
 
 !!! note
@@ -104,11 +114,40 @@ supported ROCm releases.
 This installation method is recommended for users who want to use Mneme
 to record and replay kernels.
 
+### AMD Systems
 ```bash
 git clone https://github.com/Olympus-HPC/Mneme.git
 cd Mneme
 export LLVM_INSTALL_DIR=${ROCM_PATH}
-pip install .
+pip install -e .
+```
+
+### NVIDIA Systems
+
+NVIDIA systems do not provide a proper LLVM installations. You can install one LLVM installation by using conda:
+```bash
+export MINICONDA_DIR=miniconda
+export LLVM_VERSION=18.1.8
+PYTHON_VERSION=3.10
+mkdir -p ${MINICONDA_DIR}
+wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-$(uname -m).sh -O ${MINICONDA_DIR}/miniconda.sh
+bash ${MINICONDA_DIR}/miniconda.sh -b -u -p ${MINICONDA_DIR}
+rm ${MINICONDA_DIR}/miniconda.sh
+source "${MINICONDA_DIR}/etc/profile.d/conda.sh"
+conda activate base
+conda create -y -n mneme -c conda-forge \
+  python=${PYTHON_VERSION} clang=${LLVM_VERSION} clangxx=${LLVM_VERSION} \
+  clangdev=${LLVM_VERSION} llvmdev=${LLVM_VERSION} lit=${LLVM_VERSION} \
+  gcc=12 gxx=12
+conda activate mneme
+```
+
+Once you have LLVM installed you can install Mneme as:
+```bash
+git clone https://github.com/Olympus-HPC/Mneme.git
+cd Mneme
+export LLVM_INSTALL_DIR=$(llvm-config --prefix)
+pip install -e .
 ```
 
 This installs the Mneme CLI (mneme) and Python bindings along with all

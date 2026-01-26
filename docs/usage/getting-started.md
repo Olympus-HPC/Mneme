@@ -5,7 +5,9 @@ using Mneme.
 
 ## Prerequisites
 
-- A HIP-capable system supporting ROCM 6.3 or 6.4.
+- A capable system:
+    - AMD supporting ROCM 6.3, 6.4 or 7.1 or,
+    - NVIDIA supporting CUDA 12.2 with an LLVM of version 18, 19 or 20.
 - CMake and a C++ compiler
 - Python 3.9+
 
@@ -13,6 +15,7 @@ For full installation details, see **Usage → Install**.
 
 ## Install Mneme (quick path)
 
+### AMD Systems
 ```bash
 git clone https://github.com/Olympus-HPC/Mneme.git
 cd Mneme
@@ -20,10 +23,40 @@ export LLVM_INSTALL_DIR=${ROCM_PATH}
 pip install -e .
 ```
 
+### NVIDIA Systems
+
+NVIDIA systems do not provide a proper LLVM installations. You can install one LLVM installation by using conda:
+```bash
+export MINICONDA_DIR=miniconda
+export LLVM_VERSION=18.1.8
+PYTHON_VERSION=3.10
+mkdir -p ${MINICONDA_DIR}
+wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-$(uname -m).sh -O ${MINICONDA_DIR}/miniconda.sh
+bash ${MINICONDA_DIR}/miniconda.sh -b -u -p ${MINICONDA_DIR}
+rm ${MINICONDA_DIR}/miniconda.sh
+source "${MINICONDA_DIR}/etc/profile.d/conda.sh"
+conda activate base
+conda create -y -n mneme -c conda-forge \
+  python=${PYTHON_VERSION} clang=${LLVM_VERSION} clangxx=${LLVM_VERSION} \
+  clangdev=${LLVM_VERSION} llvmdev=${LLVM_VERSION} lit=${LLVM_VERSION} \
+  gcc=12 gxx=12
+conda activate mneme
+```
+
+Once you have LLVM installed you can install Mneme as:
+```bash
+git clone https://github.com/Olympus-HPC/Mneme.git
+cd Mneme
+export LLVM_INSTALL_DIR=$(llvm-config --prefix)
+pip install -e .
+```
+
+
 ## Execute Example Code
 
 ### Phase 1: Instrumentation (compile time) 
 
+#### AMD Systems
 Build the provided example code:
 
 ```bash
@@ -31,8 +64,20 @@ cmake -B build-example -S examples/hip_vec_add/ -DCMAKE_C_COMPILER=$(mneme confi
 cmake --build build-example/
 ```
 
+#### NVIDIA Systems
+Build the provided example code:
+
+```bash
+cmake -B build-example -S examples/cuda_vec_add/ -DCMAKE_CUDA_FLAGS=-std=c++17 -DCMAKE_CUDA_ARCHITECTURES=90 -DCMAKE_C_COMPILER=$(mneme config cc) -DCMAKE_CUDA_COMPILER=$(mneme config cxx)  -DCMAKE_CXX_COMPILER=$(mneme config cxx) -DCMAKE_PREFIX_PATH=$(mneme config cmakedir)
+cmake --build build-example/
+```
+
+
 !!! note
     The `cmake` build command will emit a warning `clang++: warning: argument unused during compilation: '-Xoffload-linker --load-pass-plugin=<path-to>/libProteusPass.so'`. It is safe to ignore the warning.
+
+!!! note
+    On CUDA systems you need to pass a couple of extra cmake flags `-DCMAKE_CUDA_FLAGS=-std=c++17`, `-DCMAKE_CUDA_ARCHITECTURES=90` and `-DCMAKE_CUDA_COMPILER=$(mneme config cxx)`. The `c++17` flags are necessary due to an existing LLVM@18 and cmake bug. 
 
 ### Phase 2: Record Executable (runtime)
 
