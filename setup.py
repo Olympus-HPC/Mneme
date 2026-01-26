@@ -176,7 +176,7 @@ class CMakeBuild(build_ext):
                         "--depth",
                         "1",
                         "origin",
-                        "features/cuda-shared",
+                        "cuda-proteus-core-shared-llvm",
                     ],
                     cwd=str(Path(self.build_scratch) / "proteus"),
                 )

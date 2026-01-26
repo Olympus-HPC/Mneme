@@ -151,7 +151,6 @@ When omitted, all values default to those recorded during execution.
 | Option                    | Description                                                    |
 | ------------------------- | -------------------------------------------------------------- |
 | `--codegen-opt`, `-co`    | Backend optimization level used during machine code generation |
-| `--codegen-method`, `-cm` | Code-generation backend to use (e.g., `serial`)                |
 | `--output-ll`, `-ol`      | Store the generated LLVM IR to the specified file              |
 
 ### Execution Options
