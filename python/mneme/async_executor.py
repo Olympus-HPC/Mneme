@@ -8,7 +8,7 @@ from multiprocessing import Queue as ProcessQueue
 from pathlib import Path
 from queue import Queue as ThreadQueue
 from threading import Event as ThreadEvent
-from typing import Callable, Dict, Optional
+from typing import Callable, Dict, Optional, Union
 
 from mneme.futures import EvalFuture
 from mneme.mneme_logging import logger
@@ -468,7 +468,7 @@ class AsyncReplayExecutor:
                 return
             future.set_error(error)
 
-    def set_ir(self, ir: str | Path):
+    def set_ir(self, ir: Union[str, Path]):
         """ Sets the LLVM IR for all workers to this IR.
             Async, returns before the IR is set; But is guaranteed to set the IR
             before any submit or evaluate calls after set_ir is called.
