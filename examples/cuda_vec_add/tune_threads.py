@@ -14,7 +14,7 @@ Workflow:
 
 Notes:
   - This example intentionally keeps the API usage explicit and minimal.
-  - The Optuna objective is configured as direction="maximize" and the script
+  - The Optuna objective is configured as direction="minimize" and the script
     reports a speedup value to Optuna, exactly as shown in the original example.
 """
 
