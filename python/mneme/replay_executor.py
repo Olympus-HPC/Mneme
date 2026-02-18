@@ -844,6 +844,9 @@ class TuneWorker(BaseExecutor):
 
                     root_ir = worker.set_new_ir(new_ir_data)
 
+                    if root_ir is None:
+                        logger.error(f"Worker {worker.device_id} failed to set new IR")
+
                 elif msg["payload"] == "process":
                     logger.debug(
                         f"Worker {worker.device_id} received processing request {msg['exp_id']}"
