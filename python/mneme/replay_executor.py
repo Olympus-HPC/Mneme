@@ -196,6 +196,8 @@ class BaseExecutor:
         jit.internalize(new_ir, self.kernel_descr.kernel_name)
         jit.pruneIR(new_ir)
 
+        return new_ir
+
     @cond_time("preprocess_ir_time")
     def _preprocess_ir(
         self,
