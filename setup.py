@@ -162,27 +162,12 @@ class CMakeBuild(build_ext):
                         "clone",
                         "--depth",
                         "1",
-                        # "--branch",
-                        # "features/blocks-per-eu",
+                        "--branch",
+                        "mneme-optaas",
                         self.PROTEUS_REPO,
                         proteus_path,
                     ],
                     cwd=self.build_scratch,
-                )
-                run_command(
-                    [
-                        "git",
-                        "fetch",
-                        "--depth",
-                        "1",
-                        "origin",
-                        "cuda-proteus-core-shared-llvm",
-                    ],
-                    cwd=str(Path(self.build_scratch) / "proteus"),
-                )
-                run_command(
-                    ["git", "checkout", "-b", "features/cuda-shared", "FETCH_HEAD"],
-                    cwd=str(Path(self.build_scratch) / "proteus"),
                 )
 
         build_dir = os.path.join(proteus_path, "build")
