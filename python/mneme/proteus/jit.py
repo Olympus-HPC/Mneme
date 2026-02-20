@@ -112,6 +112,9 @@ def pruneIR(mod: ModuleRef):
         raise TypeError(f"Expecting type of ModuleRef instead got {type(mod)}")
     ffi.lib.ProteusPY_pruneIR(mod)
 
+    with open("prune.ll", "w") as fd:
+        fd.write(str(mod))
+
 
 def optimize(mod: ModuleRef, device_arch: str, opt_level: str, codegen_opt_level: int):
     """
@@ -157,6 +160,10 @@ def optimize(mod: ModuleRef, device_arch: str, opt_level: str, codegen_opt_level
         int(codegen_opt_level),
     )
 
+    with open("optimize.ll", "w") as fd:
+        fd.write(str(mod))
+
+
 
 def internalize(mod: ModuleRef, kernel_name: str):
     """
@@ -181,6 +188,10 @@ def internalize(mod: ModuleRef, kernel_name: str):
         raise TypeError(f"Expecting type of ModuleRef instead got {type(mod)}")
 
     ffi.lib.ProteusPY_internalize(mod, _encode_string(kernel_name))
+
+    with open("internalize.ll", "w") as fd:
+        fd.write(str(mod))
+
 
 
 def codegen_object(
@@ -220,6 +231,10 @@ def codegen_object(
         raise RuntimeError(
             f"codegen optimization level must be in range (0,3], instead it was {codegen_opt_level}"
         )
+
+    with open("codegen.ll", "w") as fd:
+        fd.write(str(mod))
+
     result = MemBufferRef(
         ffi.lib.ProteusPY_codeGenObject(
             mod,
@@ -269,6 +284,11 @@ def link_llvm_modules(
         ),
         get_global_context(),
     )
+
+    with open("after_link.ll", "w") as fd:
+        fd.write(str(Mod))
+
+
     return Mod
 
 
@@ -318,7 +338,7 @@ def specialize_args(
     for i, v in enumerate(specialize_indexes):
         indexes[i] = v
 
-    return int(
+    val = int(
         ffi.lib.ProteusPY_specializeArguments(
             mod,
             c_uint64(mod_hash),
@@ -329,6 +349,12 @@ def specialize_args(
             len(specialize_indexes),
         )
     )
+
+    with open("specialize_args.ll", "w") as fd:
+        fd.write(str(mod))
+
+
+    return val
 
 
 def specialize_dims(
@@ -358,6 +384,10 @@ def specialize_dims(
     int
         Updated module hash.
     """
+
+    with open("specialize_dims.ll", "w") as fd:
+        fd.write(str(mod))
+
     return int(
         ffi.lib.ProteusPY_specializeDims(
             mod, c_uint64(mod_hash), _encode_string(kernel_name), grid_dim, block_dim

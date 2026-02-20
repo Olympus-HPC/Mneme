@@ -105,19 +105,49 @@ ProteusPY_linkModules(const char **LLVMIRFiles, int size,
     if (!ModuleOrErr)
       LOG_FATAL("Error parsing bitcode: {}",
                 llvm::toString(ModuleOrErr.takeError()));
-
+    {
+      std::error_code EC;
+      llvm::raw_fd_ostream FOS("before_prune.bc", EC);
+      WriteBitcodeToFile(*ModuleOrErr->get(), FOS); 
+      FOS.flush();
+    }
     if (prune_flag) {
       pruneIR(*ModuleOrErr->get());
     }
+
+    {
+      std::error_code EC;
+      llvm::raw_fd_ostream FOS("before_prune.bc", EC);
+      WriteBitcodeToFile(*ModuleOrErr->get(), FOS); 
+      FOS.flush();
+    }
+
+
 
     RecordedModules.emplace_back(std::move(ModuleOrErr.get()));
   }
 
   auto Mod = proteus::linkModules(*unwrap(context), std::move(RecordedModules));
 
+    {
+      std::error_code EC;
+      llvm::raw_fd_ostream FOS("linked.bc", EC);
+      WriteBitcodeToFile(*Mod.get(), FOS); 
+      FOS.flush();
+    }
+
+
   if (internalize_flag) {
-    internalize(*Mod.get(), KernelSym);
+    //internalize(*Mod.get(), KernelSym);
   }
+
+    {
+      std::error_code EC;
+      llvm::raw_fd_ostream FOS("intern.bc", EC);
+      WriteBitcodeToFile(*Mod.get(), FOS); 
+      FOS.flush();
+    }
+
 
   proteus::runCleanupPassPipeline(*Mod.get());
 
