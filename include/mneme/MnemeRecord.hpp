@@ -49,6 +49,9 @@ protected:
   // create the allocator we assume that the allocations go to the same device
   int DeviceID;
 
+  // Mneme serializes all kernel executions. This the lock being used to do so
+  std::mutex GlobalLock;
+
 public:
   using MnemeDeviceRT = DeviceTraits<VendorTypes>;
   using DeviceError_t = typename MnemeDeviceRT::DeviceError_t;
@@ -154,6 +157,14 @@ public:
                                DeviceStream_t Stream) {
     using namespace llvm;
     using namespace proteus;
+    std::lock_guard<std::mutex> GMutex(GlobalLock);
+    auto EC = MnemeDeviceRT::DeviceErrorCheck(MnemeDeviceRT::DeviceStreamSynchronize(Stream));
+    if (EC)
+      LOG_FATAL("Cannot synchronize stream\n");
+    EC = MnemeDeviceRT::DeviceErrorCheck(MnemeDeviceRT::DeviceSynchronize());
+    if (EC)
+      LOG_FATAL("Cannot synchronize stream\n");
+
 
     if (!PM) {
       // NOTE: We need this arch cause internally we initialize the device.
