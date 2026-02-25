@@ -163,6 +163,7 @@ public:
                  "comparators",
                  GVName);
         correct = false;
+        continue;
       }
 
       auto &OtherGV = it->second;
@@ -401,31 +402,6 @@ public:
       LOG_INFO("Successfully loaded global variable: {}", KV.first);
     }
   }
-
-  void initializeDeviceMemory() {
-    if (!PM) {
-      LOG_CRITICAL("Memory Manager is not initialized");
-    }
-    PrologueState.load();
-    EpilogueState.load();
-  }
-
-  void releaseMemory() {
-    PrologueState.release();
-    EpilogueState.release();
-    PM.reset();
-  }
-
-  void reset() { PrologueState.reset(); }
-
-  bool isMemorySame() { return PrologueState == EpilogueState; }
-
-  void **getArgs() const { return PrologueState.getArgs(); }
-
-  uint64_t getSharedMemSize() { return SharedMem; }
-
-  dim3 getRecordedGrid() const { return GridDim; }
-  dim3 getRecordedBlock() const { return BlockDim; }
 };
 
 } // namespace mneme

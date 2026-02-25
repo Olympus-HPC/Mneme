@@ -50,7 +50,7 @@ from mneme.mneme_types import ExperimentConfiguration, ExperimentResult
 from mneme.page_manager import PageManagerRef
 from mneme.profile import init_profiler
 from mneme.proteus import jit
-from mneme.recorded_execution import RecordedExecution
+from mneme.recorded_execution import RecordedExecution, MemStateRef
 from mneme.transforms import transform
 from mneme.utils import cond_gpu_time, cond_time
 
@@ -474,6 +474,9 @@ class BaseExecutor:
         result: ExperimentResult,
         config: ExperimentConfiguration,
         mem_buffer: MemBufferRef,
+        prologue: MemStateRef,
+        epilogue: MemStateRef,
+        verify: bool,
         track: bool,
         iterations: int,
     ):
@@ -525,6 +528,8 @@ class BaseExecutor:
                 iterations,
                 profile=track,
             )
+            if verify: 
+                result.verified = prologue == epilogue
             if track:
                 result.reg_usage = device_func.reg_usage
                 result.const_mem_usage = device_func.const_mem
@@ -594,8 +599,8 @@ class BaseExecutor:
         # NOTE: 1. First we need to verify.
         ver_mod = ir_module.clone()
         mem_buffer = self._build(result, config, ver_mod, False)
-        self._run(result, config, mem_buffer, False, 1)
-        result.verified = self.prologue == self.epilogue
+        self._run(result, config, mem_buffer, self.prologue, self.epilogue, True, False, 1)
+
 
         # NOTE: 2. We apply a custom pass to delete all clang insered code.
         # It is hard to identify these cases, So we delete only things
@@ -606,7 +611,7 @@ class BaseExecutor:
         # NOTE: 3. We build and run. We set tracking on and we always execute iterations +2,
         # to enalbe later computation of statistical metrics etc.
         mem_buffer = self._build(result, config, ir_module, True)
-        self._run(result, config, mem_buffer, True, self._iterations + 2)
+        self._run(result, config, mem_buffer, self.prologue, self.epilogue, False, True, self._iterations + 2)
         result.executed = True
 
         return ir_module
