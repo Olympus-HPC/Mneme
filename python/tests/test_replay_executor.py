@@ -86,6 +86,17 @@ class FakeMemBuffer:
     def get_size(self):
         return self._size
 
+class FakeMemStateRef:
+    def __init__(self):
+
+    def open(self):
+        return self
+
+    def __enter__(self):
+        return self.open()
+
+    def __eq__(self, other):
+        return True
 
 class FakeDeviceFunction:
     def __init__(self):
@@ -417,8 +428,10 @@ def test_run_records_resource_usage_when_track_true(monkeypatch):
     res = mod.ExperimentResult()
     cfg = mod.ExperimentConfiguration()
     mb = FakeMemBuffer()
+    prologue = FakeMemStateRef()
+    epilogue = FakeMemStateRef()
 
-    ex._run(res, cfg, mb, track=True, iterations=7)
+    ex._run(res, cfg, mb, prologue, epilogue, verify=True, track=True, iterations=7)
 
     assert run_kernel_calls == [("K", 7, True)]
     assert res.reg_usage == device_func.reg_usage
@@ -465,7 +478,7 @@ def test_execute_orchestrates_verification_and_tracked_run(monkeypatch):
         build_calls.append((ir_mod.name, track))
         return FakeMemBuffer()
 
-    def fake_run(result, cfg, mem_buf, track, iters):
+    def fake_run(result, cfg, mem_buf, prologue, epilogue, verify, track, iters):
         run_calls.append((track, iters))
 
     ex = mod.BaseExecutor(record_db="x", record_id="rid", iterations=3)
