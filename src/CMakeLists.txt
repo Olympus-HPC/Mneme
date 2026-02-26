@@ -1,7 +1,7 @@
 
 set(MnemeCoreSrcDir ${CMAKE_CURRENT_SOURCE_DIR})
-set(RecordLibSRC "")
-set(ReplaySRC MnemeReplay.cpp MnemePageManager.cpp MnemeDeviceCode.cpp)
+set(RecordLibSRC MnemeAnnotationInternal.cpp)
+set(ReplaySRC MnemeReplay.cpp MnemePageManager.cpp MnemeDeviceCode.cpp MnemeAnnotationInternal.cpp)
 
 if (MNEME_ENABLE_HIP)
   list(APPEND RecordLibSRC MnemeRecordPreloadHIP.cpp MnemePageManager.cpp)

@@ -287,9 +287,6 @@ template <> struct DeviceTraits<DeviceVendors::HIP> {
     }
   }
 
-  static bool compareDeviceBlobs(const char *Blob1, const char *Blob2,
-                                 uint64_t NumBytes);
-
   static hipError_t DeviceStreamCreate(hipStream_t *Stream) {
     return hipStreamCreate(Stream);
   }
