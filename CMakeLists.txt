@@ -69,7 +69,7 @@ write_basic_package_version_file(
   VERSION ${PROJECT_VERSION}
   COMPATIBILITY AnyNewerVersion)
 
-set(MNEME_TARGETS record)
+set(MNEME_TARGETS mnemert record)
 if(MNEME_ENABLE_AUTOTUNE)
   list(APPEND MNEME_TARGETS mneme_profile mneme)
 endif()
@@ -80,6 +80,10 @@ install(
   RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
   LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}"
   ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}")
+
+install(
+  FILES "${PROJECT_SOURCE_DIR}/include/mneme/MnemeAnnotation.hpp"
+  DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/mneme")
 
 # Install and export CMake package
 install(

@@ -49,6 +49,7 @@ mneme_src=$test_dir/mneme_src/Mneme
 log "End copying mneme src to ${mneme_src} from ${mneme_orig_src}"
 
 if [[ "$SYS_TYPE" == "toss_4_x86_64_ib" ]]; then
+  unset CUDA_VISIBLE_DEVICES
   ml load cuda/12.2
   setup_conda_env "${test_dir}/miniconda3" "${MNEME_CI_LLVM_VERSION}" "${MNEME_CI_PYTHON_VERSION}"
   export LLVM_INSTALL_DIR=$(llvm-config --prefix)

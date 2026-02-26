@@ -1,13 +1,21 @@
 
 set(MnemeCoreSrcDir ${CMAKE_CURRENT_SOURCE_DIR})
-set(RecordLibSRC "")
-set(ReplaySRC MnemeReplay.cpp MnemePageManager.cpp MnemeDeviceCode.cpp)
+set(AnnotationRuntimeSRC MnemeAnnotation.cpp)
+set(RecordLibSRC MnemeAnnotationInternal.cpp)
+set(ReplaySRC MnemeReplay.cpp MnemePageManager.cpp MnemeDeviceCode.cpp MnemeAnnotationInternal.cpp)
 
 if (MNEME_ENABLE_HIP)
   list(APPEND RecordLibSRC MnemeRecordPreloadHIP.cpp MnemePageManager.cpp)
 elseif(MNEME_ENABLE_CUDA)
   list(APPEND RecordLibSRC MnemeRecordPreloadCUDA.cpp MnemePageManager.cpp)
 endif()
+
+add_library(mnemert SHARED ${AnnotationRuntimeSRC})
+target_include_directories(
+ mnemert 
+  PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
 
 add_library(record SHARED ${RecordLibSRC})
 
@@ -54,12 +62,15 @@ endif()
 
 
 target_include_directories(record SYSTEM PRIVATE ${LLVM_INCLUDE_DIRS} ${CMAKE_SOURCE_DIR}/include)
+target_link_libraries(record PRIVATE mnemert)
 # Link the record preload shared library with proteus shared library to avoid
 # LLVM static initialization issues.
 target_link_libraries(record PRIVATE proteus_shared)
 
 if (MNEME_ENABLE_LOGGER)
   message(STATUS "Adding SPDLOG in recording")
+  target_link_libraries(mnemert PRIVATE spdlog::spdlog_header_only)
+  target_compile_definitions(mnemert PRIVATE MNEME_ENABLE_LOGGER)
   target_link_libraries(record PRIVATE spdlog::spdlog_header_only)
   target_compile_definitions(record PRIVATE MNEME_ENABLE_LOGGER)
 endif()

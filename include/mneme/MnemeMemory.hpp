@@ -9,6 +9,9 @@
 #include <utility>
 
 #include "mneme/DeviceTraits.hpp"
+#include "mneme/MnemeAnnotation.hpp"
+#include "mneme/MnemeAnnotationInternal.hpp"
+#include "mneme/MnemeComparators.hpp"
 #include "mneme/MnemeLogger.hpp"
 #include "mneme/MnemeUtils.hpp"
 
@@ -23,6 +26,7 @@ public:
       typename MnemeDeviceRT::MemoryAllocationHandle_t;
 
 protected:
+  Metadata PtrMD;
   uint64_t ActualSize;
   void *BlobAddr;
   uint64_t Size;
@@ -89,6 +93,7 @@ public:
     Buffer += Size;
     LOG_DEBUG("Read memory blob at address {} SIZE: {} ActualSize:{}",
               DeviceAddr, Size, ActualSize);
+    Blob.PtrMD = metadata::fromBuffer(Buffer);
     return std::make_pair(DeviceAddr, std::move(Blob));
   }
 
@@ -104,6 +109,7 @@ public:
       ActualSize = other.ActualSize;
       HostData = std::move(other.HostData);
       IsMapped = other.IsMapped;
+      PtrMD = other.PtrMD;
       other.BlobAddr = 0;
       other.HostData = nullptr;
     }
@@ -113,7 +119,7 @@ public:
   MnemeMemoryBlob(MnemeMemoryBlob &&other) noexcept
       : BlobAddr(other.BlobAddr), Size(other.Size),
         ActualSize(other.ActualSize), HostData(std::move(other.HostData)),
-        IsMapped(other.IsMapped) {
+        IsMapped(other.IsMapped), PtrMD(other.PtrMD) {
     other.BlobAddr = 0;
     other.HostData = nullptr;
   }
@@ -126,13 +132,40 @@ public:
   uint64_t getActualSize() const { return ActualSize; }
   uint64_t getSize() const { return Size; }
   const std::unique_ptr<uint8_t[]> &getHostData() const { return HostData; }
+
+  void setMetadata(Metadata Md) { PtrMD = Md; }
+
+  Metadata getMetadata() const { return PtrMD; }
+
+  bool operator==(const MnemeMemoryBlob<VendorTypes> &other) const {
+    if (getSize() != other.getSize()) {
+      LOG_WARN("Sizes Differ {} vs {}", getSize(), other.getSize());
+      return false;
+    }
+
+    auto Md = getMetadata();
+    auto Compare = compareDeviceBlobs((const char *)other.getBlobAddr(),
+                                      (const char *)getBlobAddr(), getSize(),
+                                      Md);
+
+    // Comparator semantics:
+    // - Norm::None  => per-element thresholding reports AnyFail/FirstBadIdx
+    // - Norm::L1/L2/Linf => aggregated error is reported in Agg
+    if (Md.norm == Norm::None)
+      return Compare.AnyFail == 0;
+
+    return Compare.Agg <= Md.threshold;
+  }
+  bool operator!=(const MnemeMemoryBlob<VendorTypes> &other) const {
+    return !(*this == other);
+  }
 };
 
 template <DeviceVendors VendorTypes>
 llvm::raw_ostream &operator<<(llvm::raw_ostream &OS,
                               const MnemeMemoryBlob<VendorTypes> &Blob) {
   // The format in the binary is the following:
-  // | Var Actual Size | Var-Size | Device Address | Var Data |
+  // | Var Actual Size | Var-Size | Device Address | Var Data | Metadata
   OS << llvm::StringRef(reinterpret_cast<const char *>(&Blob.ActualSize),
                         sizeof(Blob.ActualSize));
   OS << llvm::StringRef(reinterpret_cast<const char *>(&Blob.Size),
@@ -147,9 +180,9 @@ llvm::raw_ostream &operator<<(llvm::raw_ostream &OS,
             Blob.getActualSize());
 
   auto EC = DeviceTraits<VendorTypes>::DeviceErrorCheck(
-      DeviceTraits<VendorTypes>::DeviceCopy(static_cast<void *>(Blob.getHostData().get()),
-          reinterpret_cast<void *>(Blob.BlobAddr),
-          Blob.getSize(),
+      DeviceTraits<VendorTypes>::DeviceCopy(
+          static_cast<void *>(Blob.getHostData().get()),
+          reinterpret_cast<void *>(Blob.BlobAddr), Blob.getSize(),
           DeviceTraits<VendorTypes>::MemcpyDeviceToHostKind()));
   if (EC)
     LOG_FATAL("Error in copying data from device when serializing context on "
@@ -157,6 +190,8 @@ llvm::raw_ostream &operator<<(llvm::raw_ostream &OS,
               EC.value() + "\n");
   OS << llvm::StringRef(
       reinterpret_cast<const char *>(Blob.getHostData().get()), Blob.Size);
+  auto MD = Blob.getMetadata();
+  mneme::metadata::serialize(OS, MD);
 
   return OS;
 }

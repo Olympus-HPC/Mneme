@@ -1,7 +1,9 @@
+#include "MnemeAnnotationRuntime.hpp"
 #include "mneme/MnemeLLVMUtils.hpp"
 #include "mneme/MnemeLogger.hpp"
 #include "mneme/MnemeRecord.hpp"
 #include <cuda_runtime.h>
+#include <utility>
 
 #ifdef __GNUC__
 #define __align__(n) __attribute__((aligned(n)))
@@ -82,6 +84,24 @@ cudaError_t __jit_launch_kernel(void *Kernel, dim3 GridDim, dim3 BlockDim,
   auto &mneme = MnemeRecorderCUDAPreload::instance();
   return mneme.rtLaunchKernel(Kernel, GridDim, BlockDim, KernelArgs, ShmemSize,
                               static_cast<cudaStream_t>(Stream));
+}
+
+bool mneme_set_metadata_for_ptr(const void *ptr, mneme::Metadata md) {
+  auto &mneme = MnemeRecorderCUDAPreload::instance();
+  return mneme.setMetadataForPointer(ptr, std::move(md));
+}
+
+bool mneme_get_metadata_for_ptr(const void *ptr, mneme::Metadata *md) {
+  if (!md)
+    return false;
+
+  auto &mneme = MnemeRecorderCUDAPreload::instance();
+  return mneme.getMetadataForPointer(ptr, *md);
+}
+
+bool mneme_erase_metadata_for_ptr(const void *ptr) {
+  auto &mneme = MnemeRecorderCUDAPreload::instance();
+  return mneme.eraseMetadataForPointer(ptr);
 }
 
 }

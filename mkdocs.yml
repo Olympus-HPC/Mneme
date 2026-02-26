@@ -25,6 +25,7 @@ nav:
       - Install: usage/install.md
       - Record: usage/record.md
       - Replay: usage/replay.md
+      - Verification: usage/verification.md
   - Concepts:
     - Overview: concepts/overview.md
     - Execution Phases: concepts/mneme-phases.md

@@ -26,24 +26,28 @@ elseif(ENABLE_HIP)
 endif()
 
 find_package(mneme REQUIRED)
-add_executable(vecAdd vec_add.cu)
 
-add_mneme(vecAdd)
+set(TEST_TARGET_NAME vecAdd CACHE STRING "Name of the test executable")
+set(TEST_SOURCE_FILE vec_add.cu CACHE STRING "CUDA/HIP source file for the test executable")
+
+add_executable(${TEST_TARGET_NAME} ${TEST_SOURCE_FILE})
+
+add_mneme(${TEST_TARGET_NAME})
 
 if (RDC)
 if(ENABLE_CUDA)
-  target_link_options(vecAdd  PUBLIC -fgpu-rdc)
+  target_link_options(${TEST_TARGET_NAME}  PUBLIC -fgpu-rdc)
 elseif(ENABLE_HIP)
-  target_link_options(vecAdd  PUBLIC -fgpu-rdc --hip-link)
+  target_link_options(${TEST_TARGET_NAME}  PUBLIC -fgpu-rdc --hip-link)
 endif()
 endif()
 
 if(ENABLE_CUDA)
-set_source_files_properties(vec_add.cu PROPERTIES LANGUAGE CUDA)
-target_link_libraries(vecAdd PRIVATE CUDA::cudart CUDA::cuda_driver)
+set_source_files_properties(${TEST_SOURCE_FILE} PROPERTIES LANGUAGE CUDA)
+target_link_libraries(${TEST_TARGET_NAME} PRIVATE CUDA::cudart CUDA::cuda_driver)
 elseif(ENABLE_HIP)
-set_source_files_properties(vec_add.cu PROPERTIES LANGUAGE HIP)
-target_include_directories(vecAdd PRIVATE ${HIP_INCLUDE_DIRS})
-target_link_libraries(vecAdd PRIVATE hip::host)
+set_source_files_properties(${TEST_SOURCE_FILE} PROPERTIES LANGUAGE HIP)
+target_include_directories(${TEST_TARGET_NAME} PRIVATE ${HIP_INCLUDE_DIRS})
+target_link_libraries(${TEST_TARGET_NAME} PRIVATE hip::host)
 endif()
 

@@ -55,6 +55,42 @@ public:
   using DeviceStream_t = typename MnemeDeviceRT::DeviceStream_t;
   using KernelFunction_t = typename MnemeDeviceRT::KernelFunction_t;
 
+  bool setMetadataForPointer(const void *ptr, Metadata md) {
+    if (!ptr)
+      return false;
+
+    auto It = AllocatedBlobs.find(const_cast<void *>(ptr));
+    if (It == AllocatedBlobs.end())
+      return false;
+
+    It->second.setMetadata(std::move(md));
+    return true;
+  }
+
+  bool getMetadataForPointer(const void *ptr, Metadata &md) const {
+    if (!ptr)
+      return false;
+
+    auto It = AllocatedBlobs.find(const_cast<void *>(ptr));
+    if (It == AllocatedBlobs.end())
+      return false;
+
+    md = It->second.getMetadata();
+    return true;
+  }
+
+  bool eraseMetadataForPointer(const void *ptr) {
+    if (!ptr)
+      return false;
+
+    auto It = AllocatedBlobs.find(const_cast<void *>(ptr));
+    if (It == AllocatedBlobs.end())
+      return false;
+
+    It->second.setMetadata(Metadata{});
+    return true;
+  }
+
 private:
   bool ExtractedIR;
   RecordDatabase DB;

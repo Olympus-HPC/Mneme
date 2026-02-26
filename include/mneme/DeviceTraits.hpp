@@ -287,9 +287,6 @@ template <> struct DeviceTraits<DeviceVendors::HIP> {
     }
   }
 
-  static bool compareDeviceBlobs(const char *Blob1, const char *Blob2,
-                                 uint64_t NumBytes);
-
   static hipError_t DeviceStreamCreate(hipStream_t *Stream) {
     return hipStreamCreate(Stream);
   }
@@ -336,7 +333,7 @@ template <> struct DeviceTraits<DeviceVendors::HIP> {
   static hipError_t deviceGetAttribute(hipFunction_t &Func,
                                        FuncAttributes Attribute, int &Value) {
     LOG_DEBUG("Going to request attributes of {}", (void *)Func);
-    
+
     switch (Attribute) {
     case REGISTER_USAGE:
       return hipFuncGetAttribute(&Value, HIP_FUNC_ATTRIBUTE_NUM_REGS, Func);
@@ -514,7 +511,8 @@ template <> struct DeviceTraits<DeviceVendors::CUDA> {
   }
 
   static std::pair<void *, size_t>
-  getGlobalAddrFromModule(DeviceModule_t &cudaModule, const std::string &GlobalName) {
+  getGlobalAddrFromModule(DeviceModule_t &cudaModule,
+                          const std::string &GlobalName) {
     size_t Size;
     DevicePtr_t DevPtr;
     auto EC = DeviceErrorCheck(
@@ -700,25 +698,26 @@ template <> struct DeviceTraits<DeviceVendors::CUDA> {
   }
 
   static DeviceDriverError_t deviceGetAttribute(cudaFunction_t &Func,
-                                       FuncAttributes Attribute, int &Value) {
+                                                FuncAttributes Attribute,
+                                                int &Value) {
     LOG_DEBUG("Going to request attributes of {}", (void *)Func);
-    
+
     switch (Attribute) {
     case REGISTER_USAGE:
       return cuFuncGetAttribute(&Value, CU_FUNC_ATTRIBUTE_NUM_REGS, Func);
 
     case LOCALMEM_USAGE:
-      return cuFuncGetAttribute(&Value, CU_FUNC_ATTRIBUTE_LOCAL_SIZE_BYTES, Func);
+      return cuFuncGetAttribute(&Value, CU_FUNC_ATTRIBUTE_LOCAL_SIZE_BYTES,
+                                Func);
 
     case CONSTMEM_USAGE:
-      return cuFuncGetAttribute(&Value, CU_FUNC_ATTRIBUTE_CONST_SIZE_BYTES, Func);
+      return cuFuncGetAttribute(&Value, CU_FUNC_ATTRIBUTE_CONST_SIZE_BYTES,
+                                Func);
     default:
       LOG_FATAL("Request unknown attribute");
       break;
     }
   }
-
-
 };
 #else
 #endif
