@@ -528,7 +528,7 @@ class BaseExecutor:
                 iterations,
                 profile=track,
             )
-            if verify: 
+            if verify:
                 result.verified = prologue == epilogue
             if track:
                 result.reg_usage = device_func.reg_usage
