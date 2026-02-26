@@ -601,7 +601,6 @@ class BaseExecutor:
         mem_buffer = self._build(result, config, ver_mod, False)
         self._run(result, config, mem_buffer, self.prologue, self.epilogue, True, False, 1)
 
-
         # NOTE: 2. We apply a custom pass to delete all clang insered code.
         # It is hard to identify these cases, So we delete only things
         # that have been attributed by clang
