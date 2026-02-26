@@ -88,6 +88,7 @@ class FakeMemBuffer:
 
 class FakeMemStateRef:
     def __init__(self):
+        pass
 
     def open(self):
         return self
