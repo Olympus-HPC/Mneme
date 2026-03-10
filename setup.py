@@ -328,47 +328,16 @@ class CustomBuildPy(build_py):
         super().run()
 
 
-# Setup Configuration
-setup(
-    name="mneme",
-    version="0.1.0",
-    author="Konstantinos Parasyris",
-    author_email="parasyris1@llnl.gov",
-    description="Python bindings for Mneme replay tool",
-    long_description=open("README.md").read(),
-    long_description_content_type="text/markdown",
-    ext_modules=[],
-    packages=find_packages(where="python"),
-    package_dir={"": "python"},
-    package_data={
-        "": [
-            "native/**/*",
-            "llvm/_lib_path_config.py",
-        ]
-    },
-    include_package_data=True,
-    entry_points={
-        "console_scripts": [
-            "mneme= mneme.cli:main",
-        ],
-    },
-    cmdclass={
-        "build_ext": CMakeBuild,
-        "build_py": CustomBuildPy,
-        "develop": CustomDevelop,
-        "egg_info": CustomEggInfo,
-    },
-    classifiers=[
-        "Programming Language :: Python :: 3",
-        "License :: OSI Approved :: Apache License",
-        "Operating System :: OS Independent",
-    ],
-    python_requires=">=3.6",
-    install_requires=[
-        "optuna>=4.4",
-        "scipy",
-        "pytest>=7.0",
-        "pytest-mock>=3.0",
-        "pytest-cov",
-    ],
-)
+# Setup configuration data moved to setup.cfg and pyproject.toml.
+# Keep the custom build commands (cmdclass) here and invoke setup so
+# setuptools will read declarative metadata from setup.cfg.
+if __name__ == "__main__":
+    setup(
+        ext_modules=[],
+        cmdclass={
+            "build_ext": CMakeBuild,
+            "build_py": CustomBuildPy,
+            "develop": CustomDevelop,
+            "egg_info": CustomEggInfo,
+        },
+    )
