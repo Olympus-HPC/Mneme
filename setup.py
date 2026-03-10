@@ -15,10 +15,28 @@ from setuptools.command.egg_info import egg_info
 
 # Helper function to run shell commands
 def run_command(command, cwd=None):
-    sys.stderr.write(f"Running: {' '.join(command)} in {cwd or os.getcwd()}")
-    result = subprocess.run(command, cwd=cwd, check=True)
-    if result.returncode != 0:
-        raise RuntimeError(f"Command {' '.join(command)} failed")
+    sys.stderr.write(f"Running: {' '.join(command)} in {cwd or os.getcwd()}\n")
+    try:
+        result = subprocess.run(
+            command,
+            cwd=cwd,
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        if result.stdout:
+            sys.stderr.write(result.stdout)
+        if result.stderr:
+            sys.stderr.write(result.stderr)
+        return result
+    except subprocess.CalledProcessError as e:
+        # write captured output and re-raise so callers see the failure
+        if getattr(e, 'stdout', None):
+            sys.stderr.write(e.stdout)
+        if getattr(e, 'stderr', None):
+            sys.stderr.write(e.stderr)
+        raise
 
 
 def detect_local_sm_via_nvidia_smi() -> int:
@@ -101,20 +119,20 @@ class CMakeBuild(build_ext):
         if self.has_nvidia == "On":
             self.cuda_arch = detect_local_sm_via_nvidia_smi()
         self.has_amd = "On" if has_amd_gpu() else "Off"
-        self.llvm_dir = os.getenv("LLVM_INSTALL_DIR", None)
-        if self.has_amd == "On":
-            self.cxx = f"{self.llvm_dir}/bin/amdclang++"
-            self.cc = f"{self.llvm_dir}/bin/amdclang"
-            self.llvm_dir = f"{self.llvm_dir}/llvm/"
-        else:
-            self.cxx = f"{self.llvm_dir}/bin/clang++"
-            self.cc = f"{self.llvm_dir}/bin/clang"
-            self.llvm_dir = f"{self.llvm_dir}/"
-
+        # Ensure LLVM_INSTALL_DIR is provided before using it
+        self.llvm_dir = os.getenv("LLVM_INSTALL_DIR")
         if not self.llvm_dir:
             raise RuntimeError(
                 "Error: LLVM_INSTALL_DIR is not set. Please export it before running setup.py."
             )
+        self.llvm_dir = str(Path(self.llvm_dir))
+        if self.has_amd == "On":
+            self.cxx = f"{self.llvm_dir}/bin/amdclang++"
+            self.cc = f"{self.llvm_dir}/bin/amdclang"
+            self.llvm_dir = f"{self.llvm_dir}/llvm"
+        else:
+            self.cxx = f"{self.llvm_dir}/bin/clang++"
+            self.cc = f"{self.llvm_dir}/bin/clang"
         prefix = Path(self.install_dir).resolve()
         libdir = prefix / "lib64"
         includedir = prefix / "include"
@@ -307,16 +325,12 @@ class CustomDevelop(develop):
 
 class CustomEggInfo(egg_info):
     def run(self):
-        try:
-            from pathlib import Path
+        from pathlib import Path
 
-            root = Path(__file__).resolve().parent
-            so = root / "python" / "mneme" / "native" / "lib64" / "libmneme.so"
-            if not so.exists():
-                self.run_command("build_ext")
-        except Exception:
-            # if anything goes wrong, don't block egg_info
-            pass
+        root = Path(__file__).resolve().parent
+        so = root / "python" / "mneme" / "native" / "lib64" / "libmneme.so"
+        if not so.exists():
+            self.run_command("build_ext")
         super().run()
 
 
