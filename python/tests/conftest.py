@@ -156,6 +156,63 @@ def build_vecadd(
     }
 
 
+def build_vecadd_annotations(
+    tmp_path_factory, call_mneme_config, has_amd_gpu, has_nvidia_gpu
+):
+    has_nvidia = has_nvidia_gpu
+    has_amd = has_amd_gpu
+    cuda_arch = "native"
+
+    if has_nvidia:
+        cuda_arch = detect_local_sm_via_nvidia_smi()
+
+    tmpdir = tmp_path_factory.mktemp("vecadd_annotations")
+    src_dir = pathlib.Path(__file__).parents[0] / "c_src" / "cmake"
+
+    mneme_cc = call_mneme_config("cc")
+    mneme_cxx = call_mneme_config("cxx")
+    mneme_cmake_dir = call_mneme_config("cmakedir")
+    if has_nvidia and has_amd:
+        raise RuntimeError("Cannot build test on system with 2 GPU architectures")
+    if not has_nvidia and not has_amd:
+        raise RuntimeError("Cannot build test on system with no GPU available")
+
+    nv_flag = "On" if has_nvidia else "Off"
+    amd_flag = "On" if has_amd else "Off"
+
+    subprocess.run(
+        [
+            "cmake",
+            f"-DCMAKE_C_COMPILER={mneme_cc}",
+            f"-DENABLE_CUDA={nv_flag}",
+            f"-DCMAKE_CUDA_COMPILER={mneme_cxx}",
+            "-DCMAKE_CUDA_FLAGS=-std=c++17",
+            f"-DCMAKE_CUDA_ARCHITECTURES={cuda_arch}",
+            f"-DENABLE_HIP={amd_flag}",
+            f"-DCMAKE_CXX_COMPILER={mneme_cxx}",
+            f"-DCMAKE_PREFIX_PATH={mneme_cmake_dir}",
+            "-DRDC=Off",
+            "-DTEST_TARGET_NAME=vecAddAnnotations",
+            "-DTEST_SOURCE_FILE=vec_add_annotations.cu",
+            str(src_dir),
+        ],
+        cwd=tmpdir,
+        check=True,
+    )
+
+    run_checked(["make", "-j"], cwd=tmpdir)
+
+    return {
+        "src_dir": src_dir,
+        "build_dir": tmpdir,
+        "binary": tmpdir / "vecAddAnnotations",
+        "rdc": "Off",
+        "cc": mneme_cc,
+        "cxx": mneme_cxx,
+        "cmakedir": mneme_cmake_dir,
+    }
+
+
 @pytest.fixture(params=["On", "Off"])
 def build_test_program(
     request, tmp_path_factory, build_cache, has_amd_gpu, has_nvidia_gpu
@@ -168,6 +225,18 @@ def build_test_program(
             rdc, tmp_path_factory, call_mneme_config, has_amd_gpu, has_nvidia_gpu
         )
 
+    return build_cache[key]
+
+
+@pytest.fixture
+def build_annotation_test_program(
+    tmp_path_factory, build_cache, has_amd_gpu, has_nvidia_gpu
+):
+    key = "vecadd_annotations_cached"
+    if key not in build_cache:
+        build_cache[key] = build_vecadd_annotations(
+            tmp_path_factory, call_mneme_config, has_amd_gpu, has_nvidia_gpu
+        )
     return build_cache[key]
 
 

@@ -104,6 +104,7 @@ build_spdlog() {
 }
 
 if [[ "$SYS_TYPE" == "toss_4_x86_64_ib" ]]; then
+  unset CUDA_VISIBLE_DEVICES
   ml load cmake/3.30
   ml load cuda/12.2.2
   PYTHON_VERSION=3.12
@@ -124,7 +125,7 @@ echo "Current dir is $(pwd)"
 cmake \
   -DCMAKE_BUILD_TYPE=Debug \
   -DCMAKE_CUDA_FLAGS=-std=c++17 \
-  -DCMAKE_PREFIX_PATH="$CONDA_PREFIX;$CONDA_PREFIX/lib/cmake" \
+  -DCMAKE_PREFIX_PATH="$installDir;$CONDA_PREFIX;$CONDA_PREFIX/lib/cmake" \
   -Dproteus_DIR=$installDir \
   -DCMAKE_INSTALL_PREFIX=$installDir \
   -DCMAKE_CXX_COMPILER=${cpp} \
@@ -153,6 +154,7 @@ elif [[ "$SYS_TYPE" == "toss_4_x86_64_ib_cray" ]]; then
 
   cmake \
     -DCMAKE_BUILD_TYPE=Relwithdebinfo \
+    -DCMAKE_PREFIX_PATH="$installDir" \
     -Dproteus_DIR=$installDir \
     -DCMAKE_INSTALL_PREFIX=$installDir \
     -DCMAKE_CXX_COMPILER=amdclang++ \

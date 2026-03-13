@@ -17,6 +17,7 @@ For full usage instructions, tutorials, and API reference, please visit the **[D
 *   **Record**: Capture GPU kernels from large applications into isolated replayable units.
 *   **Replay**: Execute captured kernels independently without the original application context.
 *   **Tune**: Optimize kernel parameters (block size, grid size) and compiler passes using Python tools like Optuna.
+*   **Verify**: Annotate device buffers with tolerance-aware comparison policies (data type, threshold, norm) for robust replay verification of floating-point kernels.
 
 ## Contributions
 

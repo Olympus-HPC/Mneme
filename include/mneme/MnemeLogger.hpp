@@ -6,6 +6,7 @@
 #include <cstdlib> // getenv
 #include <filesystem>
 #include <iostream>
+#include <climits>
 #include <memory>
 #include <spdlog/sinks/basic_file_sink.h>
 #include <spdlog/sinks/stdout_color_sinks.h>

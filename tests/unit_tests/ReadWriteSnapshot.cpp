@@ -1,4 +1,5 @@
 #include "mneme/DeviceTraits.hpp"
+#include "mneme/MnemeAnnotation.hpp"
 #include "mneme/MnemeKernelInfo.hpp"
 #include "mneme/MnemeLogger.hpp"
 #include "mneme/MnemeSnapshot.hpp"
@@ -48,9 +49,6 @@ int main(int argc, char **argv) {
       LOG_FATAL("Could not allocate device data");
     }
 
-    std::cout << "Address is " << (void *)DData << "\n";
-    std::cout << "Address is " << (void *)HData << "\n";
-
     EC = MnemeDeviceRT::DeviceErrorCheck(MnemeDeviceRT::DeviceCopy(
         DData, HData, 128, MnemeDeviceRT::MemcpyHostToDeviceKind()));
     if (EC) {
@@ -64,6 +62,13 @@ int main(int argc, char **argv) {
   auto GlobalData = initializeDeviceData();
 
   MnemeMemoryBlobDevice Blob(128L, BlobData.first, 128L);
+  mneme::Metadata Md;
+  Md.builtin = BuiltinDType::F64;
+  Md.norm = Norm::L2;
+  Md.threshold = 0.5;
+  Md.threshold_kind = ThresholdKind::Relative;
+  Md.tag = std::string("Test");
+  Blob.setMetadata(Md);
 
   Blob.setHostData(std::unique_ptr<uint8_t[]>(new uint8_t[128]));
 
@@ -144,6 +149,32 @@ int main(int argc, char **argv) {
                   << "\n";
         return 1;
       }
+
+      if (RBlob.getMetadata().builtin != BuiltinDType::F64) {
+        std::cerr << "Metadata builtin differs\n";
+        return 1;
+      }
+
+      if (RBlob.getMetadata().norm != Norm::L2) {
+        std::cerr << "Metadata norm differs\n";
+        return 1;
+      }
+
+      if (RBlob.getMetadata().threshold != 0.5) {
+        std::cerr << "Metadata threshold differs\n";
+        return 1;
+      }
+
+      if (RBlob.getMetadata().threshold_kind != ThresholdKind::Relative) {
+        std::cerr << "Metadata threshold_kind differs\n";
+        return 1;
+      }
+
+      if (RBlob.getMetadata().tag.value() != "Test") {
+        std::cerr << "Metadata tag differs\n";
+        return 1;
+      }
+
       uint8_t *WData = WBlob.getHostData().get();
       uint8_t *RData = RBlob.getHostData().get();
       if (std::memcmp(reinterpret_cast<void *>(WData),

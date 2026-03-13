@@ -146,6 +146,13 @@ These snapshots include:
 - device global variables, and
 - kernel argument memory.
 
+If the application has annotated any device pointer via
+`mneme::annotate()`, the associated metadata (data type, error
+threshold, norm, and optional tag) is captured alongside the memory
+content.  This metadata governs how Mneme compares the replayed output
+against the recorded epilogue during the replay phase.  See
+[Usage → Verification](../usage/verification.md) for details.
+
 The closure of kernel arguments, global variables and heap memory represents a
 superset of the memory the kernel may access during execution, ensuring
 that replay has all required inputs available.
@@ -282,6 +289,13 @@ Following execution, Mneme:
 
 - captures the resulting device memory state, and
 - compares it against the recorded epilogue snapshot.
+
+When a recorded memory blob carries annotation metadata (set via
+`mneme::annotate()` before the corresponding kernel launch), Mneme
+uses the stored data type, threshold, and norm to perform a
+tolerance-aware comparison instead of a byte-exact check.  See
+[Usage → Verification](../usage/verification.md) for the full
+semantics.
 
 This comparison enables:
 

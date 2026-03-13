@@ -50,7 +50,7 @@ variables:
 # Time in minutes.
 # Arguments for top level allocation
 # Note: can be set to "OFF" to prevent allocation sharing.
-  MATRIX_SHARED_ALLOC: "--exclusive --nodes=1 --time=60 --partition=pdebug"
+  MATRIX_SHARED_ALLOC: "--exclusive --gpus=1 --nodes=1 --time=60 --partition=pdebug"
 # Arguments for job level allocation
   MATRIX_JOB_ALLOC: "--gpus=1 --nodes=1"
 

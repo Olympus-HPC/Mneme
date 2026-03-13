@@ -369,5 +369,6 @@ setup(
         "scipy",
         "pytest>=7.0",
         "pytest-mock>=3.0",
+        "pytest-cov",
     ],
 )

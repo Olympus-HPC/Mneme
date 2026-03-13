@@ -108,6 +108,29 @@ The prologue and epilogue files contain serialized descriptors of GPU
 memory contents and associated metadata, including the number of memory
 regions, their sizes, and kernel argument mappings.
 
+### Blob annotation metadata
+
+Each recorded memory blob may carry optional **annotation metadata**
+attached by the application via `mneme::annotate()` before the kernel
+launch.  When present, the metadata is serialized immediately after the
+blob's raw data in the following order:
+
+| Field            | Size    | Description |
+| ---------------- | ------- | ----------- |
+| `builtin`        | 1 byte  | `BuiltinDType` enum value (scalar type) |
+| `threshold`      | 8 bytes | `double` — maximum acceptable error |
+| `threshold_kind` | 1 byte  | `ThresholdKind` enum (`Absolute` or `Relative`) |
+| `norm`           | 1 byte  | `Norm` enum (`None`, `L1`, `L2`, `Linf`) |
+| `tag_len`        | 8 bytes | Length of the tag string (0 if absent) |
+| `tag`            | variable | UTF-8 tag string (omitted when `tag_len` is 0) |
+
+Buffers that were **not** annotated are recorded with zero-valued
+defaults (`threshold = 0`, `norm = None`), which preserves the
+traditional byte-exact comparison behavior.
+
+See **[Usage → Verification](verification.md)** for details on how
+this metadata is used during replay.
+
 ---
 
 ## Recorded LLVM IR

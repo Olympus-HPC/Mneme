@@ -1,72 +1,362 @@
 #include "mneme/DeviceTraits.hpp"
+#include "mneme/MnemeAnnotation.hpp"
+#include "mneme/MnemeComparators.hpp"
+#include <cassert>
+#include <cmath>
+#include <cstdint>
 #include <cstring>
-#include <llvm/ADT/DenseMap.h>
+#include <iostream>
+#include <limits>
+#include <vector>
 
 using namespace mneme;
 
 #ifdef MNEME_ENABLE_HIP
 constexpr DeviceVendors Vendor = DeviceVendors::HIP;
 using MnemeDeviceRT = DeviceTraits<DeviceVendors::HIP>;
+#include <hip/hip_fp16.h>
 #elif defined(MNEME_ENABLE_CUDA)
 constexpr DeviceVendors Vendor = DeviceVendors::CUDA;
 using MnemeDeviceRT = DeviceTraits<DeviceVendors::CUDA>;
+#include <cuda_fp16.h>
+#else
+#error "Define MNEME_ENABLE_HIP or MNEME_ENABLE_CUDA"
 #endif
 
-int main(int argc, char *argv[]) {
-  {
-    char *DevPtr[2];
-    int NumBytes = 544;
-    for (int i = 0; i < 2; i++) {
-      auto EC = MnemeDeviceRT::DeviceErrorCheck(MnemeDeviceRT::DeviceMalloc(
-          reinterpret_cast<void **>(&DevPtr[i]), NumBytes));
-      if (EC)
-        LOG_FATAL("Error in comparing blobs " + EC.value());
+static bool approx(double a, double b, double eps = 1e-9) {
+  return std::fabs(a - b) <= eps * (1.0 + std::max(std::fabs(a), std::fabs(b)));
+}
 
-      EC = MnemeDeviceRT::DeviceErrorCheck(
-          MnemeDeviceRT::DeviceMemset(DevPtr[i], 3, NumBytes));
+// Compute expected error per-element for Absolute/Relative (your device code
+// does NOT implement ULP)
+template <class T> static double host_element_error(T a, T b, ThresholdKind k) {
+  const double da = (double)a;
+  const double db = (double)b;
+  const double abs_err = std::fabs(da - db);
+  if (k == ThresholdKind::Absolute)
+    return abs_err;
+  // Relative: |a-b| / max(|b|, 1e-12)
+  const double denom = std::max(std::fabs(db), 1e-12);
+  return abs_err / denom;
+}
 
-      if (EC)
-        LOG_FATAL("Error in comparing blobs " + EC.value());
+template <>
+double host_element_error<__half>(__half a, __half b, ThresholdKind k) {
+#if defined(MNEME_ENABLE_HIP)
+  float fa = __half2float(a);
+  float fb = __half2float(b);
+#else
+  float fa = __half2float(a);
+  float fb = __half2float(b);
+#endif
+  return host_element_error<float>(fa, fb, k);
+}
+
+template <class T>
+static void fill_equal(std::vector<T> &x, std::vector<T> &y) {
+  for (size_t i = 0; i < x.size(); ++i) {
+    // pick a pattern that is safe for ints and floats
+    if constexpr (std::is_integral_v<T>) {
+      x[i] = (T)((i * 7) % 251);
+      y[i] = x[i];
+    } else {
+      x[i] = (T)(0.25 + (double)i * 0.01);
+      y[i] = x[i];
     }
-    if (!MnemeDeviceRT::compareDeviceBlobs(DevPtr[0], DevPtr[1], NumBytes)) {
-      std::cout << "Expected memory to be same";
-      return -1;
-    }
+  }
+}
 
-    for (int i = 0; i < 2; i++) {
-      auto EC =
-          MnemeDeviceRT::DeviceErrorCheck(MnemeDeviceRT::DeviceFree(DevPtr[i]));
-      if (EC)
-        LOG_FATAL("Error in comparing blobs " + EC.value());
+template <>
+void fill_equal<__half>(std::vector<__half> &x, std::vector<__half> &y) {
+  for (size_t i = 0; i < x.size(); ++i) {
+    float v = 0.25f + (float)i * 0.01f;
+#if defined(MNEME_ENABLE_HIP)
+    x[i] = __float2half(v);
+    y[i] = __float2half(v);
+#else
+    x[i] = __float2half(v);
+    y[i] = __float2half(v);
+#endif
+  }
+}
+
+// Introduce one mismatch at idx with delta
+template <class T>
+static void introduce_mismatch(std::vector<T> &y, size_t idx, double delta) {
+  if constexpr (std::is_integral_v<T>) {
+    long long v = (long long)y[idx];
+    y[idx] = (T)(v + (long long)delta);
+  } else {
+    y[idx] = (T)((double)y[idx] + delta);
+  }
+}
+
+template <>
+void introduce_mismatch<__half>(std::vector<__half> &y, size_t idx,
+                                double delta) {
+#if defined(MNEME_ENABLE_HIP)
+  float v = __half2float(y[idx]);
+  y[idx] = __float2half(v + (float)delta);
+#else
+  float v = __half2float(y[idx]);
+  y[idx] = __float2half(v + (float)delta);
+#endif
+}
+
+template <class T>
+static void run_case(BuiltinDType dtype, ThresholdKind tk, Norm norm,
+                     double threshold, bool expect_fail) {
+  constexpr size_t N = 2048;
+  std::vector<T> hA(N), hB(N);
+  fill_equal(hA, hB);
+
+  const size_t bad_idx = 777;
+  const double delta = std::is_integral_v<T> ? 3.0 : 0.05; // sizeable diff
+  if (expect_fail)
+    introduce_mismatch<T>(hB, bad_idx, delta);
+
+  // Allocate device buffers
+  T *dA = nullptr;
+  T *dB = nullptr;
+  auto EC = MnemeDeviceRT::DeviceErrorCheck(MnemeDeviceRT::DeviceMalloc(
+      reinterpret_cast<void **>(&dA), N * sizeof(T)));
+  if (EC)
+    LOG_FATAL("DeviceMalloc dA failed: " + EC.value());
+
+  EC = MnemeDeviceRT::DeviceErrorCheck(MnemeDeviceRT::DeviceMalloc(
+      reinterpret_cast<void **>(&dB), N * sizeof(T)));
+  if (EC)
+    LOG_FATAL("DeviceMalloc dB failed: " + EC.value());
+
+  EC = MnemeDeviceRT::DeviceErrorCheck(MnemeDeviceRT::DeviceCopy(
+      dA, hA.data(), N * sizeof(T), MnemeDeviceRT::MemcpyHostToDeviceKind()));
+  if (EC)
+    LOG_FATAL("Memcpy H2D dA failed: " + EC.value());
+
+  EC = MnemeDeviceRT::DeviceErrorCheck(MnemeDeviceRT::DeviceCopy(
+      dB, hB.data(), N * sizeof(T), MnemeDeviceRT::MemcpyHostToDeviceKind()));
+  if (EC)
+    LOG_FATAL("Memcpy H2D dB failed: " + EC.value());
+
+  Metadata md;
+  md.builtin = dtype;
+  md.threshold_kind = tk;
+  md.norm = norm;
+  md.threshold = threshold;
+
+  // Call Mneme comparator
+  CompareResult r = compareDeviceBlobs(reinterpret_cast<const char *>(dA),
+                                       reinterpret_cast<const char *>(dB),
+                                       (uint64_t)(N * sizeof(T)), md);
+
+  // Compute expected aggregates (matching your kernel semantics)
+  double exp_max = 0.0;
+  double exp_l1 = 0.0;
+  double exp_l2_sum_sq = 0.0;
+  double exp_linf = 0.0;
+
+  int exp_any_fail = 0;
+  int exp_first_bad = (int)N;
+
+  for (size_t i = 0; i < N; ++i) {
+    double e = host_element_error<T>(hA[i], hB[i], tk);
+    exp_max = std::max(exp_max, e);
+
+    if (norm == Norm::None) {
+      if (e > threshold) {
+        exp_any_fail = 1;
+        exp_first_bad = std::min(exp_first_bad, (int)i);
+      }
+    } else {
+      exp_l1 += e;
+      exp_l2_sum_sq += std::sqrt(e * e);
+      exp_linf = std::max(exp_linf, e);
     }
   }
 
-  {
-    char *DevPtr[2];
-    int NumBytes = 544;
-    for (int i = 0; i < 2; i++) {
-      auto EC = MnemeDeviceRT::DeviceErrorCheck(MnemeDeviceRT::DeviceMalloc(
-          reinterpret_cast<void **>(&DevPtr[i]), NumBytes));
-      if (EC)
-        LOG_FATAL("Error in comparing blobs " + EC.value());
-
-      EC = MnemeDeviceRT::DeviceErrorCheck(
-          MnemeDeviceRT::DeviceMemset(DevPtr[i], 3 + i, NumBytes));
-
-      if (EC)
-        LOG_FATAL("Error in comparing blobs " + EC.value());
+  // Assertions
+  if (norm == Norm::None) {
+    if (expect_fail) {
+      assert(r.AnyFail == 1);
+      assert(r.FirstBadIdx == exp_first_bad);
+      assert(r.MaxErr >= exp_max - 1e-12);
+    } else {
+      assert(r.AnyFail == 0);
+      // FirstBadIdx may be N or INT_MAX depending on init choice; accept ">= N"
+      assert(r.FirstBadIdx >= (int)N);
+      assert(approx(r.MaxErr, 0.0) || r.MaxErr <= 1e-12);
     }
-    if (MnemeDeviceRT::compareDeviceBlobs(DevPtr[0], DevPtr[1], NumBytes)) {
-      std::cout << "Expected memory to differ";
-      return -1;
-    }
-
-    for (int i = 0; i < 2; i++) {
-      auto EC =
-          MnemeDeviceRT::DeviceErrorCheck(MnemeDeviceRT::DeviceFree(DevPtr[i]));
-      if (EC)
-        LOG_FATAL("Error in comparing blobs " + EC.value());
-    }
+  } else if (norm == Norm::Linf) {
+    assert(r.AnyFail == 0); // your kernel only sets AnyFail for Norm::None
+    assert(approx(r.Agg, exp_linf, 1e-7));
+    assert(r.MaxErr >= exp_max - 1e-12);
+  } else if (norm == Norm::L1) {
+    assert(r.AnyFail == 0);
+    assert(approx(r.Agg, exp_l1, 1e-6));
+    assert(r.MaxErr >= exp_max - 1e-12);
+  } else if (norm == Norm::L2) {
+    assert(r.AnyFail == 0);
+    assert(approx(r.Agg, exp_l2_sum_sq, 1e-6));
+    assert(r.MaxErr >= exp_max - 1e-12);
+  } else {
+    assert(false && "Unhandled norm");
   }
+
+  // Free
+  EC = MnemeDeviceRT::DeviceErrorCheck(MnemeDeviceRT::DeviceFree(dA));
+  if (EC)
+    LOG_FATAL("DeviceFree dA failed: " + EC.value());
+  EC = MnemeDeviceRT::DeviceErrorCheck(MnemeDeviceRT::DeviceFree(dB));
+  if (EC)
+    LOG_FATAL("DeviceFree dB failed: " + EC.value());
+}
+
+static void run_all_for_dtype(BuiltinDType dt) {
+  // Absolute, exact equality should pass with threshold 0
+  auto run_abs_pass = [&](auto tag_type) {
+    using T = decltype(tag_type);
+    run_case<T>(dt, ThresholdKind::Absolute, Norm::None, 0.0,
+                /*expect_fail=*/false);
+    run_case<T>(dt, ThresholdKind::Absolute, Norm::Linf, 0.0,
+                /*expect_fail=*/false);
+    run_case<T>(dt, ThresholdKind::Absolute, Norm::L1, 0.0,
+                /*expect_fail=*/false);
+    run_case<T>(dt, ThresholdKind::Absolute, Norm::L2, 0.0,
+                /*expect_fail=*/false);
+  };
+
+  auto run_abs_fail = [&](auto tag_type) {
+    using T = decltype(tag_type);
+    // With a mismatch, Norm::None should fail for small threshold
+    run_case<T>(dt, ThresholdKind::Absolute, Norm::None, 0.0,
+                /*expect_fail=*/true);
+
+    // Aggregates should reflect mismatch; we don't "fail" in kernel for
+    // aggregates.
+    run_case<T>(dt, ThresholdKind::Absolute, Norm::Linf, 0.0,
+                /*expect_fail=*/true);
+    run_case<T>(dt, ThresholdKind::Absolute, Norm::L1, 0.0,
+                /*expect_fail=*/true);
+    run_case<T>(dt, ThresholdKind::Absolute, Norm::L2, 0.0,
+                /*expect_fail=*/true);
+  };
+
+  auto run_rel_pass = [&](auto tag_type) {
+    using T = decltype(tag_type);
+    // Equal buffers => relative errors 0
+    run_case<T>(dt, ThresholdKind::Relative, Norm::None, 0.0,
+                /*expect_fail=*/false);
+    run_case<T>(dt, ThresholdKind::Relative, Norm::Linf, 0.0,
+                /*expect_fail=*/false);
+    run_case<T>(dt, ThresholdKind::Relative, Norm::L1, 0.0,
+                /*expect_fail=*/false);
+    run_case<T>(dt, ThresholdKind::Relative, Norm::L2, 0.0,
+                /*expect_fail=*/false);
+  };
+
+  auto run_rel_fail = [&](auto tag_type) {
+    using T = decltype(tag_type);
+    // Make mismatch; relative error should be nonzero => fail at threshold 0 in
+    // Norm::None
+    run_case<T>(dt, ThresholdKind::Relative, Norm::None, 0.0,
+                /*expect_fail=*/true);
+
+    // Aggregates
+    run_case<T>(dt, ThresholdKind::Relative, Norm::Linf, 0.0,
+                /*expect_fail=*/true);
+    run_case<T>(dt, ThresholdKind::Relative, Norm::L1, 0.0,
+                /*expect_fail=*/true);
+    run_case<T>(dt, ThresholdKind::Relative, Norm::L2, 0.0,
+                /*expect_fail=*/true);
+  };
+
+  switch (dt) {
+  case BuiltinDType::U8:
+    run_abs_pass(uint8_t{});
+    run_abs_fail(uint8_t{});
+    run_rel_pass(uint8_t{});
+    run_rel_fail(uint8_t{});
+    break;
+  case BuiltinDType::I8:
+    run_abs_pass(int8_t{});
+    run_abs_fail(int8_t{});
+    run_rel_pass(int8_t{});
+    run_rel_fail(int8_t{});
+    break;
+  case BuiltinDType::U16:
+    run_abs_pass(uint16_t{});
+    run_abs_fail(uint16_t{});
+    run_rel_pass(uint16_t{});
+    run_rel_fail(uint16_t{});
+    break;
+  case BuiltinDType::I16:
+    run_abs_pass(int16_t{});
+    run_abs_fail(int16_t{});
+    run_rel_pass(int16_t{});
+    run_rel_fail(int16_t{});
+    break;
+  case BuiltinDType::U32:
+    run_abs_pass(uint32_t{});
+    run_abs_fail(uint32_t{});
+    run_rel_pass(uint32_t{});
+    run_rel_fail(uint32_t{});
+    break;
+  case BuiltinDType::I32:
+    run_abs_pass(int32_t{});
+    run_abs_fail(int32_t{});
+    run_rel_pass(int32_t{});
+    run_rel_fail(int32_t{});
+    break;
+  case BuiltinDType::U64:
+    run_abs_pass(uint64_t{});
+    run_abs_fail(uint64_t{});
+    run_rel_pass(uint64_t{});
+    run_rel_fail(uint64_t{});
+    break;
+  case BuiltinDType::I64:
+    run_abs_pass(int64_t{});
+    run_abs_fail(int64_t{});
+    run_rel_pass(int64_t{});
+    run_rel_fail(int64_t{});
+    break;
+  case BuiltinDType::F16:
+    run_abs_pass(__half{});
+    run_abs_fail(__half{});
+    run_rel_pass(__half{});
+    run_rel_fail(__half{});
+    break;
+  case BuiltinDType::F32:
+    run_abs_pass(float{});
+    run_abs_fail(float{});
+    run_rel_pass(float{});
+    run_rel_fail(float{});
+    break;
+  case BuiltinDType::F64:
+    run_abs_pass(double{});
+    run_abs_fail(double{});
+    run_rel_pass(double{});
+    run_rel_fail(double{});
+    break;
+  default:
+    assert(false && "unknown dtype");
+  }
+}
+
+int main() {
+  std::cout << "Running Mneme compareDeviceBlobs thorough tests...\n";
+
+  run_all_for_dtype(BuiltinDType::U8);
+  run_all_for_dtype(BuiltinDType::I8);
+  run_all_for_dtype(BuiltinDType::U16);
+  run_all_for_dtype(BuiltinDType::I16);
+  run_all_for_dtype(BuiltinDType::U32);
+  run_all_for_dtype(BuiltinDType::I32);
+  run_all_for_dtype(BuiltinDType::U64);
+  run_all_for_dtype(BuiltinDType::I64);
+  run_all_for_dtype(BuiltinDType::F16);
+  run_all_for_dtype(BuiltinDType::F32);
+  run_all_for_dtype(BuiltinDType::F64);
+
+  std::cout << "All tests passed.\n";
   return 0;
 }
