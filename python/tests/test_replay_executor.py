@@ -480,6 +480,8 @@ def test_execute_orchestrates_verification_and_tracked_run(monkeypatch):
         return FakeMemBuffer()
 
     def fake_run(result, cfg, mem_buf, prologue, epilogue, verify, track, iters):
+        if verify:
+            result.verified = True
         run_calls.append((track, iters))
 
     ex = mod.BaseExecutor(record_db="x", record_id="rid", iterations=3)
