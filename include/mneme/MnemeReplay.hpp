@@ -161,6 +161,7 @@ public:
                  "comparators",
                  GVName);
         correct = false;
+        continue;
       }
 
       auto &OtherGV = it->second;
