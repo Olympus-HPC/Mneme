@@ -92,6 +92,13 @@ mneme record -rdb record-dir -vass 64 -- ./vecAdd 1024
 
 0 on successful recording non-zero if execution or recording fails
 
+!!! tip "Tolerance-aware verification"
+    Recording does not require modifying application source code.  However,
+    if you want tolerance-aware verification during replay, you can
+    annotate device pointers with `mneme::annotate()` before the kernel
+    launches that will be recorded.  See
+    [Usage → Verification](verification.md) for details.
+
 ## mneme replay
 
 ```bash
@@ -201,6 +208,13 @@ mneme replay \
 !!! note
     Enabling specialization or modifying launch bounds may change kernel
     performance characteristics and should be validated carefully.
+
+!!! tip "Replay verification"
+    After execution, Mneme compares the resulting device memory state
+    against the recorded epilogue snapshot.  By default this is a byte-exact
+    check.  If buffers were annotated with `mneme::annotate()` before
+    recording, Mneme uses the stored tolerance metadata instead.  See
+    [Usage → Verification](verification.md) for the full semantics.
 
 ### Exit status
 

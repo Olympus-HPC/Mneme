@@ -82,7 +82,7 @@ control *what is treated as constant* during replay compilation.
 Conceptually, this allows Mneme to propagate recorded values into the IR,
 enabling constant folding and simplification. The exact specialization
 surface is backend-dependent and evolves over time. Briefly, any custom specialization 
-supported in `proteus` is also exposed in this parameter.
+supported in Proteus is also exposed in this parameter.
 
 ### Specialize launch dimensions
 

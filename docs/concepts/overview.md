@@ -36,9 +36,8 @@ So, instead of replaying an entire application, Mneme:
 3. Replays the kernel *without* the original application.
 
 This enables fast experimentation, reproducibility, and optimization
-without rebuilding or rerunning the full application while also automated 
-collection of realistic kernel inputs. As mneme will automatically record the 
-kernel inputs.
+without rebuilding or rerunning the full application, while also enabling
+automated collection of realistic kernel inputs.
 
 ---
 
@@ -101,7 +100,7 @@ and dynamic instances of those kernels.
   A specific runtime instance of a kernel, represented by a
   *dynamic hash*. The dynamic hash encodes the kernel runtime configuration parameters (block dimensions and grid dimensions).
 
-This distinction allows Mneme to record separate the static part of the process (the code) and associate to it multiple instances of that code that use different thread/block dimensions.
+This distinction allows Mneme to separate the static part of a kernel (the code) from the dynamic instances that use different thread/block dimensions.
 
 See **[Static vs Dynamic Hash](static-dynamic.md)** for details.
 

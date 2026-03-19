@@ -10,8 +10,6 @@ work together to enable kernel record, replay, and tuning.
 
 ### Purpose
 
-Purpose
-
 The purpose of the instrumentation phase is to produce a recordable executable:
 a binary that self-describes its GPU kernels and can be observed by Mneme at runtime.
 
@@ -28,8 +26,6 @@ Instrumentation provides a single, unified analysis point—the executable—whe
 kernel code, metadata, and runtime hooks are consistently available.
 
 ### What happens
-
-What happens
 
 During compilation, Mneme (via Proteus) applies an LLVM instrumentation pass that performs two complementary actions:
 
@@ -57,11 +53,11 @@ when Mneme is not actively recording.
 #### 3. **Fatbinary and global variable registration**
 
 During host-side compilation, the instrumentation pass performs registration of the fatbinary global variable and kernel stub handles to the
-proteus runtime system.
+Proteus runtime system.
 
 !!! note
-    The instrumentation pass is not developed by Mneme, instead we completely rely on proteus instrumentation pass maintained and developed for the
-    [annotation based JIT interface](https://olympus-hpc.github.io/proteus/user/interface/#code-annotations).
+    The instrumentation pass is not developed by Mneme. Instead, Mneme relies entirely on the Proteus instrumentation pass, maintained and developed for the
+    [annotation-based JIT interface](https://olympus-hpc.github.io/proteus/user/interface/#code-annotations).
 
 ### What is produced
 
@@ -163,7 +159,7 @@ The instrumentation phase provides Mneme with:
 access to the kernel’s LLVM IR (embedded in ELF sections), and
 metadata describing kernel identity and global variables.
 
-During recording, Mneme querries *proteus* for LLVM IR and associates each observed kernel launch with:
+During recording, Mneme queries Proteus for LLVM IR and associates each observed kernel launch with:
 
 - its static kernel identity (LLVM IR code),
 - a dynamic execution identity (launch configuration and runtime parameters), and
@@ -219,15 +215,14 @@ Replay operates entirely on the artifacts produced during recording.
 Replay consists of three fundamental steps:
 
 - Restore device memory
-- Recompile the kernel using proteus
+- Recompile the kernel using Proteus
 - Execute and validate
 
 Together, these steps reconstruct a concrete kernel execution that is
 equivalent to the recorded one, while allowing controlled variation.
 
-All of these steps are exposed a C-bindings to python, as such we hide from
-the user the system level intricancies and we provide a fast prototyping core
-environment. 
+All of these steps are exposed as C-bindings to Python, hiding system-level
+intricacies from the user and providing a fast prototyping environment.
 
 ### Restoring device memory state
 
@@ -304,7 +299,7 @@ This comparison enables:
 - safe exploration of optimization spaces as replay executions that fail validation can be automatically discarded
 during tuning workflows.
 
-# Tuning and experimentation
+## Tuning and experimentation
 
 Replay is the foundation of Mneme’s tuning model.
 

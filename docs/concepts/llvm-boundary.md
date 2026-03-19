@@ -19,8 +19,8 @@ Mneme needs a stable handle to the kernel code that is:
 
 Source code is a poor boundary for this purpose because it is fragmented
 across translation units and heavily shaped by language semantics
-(templates, macros, headers, and ABI details) and there is non neglicible time spend in lowering
-this information into some intermediate represtation. Conversely, recording a
+(templates, macros, headers, and ABI details), and there is non-negligible time spent lowering
+this information into an intermediate representation. Conversely, recording a
 final device binary is also limiting: much of the high-level structure is
 lost, and many compiler-level transformations become difficult or impossible.
 
@@ -30,7 +30,7 @@ LLVM IR sits at a useful middle ground:
 - module boundaries are well defined,
 - kernels and their dependencies are available in a consistent representation,
 - standard LLVM tools can inspect and transform it.
-- Lowering LLVM IR to device requires minimal external parameters, thus we can use `proteus` JIT capability to efficiently build executables during replay. 
+- Lowering LLVM IR to device requires minimal external parameters, thus we can use Proteus JIT capability to efficiently build executables during replay. 
 
 ---
 

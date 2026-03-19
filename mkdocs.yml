@@ -23,8 +23,6 @@ nav:
       - Artifacts: usage/artifacts.md
       - Tune: usage/tune.md
       - Install: usage/install.md
-      - Record: usage/record.md
-      - Replay: usage/replay.md
       - Verification: usage/verification.md
   - Concepts:
     - Overview: concepts/overview.md

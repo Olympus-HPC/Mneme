@@ -124,7 +124,7 @@ pip install -e .
 
 ### NVIDIA Systems
 
-NVIDIA systems do not provide a proper LLVM installations. You can install one LLVM installation by using conda:
+NVIDIA systems do not provide a proper LLVM installation. You can install one LLVM installation by using conda:
 ```bash
 export MINICONDA_DIR=miniconda
 export LLVM_VERSION=18.1.8
@@ -164,20 +164,6 @@ pip install -e .
 
 Editable mode installs Mneme in-place, allowing local source changes to be
 picked up without reinstallation.
-
-### Optional: Using an external Proteus installation
-
-Mneme can be configured to use an **existing Proteus source tree or a
-pre-built Proteus installation** via environment variables.
-
-This is intended for advanced users and application developers who
-already build or ship binaries linked against Proteus. In such cases,
-applications do **not** need to be rebuilt specifically for Mneme:
-recording and replay functionality can be enabled by preloading Mneme
-at runtime.
-
-This capability is not part of the default installation path and is
-currently less extensively tested than the bundled Proteus workflow.
 
 ### Optional: Using an external Proteus installation
 

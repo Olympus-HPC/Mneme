@@ -224,7 +224,7 @@ This enables:
 - Bayesian/TPE optimization,
 - multi-objective optimization (NSGAIIS samplers for advanced workflows).
 
-Mneme instead of implementing these samping/tuning technologies relies on the
+Mneme instead of implementing these sampling/tuning technologies relies on the
 state of the art `optuna` library to traverse and sample the search space.
 
 ---

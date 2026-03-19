@@ -13,7 +13,7 @@
 
 ## High-Level Overview
 [Mneme](https://en.wikipedia.org/wiki/Mneme) is a framework for **recording and replaying GPU kernel executions**
-(HIP) as **standalone, reproducible executables**.
+(CUDA / HIP) as **standalone, reproducible executables**.
 
 It enables developers and researchers to:
 
