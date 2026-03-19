@@ -16,7 +16,7 @@ You need:
 
 - A valid Mneme recording database file (`<static-hash>.json`)
 - A recorded kernel **instance id** (the *dynamic hash*) present in the database under `instances`
-- A working Mneme installation (see **Usage → Install**)
+- A working Mneme installation (see **[Usage → Install](install.md)**)
 
 ---
 

@@ -4,8 +4,8 @@ This section introduces the **core concepts and mental models** behind Mneme.
 It is intended to help users understand *what Mneme records*, *what it replays*,
 and *how its components fit together*.
 
-For step-by-step instructions and command-line usage, see **Getting Started**
-and **Usage**.
+For step-by-step instructions and command-line usage, see **[Getting Started](../usage/getting-started.md)**
+and **[Usage](../usage/cli.md)**.
 
 ---
 
@@ -85,7 +85,7 @@ These phases are intentionally decoupled: once recorded, a kernel can be
 replayed, verified, and tuned repeatedly without requiring the original
 application or its runtime environment.
 
-See **Record vs Replay** for details.
+See **[Execution Phases](mneme-phases.md)** for details.
 
 ---
 
@@ -103,7 +103,7 @@ and dynamic instances of those kernels.
 
 This distinction allows Mneme to record separate the static part of the process (the code) and associate to it multiple instances of that code that use different thread/block dimensions.
 
-See **Static vs Dynamic Hash** for details.
+See **[Static vs Dynamic Hash](static-dynamic.md)** for details.
 
 ---
 
@@ -118,7 +118,7 @@ contract between record and replay:
 
 These artifacts are immutable and replay-safe.
 
-See **Artifacts** for the conceptual view and **Usage → Recording artifacts**
+See **[Artifacts](artifacts.md)** for the conceptual view and **[Usage → Recording artifacts](../usage/artifacts.md)**
 for file-level details.
 
 ---
@@ -133,7 +133,7 @@ allowing:
 - integration with custom compiler passes,
 - backend retargeting via existing LLVM codegen.
 
-See **LLVM IR Boundary** for details.
+See **[LLVM IR Boundary](llvm-boundary.md)** for details.
 
 ---
 
@@ -149,7 +149,7 @@ controls:
 Replay configurations are first-class objects and form the basis of
 tuning workflows.
 
-See **Replay Configuration** for details.
+See **[Replay Configuration](replay-configuration.md)** for details.
 
 ---
 
@@ -164,7 +164,7 @@ Mneme’s tuning model builds on replay by:
 Tuning is fully decoupled from recording and can be repeated or extended
 without re-recording.
 
-See **Tuning Model** for details.
+See **[Tuning Model](tune.md)** for details.
 
 ---
 

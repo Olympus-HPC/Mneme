@@ -207,7 +207,7 @@ The `mneme replay` CLI flags correspond directly to configuration fields:
 - `--codegen-opt` → `codegen_opt`
 - `--codegen-method` → `codegen_method`
 
-For CLI details, see **Usage → CLI**.
+For CLI details, see **[Usage → CLI](../usage/cli.md)**.
 
 ---
 

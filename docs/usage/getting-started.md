@@ -11,7 +11,7 @@ using Mneme.
 - CMake and a C++ compiler
 - Python 3.9+
 
-For full installation details, see **Usage → Install**.
+For full installation details, see **[Usage → Install](install.md)**.
 
 ## Install Mneme (quick path)
 

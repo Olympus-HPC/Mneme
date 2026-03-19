@@ -48,8 +48,8 @@ Conceptually, this includes:
 This captured IR is stored as recorded LLVM bitcode (`.bc`) and is referenced
 by the recording database.
 
-See **Mneme Execution Phases** for how this IR is discovered and embedded at build time,
-and **Artifacts** for how it is stored and referenced.
+See **[Execution Phases](mneme-phases.md)** for how this IR is discovered and embedded at build time,
+and **[Artifacts](artifacts.md)** for how it is stored and referenced.
 
 ---
 
@@ -70,7 +70,7 @@ This is why replay configuration includes compilation knobs such as:
 - optimization levels for backend code generation
 - specialization options (e.g., specializing dims or arguments)
 
-See **Replay Configuration** for the full set of replay-time knobs.
+See **[Replay Configuration](replay-configuration.md)** for the full set of replay-time knobs.
 
 ---
 
@@ -121,7 +121,7 @@ opt -O3 RecordedIR_<static-hash>.bc -o optimized.bc
 mneme replay ... --output-ll out.ll "default<O3>"
 ```
 
-See Artifacts for where recorded .bc files are stored and how they are referenced.
+See [Artifacts](artifacts.md) for where recorded .bc files are stored and how they are referenced.
 
 ## Practical implications and limitations
 

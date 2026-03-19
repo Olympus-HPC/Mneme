@@ -80,5 +80,5 @@ This site contains:
 - a **Developer Guide** describing internal architecture, and
 - API references for both **Python** and **C++** components.
 
-Start with **Usage → Install** to get up and running.
+Start with **[Usage → Install](usage/install.md)** to get up and running.
 

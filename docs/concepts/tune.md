@@ -56,7 +56,7 @@ It controls:
 - optional launch-bounds knobs (`set_launch_bounds`, `max_threads`, `min_blocks_per_sm`)
 - replay hygiene (`prune`, `internalize`)
 
-See **Replay Configuration** for the full conceptual view.
+See **[Replay Configuration](replay-configuration.md)** for the full conceptual view.
 
 ### Search space
 

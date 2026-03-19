@@ -60,7 +60,7 @@ The database contains:
 - the associated LLVM IR used for replay, and
 - device memory snapshots captured before and after kernel execution.
 
-See Usage → Artifacts for a detailed description of the database layout.
+See [Usage → Artifacts](artifacts.md) for a detailed description of the database layout.
 
 ### Examples
 

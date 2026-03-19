@@ -235,5 +235,5 @@ Python bindings are correctly installed.
 ## Next steps
 
 Once Mneme is installed and the test suite completes successfully,
-proceed to **Getting Started** for a guided, end-to-end example of
+proceed to **[Getting Started](getting-started.md)** for a guided, end-to-end example of
 building, recording, and replaying a GPU kernel with Mneme.
