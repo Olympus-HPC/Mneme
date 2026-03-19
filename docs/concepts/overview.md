@@ -4,8 +4,8 @@ This section introduces the **core concepts and mental models** behind Mneme.
 It is intended to help users understand *what Mneme records*, *what it replays*,
 and *how its components fit together*.
 
-For step-by-step instructions and command-line usage, see **Getting Started**
-and **Usage**.
+For step-by-step instructions and command-line usage, see **[Getting Started](../usage/getting-started.md)**
+and **[Usage](../usage/cli.md)**.
 
 ---
 
@@ -24,6 +24,80 @@ to kernel-level behavior.
 
 ---
 
+## Architecture
+
+The following diagram shows how the three phases connect and how data
+flows from the original application to tuning results.
+
+```mermaid
+flowchart TB
+    %% ── Styles ──
+    classDef input fill:#e8f4fd,stroke:#4a90d9,color:#1a1a1a,font-weight:bold
+    classDef process fill:#4a90d9,stroke:#2c5f8a,color:#fff,font-weight:bold
+    classDef artifact fill:#f5a623,stroke:#c17d12,color:#fff,font-weight:bold
+    classDef decision fill:#7b68ee,stroke:#5a4fcf,color:#fff,font-weight:bold
+    classDef terminal fill:#5cb85c,stroke:#3d8b3d,color:#fff,font-weight:bold
+    classDef phase fill:#f8f9fb,stroke:#8899aa,font-weight:bold
+
+    %% ════════════════════════════════════════
+    %% Phase 1: Instrumentation — Build Time
+    %% ════════════════════════════════════════
+    subgraph build["<b>① Instrumentation — Build Time</b>"]
+        direction TB
+        src["<b>Application Source Code</b>"]:::input
+        compile["<b>Clang + Proteus LLVM Pass</b>"]:::process
+        src --> compile
+    end
+    class build phase
+
+    compile --> exe
+    exe[/"<b>⬡ Recordable Executable</b>"/]:::artifact
+
+    %% ════════════════════════════════════════
+    %% Phase 2: Recording — Runtime
+    %% ════════════════════════════════════════
+    exe ==> intercept
+
+    subgraph record["<b>② Recording — Runtime</b>"]
+        direction TB
+        intercept["<b>Intercept Device Allocations<br/>& Kernel Launches</b>"]:::process
+        intercept --> gen["<b>Generate Recording Artifacts</b>"]:::process
+    end
+    class record phase
+
+    gen --> rdb
+
+    subgraph rdb["<b>⬡ Recording Database</b>"]
+        rdb_contents["<b>• Kernel Metadata · .json<br/>• LLVM IR · .bc<br/>• Prologue Snapshot · .mneme<br/>• Epilogue Snapshot · .mneme</b>"]:::artifact
+    end
+    class rdb artifact
+
+    %% ════════════════════════════════════════
+    %% Phase 3: Replay & Tuning — Runtime
+    %% ════════════════════════════════════════
+    rdb ==> load
+
+    subgraph replay["<b>③ Replay & Tuning — Runtime</b>"]
+        direction TB
+        load["<b>Load Memory State &<br/>Initialize Device Virtual Address Space</b>"]:::process
+        select["<b>Select Kernel Configuration<br/>(threads, blocks, launch bounds, optimizations)</b>"]:::process
+        execver["<b>Execute & Verify Kernel</b>"]:::process
+        store["<b>Store Result in DB</b>"]:::process
+        cont{"<b>Continue Tuning?</b>"}:::decision
+        done(["<b>Done</b>"]):::terminal
+
+        load --> select
+        select --> execver
+        execver --> store
+        store --> cont
+        cont -- "<b>Yes</b>" --> select
+        cont -- "<b>No</b>" --> done
+    end
+    class replay phase
+```
+
+---
+
 ## Core idea: isolate the kernel
 
 The central design principle of Mneme is **kernel isolation**. 
@@ -36,9 +110,8 @@ So, instead of replaying an entire application, Mneme:
 3. Replays the kernel *without* the original application.
 
 This enables fast experimentation, reproducibility, and optimization
-without rebuilding or rerunning the full application while also automated 
-collection of realistic kernel inputs. As mneme will automatically record the 
-kernel inputs.
+without rebuilding or rerunning the full application, while also enabling
+automated collection of realistic kernel inputs.
 
 ---
 
@@ -85,7 +158,7 @@ These phases are intentionally decoupled: once recorded, a kernel can be
 replayed, verified, and tuned repeatedly without requiring the original
 application or its runtime environment.
 
-See **Record vs Replay** for details.
+See **[Execution Phases](mneme-phases.md)** for details.
 
 ---
 
@@ -101,9 +174,9 @@ and dynamic instances of those kernels.
   A specific runtime instance of a kernel, represented by a
   *dynamic hash*. The dynamic hash encodes the kernel runtime configuration parameters (block dimensions and grid dimensions).
 
-This distinction allows Mneme to record separate the static part of the process (the code) and associate to it multiple instances of that code that use different thread/block dimensions.
+This distinction allows Mneme to separate the static part of a kernel (the code) from the dynamic instances that use different thread/block dimensions.
 
-See **Static vs Dynamic Hash** for details.
+See **[Static vs Dynamic Hash](static-dynamic.md)** for details.
 
 ---
 
@@ -118,7 +191,7 @@ contract between record and replay:
 
 These artifacts are immutable and replay-safe.
 
-See **Artifacts** for the conceptual view and **Usage → Recording artifacts**
+See **[Artifacts](artifacts.md)** for the conceptual view and **[Usage → Recording artifacts](../usage/artifacts.md)**
 for file-level details.
 
 ---
@@ -133,7 +206,7 @@ allowing:
 - integration with custom compiler passes,
 - backend retargeting via existing LLVM codegen.
 
-See **LLVM IR Boundary** for details.
+See **[LLVM IR Boundary](llvm-boundary.md)** for details.
 
 ---
 
@@ -149,7 +222,7 @@ controls:
 Replay configurations are first-class objects and form the basis of
 tuning workflows.
 
-See **Replay Configuration** for details.
+See **[Replay Configuration](replay-configuration.md)** for details.
 
 ---
 
@@ -164,7 +237,7 @@ Mneme’s tuning model builds on replay by:
 Tuning is fully decoupled from recording and can be repeated or extended
 without re-recording.
 
-See **Tuning Model** for details.
+See **[Tuning Model](tune.md)** for details.
 
 ---
 

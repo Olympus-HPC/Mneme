@@ -19,8 +19,8 @@ Mneme needs a stable handle to the kernel code that is:
 
 Source code is a poor boundary for this purpose because it is fragmented
 across translation units and heavily shaped by language semantics
-(templates, macros, headers, and ABI details) and there is non neglicible time spend in lowering
-this information into some intermediate represtation. Conversely, recording a
+(templates, macros, headers, and ABI details), and there is non-negligible time spent lowering
+this information into an intermediate representation. Conversely, recording a
 final device binary is also limiting: much of the high-level structure is
 lost, and many compiler-level transformations become difficult or impossible.
 
@@ -30,7 +30,7 @@ LLVM IR sits at a useful middle ground:
 - module boundaries are well defined,
 - kernels and their dependencies are available in a consistent representation,
 - standard LLVM tools can inspect and transform it.
-- Lowering LLVM IR to device requires minimal external parameters, thus we can use `proteus` JIT capability to efficiently build executables during replay. 
+- Lowering LLVM IR to device requires minimal external parameters, thus we can use Proteus JIT capability to efficiently build executables during replay. 
 
 ---
 
@@ -48,8 +48,8 @@ Conceptually, this includes:
 This captured IR is stored as recorded LLVM bitcode (`.bc`) and is referenced
 by the recording database.
 
-See **Mneme Execution Phases** for how this IR is discovered and embedded at build time,
-and **Artifacts** for how it is stored and referenced.
+See **[Execution Phases](mneme-phases.md)** for how this IR is discovered and embedded at build time,
+and **[Artifacts](artifacts.md)** for how it is stored and referenced.
 
 ---
 
@@ -70,7 +70,7 @@ This is why replay configuration includes compilation knobs such as:
 - optimization levels for backend code generation
 - specialization options (e.g., specializing dims or arguments)
 
-See **Replay Configuration** for the full set of replay-time knobs.
+See **[Replay Configuration](replay-configuration.md)** for the full set of replay-time knobs.
 
 ---
 
@@ -121,7 +121,7 @@ opt -O3 RecordedIR_<static-hash>.bc -o optimized.bc
 mneme replay ... --output-ll out.ll "default<O3>"
 ```
 
-See Artifacts for where recorded .bc files are stored and how they are referenced.
+See [Artifacts](artifacts.md) for where recorded .bc files are stored and how they are referenced.
 
 ## Practical implications and limitations
 

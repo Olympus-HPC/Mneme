@@ -151,8 +151,8 @@ record–replay system rather than a traditional profiler or tracer.
 
 ## Where to go next
 
-For file formats and concrete examples, see Usage → artifacts
+For file formats and concrete examples, see [Usage → Artifacts](../usage/artifacts.md)
 
-For how artifacts are produced, see Mneme Execution Phases
+For how artifacts are produced, see [Execution Phases](mneme-phases.md)
 
-For how artifacts are consumed, see Usage → artifacts 
+For how artifacts are consumed, see [Usage → Artifacts](../usage/artifacts.md) 

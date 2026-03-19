@@ -56,7 +56,7 @@ during recording.
     by incorporating additional runtime parameters, such as scalar kernel
     arguments.
 
-#### Properties
+### Properties
 
 - Specific to a single kernel launch configuration,
 - Unique within the scope of a static kernel,

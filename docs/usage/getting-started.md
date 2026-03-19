@@ -11,7 +11,7 @@ using Mneme.
 - CMake and a C++ compiler
 - Python 3.9+
 
-For full installation details, see **Usage → Install**.
+For full installation details, see **[Usage → Install](install.md)**.
 
 ## Install Mneme (quick path)
 
@@ -25,7 +25,7 @@ pip install -e .
 
 ### NVIDIA Systems
 
-NVIDIA systems do not provide a proper LLVM installations. You can install one LLVM installation by using conda:
+NVIDIA systems do not provide a proper LLVM installation. You can install one LLVM installation by using conda:
 ```bash
 export MINICONDA_DIR=miniconda
 export LLVM_VERSION=18.1.8

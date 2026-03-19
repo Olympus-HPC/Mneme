@@ -66,7 +66,7 @@ If you need this:
 If any of these limitations block your use case, please:
 
 
-Open a GitHub issue
+[Open a GitHub issue](https://github.com/Olympus-HPC/Mneme/issues)
 Include:
 
 - CUDA / HIP version

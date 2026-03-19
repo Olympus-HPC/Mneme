@@ -56,7 +56,7 @@ It controls:
 - optional launch-bounds knobs (`set_launch_bounds`, `max_threads`, `min_blocks_per_sm`)
 - replay hygiene (`prune`, `internalize`)
 
-See **Replay Configuration** for the full conceptual view.
+See **[Replay Configuration](replay-configuration.md)** for the full conceptual view.
 
 ### Search space
 
@@ -224,7 +224,7 @@ This enables:
 - Bayesian/TPE optimization,
 - multi-objective optimization (NSGAIIS samplers for advanced workflows).
 
-Mneme instead of implementing these samping/tuning technologies relies on the
+Mneme instead of implementing these sampling/tuning technologies relies on the
 state of the art `optuna` library to traverse and sample the search space.
 
 ---
