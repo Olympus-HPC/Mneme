@@ -6,6 +6,7 @@
 #include <llvm/Support/JSON.h>
 #include <llvm/Support/MemoryBuffer.h>
 #include <memory>
+#include <optional>
 
 #include "mneme/DeviceTraits.hpp"
 #include "mneme/MnemeLogger.hpp"
@@ -30,6 +31,7 @@ public:
   std::unordered_map<std::string, ReplayGlobalVar> GlobalVars;
   InstanceType IType;
   std::string SnapshotName;
+  std::string BaseSnapshotName;
   std::unique_ptr<void *[]> Args;
 
 private:
@@ -103,11 +105,15 @@ private:
 public:
   ReplayMemState() = default;
   ReplayMemState(std::string KernelName, std::string SnapshotName,
-                 InstanceType IType)
+                 InstanceType IType, std::string BaseSnapshotName = "")
       : KInfo(std::make_shared<KernelInfo>(KernelName)),
-        SnapshotName(SnapshotName), IType(IType) {
-    MnemeSnapshot<VendorTypes>::readMnemeSnapShot(SnapshotName, GlobalVars,
-                                                  DeviceMemoryState, KInfo);
+        SnapshotName(SnapshotName), BaseSnapshotName(BaseSnapshotName),
+        IType(IType) {
+    std::optional<std::string> BaseSnapshot = std::nullopt;
+    if (IType == InstanceType::Epilogue && !BaseSnapshotName.empty())
+      BaseSnapshot = BaseSnapshotName;
+    MnemeSnapshot<VendorTypes>::readMnemeSnapShot(
+        SnapshotName, GlobalVars, DeviceMemoryState, KInfo, BaseSnapshot);
     LOG_DEBUG("Initialized Snapshot for kernel {} of state {}",
               KInfo->getName(),
               (IType == InstanceType::Prologue ? "Prologue" : "Epilogue"));

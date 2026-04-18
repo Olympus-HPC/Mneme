@@ -1,6 +1,7 @@
 #include "llvm/core.h"
 #include <mneme/MnemePython.hpp>
 #include <mneme/MnemeUtils.hpp>
+#include <string>
 
 using namespace mneme;
 using namespace mneme::python;
@@ -10,11 +11,14 @@ using namespace llvm;
 extern "C" {
 API_EXPORT(MnemeDeviceMemStateRef)
 MnemePy_initializeMemState(const char *KernelName, const char *fn,
-                           bool isPrologue) {
+                           const char *BasePrologueFn, bool isPrologue) {
   DeviceMemState::InstanceType type =
       isPrologue ? DeviceMemState::InstanceType::Prologue
                  : DeviceMemState::InstanceType::Epilogue;
-  DeviceMemState *state = new DeviceMemState(KernelName, fn, type);
+  std::string BaseSnapshotName =
+      BasePrologueFn == nullptr ? "" : std::string(BasePrologueFn);
+  DeviceMemState *state =
+      new DeviceMemState(KernelName, fn, type, BaseSnapshotName);
   return wrap(state);
 }
 
