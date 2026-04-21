@@ -97,8 +97,8 @@ The following tools and libraries must be available:
 - LLVM libraries
 
 These tools are provided by the **LLVM distribution bundled with ROCm**.
-Mneme is currently tested with **LLVM 18 and LLVM 19** as shipped by
-supported ROCm releases.
+Mneme is currently tested with **LLVM 18, 19, and 20** as shipped by
+supported ROCm releases (6.3, 6.4, and 7.1 respectively).
 
 !!! note
     Mneme expects the ROCm-provided LLVM toolchain to be used.
