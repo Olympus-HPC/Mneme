@@ -9,6 +9,7 @@
 # Expects CI_MACHINE defined to machine name.
 .machine-check:
   stage: prerequisites
+  interruptible: true
   tags: [shell, oslic]
   variables:
     GIT_STRATEGY: none
@@ -24,6 +25,77 @@
         exit 1
       fi
 
+.pipeline-trigger-rules:
+  rules:
+    # For default-branch push pipelines, rules:changes compares against the
+    # previous commit on the branch. Non-default branches compare to develop.
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      changes:
+        paths: &pipeline_trigger_paths
+          - ".gitlab-ci.yml"
+          - ".gitlab/**/*"
+          - ".coveragerc"
+          - "CMakeLists.txt"
+          - "cmake/**/*"
+          - "include/**/*"
+          - "pyproject.toml"
+          - "python/**/*"
+          - "pytest.ini"
+          - "scripts/gitlab/**/*"
+          - "setup.cfg"
+          - "setup.py"
+          - "src/**/*"
+          - "tests/**/*"
+    - if: '$CI_COMMIT_BRANCH != $CI_DEFAULT_BRANCH'
+      changes:
+        compare_to: &compare_to_ref "refs/heads/develop"
+        paths: *pipeline_trigger_paths
+
+.core-build-rules:
+  rules:
+    # For default-branch push pipelines, rules:changes compares against the
+    # previous commit on the branch. Non-default branches compare to develop.
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      changes:
+        paths: &core_build_paths
+          - ".gitlab-ci.yml"
+          - ".gitlab/**/*"
+          - "CMakeLists.txt"
+          - "cmake/**/*"
+          - "include/**/*"
+          - "scripts/gitlab/**/*"
+          - "src/**/*"
+          - "tests/**/*"
+    - if: '$CI_COMMIT_BRANCH != $CI_DEFAULT_BRANCH'
+      changes:
+        compare_to: *compare_to_ref
+        paths: *core_build_paths
+
+.python-rules:
+  rules:
+    # For default-branch push pipelines, rules:changes compares against the
+    # previous commit on the branch. Non-default branches compare to develop.
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      changes:
+        paths: &python_paths
+          - ".gitlab-ci.yml"
+          - ".gitlab/**/*"
+          - ".coveragerc"
+          - "CMakeLists.txt"
+          - "cmake/**/*"
+          - "include/**/*"
+          - "pyproject.toml"
+          - "python/**/*"
+          - "pytest.ini"
+          - "scripts/gitlab/**/*"
+          - "setup.cfg"
+          - "setup.py"
+          - "src/**/*"
+    - if: '$CI_COMMIT_BRANCH != $CI_DEFAULT_BRANCH'
+      changes:
+        compare_to: *compare_to_ref
+        paths: *python_paths
+
 #################################
 #    System Up Check            #
 #################################
@@ -32,17 +104,17 @@
 matrix-up-check:
   variables:
     CI_MACHINE: "matrix"
-  extends: [.machine-check]
+  extends: [.machine-check, .pipeline-trigger-rules]
 
 tioga-up-check:
   variables:
     CI_MACHINE: "tioga"
-  extends: [.machine-check]
+  extends: [.machine-check, .pipeline-trigger-rules]
 
 tuolumne-up-check:
   variables:
     CI_MACHINE: "tuolumne"
-  extends: [.machine-check]
+  extends: [.machine-check, .pipeline-trigger-rules]
 
 #################################
 #       C/C++ Tests             #
@@ -51,19 +123,19 @@ matrix-build-and-test:
   variables:
     CI_MACHINE: "matrix"
   needs: [matrix-up-check]
-  extends: [.build-and-test]
+  extends: [.build-and-test, .core-build-rules]
 
 tioga-build-and-test:
   variables:
     CI_MACHINE: "tioga"
   needs: [tioga-up-check]
-  extends: [.build-and-test]
+  extends: [.build-and-test, .core-build-rules]
 
 tuolumne-build-and-test:
   variables:
     CI_MACHINE: "tuolumne"
   needs: [tuolumne-up-check]
-  extends: [.build-and-test]
+  extends: [.build-and-test, .core-build-rules]
 
 
 #################################
@@ -76,7 +148,7 @@ tioga-test-python-cov:
       value: "scripts/gitlab/ci-python-test.sh"
       expand: false
   needs: [tioga-up-check]
-  extends: [.test-python-cov]
+  extends: [.test-python-cov, .python-rules]
 
 tuolumne-test-python-cov:
   variables:
@@ -85,7 +157,7 @@ tuolumne-test-python-cov:
       value: "scripts/gitlab/ci-python-test.sh"
       expand: false
   needs: [tuolumne-up-check]
-  extends: [.test-python-cov]
+  extends: [.test-python-cov, .python-rules]
 
 matrix-test-python-cov:
   variables:
@@ -94,5 +166,4 @@ matrix-test-python-cov:
       value: "scripts/gitlab/ci-python-test.sh"
       expand: false
   needs: [matrix-up-check]
-  extends: [.test-python-cov]
-
+  extends: [.test-python-cov, .python-rules]
