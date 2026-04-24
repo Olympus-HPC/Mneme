@@ -122,3 +122,5 @@ CREATE_RDC_GPU_TEST(multi_kernel_regex multi_kernel_regex.cpp)
 
 CREATE_GPU_TEST(test_annotation test_annotation.cpp)
 CREATE_RDC_GPU_TEST(test_annotation test_annotation.cpp)
+
+CREATE_GPU_TEST(test_device_global_as_arg test_device_global_as_arg.cpp test_device_global_as_arg_global.cpp)

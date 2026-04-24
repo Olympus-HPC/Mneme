@@ -1,15 +1,18 @@
 #pragma once
 
-#include <llvm/ADT/DenseMap.h>
-#include <llvm/ADT/SmallVector.h>
-#include <llvm/ADT/StringRef.h>
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StableHashing.h>
+#include <llvm/ADT/StringRef.h>
 #include <llvm/Support/raw_ostream.h>
 
 namespace mneme {
+struct KernelPointerOffset {
+  size_t ArgIndex;
+  size_t Offset;
+};
+
 struct KernelInfo {
   const void *HostFun;
   std::string Name;
@@ -19,6 +22,7 @@ struct KernelInfo {
   llvm::SmallVector<std::function<double(void *)>> ToDoubleFunc;
   llvm::SmallVector<bool> KernelSpecializations;
   llvm::SmallVector<std::unique_ptr<uint8_t[]>> ArgData;
+  llvm::SmallVector<KernelPointerOffset> PointerOffsets;
   KernelInfo(const void *HostFun, char *Name)
       : HostFun(HostFun), Name(Name), StaticHash(std::nullopt) {};
   KernelInfo(std::string &Name) : Name(Name), StaticHash(std::nullopt) {};

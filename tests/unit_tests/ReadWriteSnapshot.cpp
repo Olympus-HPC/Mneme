@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
+#include <fstream>
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/SmallVector.h>
 #include <memory>
@@ -87,6 +88,7 @@ int main(int argc, char **argv) {
   }
 
   TestKernel->setArgSizes(ArgSizes);
+  TestKernel->PointerOffsets.push_back(KernelPointerOffset{0, 0});
 
   // Create a raw_svector_ostream using the buffer
   std::unordered_map<std::string, proteus::GlobalVarInfo> GVars;
@@ -96,7 +98,8 @@ int main(int argc, char **argv) {
   std::filesystem::path SnapshotFN("./test.mneme");
 
   MnemeSnapshot<Vendor>::takeMnemeSnapshot(GVars, DeviceMemMap, SnapshotFN,
-                                           TestKernel->KernelArgSizes, Args, 0);
+                                           TestKernel->KernelArgSizes, Args,
+                                           TestKernel->PointerOffsets, 0);
 
   std::unordered_map<std::string, ReplayGlobalVar> ReadGVars;
   llvm::DenseMap<void *, MnemeMemoryBlobDevice> ReadDeviceMemMap;
@@ -106,6 +109,25 @@ int main(int argc, char **argv) {
 
   MnemeSnapshot<Vendor>::readMnemeSnapShot(SnapshotFN, ReadGVars,
                                            ReadDeviceMemMap, RTestKernel);
+
+  std::filesystem::path OldSnapshotFN("./test-old.mneme");
+  {
+    std::ifstream In(SnapshotFN, std::ios::binary);
+    std::string Bytes((std::istreambuf_iterator<char>(In)),
+                      std::istreambuf_iterator<char>());
+    size_t PointerTableBytes =
+        sizeof(size_t) + TestKernel->PointerOffsets.size() * 2 * sizeof(size_t);
+    Bytes.resize(Bytes.size() - PointerTableBytes);
+    std::ofstream Out(OldSnapshotFN, std::ios::binary);
+    Out.write(Bytes.data(), Bytes.size());
+  }
+
+  std::unordered_map<std::string, ReplayGlobalVar> OldReadGVars;
+  llvm::DenseMap<void *, MnemeMemoryBlobDevice> OldReadDeviceMemMap;
+  std::shared_ptr<KernelInfo> OldRTestKernel =
+      std::make_shared<KernelInfo>(KernelName);
+  MnemeSnapshot<Vendor>::readMnemeSnapShot(OldSnapshotFN, OldReadGVars,
+                                           OldReadDeviceMemMap, OldRTestKernel);
 
   auto ValidateGlobalMem = [&]() {
     auto it = ReadGVars.find("Test");
@@ -217,10 +239,20 @@ int main(int argc, char **argv) {
         }
       }
     }
+    if (RKernel.PointerOffsets.size() != 1 ||
+        RKernel.PointerOffsets[0].ArgIndex != 0 ||
+        RKernel.PointerOffsets[0].Offset != 0) {
+      std::cerr << "Pointer offsets differ\n";
+      return 4;
+    }
     return 0;
   }();
 
   auto Ret = ValidateGlobalMem | ValidateDeviceMem | ValidateKernelArgs;
+  if (!OldRTestKernel->PointerOffsets.empty()) {
+    std::cerr << "Old snapshot unexpectedly contains pointer offsets\n";
+    Ret |= 4;
+  }
 
   delete[] GlobalData.second;
   delete[] BlobData.second;

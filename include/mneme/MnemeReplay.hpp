@@ -1,4 +1,5 @@
 #include <cstdint>
+#include <cstring>
 #include <llvm/Bitcode/BitcodeReader.h>
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/Module.h>
@@ -98,6 +99,33 @@ private:
     }
     std::unique_ptr<void *[]> ArgUniquePtr{Args};
     return ArgUniquePtr;
+  }
+
+  void relocatePointerArgsForGlobal(void *RecordedGlobalAddr,
+                                    void *ReplayGlobalAddr, size_t GlobalSize) {
+    auto RecordedBase = reinterpret_cast<uintptr_t>(RecordedGlobalAddr);
+    auto ReplayBase = reinterpret_cast<uintptr_t>(ReplayGlobalAddr);
+    for (auto PointerOffset : KInfo->PointerOffsets) {
+      if (PointerOffset.ArgIndex >= KInfo->ArgData.size())
+        LOG_FATAL("Recorded pointer offset references an unknown argument");
+      if (PointerOffset.Offset + sizeof(void *) >
+          KInfo->KernelArgSizes[PointerOffset.ArgIndex])
+        LOG_FATAL("Recorded pointer offset is outside the argument storage");
+
+      auto *Slot =
+          KInfo->ArgData[PointerOffset.ArgIndex].get() + PointerOffset.Offset;
+      void *RecordedPtr = nullptr;
+      std::memcpy(&RecordedPtr, Slot, sizeof(RecordedPtr));
+      auto PtrAddr = reinterpret_cast<uintptr_t>(RecordedPtr);
+      if (PtrAddr < RecordedBase || PtrAddr >= RecordedBase + GlobalSize)
+        continue;
+
+      void *RelocatedPtr =
+          reinterpret_cast<void *>(ReplayBase + (PtrAddr - RecordedBase));
+      std::memcpy(Slot, &RelocatedPtr, sizeof(RelocatedPtr));
+      LOG_DEBUG("Relocated recorded global pointer arg from {} to {}",
+                RecordedPtr, RelocatedPtr);
+    }
   }
 
 public:
@@ -207,6 +235,7 @@ public:
   void initializeGlobals(DeviceModule_t VendorMod) {
     LOG_INFO("Initializing {} Globals", GlobalVars.size());
     for (auto &KV : GlobalVars) {
+      void *RecordedAddr = KV.second.DevAddr;
       auto [LoadedAddr, LoadedSize] =
           DeviceTraits<VendorTypes>::getGlobalAddrFromModule(VendorMod,
                                                              KV.first);
@@ -222,6 +251,9 @@ public:
                   "has a different size between record and replay\n" +
                   "Record Size:" + std::to_string(KV.second.VarSize) +
                   "\nReplay Size:" + std::to_string(LoadedSize));
+
+      relocatePointerArgsForGlobal(RecordedAddr, KV.second.DevAddr,
+                                   KV.second.VarSize);
 
       auto EC = DeviceTraits<VendorTypes>::DeviceErrorCheck(
           DeviceTraits<VendorTypes>::DeviceCopy(
