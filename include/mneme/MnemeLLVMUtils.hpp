@@ -81,14 +81,14 @@ getPointerOffsetsByArg(llvm::Function &F) {
   return PointerOffsets;
 }
 
-inline static llvm::SmallVector<KernelPointerOffset>
-getKernelPointerOffsets(llvm::Function &F) {
-  llvm::SmallVector<KernelPointerOffset> PointerOffsets;
+inline static llvm::SmallVector<KernelArgPointerSlot>
+getKernelPointerSlots(llvm::Function &F) {
+  llvm::SmallVector<KernelArgPointerSlot> PointerSlots;
   auto ArgPointerOffsets = getPointerOffsetsByArg(F);
   for (size_t ArgIndex = 0; ArgIndex < ArgPointerOffsets.size(); ++ArgIndex)
     for (auto Offset : ArgPointerOffsets[ArgIndex])
-      PointerOffsets.push_back(KernelPointerOffset{ArgIndex, Offset});
-  return PointerOffsets;
+      PointerSlots.push_back(KernelArgPointerSlot{ArgIndex, Offset});
+  return PointerSlots;
 }
 
 inline static llvm::SmallVector<std::string> getArgNames(llvm::Function &F) {

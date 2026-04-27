@@ -116,22 +116,10 @@ private:
   DeviceError_t (*origSetDeviceID)(int id);
   DeviceError_t (*origGetDeviceID)(int *id);
 
-  void addSnapshotGlobal(
-      std::unordered_map<std::string, proteus::GlobalVarInfo> &SnapshotGlobals,
-      const std::string &Name, const proteus::GlobalVarInfo &GVI) {
-    auto [It, Inserted] = SnapshotGlobals.try_emplace(Name, GVI);
-    if (!Inserted && (It->second.DevAddr != GVI.DevAddr ||
-                      It->second.VarSize != GVI.VarSize))
-      LOG_FATAL("Proteus registered global name collision for '" + Name +
-                "' with different device storage");
-  }
-
   bool pointerIsMnemeAllocation(const void *Ptr) const {
-    auto PtrAddr = reinterpret_cast<uintptr_t>(Ptr);
     for (const auto &[BasePtr, Blob] : AllocatedBlobs) {
-      auto Base = reinterpret_cast<uintptr_t>(Blob.getBlobAddr());
-      auto End = Base + Blob.getSize();
-      if (PtrAddr >= Base && PtrAddr < End)
+      DeviceAddressRange Range{Blob.getBlobAddr(), Blob.getSize()};
+      if (Range.contains(Ptr))
         return true;
     }
     return false;
@@ -139,19 +127,16 @@ private:
 
   std::optional<std::string>
   findGlobalForPointer(const void *Ptr, ::JitDeviceImplT &Proteus,
-                       std::unordered_map<std::string, proteus::GlobalVarInfo>
-                           &SnapshotGlobals) {
-    auto PtrAddr = reinterpret_cast<uintptr_t>(Ptr);
+                       CapturedGlobals &SnapshotGlobals) {
     std::optional<std::string> Match;
     for (auto &[Handle, BinInfo] : Proteus.HandleToBinaryInfo) {
       BinInfo.mapGlobals();
       for (const auto &[Name, GVI] : BinInfo.getVarNameToGlobalInfo()) {
-        auto Base = reinterpret_cast<uintptr_t>(GVI.DevAddr);
-        auto End = Base + GVI.VarSize;
-        if (!Base || PtrAddr < Base || PtrAddr >= End)
+        DeviceAddressRange Range{GVI.DevAddr, GVI.VarSize};
+        if (!Range.contains(Ptr))
           continue;
 
-        addSnapshotGlobal(SnapshotGlobals, Name, GVI);
+        SnapshotGlobals.add(Name, GVI);
         if (Match && *Match != Name)
           LOG_FATAL("Device pointer " + util::pointerToHexString(Ptr) +
                     " aliases multiple Proteus globals: " + *Match + " and " +
@@ -162,33 +147,37 @@ private:
     return Match;
   }
 
-  std::unordered_map<std::string, proteus::GlobalVarInfo>
+  CapturedGlobals
   buildSnapshotGlobals(proteus::JITKernelInfo &KInfo, void **Args,
                        ::JitDeviceImplT &Proteus,
-                       llvm::ArrayRef<KernelPointerOffset> PointerOffsets) {
-    std::unordered_map<std::string, proteus::GlobalVarInfo> SnapshotGlobals;
+                       llvm::ArrayRef<KernelArgPointerSlot> PointerSlots) {
+    CapturedGlobals SnapshotGlobals;
     for (const auto &[Name, GVI] :
          KInfo.getBinaryInfo().getVarNameToGlobalInfo())
-      addSnapshotGlobal(SnapshotGlobals, Name, GVI);
+      SnapshotGlobals.add(Name, GVI);
 
-    for (auto PointerOffset : PointerOffsets) {
-      const auto *ArgBytes =
-          static_cast<const uint8_t *>(Args[PointerOffset.ArgIndex]);
-      void *RecordedPtr = nullptr;
-      std::memcpy(&RecordedPtr, ArgBytes + PointerOffset.Offset,
-                  sizeof(RecordedPtr));
+    auto *F = KInfo.getModule().getFunction(KInfo.getName());
+    if (!F)
+      LOG_FATAL("Could not find kernel function in extracted LLVM module");
+    auto KernelArgSizes = mneme::getFuncDescr(*F);
+    for (auto PointerSlot : PointerSlots) {
+      PointerSlot.validateAgainst(KernelArgSizes);
+      void *RecordedPtr = PointerSlot.readFrom(Args);
       if (!RecordedPtr)
         continue;
 
       if (pointerIsMnemeAllocation(RecordedPtr))
         continue;
 
+      if (SnapshotGlobals.findContaining(RecordedPtr))
+        continue;
+
       if (findGlobalForPointer(RecordedPtr, Proteus, SnapshotGlobals))
         continue;
 
       LOG_FATAL("Kernel argument pointer at arg " +
-                std::to_string(PointerOffset.ArgIndex) + " offset " +
-                std::to_string(PointerOffset.Offset) + " points to " +
+                std::to_string(PointerSlot.ArgIndex) + " offset " +
+                std::to_string(PointerSlot.ByteOffset) + " points to " +
                 util::pointerToHexString(RecordedPtr) +
                 ", which is neither a Mneme allocation nor a Proteus "
                 "registered global");
@@ -301,12 +290,12 @@ public:
     if (!F)
       LOG_FATAL("Could not find kernel function in extracted LLVM module");
 
-    auto PointerOffsets = mneme::getKernelPointerOffsets(*F);
+    auto PointerSlots = mneme::getKernelPointerSlots(*F);
     auto SnapshotGlobals =
-        buildSnapshotGlobals(KInfo, Args, Proteus, PointerOffsets);
+        buildSnapshotGlobals(KInfo, Args, Proteus, PointerSlots);
     auto RecordAction = DB.takeSnapshot<VendorTypes>(
         PM->getVAStart(), PM->getTotalVASize(), KInfo, SnapshotGlobals, Proteus,
-        PointerOffsets, AllocatedBlobs, GridDim, BlockDim, Args, SharedMem,
+        PointerSlots, AllocatedBlobs, GridDim, BlockDim, Args, SharedMem,
         Stream);
     if (RecordAction)
       LOG_INFO("Successfully Recorded Prologue of Kernel {} NAME:{} GRID:({}, "

@@ -1,16 +1,63 @@
 #pragma once
 
+#include <cstdint>
+#include <cstring>
+#include <functional>
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StableHashing.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/raw_ostream.h>
+#include <memory>
+#include <optional>
+#include <string>
+
+#include "mneme/MnemeLogger.hpp"
 
 namespace mneme {
-struct KernelPointerOffset {
-  size_t ArgIndex;
-  size_t Offset;
+struct DeviceAddressRange {
+  const void *Base = nullptr;
+  uint64_t Size = 0;
+
+  bool contains(const void *Ptr) const {
+    auto BaseAddr = reinterpret_cast<uintptr_t>(Base);
+    auto PtrAddr = reinterpret_cast<uintptr_t>(Ptr);
+    return BaseAddr && PtrAddr >= BaseAddr && PtrAddr < BaseAddr + Size;
+  }
+
+  uint64_t offsetOf(const void *Ptr) const {
+    if (!contains(Ptr))
+      LOG_FATAL("Pointer is outside the recorded device address range");
+    return reinterpret_cast<uintptr_t>(Ptr) - reinterpret_cast<uintptr_t>(Base);
+  }
+
+  void *rebase(const void *RecordedPtr, void *ReplayBase) const {
+    return reinterpret_cast<void *>(reinterpret_cast<uintptr_t>(ReplayBase) +
+                                    offsetOf(RecordedPtr));
+  }
+};
+
+struct KernelArgPointerSlot {
+  uint64_t ArgIndex;
+  uint64_t ByteOffset;
+
+  void validateAgainst(llvm::ArrayRef<size_t> ArgSizes) const {
+    if (ArgIndex >= ArgSizes.size())
+      LOG_FATAL("Recorded pointer slot references an unknown argument");
+    if (ByteOffset + sizeof(void *) > ArgSizes[ArgIndex])
+      LOG_FATAL("Recorded pointer slot is outside the argument storage");
+  }
+
+  void *readFrom(void **Args) const {
+    const auto *ArgBytes = static_cast<const uint8_t *>(Args[ArgIndex]);
+    void *RecordedPtr = nullptr;
+    std::memcpy(&RecordedPtr, ArgBytes + ByteOffset, sizeof(RecordedPtr));
+    return RecordedPtr;
+  }
+
+  void *readFrom(const struct KernelInfo &KInfo) const;
+  void writeTo(struct KernelInfo &KInfo, void *Value) const;
 };
 
 struct KernelInfo {
@@ -22,7 +69,7 @@ struct KernelInfo {
   llvm::SmallVector<std::function<double(void *)>> ToDoubleFunc;
   llvm::SmallVector<bool> KernelSpecializations;
   llvm::SmallVector<std::unique_ptr<uint8_t[]>> ArgData;
-  llvm::SmallVector<KernelPointerOffset> PointerOffsets;
+  llvm::SmallVector<KernelArgPointerSlot> PointerSlots;
   KernelInfo(const void *HostFun, char *Name)
       : HostFun(HostFun), Name(Name), StaticHash(std::nullopt) {};
   KernelInfo(std::string &Name) : Name(Name), StaticHash(std::nullopt) {};
@@ -72,4 +119,25 @@ public:
     return ToDoubleFunc;
   }
 };
+
+inline void *KernelArgPointerSlot::readFrom(const KernelInfo &KInfo) const {
+  validateAgainst(KInfo.KernelArgSizes);
+  if (ArgIndex >= KInfo.ArgData.size())
+    LOG_FATAL(
+        "Recorded pointer slot references argument data that was not loaded");
+  const auto *Slot = KInfo.ArgData[ArgIndex].get() + ByteOffset;
+  void *RecordedPtr = nullptr;
+  std::memcpy(&RecordedPtr, Slot, sizeof(RecordedPtr));
+  return RecordedPtr;
+}
+
+inline void KernelArgPointerSlot::writeTo(KernelInfo &KInfo,
+                                          void *Value) const {
+  validateAgainst(KInfo.KernelArgSizes);
+  if (ArgIndex >= KInfo.ArgData.size())
+    LOG_FATAL(
+        "Recorded pointer slot references argument data that was not loaded");
+  auto *Slot = KInfo.ArgData[ArgIndex].get() + ByteOffset;
+  std::memcpy(Slot, &Value, sizeof(Value));
+}
 } // namespace mneme

@@ -88,18 +88,18 @@ int main(int argc, char **argv) {
   }
 
   TestKernel->setArgSizes(ArgSizes);
-  TestKernel->PointerOffsets.push_back(KernelPointerOffset{0, 0});
+  TestKernel->PointerSlots.push_back(KernelArgPointerSlot{0, 0});
 
   // Create a raw_svector_ostream using the buffer
-  std::unordered_map<std::string, proteus::GlobalVarInfo> GVars;
-  GVars.try_emplace("Test", GV);
+  CapturedGlobals GVars;
+  GVars.add("Test", GV);
   llvm::DenseMap<void *, MnemeMemoryBlobDevice> DeviceMemMap;
   DeviceMemMap.try_emplace((void *)BlobData.first, std::move(Blob));
   std::filesystem::path SnapshotFN("./test.mneme");
 
   MnemeSnapshot<Vendor>::takeMnemeSnapshot(GVars, DeviceMemMap, SnapshotFN,
                                            TestKernel->KernelArgSizes, Args,
-                                           TestKernel->PointerOffsets, 0);
+                                           TestKernel->PointerSlots, 0);
 
   std::unordered_map<std::string, ReplayGlobalVar> ReadGVars;
   llvm::DenseMap<void *, MnemeMemoryBlobDevice> ReadDeviceMemMap;
@@ -116,7 +116,7 @@ int main(int argc, char **argv) {
     std::string Bytes((std::istreambuf_iterator<char>(In)),
                       std::istreambuf_iterator<char>());
     size_t PointerTableBytes =
-        sizeof(size_t) + TestKernel->PointerOffsets.size() * 2 * sizeof(size_t);
+        sizeof(size_t) + TestKernel->PointerSlots.size() * 2 * sizeof(uint64_t);
     Bytes.resize(Bytes.size() - PointerTableBytes);
     std::ofstream Out(OldSnapshotFN, std::ios::binary);
     Out.write(Bytes.data(), Bytes.size());
@@ -239,9 +239,9 @@ int main(int argc, char **argv) {
         }
       }
     }
-    if (RKernel.PointerOffsets.size() != 1 ||
-        RKernel.PointerOffsets[0].ArgIndex != 0 ||
-        RKernel.PointerOffsets[0].Offset != 0) {
+    if (RKernel.PointerSlots.size() != 1 ||
+        RKernel.PointerSlots[0].ArgIndex != 0 ||
+        RKernel.PointerSlots[0].ByteOffset != 0) {
       std::cerr << "Pointer offsets differ\n";
       return 4;
     }
@@ -249,7 +249,7 @@ int main(int argc, char **argv) {
   }();
 
   auto Ret = ValidateGlobalMem | ValidateDeviceMem | ValidateKernelArgs;
-  if (!OldRTestKernel->PointerOffsets.empty()) {
+  if (!OldRTestKernel->PointerSlots.empty()) {
     std::cerr << "Old snapshot unexpectedly contains pointer offsets\n";
     Ret |= 4;
   }

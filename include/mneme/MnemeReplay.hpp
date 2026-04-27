@@ -103,26 +103,14 @@ private:
 
   void relocatePointerArgsForGlobal(void *RecordedGlobalAddr,
                                     void *ReplayGlobalAddr, size_t GlobalSize) {
-    auto RecordedBase = reinterpret_cast<uintptr_t>(RecordedGlobalAddr);
-    auto ReplayBase = reinterpret_cast<uintptr_t>(ReplayGlobalAddr);
-    for (auto PointerOffset : KInfo->PointerOffsets) {
-      if (PointerOffset.ArgIndex >= KInfo->ArgData.size())
-        LOG_FATAL("Recorded pointer offset references an unknown argument");
-      if (PointerOffset.Offset + sizeof(void *) >
-          KInfo->KernelArgSizes[PointerOffset.ArgIndex])
-        LOG_FATAL("Recorded pointer offset is outside the argument storage");
-
-      auto *Slot =
-          KInfo->ArgData[PointerOffset.ArgIndex].get() + PointerOffset.Offset;
-      void *RecordedPtr = nullptr;
-      std::memcpy(&RecordedPtr, Slot, sizeof(RecordedPtr));
-      auto PtrAddr = reinterpret_cast<uintptr_t>(RecordedPtr);
-      if (PtrAddr < RecordedBase || PtrAddr >= RecordedBase + GlobalSize)
+    DeviceAddressRange RecordedRange{RecordedGlobalAddr, GlobalSize};
+    for (auto PointerSlot : KInfo->PointerSlots) {
+      void *RecordedPtr = PointerSlot.readFrom(*KInfo);
+      if (!RecordedRange.contains(RecordedPtr))
         continue;
 
-      void *RelocatedPtr =
-          reinterpret_cast<void *>(ReplayBase + (PtrAddr - RecordedBase));
-      std::memcpy(Slot, &RelocatedPtr, sizeof(RelocatedPtr));
+      void *RelocatedPtr = RecordedRange.rebase(RecordedPtr, ReplayGlobalAddr);
+      PointerSlot.writeTo(*KInfo, RelocatedPtr);
       LOG_DEBUG("Relocated recorded global pointer arg from {} to {}",
                 RecordedPtr, RelocatedPtr);
     }
