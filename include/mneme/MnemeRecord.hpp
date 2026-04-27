@@ -214,7 +214,6 @@ public:
       return origLaunchKernel(func, GridDim, BlockDim, Args, SharedMem, Stream);
     }
     auto &KInfo = OptionalKernelInfo.value().get();
-    auto &BinInfo = KInfo.getBinaryInfo();
     LOG_DEBUG("Continue with {}", KInfo.getName());
     Proteus.extractModuleAndBitcode(KInfo);
 

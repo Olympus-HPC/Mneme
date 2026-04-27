@@ -37,8 +37,9 @@ pushd $build_dir
 
 build_proteus() {
   echo "Building PROTEUS"
+  PROTEUS_VERSION=$(cat "${mneme_src}/PROTEUS_VERSION")
   if [[ ! -d proteus ]]; then
-    git clone --depth 1 --branch v2026.03.0 --single-branch git@github.com:Olympus-HPC/proteus.git
+    git clone --depth 1 --branch "${PROTEUS_VERSION}" --single-branch git@github.com:Olympus-HPC/proteus.git
   fi
   pushd proteus
   PROTEUS_ENABLE_HIP=$1

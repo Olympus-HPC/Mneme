@@ -63,7 +63,7 @@ use the corresponding Proteus release to avoid incompatibilities.
     record and replay functionality, which is not possible with a
     static-only Proteus build.
 
-#### Tested Proteus commit
+#### Tested Proteus release
 
 - Repository: https://github.com/Olympus-HPC/Proteus
 - Release: `v2026.03.0`

@@ -88,7 +88,9 @@ def get_llvm_config(llvm_dir):
 # Custom build class for CMake
 class CMakeBuild(build_ext):
     PROTEUS_REPO = "https://github.com/Olympus-HPC/proteus.git"
-    PROTEUS_VERSION = "v2026.03.0"
+    PROTEUS_VERSION = (
+        (Path(__file__).resolve().parent / "PROTEUS_VERSION").read_text().strip()
+    )
     SPDLOG_REPO = "https://github.com/gabime/spdlog.git"
 
     def initialize_options(self):
