@@ -116,7 +116,7 @@ def test_recorded_execution_to_dict():
         va_addr="0x100",
         va_size=32,
         kernel_instances={"hashX": fake_instance},
-        globals=["g_data"],
+        captured_globals=["g_data"],
     )
 
     d = r.to_dict()
@@ -182,7 +182,7 @@ def test_recorded_execution_from_json_reconstructs():
         r = RecordedExecution.from_json(fname)
 
     assert r.kernel_name == "K"
-    assert r.globals == ["g_data"]
+    assert r.captured_globals == ["g_data"]
     assert "H" in r.kernel_instances
     inst = r.kernel_instances["H"]
     assert inst.block_dim.x == 1

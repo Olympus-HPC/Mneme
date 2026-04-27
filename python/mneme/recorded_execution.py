@@ -409,7 +409,7 @@ class RecordedExecution:
         va_addr: str,
         va_size: int,
         kernel_instances: Dict[str, KernelInstance],
-        globals: List[str] = None,
+        captured_globals: List[str] = None,
     ):
         self.static_hash = static_hash
         self.kernel_name = kernel_name
@@ -420,7 +420,7 @@ class RecordedExecution:
         self.va_addr = va_addr
         self.va_size = va_size
         self.kernel_instances = kernel_instances
-        self.globals = globals or []
+        self.captured_globals = captured_globals or []
         self._link_mod = None
 
     def __str__(self):
@@ -480,7 +480,7 @@ class RecordedExecution:
             self.kernel_name,
             prune,
             internalize,
-            preserve_globals=self.globals,
+            preserve_globals=self.captured_globals,
         )
 
         return self._link_mod
@@ -492,7 +492,7 @@ class RecordedExecution:
         res["DemangledName"] = self.demangled_name
         res["KernelName"] = self.kernel_name
         res["Modules"] = self.llvm_files
-        res["Globals"] = self.globals
+        res["Globals"] = self.captured_globals
         res["Specializations"] = self.specializations
         res["StaticHash"] = self.static_hash
         res["VASize"] = self.va_size
