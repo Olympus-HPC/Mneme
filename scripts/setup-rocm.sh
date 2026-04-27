@@ -5,7 +5,7 @@ HOSTN=${HOSTNAME//[0-9]/}
 ROCM_VERSION=$1
 if [ $# -lt 1 ]; then
     echo "Usage: source scripts/setup-rocm.sh <ROCm version>"
-    return 0
+    return 1
 fi
 
 # Developer knobs.
@@ -14,12 +14,13 @@ MNEME_ENABLE_LOGGER=${MNEME_ENABLE_LOGGER:-Off}
 MNEME_ENABLE_AUTOTUNE=${MNEME_ENABLE_AUTOTUNE:-Off}
 MNEME_LINK_SHARED_LLVM=${MNEME_LINK_SHARED_LLVM:-Off}
 
+ml load cmake/3.23.1
 ml load rocm/${ROCM_VERSION}
 
 LLVM_INSTALL_DIR=${ROCM_PATH}/llvm
 PROTEUS_DIR=${PROTEUS_DIR:-../proteus/install-${HOSTN}-rocm-${ROCM_VERSION}}
 
-mkdir build-${HOSTN}-rocm-${ROCM_VERSION}
+mkdir -p build-${HOSTN}-rocm-${ROCM_VERSION}
 pushd build-${HOSTN}-rocm-${ROCM_VERSION}
 
 cmake .. \

@@ -2,15 +2,15 @@
 
 HOSTN=${HOSTNAME//[0-9]/}
 
-ml load cmake/3.23.1
-
 LLVM_INSTALL_DIR=$1
 CUDA_VERSION=$2
 if [ $# -lt 2 ] || [ -z "${LLVM_INSTALL_DIR}" ] || [ -z "${CUDA_VERSION}" ];
 then
     echo "Usage: source scripts/setup-cuda.sh <LLVM installation dir> <CUDA version>"
-    return 0
+    return 1
 fi
+
+ml load cmake/3.23.1
 
 # Developer knobs.
 MNEME_ENABLE_TESTS=${MNEME_ENABLE_TESTS:-Off}
@@ -32,7 +32,7 @@ fi
 PROTEUS_DIR=${PROTEUS_DIR:-../proteus/install-${HOSTN}-cuda-${CUDA_VERSION}-llvm-${LLVM_VERSION}}
 
 BUILDDIR="build-${HOSTN}-cuda-${CUDA_VERSION}-llvm-${LLVM_VERSION}"
-mkdir "${BUILDDIR}"
+mkdir -p "${BUILDDIR}"
 pushd "${BUILDDIR}"
 
 cmake .. \
