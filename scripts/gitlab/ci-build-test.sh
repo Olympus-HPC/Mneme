@@ -38,30 +38,25 @@ pushd $build_dir
 build_proteus() {
   echo "Building PROTEUS"
   if [[ ! -d proteus ]]; then
-    git clone --depth 1 git@github.com:Olympus-HPC/proteus.git
-    pushd proteus
-    git fetch --depth 1 origin cuda-proteus-core-shared-llvm
-    git checkout -b cuda-proteus-core-shared-llvm FETCH_HEAD
-    popd
+    git clone --depth 1 --branch v2026.03.0 --single-branch git@github.com:Olympus-HPC/proteus.git
   fi
   pushd proteus
   PROTEUS_ENABLE_HIP=$1
   PROTEUS_ENABLE_CUDA=$2
   PROTEUS_INSTALL_DIR=$3
-  LINK_SHARED_LLVM=$4
   echo "Proteus: ENABLE_HIP: $PROTEUS_ENABLE_HIP ENABLE_CUDA: $PROTEUS_ENABLE_CUDA"
   rm -rf build-proteus-${host}
   mkdir build-proteus-${host}
   pushd build-proteus-${host}
   cmake .. \
     -DBUILD_SHARED=On \
+    -DPROTEUS_INSTALL_IMPL_HEADERS=On \
     -DCMAKE_POSITION_INDEPENDENT_CODE=On \
     -DLLVM_INSTALL_DIR=${LLVM_INSTALL_DIR} \
     -DCMAKE_C_COMPILER=${LLVM_INSTALL_DIR}/bin/clang \
     -DCMAKE_PREFIX_PATH="$CONDA_PREFIX;$CONDA_PREFIX/lib/cmake" \
     -DCMAKE_CXX_COMPILER=${LLVM_INSTALL_DIR}/bin/clang++ \
     -DPROTEUS_ENABLE_HIP=${PROTEUS_ENABLE_HIP} \
-    -DPROTEUS_LINK_SHARED_LLVM=${LINK_SHARED_LLVM} \
     -DPROTEUS_ENABLE_CUDA=${PROTEUS_ENABLE_CUDA} \
     -DCMAKE_CUDA_COMPILER=$LLVM_INSTALL_DIR/bin/clang++ \
     -DCMAKE_CUDA_FLAGS=-std=c++17 \
@@ -118,7 +113,7 @@ cpp=$(which clang++)
 cc=$(which clang)
 echo "Setting root dir to be ${LLVM_INSTALL_DIR}"
 
-build_proteus "OFF" "ON" $installDir ON
+build_proteus "OFF" "ON" $installDir
 echo "After proteus Current directory is $(pwd)"
 build_spdlog $installDir
 echo "Current dir is $(pwd)"
@@ -146,7 +141,7 @@ elif [[ "$SYS_TYPE" == "toss_4_x86_64_ib_cray" ]]; then
   export LLVM_INSTALL_DIR=${ROCM_PATH}/llvm
   echo "LLVM INSTALL DIR is ${LLVM_INSTALL_DIR}"
 
-  build_proteus "ON" "OFF" $installDir OFF
+  build_proteus "ON" "OFF" $installDir
   echo "After proteus Current directory is $(pwd)"
   build_spdlog $installDir
   echo "After spdlog Current directory is $(pwd)"

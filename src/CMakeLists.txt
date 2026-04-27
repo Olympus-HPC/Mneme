@@ -65,7 +65,7 @@ target_include_directories(record SYSTEM PRIVATE ${LLVM_INCLUDE_DIRS} ${CMAKE_SO
 target_link_libraries(record PRIVATE mnemert)
 # Link the record preload shared library with proteus shared library to avoid
 # LLVM static initialization issues.
-target_link_libraries(record PRIVATE proteus_shared)
+target_link_libraries(record PRIVATE proteus)
 
 if (MNEME_ENABLE_LOGGER)
   message(STATUS "Adding SPDLOG in recording")

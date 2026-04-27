@@ -21,8 +21,8 @@
 #include <llvm/IR/Module.h>
 #include <mutex>
 
-#include <proteus/CompilerInterfaceDevice.h>
-#include <proteus/JitEngineDevice.h>
+#include <proteus/impl/CompilerInterfaceDevice.h>
+#include <proteus/impl/JitEngineDevice.h>
 
 #include "mneme/DeviceTraits.hpp"
 #include "mneme/MnemeKernelInfo.hpp"
@@ -215,7 +215,6 @@ public:
     }
     auto &KInfo = OptionalKernelInfo.value().get();
     auto &BinInfo = KInfo.getBinaryInfo();
-    BinInfo.mapGlobals();
     LOG_DEBUG("Continue with {}", KInfo.getName());
     Proteus.extractModuleAndBitcode(KInfo);
 

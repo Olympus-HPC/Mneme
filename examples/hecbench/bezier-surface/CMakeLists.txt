@@ -28,5 +28,5 @@ BUILD(bezier-orig BEZIER::ORIG)
 
 add_executable(bezier-proteus main.cpp)
 target_compile_definitions(bezier-proteus PRIVATE ENABLE_PROTEUS)
-add_proteus(bezier-proteus LINK_SHARED)
+add_proteus(bezier-proteus)
 BUILD(bezier-proteus BEZIER::PROTEUS)

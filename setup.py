@@ -88,6 +88,7 @@ def get_llvm_config(llvm_dir):
 # Custom build class for CMake
 class CMakeBuild(build_ext):
     PROTEUS_REPO = "https://github.com/Olympus-HPC/proteus.git"
+    PROTEUS_VERSION = "v2026.03.0"
     SPDLOG_REPO = "https://github.com/gabime/spdlog.git"
 
     def initialize_options(self):
@@ -180,27 +181,13 @@ class CMakeBuild(build_ext):
                         "clone",
                         "--depth",
                         "1",
-                        # "--branch",
-                        # "features/blocks-per-eu",
+                        "--branch",
+                        self.PROTEUS_VERSION,
+                        "--single-branch",
                         self.PROTEUS_REPO,
                         proteus_path,
                     ],
                     cwd=self.build_scratch,
-                )
-                run_command(
-                    [
-                        "git",
-                        "fetch",
-                        "--depth",
-                        "1",
-                        "origin",
-                        "cuda-proteus-core-shared-llvm",
-                    ],
-                    cwd=str(Path(self.build_scratch) / "proteus"),
-                )
-                run_command(
-                    ["git", "checkout", "-b", "features/cuda-shared", "FETCH_HEAD"],
-                    cwd=str(Path(self.build_scratch) / "proteus"),
                 )
 
         build_dir = os.path.join(proteus_path, "build")
@@ -210,6 +197,7 @@ class CMakeBuild(build_ext):
             "-DCMAKE_BUILD_TYPE=Relwithdebinfo",
             "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
             "-DBUILD_SHARED=On",
+            "-DPROTEUS_INSTALL_IMPL_HEADERS=On",
             "-DCMAKE_INSTALL_RPATH=$ORIGIN",
             "-DCMAKE_SKIP_INSTALL_RPATH=OFF",
             "-DCMAKE_POSITION_INDEPENDENT_CODE=On",

@@ -50,14 +50,12 @@ but not tested.
 ### Proteus dependency and compatibility
 
 Mneme depends on the Proteus JIT and LLVM transformation infrastructure.
-At present, neither Mneme nor Proteus follows a formal versioning scheme.
+Compatibility between Mneme and Proteus is defined by the tested Proteus
+release and commit.
 
-Compatibility between Mneme and Proteus is therefore defined at the
-**commit (SHA) level**.
-
-Mneme is regularly tested against a specific Proteus commit known to be
+Mneme is regularly tested against a specific Proteus release known to be
 compatible. Users building Mneme from source are strongly encouraged to
-use the corresponding Proteus commit to avoid incompatibilities.
+use the corresponding Proteus release to avoid incompatibilities.
 
 !!! note
     Mneme requires Proteus to be built and installed as a **shared library**.
@@ -68,15 +66,22 @@ use the corresponding Proteus commit to avoid incompatibilities.
 #### Tested Proteus commit
 
 - Repository: https://github.com/Olympus-HPC/Proteus
-- Branch: `cuda-proteus-core-shared-llvm`
+- Release: `v2026.03.0`
+- Commit: `496cdd70b5acef5b31688250616b091b3928fad3`
 - Tested with: Mneme `develop`
+
+Proteus must be configured with:
+
+```bash
+-DBUILD_SHARED=On -DPROTEUS_INSTALL_IMPL_HEADERS=On
+```
 
 !!! note
     Mneme may not be compatible with the latest Proteus `main` branch at all times.
     Proteus is under active development, and changes to core components may
     temporarily break compatibility with Mneme.
 
-    Users are strongly encouraged to use the tested Proteus commit listed above.
+    Users are strongly encouraged to use the tested Proteus release listed above.
 
 ### spdlog dependency and compatibility
 
@@ -249,7 +254,10 @@ external Proteus installation:
 - `PROTEUS_SRC`: Path to a Proteus source tree. When set, the Mneme
   installer will configure and build Proteus from this source.
 - `PROTEUS_DIR`: Path to an existing Proteus installation prefix.
-  This directory must allow `find_package(Proteus)` to succeed.
+  This directory must allow `find_package(proteus)` to succeed.
+
+External Proteus installations must use release `v2026.03.0` and must be
+built with `-DBUILD_SHARED=On -DPROTEUS_INSTALL_IMPL_HEADERS=On`.
 
 When either of these variables is set, Mneme will use the specified
 Proteus installation instead of the internally managed one.
