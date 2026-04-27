@@ -164,39 +164,34 @@ private:
 
   std::unordered_map<std::string, proteus::GlobalVarInfo>
   buildSnapshotGlobals(proteus::JITKernelInfo &KInfo, void **Args,
-                       ::JitDeviceImplT &Proteus) {
+                       ::JitDeviceImplT &Proteus,
+                       llvm::ArrayRef<KernelPointerOffset> PointerOffsets) {
     std::unordered_map<std::string, proteus::GlobalVarInfo> SnapshotGlobals;
     for (const auto &[Name, GVI] :
          KInfo.getBinaryInfo().getVarNameToGlobalInfo())
       addSnapshotGlobal(SnapshotGlobals, Name, GVI);
 
-    auto &Module = KInfo.getModule();
-    auto *F = Module.getFunction(KInfo.getName());
-    if (!F)
-      LOG_FATAL("Could not find kernel function in extracted LLVM module");
+    for (auto PointerOffset : PointerOffsets) {
+      const auto *ArgBytes =
+          static_cast<const uint8_t *>(Args[PointerOffset.ArgIndex]);
+      void *RecordedPtr = nullptr;
+      std::memcpy(&RecordedPtr, ArgBytes + PointerOffset.Offset,
+                  sizeof(RecordedPtr));
+      if (!RecordedPtr)
+        continue;
 
-    auto PointerOffsetsByArg = mneme::getPointerOffsetsByArg(*F);
-    for (size_t ArgIndex = 0; ArgIndex < PointerOffsetsByArg.size();
-         ++ArgIndex) {
-      for (auto Offset : PointerOffsetsByArg[ArgIndex]) {
-        const auto *ArgBytes = static_cast<const uint8_t *>(Args[ArgIndex]);
-        void *RecordedPtr = nullptr;
-        std::memcpy(&RecordedPtr, ArgBytes + Offset, sizeof(RecordedPtr));
-        if (!RecordedPtr)
-          continue;
+      if (pointerIsMnemeAllocation(RecordedPtr))
+        continue;
 
-        if (pointerIsMnemeAllocation(RecordedPtr))
-          continue;
+      if (findGlobalForPointer(RecordedPtr, Proteus, SnapshotGlobals))
+        continue;
 
-        if (findGlobalForPointer(RecordedPtr, Proteus, SnapshotGlobals))
-          continue;
-
-        LOG_FATAL("Kernel argument pointer at arg " + std::to_string(ArgIndex) +
-                  " offset " + std::to_string(Offset) + " points to " +
-                  util::pointerToHexString(RecordedPtr) +
-                  ", which is neither a Mneme allocation nor a Proteus "
-                  "registered global");
-      }
+      LOG_FATAL("Kernel argument pointer at arg " +
+                std::to_string(PointerOffset.ArgIndex) + " offset " +
+                std::to_string(PointerOffset.Offset) + " points to " +
+                util::pointerToHexString(RecordedPtr) +
+                ", which is neither a Mneme allocation nor a Proteus "
+                "registered global");
     }
     return SnapshotGlobals;
   }
@@ -301,10 +296,18 @@ public:
     auto Hash = Proteus.getStaticHash(KInfo);
     LOG_INFO("Hash value is {}", Hash.getValue());
 
-    auto SnapshotGlobals = buildSnapshotGlobals(KInfo, Args, Proteus);
+    auto &Module = KInfo.getModule();
+    auto *F = Module.getFunction(KInfo.getName());
+    if (!F)
+      LOG_FATAL("Could not find kernel function in extracted LLVM module");
+
+    auto PointerOffsets = mneme::getKernelPointerOffsets(*F);
+    auto SnapshotGlobals =
+        buildSnapshotGlobals(KInfo, Args, Proteus, PointerOffsets);
     auto RecordAction = DB.takeSnapshot<VendorTypes>(
         PM->getVAStart(), PM->getTotalVASize(), KInfo, SnapshotGlobals, Proteus,
-        AllocatedBlobs, GridDim, BlockDim, Args, SharedMem, Stream);
+        PointerOffsets, AllocatedBlobs, GridDim, BlockDim, Args, SharedMem,
+        Stream);
     if (RecordAction)
       LOG_INFO("Successfully Recorded Prologue of Kernel {} NAME:{} GRID:({}, "
                "{}, {}) "

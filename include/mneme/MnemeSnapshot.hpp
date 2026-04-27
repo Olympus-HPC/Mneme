@@ -12,6 +12,7 @@
 #include <unordered_set>
 
 #include "llvm/Demangle/Demangle.h"
+#include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/StableHashing.h>
 #include <llvm/ADT/StringRef.h>
 #include <string>
@@ -342,21 +343,22 @@ public:
     return Collection;
   }
 
-  KernelInstancesCollection(const std::string &MnemeDirectory, void *VAddr,
-                            uint64_t VASize, proteus::JITKernelInfo &KInfo,
-                            int MaxRecordings)
-      : VAddr(VAddr), VASize(VASize), MaxRecordings(MaxRecordings),
-        NumRecords(0), KName(KInfo.getName()) {
+  KernelInstancesCollection(
+      const std::string &MnemeDirectory, void *VAddr, uint64_t VASize,
+      proteus::JITKernelInfo &KInfo,
+      llvm::ArrayRef<KernelPointerOffset> KernelPointerOffsets,
+      int MaxRecordings)
+      : VAddr(VAddr), VASize(VASize), NumRecords(0),
+        MaxRecordings(MaxRecordings),
+        PointerOffsets(KernelPointerOffsets.begin(),
+                       KernelPointerOffsets.end()),
+        KName(KInfo.getName()) {
     auto &Module = KInfo.getModule();
     auto *F = Module.getFunction(KInfo.getName());
     KernelArgSizes = mneme::getFuncDescr(*F);
     KernelArgNames = mneme::getArgNames(*F);
     KernelSpecializations = mneme::canSpecialize(*F);
     ConvertArgToDouble = mneme::convertToDouble(*F);
-    auto ArgPointerOffsets = mneme::getPointerOffsetsByArg(*F);
-    for (size_t ArgIndex = 0; ArgIndex < ArgPointerOffsets.size(); ++ArgIndex)
-      for (auto Offset : ArgPointerOffsets[ArgIndex])
-        PointerOffsets.push_back(KernelPointerOffset{ArgIndex, Offset});
     ModuleFiles.emplace_back(
         StoreModule(Module, MnemeDirectory, KInfo.getStaticHash().getValue()));
   }
@@ -569,6 +571,7 @@ public:
       void *VAddr, uint64_t VASize, proteus::JITKernelInfo &KInfo,
       std::unordered_map<std::string, proteus::GlobalVarInfo> &GlobalVars,
       ::JitDeviceImplT &Proteus,
+      llvm::ArrayRef<KernelPointerOffset> PointerOffsets,
       llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &DeviceMemory,
       dim3 &GridDim, dim3 &BlockDim, void **Args, size_t SharedMem,
       typename DeviceTraits<VendorTypes>::DeviceStream_t Stream) {
@@ -582,7 +585,7 @@ public:
     auto IT = KernelRecords.try_emplace(
         KInfo.getStaticHash().getValue(),
         KernelInstancesCollection(getDir(), VAddr, VASize, KInfo,
-                                  MaxRecordings));
+                                  PointerOffsets, MaxRecordings));
     LOG_INFO("Created instance");
     IT.first->second.addGlobalSidecarModules(MnemeDirectory,
                                              KInfo.getStaticHash().getValue(),

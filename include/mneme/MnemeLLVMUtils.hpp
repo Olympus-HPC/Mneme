@@ -8,6 +8,7 @@
 #include <llvm/IR/Function.h>
 #include <llvm/IR/Module.h>
 
+#include "mneme/MnemeKernelInfo.hpp"
 #include "mneme/MnemeLogger.hpp"
 
 namespace llvm {
@@ -77,6 +78,16 @@ getPointerOffsetsByArg(llvm::Function &F) {
     collectPointerOffsets(ArgStorageTy, DL, 0, ArgOffsets);
     PointerOffsets.emplace_back(std::move(ArgOffsets));
   }
+  return PointerOffsets;
+}
+
+inline static llvm::SmallVector<KernelPointerOffset>
+getKernelPointerOffsets(llvm::Function &F) {
+  llvm::SmallVector<KernelPointerOffset> PointerOffsets;
+  auto ArgPointerOffsets = getPointerOffsetsByArg(F);
+  for (size_t ArgIndex = 0; ArgIndex < ArgPointerOffsets.size(); ++ArgIndex)
+    for (auto Offset : ArgPointerOffsets[ArgIndex])
+      PointerOffsets.push_back(KernelPointerOffset{ArgIndex, Offset});
   return PointerOffsets;
 }
 
