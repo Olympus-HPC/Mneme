@@ -158,12 +158,74 @@ tested runtime dependencies.
 This installation method is recommended for contributors and developers
 working on Mneme itself.
 
+For Python development, use an editable install:
+
 ```bash
 pip install -e .
 ```
 
 Editable mode installs Mneme in-place, allowing local source changes to be
 picked up without reinstallation.
+
+For C++ and runtime development, Mneme also provides simple setup scripts
+that configure an out-of-tree CMake build against an existing Proteus
+installation.
+These scripts are intended for developers who want a local Mneme build
+and install prefix that mirrors the Proteus developer workflow.
+
+On AMD systems:
+
+```bash
+export PROTEUS_DIR=/path/to/proteus/install-prefix
+export MNEME_ENABLE_TESTS=On
+source scripts/setup-rocm.sh 6.4.1
+cd build-$(hostname | sed 's/[0-9]//g')-rocm-6.4.1
+cmake --build . --parallel 10
+ctest --output-on-failure
+cmake --install .
+```
+
+On NVIDIA systems:
+
+```bash
+export PROTEUS_DIR=/path/to/proteus/install-prefix
+export MNEME_ENABLE_TESTS=On
+export MNEME_CUDA_ARCHITECTURES=90
+source scripts/setup-cuda.sh /path/to/llvm 12.2.2
+cd build-$(hostname | sed 's/[0-9]//g')-cuda-12.2.2-llvm-$(/path/to/llvm/bin/llvm-config --version)
+cmake --build . --parallel 10
+ctest --output-on-failure
+cmake --install .
+```
+
+`PROTEUS_DIR` should point to a compatible Proteus installation prefix
+built for the same backend.
+If `PROTEUS_DIR` is not set, the scripts default to the sibling
+`../proteus/install-*` prefixes used by the Proteus developer scripts.
+
+The scripts can be configured with environment variables before sourcing:
+
+- `MNEME_ENABLE_TESTS`: configure the C++ test targets (`Off` by default).
+- `MNEME_ENABLE_LOGGER`: enable logging support (`Off` by default).
+- `MNEME_ENABLE_AUTOTUNE`: build autotuning/profile support (`Off` by default).
+- `MNEME_LINK_SHARED_LLVM`: link against shared LLVM libraries
+  (`On` by default for CUDA, `Off` by default for ROCm).
+- `MNEME_CUDA_ARCHITECTURES`: CUDA architecture list for NVIDIA builds
+  (`90` by default).
+
+Additional CMake arguments may be passed after the required script
+arguments.
+For example:
+
+```bash
+source scripts/setup-rocm.sh 6.4.1 -DCMAKE_BUILD_TYPE=RelWithDebInfo
+source scripts/setup-cuda.sh /path/to/llvm 12.2.2 -DCMAKE_BUILD_TYPE=RelWithDebInfo
+```
+
+!!! note
+    The setup scripts configure and install the native CMake project.
+    They do not replace `pip install -e .` for the Mneme Python package,
+    CLI, or Python bindings.
 
 ### Optional: Using an external Proteus installation
 
