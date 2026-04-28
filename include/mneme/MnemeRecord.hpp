@@ -130,7 +130,6 @@ private:
                        CapturedGlobals &SnapshotGlobals) {
     std::optional<std::string> Match;
     for (auto &[Handle, BinInfo] : Proteus.HandleToBinaryInfo) {
-      BinInfo.mapGlobals();
       for (const auto &[Name, GVI] : BinInfo.getVarNameToGlobalInfo()) {
         DeviceAddressRange Range{GVI.DevAddr, GVI.VarSize};
         if (!Range.contains(Ptr))
