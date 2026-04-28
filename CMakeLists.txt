@@ -34,6 +34,13 @@ if(MNEME_ENABLE_CUDA)
   enable_language(CUDA)
   message(STATUS "Cuda Libraries: ${CUDA_LIBRARIES}")
   message(STATUS "Cuda Library: ${CUDA_LIBRARY}")
+  find_library(MNEME_NVPTXCOMPILER_LIBRARY
+    NAMES nvptxcompiler_static libnvptxcompiler_static nvptxcompiler
+    REQUIRED
+    NO_DEFAULT_PATH
+    PATHS "${CUDAToolkit_LIBRARY_DIR}"
+  )
+  message(STATUS "CUDA nvPTXCompiler library: ${MNEME_NVPTXCOMPILER_LIBRARY}")
   add_definitions("-DMNEME_ENABLE_CUDA")
 elseif(MNEME_ENABLE_HIP)
   find_package(HIP REQUIRED)

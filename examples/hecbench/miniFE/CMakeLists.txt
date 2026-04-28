@@ -36,5 +36,5 @@ BUILD(miniFE-mneme MINIFE::MNEME)
 
 add_executable(miniFE-proteus ${miniFE_src})
 target_compile_definitions(miniFE-proteus PRIVATE ENABLE_PROTEUS)
-add_proteus(miniFE-proteus LINK_SHARED)
+add_proteus(miniFE-proteus)
 BUILD(miniFE-proteus MINIFE::PROTEUS)

@@ -15,9 +15,9 @@
 #include <string>
 #include <sys/types.h>
 
-#include "proteus/CompilerInterfaceDevice.h"
-#include "proteus/Hashing.h"
-#include <proteus/JitEngineDevice.h>
+#include "proteus/impl/CompilerInterfaceDevice.h"
+#include "proteus/impl/Hashing.h"
+#include <proteus/impl/JitEngineDevice.h>
 
 #include "mneme/DeviceTraits.hpp"
 #include "mneme/MnemeKernelInfo.hpp"

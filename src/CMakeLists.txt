@@ -65,7 +65,7 @@ target_include_directories(record SYSTEM PRIVATE ${LLVM_INCLUDE_DIRS} ${CMAKE_SO
 target_link_libraries(record PRIVATE mnemert)
 # Link the record preload shared library with proteus shared library to avoid
 # LLVM static initialization issues.
-target_link_libraries(record PRIVATE proteus_shared)
+target_link_libraries(record PRIVATE proteus)
 
 if (MNEME_ENABLE_LOGGER)
   message(STATUS "Adding SPDLOG in recording")
@@ -78,6 +78,10 @@ endif()
 if(MNEME_ENABLE_HIP)
   target_link_libraries(record PRIVATE hip::host)
   target_link_libraries(record PRIVATE ${llvm_libs})
+  # Proteus's HIP impl headers (CoreLLVMHIP.h) call lld::elf::link inline,
+  # so consumers that instantiate that code must link the LLD libraries
+  # themselves — libproteus.so hides them via its version script.
+  target_link_libraries(record PRIVATE lldCommon lldELF)
 elseif(MNEME_ENABLE_CUDA)
   target_link_libraries(record PRIVATE CUDA::cudart CUDA::cuda_driver)
   target_link_libraries(record PRIVATE ${llvm_libs})

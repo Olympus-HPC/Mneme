@@ -21,8 +21,8 @@
 #include <llvm/IR/Module.h>
 #include <mutex>
 
-#include <proteus/CompilerInterfaceDevice.h>
-#include <proteus/JitEngineDevice.h>
+#include <proteus/impl/CompilerInterfaceDevice.h>
+#include <proteus/impl/JitEngineDevice.h>
 
 #include "mneme/DeviceTraits.hpp"
 #include "mneme/MnemeKernelInfo.hpp"
@@ -34,7 +34,6 @@ namespace mneme {
 template <DeviceVendors VendorTypes> class MnemeRecorder {
 protected:
   void *rtLib;
-  void *proteusLib;
   std::string RecordReplayDir;
   llvm::DenseMap<void **, llvm::SmallVector<std::shared_ptr<KernelInfo>>>
       HandleToKernels;
@@ -100,11 +99,6 @@ private:
                                     dim3 blockDim, void **args,
                                     size_t sharedMem,
                                     DeviceStream_t stream) = nullptr;
-
-  DeviceError_t (*proteusLaunchKernel)(const void *func, dim3 gridDim,
-                                       dim3 blockDim, void **args,
-                                       size_t sharedMem,
-                                       DeviceStream_t stream) = nullptr;
 
   DeviceError_t (*origMallocDevice)(void **ptr, size_t size);
 
@@ -214,8 +208,6 @@ public:
       return origLaunchKernel(func, GridDim, BlockDim, Args, SharedMem, Stream);
     }
     auto &KInfo = OptionalKernelInfo.value().get();
-    auto &BinInfo = KInfo.getBinaryInfo();
-    BinInfo.mapGlobals();
     LOG_DEBUG("Continue with {}", KInfo.getName());
     Proteus.extractModuleAndBitcode(KInfo);
 
@@ -266,16 +258,10 @@ public:
     VAStartAddr = nullptr;
     VATotalSize = 0;
     rtLib = MnemeDeviceRT::getRTLib();
-    proteusLib = dlopen("libproteus.so", RTLD_NOW);
     RecordReplayDir = DB.getDir();
     DeviceID = -1;
 
     // Redirect overloaded device runtime functions.
-    reinterpret_cast<void *&>(proteusLaunchKernel) =
-        dlsym(proteusLib, MnemeDeviceRT::getLaunchKernelFnName());
-    assert(proteusLaunchKernel &&
-           "Expected non-null proteus-kernel-launch function pointer");
-
     reinterpret_cast<void *&>(origLaunchKernel) =
         dlsym(rtLib, MnemeDeviceRT::getLaunchKernelFnName());
     assert(origLaunchKernel &&
