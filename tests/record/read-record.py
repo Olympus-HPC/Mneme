@@ -82,8 +82,14 @@ def _parse_prologue(filename):
             dict(builtin=builtin, threshold=threshold,
                  threshold_kind=threshold_kind, norm=norm, tag=tag)
         )
+
+    # args
+    for _ in range(u64()):
+        arg_size = u64()
+        skip(arg_size)
+
     pointer_offsets = []
-    for arg_index in range(u64() if off < len(data) else 0):
+    for _ in range(u64() if off < len(data) else 0):
         pointer_offsets.append((u64(), u64()))
     return globals_, results, pointer_offsets
 
