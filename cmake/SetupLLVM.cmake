@@ -13,6 +13,19 @@ find_package(LLVM REQUIRED CONFIG NO_DEFAULT_PATH
 
 file(REAL_PATH "${LLVM_DIR}" LLVM_DIR)
 
+if(MNEME_ENABLE_HIP)
+  find_package(LLD REQUIRED CONFIG NO_DEFAULT_PATH
+    HINTS "${LLVM_INSTALL_DIR}"
+    PATH_SUFFIXES
+      "lib/cmake/lld"
+      "lib64/cmake/lld"
+      "cmake/lld"
+      "llvm/lib/cmake/lld"
+      "llvm/lib64/cmake/lld"
+  )
+  message(STATUS "Found LLD package in: ${LLD_DIR}")
+endif()
+
 message(STATUS "LLVM_FOUND: ${LLVM_FOUND}")
 message(STATUS "LLVM_INCLUDE_DIRS: ${LLVM_INCLUDE_DIRS}")
 message(STATUS "LLVM_LIBRARY_DIR: ${LLVM_LIBRARY_DIR}")
