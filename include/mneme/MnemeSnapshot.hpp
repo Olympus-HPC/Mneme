@@ -12,6 +12,9 @@
 #include "llvm/Demangle/Demangle.h"
 #include <llvm/ADT/StableHashing.h>
 #include <llvm/ADT/StringRef.h>
+#include <llvm/Bitcode/BitcodeReader.h>
+#include <llvm/IR/LLVMContext.h>
+#include <llvm/IR/Module.h>
 #include <string>
 #include <sys/types.h>
 
@@ -260,8 +263,33 @@ class KernelInstancesCollection {
   const std::string KName;
 
 private:
-  std::string StoreModule(llvm::Module &M, const std::string &RecordReplayDir,
-                          uint64_t StaticHash) {
+  // Parse Proteus's serialized bitcode in a Mneme-owned LLVMContext and
+  // extract per-argument metadata. Operating on a Mneme-owned Module (rather
+  // than KInfo.getModule()) keeps Mneme's LLVM runtime from touching any
+  // Proteus-owned LLVM C++ object across the DSO boundary. Ctx and Mod are
+  // destroyed on return; nothing downstream captures pointers into them.
+  void extractArgInfoFromBitcode(llvm::StringRef Bitcode) {
+    auto Ctx = std::make_unique<llvm::LLVMContext>();
+    llvm::MemoryBufferRef BufRef(Bitcode, KName);
+    auto ModOrErr = llvm::parseBitcodeFile(BufRef, *Ctx);
+    if (!ModOrErr)
+      LOG_FATAL("parseBitcodeFile failed for kernel " + KName + ": " +
+                llvm::toString(ModOrErr.takeError()));
+    std::unique_ptr<llvm::Module> Mod = std::move(*ModOrErr);
+
+    llvm::Function *F = Mod->getFunction(KName);
+    if (!F)
+      LOG_FATAL("Function " + KName + " not found in parsed bitcode");
+
+    KernelArgSizes = mneme::getFuncDescr(*F);
+    KernelArgNames = mneme::getArgNames(*F);
+    KernelSpecializations = mneme::canSpecialize(*F);
+    ConvertArgToDouble = mneme::convertToDouble(*F);
+  }
+
+  std::string StoreModuleBytes(llvm::StringRef Bytes,
+                               const std::string &RecordReplayDir,
+                               uint64_t StaticHash) {
     std::string Filename(
         std::filesystem::path(llvm::Twine(RecordReplayDir + "/RecordedIR_" +
                                           std::to_string(StaticHash) + ".bc")
@@ -270,13 +298,13 @@ private:
 
     std::error_code EC;
     llvm::raw_fd_ostream OutBC(Filename, EC);
-    llvm::WriteBitcodeToFile(M, OutBC);
     if (EC)
       LOG_FATAL("Cannot write module ir file");
+    OutBC << Bytes;
+    OutBC.close();
 
     LOG_DEBUG("Stored Blob with StaticHash:{} to file {}", StaticHash,
               std::filesystem::canonical(Filename).string());
-    OutBC.close();
     return std::filesystem::canonical(Filename).string();
   }
 
@@ -309,14 +337,17 @@ public:
                             int MaxRecordings)
       : VAddr(VAddr), VASize(VASize), MaxRecordings(MaxRecordings),
         NumRecords(0), KName(KInfo.getName()) {
-    auto &Module = KInfo.getModule();
-    auto *F = Module.getFunction(KInfo.getName());
-    KernelArgSizes = mneme::getFuncDescr(*F);
-    KernelArgNames = mneme::getArgNames(*F);
-    KernelSpecializations = mneme::canSpecialize(*F);
-    ConvertArgToDouble = mneme::convertToDouble(*F);
-    ModuleFiles.emplace_back(
-        StoreModule(Module, MnemeDirectory, KInfo.getStaticHash().getValue()));
+    // Non-owning view of Proteus's cached bitcode. The underlying MemoryBuffer
+    // is owned by KInfo.Bitcode and outlives this synchronous constructor, so
+    // no copy is needed. Caller must have triggered extractModuleAndBitcode
+    // upstream so the optional is populated.
+    llvm::StringRef Bitcode = KInfo.getBitcode().getBuffer();
+    if (Bitcode.empty())
+      LOG_FATAL("Empty bitcode for kernel " + KName);
+
+    extractArgInfoFromBitcode(Bitcode);
+    ModuleFiles.emplace_back(StoreModuleBytes(
+        Bitcode, MnemeDirectory, KInfo.getStaticHash().getValue()));
   }
 
   llvm::stable_hash computeHash(dim3 &GridDim, dim3 &BlockDim,
