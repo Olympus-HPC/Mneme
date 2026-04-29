@@ -2,6 +2,7 @@
 #include <dlfcn.h>
 #include <optional>
 
+#include "mneme/MnemeConfig.hpp"
 #include "mneme/MnemeLogger.hpp"
 #include "mneme/MnemeUtils.hpp"
 
@@ -270,12 +271,7 @@ template <> struct DeviceTraits<DeviceVendors::HIP> {
   }
 
   static size_t getFixedMemorySize() {
-    static uint64_t PageSize{[&]() {
-      const char *env_p = std::getenv("MNEME_PAGE_SIZE");
-      if (!env_p)
-        return static_cast<uint64_t>(64L * 1024L * 1024L * 1024L);
-      return static_cast<uint64_t>(std::atol(env_p) * 1024L * 1024L * 1024L);
-    }()};
+    static uint64_t PageSize{Config::get().getPageSizeBytesOrDefault(64)};
     return PageSize;
   }
 
@@ -626,12 +622,7 @@ template <> struct DeviceTraits<DeviceVendors::CUDA> {
   }
 
   static size_t getFixedMemorySize() {
-    static uint64_t PageSize{[&]() {
-      const char *env_p = std::getenv("MNEME_PAGE_SIZE");
-      if (!env_p)
-        return static_cast<uint64_t>(2L * 1024L * 1024L * 1024L);
-      return static_cast<uint64_t>(std::atol(env_p) * 1024L * 1024L * 1024L);
-    }()};
+    static uint64_t PageSize{Config::get().getPageSizeBytesOrDefault(2)};
     return PageSize;
   }
 

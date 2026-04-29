@@ -48,6 +48,10 @@ endif()
 
 endfunction()
 
+add_executable(Config Config.cpp)
+target_include_directories(Config PRIVATE ${CMAKE_SOURCE_DIR}/include/)
+add_test(NAME Config::Runtime COMMAND Config)
+
 BUILD_UNIT_TEST("SerializeGlobals" SerializeGlobals.cpp)
 add_test(NAME Serialize::Globals COMMAND SerializeGlobals)
 
@@ -59,5 +63,3 @@ add_test(NAME Serialize::RWSnapshot COMMAND ReadWriteSnapshot)
 
 BUILD_DEVICE_UNIT_TEST("CompareMemoryBlob" DeviceKernels.cpp)
 add_test(NAME DeviceKernel::CompareMemory COMMAND CompareMemoryBlob)
-
-

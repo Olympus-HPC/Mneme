@@ -2,11 +2,12 @@
 
 #ifdef MNEME_ENABLE_LOGGER
 
+#include "mneme/MnemeConfig.hpp"
 #include "spdlog/spdlog.h"
+#include <climits>
 #include <cstdlib> // getenv
 #include <filesystem>
 #include <iostream>
-#include <climits>
 #include <memory>
 #include <spdlog/sinks/basic_file_sink.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
@@ -38,34 +39,34 @@ inline std::string getLogFileName() {
   return id;
 }
 
-// Get log level from the environment
-inline spdlog::level::level_enum getLogLevelFromEnv() {
-  const char *env_p = std::getenv("MNEME_LOG_LEVEL");
-  if (!env_p)
+inline spdlog::level::level_enum toSpdLogLevel(LogLevel Level) {
+  switch (Level) {
+  case LogLevel::Trace:
+    return spdlog::level::trace;
+  case LogLevel::Debug:
+    return spdlog::level::debug;
+  case LogLevel::Info:
+    return spdlog::level::info;
+  case LogLevel::Warn:
+    return spdlog::level::warn;
+  case LogLevel::Error:
+    return spdlog::level::err;
+  case LogLevel::Critical:
     return spdlog::level::critical;
-
-  static const std::unordered_map<std::string, spdlog::level::level_enum>
-      logLevels = {{"trace", spdlog::level::trace},
-                   {"debug", spdlog::level::debug},
-                   {"info", spdlog::level::info},
-                   {"warn", spdlog::level::warn},
-                   {"error", spdlog::level::err},
-                   {"critical", spdlog::level::critical},
-                   {"off", spdlog::level::off}};
-
-  std::string levelStr(env_p);
-  auto it = logLevels.find(levelStr);
-  return (it != logLevels.end()) ? it->second : spdlog::level::info;
+  case LogLevel::Off:
+    return spdlog::level::off;
+  }
+  return spdlog::level::info;
 }
 
-// Get log directory from the environment
 inline std::string getLogDirectory() {
-  const char *dir = std::getenv("MNEME_LOG_DIR");
-  if (dir && !std::filesystem::exists(dir)) {
-    std::cerr << "'MNEME_LOG_DIR' directory does not exist\n";
+  try {
+    auto Dir = Config::get().getLogDirectory();
+    return Dir.value_or("");
+  } catch (const std::runtime_error &Error) {
+    std::cerr << Error.what();
     exit(-1);
   }
-  return (dir != nullptr) ? std::string(dir) : "";
 }
 
 } // namespace
@@ -83,7 +84,7 @@ private:
       _logger = spdlog::stdout_color_mt("console_logger");
       _logger->set_pattern("[\033[34mmneme\033[0m] [%^%l%$] %v");
     }
-    _logger->set_level(getLogLevelFromEnv());
+    _logger->set_level(toSpdLogLevel(Config::get().MnemeLogLevel));
   }
 
 public:
