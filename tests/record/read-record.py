@@ -1,5 +1,6 @@
 import glob
 import json
+import os
 import struct
 import sys
 from pathlib import Path
@@ -79,7 +80,8 @@ def _parse_prologue_metadata(filename):
         )
     return results
 
-for fn in glob.glob("./*.json"):
+data_dir = sys.argv[1] if len(sys.argv) > 1 else "."
+for fn in sorted(glob.glob(os.path.join(data_dir, "*.json"))):
     with open(fn, "r") as fd:
         rr_data = json.load(fd)
     d_name = rr_data["DemangledName"]
