@@ -104,9 +104,16 @@ This mechanism enables faithful reproduction of kernel behavior and
 forms the foundation for replay, verification, and performance
 experimentation.
 
-The prologue and epilogue files contain serialized descriptors of GPU
-memory contents and associated metadata, including the number of memory
-regions, their sizes, and kernel argument mappings.
+The prologue file contains a full serialized snapshot of GPU memory,
+global variables, metadata, and kernel argument mappings. New epilogue
+files are stored as binary diffs against the matching prologue: they
+contain descriptors for the recorded globals and memory regions plus the
+changed byte ranges needed to reconstruct the post-kernel state.
+
+Replay supplies both paths explicitly. The epilogue diff does not embed
+the prologue path, so moving or copying a recording only needs to keep
+the JSON `Prologue` and `Epilogue` fields pointing at the relocated
+files. Legacy full epilogue snapshots remain readable.
 
 ### Blob annotation metadata
 
