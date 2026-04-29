@@ -48,8 +48,7 @@ endif()
 
 endfunction()
 
-add_executable(Config Config.cpp)
-target_include_directories(Config PRIVATE ${CMAKE_SOURCE_DIR}/include/)
+BUILD_UNIT_TEST("Config" Config.cpp)
 add_test(NAME Config::Runtime COMMAND Config)
 
 BUILD_UNIT_TEST("SerializeGlobals" SerializeGlobals.cpp)
