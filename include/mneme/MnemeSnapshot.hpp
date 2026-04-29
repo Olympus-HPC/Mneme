@@ -264,10 +264,9 @@ class KernelInstancesCollection {
 
 private:
   // Parse Proteus's serialized bitcode in a Mneme-owned LLVMContext and
-  // extract per-argument metadata. Operating on a Mneme-owned Module (rather
-  // than KInfo.getModule()) keeps Mneme's LLVM runtime from touching any
-  // Proteus-owned LLVM C++ object across the DSO boundary. Ctx and Mod are
-  // destroyed on return; nothing downstream captures pointers into them.
+  // extract per-argument metadata. Operating on a Mneme-owned Module 
+  // keeps Mneme's LLVM runtime from touching any
+  // Proteus-owned LLVM C++ object across the DSO boundary.
   void extractArgInfoFromBitcode(llvm::StringRef Bitcode) {
     auto Ctx = std::make_unique<llvm::LLVMContext>();
     llvm::MemoryBufferRef BufRef(Bitcode, KName);
@@ -337,10 +336,7 @@ public:
                             int MaxRecordings)
       : VAddr(VAddr), VASize(VASize), MaxRecordings(MaxRecordings),
         NumRecords(0), KName(KInfo.getName()) {
-    // Non-owning view of Proteus's cached bitcode. The underlying MemoryBuffer
-    // is owned by KInfo.Bitcode and outlives this synchronous constructor, so
-    // no copy is needed. Caller must have triggered extractModuleAndBitcode
-    // upstream so the optional is populated.
+    // Non-owning view of Proteus's cached bitcode.
     llvm::StringRef Bitcode = KInfo.getBitcode().getBuffer();
     if (Bitcode.empty())
       LOG_FATAL("Empty bitcode for kernel " + KName);
