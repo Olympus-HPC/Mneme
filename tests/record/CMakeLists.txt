@@ -76,13 +76,23 @@ configure_file(${CMAKE_CURRENT_SOURCE_DIR}/read-record.py ${CMAKE_CURRENT_BINARY
 
 file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/lit.cfg.py "
 import lit.formats
+import os
+import tempfile
+import atexit
+import shutil
 
 config.name = 'LIT tests'
 config.test_format = lit.formats.ShTest(True)
+config.environment = os.environ.copy()
 
 config.suffixes = ['.cpp']
 config.test_source_root = '${CMAKE_CURRENT_SOURCE_DIR}'
-config.test_exec_root = '${CMAKE_CURRENT_BINARY_DIR}'
+# Create a unique temp exec_root per ctest invocation to avoid races on
+# lit_test_times.txt and on test artifacts under ctest -jN.
+exec_root = tempfile.mkdtemp(prefix='lit.tmp.', dir='${CMAKE_CURRENT_BINARY_DIR}')
+config.test_exec_root = exec_root
+atexit.register(lambda: shutil.rmtree(exec_root, ignore_errors=False))
+
 MNEME_PRELOAD_LIB='${CMAKE_BINARY_DIR}/src/librecord.so'
 PAGE_SIZE = lit_config.params['PG']
 RR = lit_config.params['RR']
@@ -93,6 +103,7 @@ config.substitutions.append(('%PG', PAGE_SIZE))
 config.substitutions.append(('%RR', RR))
 config.substitutions.append(('%ext', EXT))
 config.substitutions.append(('%FILECHECK', FILECHECK))
+config.substitutions.append(('%build', '${CMAKE_CURRENT_BINARY_DIR}'))
 "
 )
 
