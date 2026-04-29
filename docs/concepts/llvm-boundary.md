@@ -128,7 +128,7 @@ See [Artifacts](artifacts.md) for where recorded .bc files are stored and how th
 LLVM IR is a powerful boundary, but it comes with practical constraints:
 
 - Toolchain coupling: Recorded IR must remain compatible with the LLVM toolchain used
-for replay. Mneme is tested with ROCm-provided LLVM versions (e.g., LLVM 18/19).
+for replay. Mneme is tested with ROCm-provided LLVM versions (e.g., LLVM 18/19/20).
 - Not full-program replay: Mneme records kernel-level IR, not host-side control flow.
 - Backend differences matter: Code generation decisions (and performance) may vary across
 GPU targets, LLVM versions, and codegen options.

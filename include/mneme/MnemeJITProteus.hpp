@@ -1,9 +1,9 @@
-#include <proteus/CoreLLVM.h>
-#include <proteus/CoreLLVMDevice.h>
+#include <proteus/impl/CoreLLVM.h>
+#include <proteus/impl/CoreLLVMDevice.h>
 
 #include <llvm/Support/InitLLVM.h>
 #ifdef MNEME_ENABLE_HIP
-#include <proteus/CoreLLVMHIP.h>
+#include <proteus/impl/CoreLLVMHIP.h>
 #elif defined(MNEME_ENABLE_CUDA)
 #else
 #error "Please define MNEME_ENABLE_HIP or MNEME_ENABLE_CUDA"

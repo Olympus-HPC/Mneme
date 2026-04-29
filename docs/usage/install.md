@@ -50,14 +50,12 @@ but not tested.
 ### Proteus dependency and compatibility
 
 Mneme depends on the Proteus JIT and LLVM transformation infrastructure.
-At present, neither Mneme nor Proteus follows a formal versioning scheme.
+Compatibility between Mneme and Proteus is defined by the tested Proteus
+release and commit.
 
-Compatibility between Mneme and Proteus is therefore defined at the
-**commit (SHA) level**.
-
-Mneme is regularly tested against a specific Proteus commit known to be
+Mneme is regularly tested against a specific Proteus release known to be
 compatible. Users building Mneme from source are strongly encouraged to
-use the corresponding Proteus commit to avoid incompatibilities.
+use the corresponding Proteus release to avoid incompatibilities.
 
 !!! note
     Mneme requires Proteus to be built and installed as a **shared library**.
@@ -65,18 +63,25 @@ use the corresponding Proteus commit to avoid incompatibilities.
     record and replay functionality, which is not possible with a
     static-only Proteus build.
 
-#### Tested Proteus commit
+#### Tested Proteus release
 
 - Repository: https://github.com/Olympus-HPC/Proteus
-- Branch: `cuda-proteus-core-shared-llvm`
+- Release: `v2026.03.0`
+- Commit: `496cdd70b5acef5b31688250616b091b3928fad3`
 - Tested with: Mneme `develop`
+
+Proteus must be configured with:
+
+```bash
+-DBUILD_SHARED=On -DPROTEUS_INSTALL_IMPL_HEADERS=On
+```
 
 !!! note
     Mneme may not be compatible with the latest Proteus `main` branch at all times.
     Proteus is under active development, and changes to core components may
     temporarily break compatibility with Mneme.
 
-    Users are strongly encouraged to use the tested Proteus commit listed above.
+    Users are strongly encouraged to use the tested Proteus release listed above.
 
 ### spdlog dependency and compatibility
 
@@ -97,8 +102,8 @@ The following tools and libraries must be available:
 - LLVM libraries
 
 These tools are provided by the **LLVM distribution bundled with ROCm**.
-Mneme is currently tested with **LLVM 18 and LLVM 19** as shipped by
-supported ROCm releases.
+Mneme is currently tested with **LLVM 18, 19, and 20** as shipped by
+supported ROCm releases (6.3, 6.4, and 7.1 respectively).
 
 !!! note
     Mneme expects the ROCm-provided LLVM toolchain to be used.
@@ -158,12 +163,74 @@ tested runtime dependencies.
 This installation method is recommended for contributors and developers
 working on Mneme itself.
 
+For Python development, use an editable install:
+
 ```bash
 pip install -e .
 ```
 
 Editable mode installs Mneme in-place, allowing local source changes to be
 picked up without reinstallation.
+
+For C++ and runtime development, Mneme also provides simple setup scripts
+that configure an out-of-tree CMake build against an existing Proteus
+installation.
+These scripts are intended for developers who want a local Mneme build
+and install prefix that mirrors the Proteus developer workflow.
+
+On AMD systems:
+
+```bash
+export PROTEUS_DIR=/path/to/proteus/install-prefix
+export MNEME_ENABLE_TESTS=On
+source scripts/setup-rocm.sh 6.4.1
+cd build-$(hostname | sed 's/[0-9]//g')-rocm-6.4.1
+cmake --build . --parallel 10
+ctest --output-on-failure
+cmake --install .
+```
+
+On NVIDIA systems:
+
+```bash
+export PROTEUS_DIR=/path/to/proteus/install-prefix
+export MNEME_ENABLE_TESTS=On
+export MNEME_CUDA_ARCHITECTURES=90
+source scripts/setup-cuda.sh /path/to/llvm 12.2.2
+cd build-$(hostname | sed 's/[0-9]//g')-cuda-12.2.2-llvm-$(/path/to/llvm/bin/llvm-config --version)
+cmake --build . --parallel 10
+ctest --output-on-failure
+cmake --install .
+```
+
+`PROTEUS_DIR` should point to a compatible Proteus installation prefix
+built for the same backend.
+If `PROTEUS_DIR` is not set, the scripts default to the sibling
+`../proteus/install-*` prefixes used by the Proteus developer scripts.
+
+The scripts can be configured with environment variables before sourcing:
+
+- `MNEME_ENABLE_TESTS`: configure the C++ test targets (`Off` by default).
+- `MNEME_ENABLE_LOGGER`: enable logging support (`Off` by default).
+- `MNEME_ENABLE_AUTOTUNE`: build autotuning/profile support (`Off` by default).
+- `MNEME_LINK_SHARED_LLVM`: link against shared LLVM libraries
+  (`On` by default for CUDA, `Off` by default for ROCm).
+- `MNEME_CUDA_ARCHITECTURES`: CUDA architecture list for NVIDIA builds
+  (`90` by default).
+
+Additional CMake arguments may be passed after the required script
+arguments.
+For example:
+
+```bash
+source scripts/setup-rocm.sh 6.4.1 -DCMAKE_BUILD_TYPE=RelWithDebInfo
+source scripts/setup-cuda.sh /path/to/llvm 12.2.2 -DCMAKE_BUILD_TYPE=RelWithDebInfo
+```
+
+!!! note
+    The setup scripts configure and install the native CMake project.
+    They do not replace `pip install -e .` for the Mneme Python package,
+    CLI, or Python bindings.
 
 ### Optional: Using an external Proteus installation
 
@@ -187,7 +254,10 @@ external Proteus installation:
 - `PROTEUS_SRC`: Path to a Proteus source tree. When set, the Mneme
   installer will configure and build Proteus from this source.
 - `PROTEUS_DIR`: Path to an existing Proteus installation prefix.
-  This directory must allow `find_package(Proteus)` to succeed.
+  This directory must allow `find_package(proteus)` to succeed.
+
+External Proteus installations must use release `v2026.03.0` and must be
+built with `-DBUILD_SHARED=On -DPROTEUS_INSTALL_IMPL_HEADERS=On`.
 
 When either of these variables is set, Mneme will use the specified
 Proteus installation instead of the internally managed one.

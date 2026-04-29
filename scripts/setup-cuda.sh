@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+
+HOSTN=${HOSTNAME//[0-9]/}
+
+LLVM_INSTALL_DIR=$1
+CUDA_VERSION=$2
+if [ $# -lt 2 ] || [ -z "${LLVM_INSTALL_DIR}" ] || [ -z "${CUDA_VERSION}" ];
+then
+    echo "Usage: source scripts/setup-cuda.sh <LLVM installation dir> <CUDA version>"
+    return 1
+fi
+
+ml load cmake/3.23.1
+
+# Developer knobs.
+MNEME_ENABLE_TESTS=${MNEME_ENABLE_TESTS:-Off}
+MNEME_ENABLE_LOGGER=${MNEME_ENABLE_LOGGER:-Off}
+MNEME_ENABLE_AUTOTUNE=${MNEME_ENABLE_AUTOTUNE:-Off}
+MNEME_LINK_SHARED_LLVM=${MNEME_LINK_SHARED_LLVM:-On}
+MNEME_CUDA_ARCHITECTURES=${MNEME_CUDA_ARCHITECTURES:-90}
+
+ml load cuda/${CUDA_VERSION}
+
+export PATH="$LLVM_INSTALL_DIR/bin":$PATH
+
+LLVM_VERSION=$("$LLVM_INSTALL_DIR/bin/llvm-config" --version)
+if [ -z "${LLVM_VERSION}" ]; then
+    echo "Error: could not determine LLVM version from $LLVM_INSTALL_DIR/bin/llvm-config"
+    return 1
+fi
+
+PROTEUS_DIR=${PROTEUS_DIR:-../proteus/install-${HOSTN}-cuda-${CUDA_VERSION}-llvm-${LLVM_VERSION}}
+
+BUILDDIR="build-${HOSTN}-cuda-${CUDA_VERSION}-llvm-${LLVM_VERSION}"
+mkdir -p "${BUILDDIR}"
+pushd "${BUILDDIR}"
+
+cmake .. \
+-DLLVM_INSTALL_DIR="$LLVM_INSTALL_DIR" \
+-DCMAKE_PREFIX_PATH="${PROTEUS_DIR}" \
+-Dproteus_DIR="${PROTEUS_DIR}" \
+-DMNEME_ENABLE_CUDA=on \
+-DMNEME_ENABLE_HIP=off \
+-DMNEME_ENABLE_TESTS=${MNEME_ENABLE_TESTS} \
+-DMNEME_ENABLE_LOGGER=${MNEME_ENABLE_LOGGER} \
+-DMNEME_ENABLE_AUTOTUNE=${MNEME_ENABLE_AUTOTUNE} \
+-DMNEME_LINK_SHARED_LLVM=${MNEME_LINK_SHARED_LLVM} \
+-DCMAKE_CUDA_ARCHITECTURES=${MNEME_CUDA_ARCHITECTURES} \
+-DCMAKE_C_COMPILER="$LLVM_INSTALL_DIR/bin/clang" \
+-DCMAKE_CXX_COMPILER="$LLVM_INSTALL_DIR/bin/clang++" \
+-DCMAKE_CUDA_COMPILER="$LLVM_INSTALL_DIR/bin/clang++" \
+-DCMAKE_INSTALL_PREFIX=../install-${HOSTN}-cuda-${CUDA_VERSION}-llvm-${LLVM_VERSION} \
+-DCMAKE_EXPORT_COMPILE_COMMANDS=on \
+"${@:3}"
+
+popd

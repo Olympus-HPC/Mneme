@@ -56,6 +56,7 @@ function(CREATE_RDC_GPU_TEST exe check_source)
         target_compile_options(
             ${exe}.rdc
             PUBLIC
+            --no-offload-new-driver
         )
     set_target_properties(${exe}.rdc PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
   endif()
@@ -121,4 +122,3 @@ CREATE_RDC_GPU_TEST(multi_kernel_regex multi_kernel_regex.cpp)
 
 CREATE_GPU_TEST(test_annotation test_annotation.cpp)
 CREATE_RDC_GPU_TEST(test_annotation test_annotation.cpp)
-

@@ -1,7 +1,7 @@
 #include "core.h"
 #include "llvm/Config/llvm-config.h"
 #include <iostream>
-#include <proteus/CoreLLVM.h>
+#include <proteus/impl/CoreLLVM.h>
 
 namespace {
 class LLVMInstance {

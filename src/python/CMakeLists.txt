@@ -70,9 +70,22 @@ if (MNEME_ENABLE_LOGGER)
 endif()
 
 if(MNEME_ENABLE_HIP)
-  target_link_libraries(mneme PRIVATE hip::host)
+  # Proteus's HIP impl headers (CoreLLVMHIP.h) call lld::elf::link inline,
+  # so consumers that instantiate that code must link the LLD libraries
+  # themselves — libproteus.so hides them via its version script.
+  target_link_libraries(mneme PRIVATE hip::host lldCommon lldELF)
 elseif(MNEME_ENABLE_CUDA)
   target_link_libraries(mneme PRIVATE CUDA::cudart CUDA::cuda_driver)
+  if(MNEME_NVPTXCOMPILER_LIBRARY MATCHES "\\.a$")
+    get_filename_component(_mneme_nvptxcompiler_name "${MNEME_NVPTXCOMPILER_LIBRARY}" NAME)
+    target_link_libraries(mneme PRIVATE
+      -Wl,--whole-archive
+      "${MNEME_NVPTXCOMPILER_LIBRARY}"
+      -Wl,--no-whole-archive
+      "-Wl,--exclude-libs,${_mneme_nvptxcompiler_name}")
+  else()
+    target_link_libraries(mneme PRIVATE "${MNEME_NVPTXCOMPILER_LIBRARY}")
+  endif()
 endif()
 
 

@@ -30,5 +30,5 @@ BUILD(wsm5-mneme WSM5::MNEME)
 
 add_executable(wsm5-proteus main.cpp)
 target_compile_definitions(wsm5-proteus PRIVATE ENABLE_PROTEUS)
-add_proteus(wsm5-proteus LINK_SHARED)
+add_proteus(wsm5-proteus)
 BUILD(wsm5-proteus WSM5::PROTEUS)

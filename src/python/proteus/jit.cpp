@@ -8,11 +8,11 @@
 #include <llvm/Bitcode/BitcodeReader.h>
 #include <llvm/IR/Module.h>
 #include <mneme/MnemeLogger.hpp>
-#include <proteus/CompilerInterfaceRuntimeConstantInfo.h>
 #include <proteus/CompilerInterfaceTypes.h>
-#include <proteus/CoreLLVM.h>
-#include <proteus/CoreLLVMDevice.h>
-#include <proteus/Hashing.h>
+#include <proteus/impl/CompilerInterfaceRuntimeConstantInfo.h>
+#include <proteus/impl/CoreLLVM.h>
+#include <proteus/impl/CoreLLVMDevice.h>
+#include <proteus/impl/Hashing.h>
 
 
 #ifdef MNEME_ENABLE_HIP

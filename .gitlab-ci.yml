@@ -30,10 +30,10 @@ variables:
 ##### LC GITLAB CONFIGURATION
 # Use an LLNL service user to run CI. This prevents from running pipelines as
 # an actual user.
-  LLNL_SERVICE_USER: "koparasy"
+  LLNL_SERVICE_USER: "fink12"
 # Use the service user workspace. Solves permission issues, stores everything
 # at the same location whoever triggers a pipeline.
-  CUSTOM_CI_BUILDS_DIR: "/usr/workspace/LExperts/mneme/gitlab-runner/"
+  CUSTOM_CI_BUILDS_DIR: "/usr/workspace/LExperts/mneme-gitlab-runner"
 # Tells Gitlab to recursively update the submodules when cloning the project.
 #  GIT_SUBMODULE_STRATEGY: recursive
 
@@ -61,15 +61,82 @@ variables:
 # We organize the build-and-test stage with sub-pipelines. Each sub-pipeline
 # corresponds to a test batch on a given machine.
 
+# Create a minimal pipeline for metadata-only changes so GitHub still receives
+# a passing GitLab status. The per-stage path groups live in
+# .gitlab/subscribed-pipelines.yml because YAML anchors do not carry across
+# included files.
+workflow:
+  rules:
+    # For default-branch push pipelines, rules:changes compares against the
+    # previous commit on the branch. Non-default branches compare to develop.
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      changes:
+        paths: &pipeline_trigger_paths
+          - ".gitlab-ci.yml"
+          - ".gitlab/**/*"
+          - ".coveragerc"
+          - "CMakeLists.txt"
+          - "cmake/**/*"
+          - "include/**/*"
+          - "pyproject.toml"
+          - "python/**/*"
+          - "pytest.ini"
+          - "scripts/gitlab/**/*"
+          - "setup.cfg"
+          - "setup.py"
+          - "src/**/*"
+          - "tests/**/*"
+      when: always
+    - if: '$CI_COMMIT_BRANCH != $CI_DEFAULT_BRANCH'
+      changes:
+        compare_to: &compare_to_ref "refs/heads/develop"
+        paths: *pipeline_trigger_paths
+      when: always
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      changes:
+        paths: &meta_only_paths
+          - ".github/**/*"
+          - ".gitignore"
+          - "docs/**/*"
+          - "doxygen/**/*"
+          - "examples/**/*"
+          - "*.md"
+          - "mkdocs.yml"
+          - "LICENSE"
+          - "NOTICE"
+      when: always
+    - if: '$CI_COMMIT_BRANCH != $CI_DEFAULT_BRANCH'
+      changes:
+        compare_to: *compare_to_ref
+        paths: *meta_only_paths
+      when: always
+    - when: always
+
 # High level stages
 stages:
   - prerequisites
   - build-and-test
   - test-python-cov
 
+meta-only:
+  stage: prerequisites
+  interruptible: true
+  tags: [shell, oslic]
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      changes:
+        paths: *meta_only_paths
+    - if: '$CI_COMMIT_BRANCH != $CI_DEFAULT_BRANCH'
+      changes:
+        compare_to: *compare_to_ref
+        paths: *meta_only_paths
+  script:
+    - echo "Meta-only change detected; skipping heavy GitLab CI."
+
 # Template for jobs triggering a build-and-test sub-pipeline:
 .build-and-test:
   stage: build-and-test
+  interruptible: true
   trigger:
     include:
       - local: '.gitlab/custom-jobs-and-variables.yml'
@@ -89,6 +156,7 @@ stages:
 
 .test-python-cov:
   stage: test-python-cov
+  interruptible: true
   trigger:
     include:
       - local: '.gitlab/custom-jobs-and-variables.yml'
