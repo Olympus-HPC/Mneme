@@ -20,10 +20,12 @@ from pathlib import Path
 #               uint8 norm; uint64 tag_len; char[tag_len] tag
 #   uint64  NumArgs
 #   for each arg: uint64 ArgSize; char[ArgSize] data
+#   optional uint64 NumPointerOffsets
+#   for each pointer offset: uint64 ArgIndex; uint64 Offset
 # ---------------------------------------------------------------------------
 
-def _parse_prologue_metadata(filename):
-    """Return a list of Metadata dicts for every blob in a prologue file."""
+def _parse_prologue(filename):
+    """Return globals, metadata, and pointer-offset records from a prologue."""
     with open(filename, "rb") as f:
         data = f.read()
     off = 0
@@ -51,12 +53,15 @@ def _parse_prologue_metadata(filename):
         off += n
 
     # globals
+    globals_ = []
     for _ in range(u64()):
         str_len = u64()
-        skip(str_len)           # name
+        name = data[off:off + str_len].decode("utf-8", errors="replace")
+        skip(str_len)
         var_size = u64()
         skip(8)                 # dev_addr
         skip(var_size)          # data
+        globals_.append(name)
 
     # blobs
     results = []
@@ -78,7 +83,16 @@ def _parse_prologue_metadata(filename):
             dict(builtin=builtin, threshold=threshold,
                  threshold_kind=threshold_kind, norm=norm, tag=tag)
         )
-    return results
+
+    # args
+    for _ in range(u64()):
+        arg_size = u64()
+        skip(arg_size)
+
+    pointer_offsets = []
+    for _ in range(u64() if off < len(data) else 0):
+        pointer_offsets.append((u64(), u64()))
+    return globals_, results, pointer_offsets
 
 data_dir = sys.argv[1] if len(sys.argv) > 1 else "."
 for fn in sorted(glob.glob(os.path.join(data_dir, "*.json"))):
@@ -112,7 +126,10 @@ for fn in sorted(glob.glob(os.path.join(data_dir, "*.json"))):
 
         # Parse the prologue binary to report any non-default blob metadata.
         try:
-            mds = _parse_prologue_metadata(instance["Prologue"])
+            globals_, mds, pointer_offsets = _parse_prologue(instance["Prologue"])
+            print("CapturedGlobals:", len(globals_), " ".join(sorted(globals_)))
+            if pointer_offsets:
+                print("PointerOffsets:", len(pointer_offsets))
             for md in mds:
                 if (md["threshold"] != 0.0 or md["builtin"] != 0
                         or md["norm"] != 0 or md["threshold_kind"] != 0

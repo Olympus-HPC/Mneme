@@ -5,15 +5,16 @@
 #include <chrono>
 #include <iostream>
 #include <llvm-c/Types.h>
+#include <llvm/ADT/StringSet.h>
 #include <llvm/Bitcode/BitcodeReader.h>
 #include <llvm/IR/Module.h>
+#include <llvm/Transforms/IPO/Internalize.h>
 #include <mneme/MnemeLogger.hpp>
 #include <proteus/CompilerInterfaceTypes.h>
 #include <proteus/impl/CompilerInterfaceRuntimeConstantInfo.h>
 #include <proteus/impl/CoreLLVM.h>
 #include <proteus/impl/CoreLLVMDevice.h>
 #include <proteus/impl/Hashing.h>
-
 
 #ifdef MNEME_ENABLE_HIP
 constexpr const char *getRTCMethod() { return "serial"; }
@@ -33,6 +34,19 @@ inline std::optional<CodegenOption> fromString(std::string str) {
     return CodegenOption::Parallel;
   }
   return std::nullopt;
+}
+
+void internalizePreserving(llvm::Module &M, llvm::StringRef KernelSym,
+                           const llvm::StringSet<> &PreserveGlobals) {
+  auto *F = M.getFunction(KernelSym);
+  llvm::internalizeModule(M, [&](const llvm::GlobalValue &GV) {
+    if (&GV == F)
+      return true;
+    if (llvm::isa<llvm::GlobalVariable>(GV) &&
+        PreserveGlobals.contains(GV.getName()))
+      return true;
+    return false;
+  });
 }
 
 } // namespace
@@ -61,7 +75,8 @@ ProteusPY_optimize(LLVMModuleRef Mod, const char *DeviceArch,
 }
 
 API_EXPORT(LLVMMemoryBufferRef)
-ProteusPY_codeGenObject(LLVMModuleRef Mod, const char *DeviceArch, unsigned CodegenOptLevel) {
+ProteusPY_codeGenObject(LLVMModuleRef Mod, const char *DeviceArch,
+                        unsigned CodegenOptLevel) {
   auto proteus_rtc = fromString(getRTCMethod());
   if (!proteus_rtc)
     LOG_FATAL("Unknown RTC value of {}", getRTCMethod());
@@ -88,7 +103,13 @@ ProteusPY_codeGenObject(LLVMModuleRef Mod, const char *DeviceArch, unsigned Code
 API_EXPORT(LLVMModuleRef)
 ProteusPY_linkModules(const char **LLVMIRFiles, int size,
                       LLVMContextRef context, const char *KernelSym,
-                      bool prune_flag = true, bool internalize_flag = true) {
+                      bool prune_flag = true, bool internalize_flag = true,
+                      const char **PreserveGlobals = nullptr,
+                      int PreserveGlobalsSize = 0) {
+  llvm::StringSet<> PreserveGlobalNames;
+  for (int I = 0; I < PreserveGlobalsSize; ++I)
+    PreserveGlobalNames.insert(PreserveGlobals[I]);
+
   auto Ctx = unwrap(context);
   llvm::SmallVector<std::unique_ptr<llvm::Module>> RecordedModules;
   for (int i = 0; i < size; i++) {
@@ -116,7 +137,7 @@ ProteusPY_linkModules(const char **LLVMIRFiles, int size,
   auto Mod = proteus::linkModules(*unwrap(context), std::move(RecordedModules));
 
   if (internalize_flag) {
-    internalize(*Mod.get(), KernelSym);
+    internalizePreserving(*Mod.get(), KernelSym, PreserveGlobalNames);
   }
 
   return wrap(Mod.release());
@@ -169,7 +190,8 @@ ProteusPY_specializeDims(LLVMModuleRef Mod, uint64_t CurrentHash,
 
 API_EXPORT(uint64_t)
 ProteusPY_specializeDimsAssume(LLVMModuleRef Mod, uint64_t CurrentHash,
-                         const char *KernelName, dim3 GridDim, dim3 BlockDim) {
+                               const char *KernelName, dim3 GridDim,
+                               dim3 BlockDim) {
   auto *M = llvm::unwrap(Mod);
   auto *F = M->getFunction(KernelName);
   proteus::setKernelDimsRange(*M, GridDim, BlockDim);
@@ -177,7 +199,6 @@ ProteusPY_specializeDimsAssume(LLVMModuleRef Mod, uint64_t CurrentHash,
                    BlockDim.y, BlockDim.z);
   return Hash.getValue();
 }
-
 
 API_EXPORT(uint64_t)
 ProteusPY_setLaunchBounds(LLVMModuleRef Mod, uint64_t CurrentHash,
@@ -191,7 +212,5 @@ ProteusPY_setLaunchBounds(LLVMModuleRef Mod, uint64_t CurrentHash,
   return Hash.getValue();
 }
 
-API_EXPORT(const char*) ProteusPY_getCodegenMethod(){
-  return getRTCMethod();
-}
+API_EXPORT(const char *) ProteusPY_getCodegenMethod() { return getRTCMethod(); }
 }

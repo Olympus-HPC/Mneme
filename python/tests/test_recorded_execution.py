@@ -116,12 +116,14 @@ def test_recorded_execution_to_dict():
         va_addr="0x100",
         va_size=32,
         kernel_instances={"hashX": fake_instance},
+        captured_globals=["g_data"],
     )
 
     d = r.to_dict()
 
     assert d["KernelName"] == "K"
     assert d["Modules"] == ["a.ll"]
+    assert d["Globals"] == ["g_data"]
     assert d["instances"]["hashX"] == {"X": 1}
 
 
@@ -141,7 +143,9 @@ def test_recorded_execution_link_llvm_modules_calls_jit():
 
         out = r.link_llvm_modules(prune=True, internalize=False)
 
-        fake_link.assert_called_once_with(["a.ll", "b.ll"], "K", True, False)
+        fake_link.assert_called_once_with(
+            ["a.ll", "b.ll"], "K", True, False, preserve_globals=[]
+        )
         assert out == "MOD"
 
 
@@ -151,6 +155,7 @@ def test_recorded_execution_from_json_reconstructs():
         "KernelName": "K",
         "DemangledName": "DK",
         "Modules": ["modA.ll"],
+        "Globals": ["g_data"],
         "ArgNames": ["x"],
         "Specializations": [True, True, False],
         "VAddr": "ADDR",
@@ -177,9 +182,9 @@ def test_recorded_execution_from_json_reconstructs():
         r = RecordedExecution.from_json(fname)
 
     assert r.kernel_name == "K"
+    assert r.captured_globals == ["g_data"]
     assert "H" in r.kernel_instances
     inst = r.kernel_instances["H"]
     assert inst.block_dim.x == 1
     assert inst.grid_dim.z == 6
     assert inst.occ == 3
-

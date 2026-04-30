@@ -136,10 +136,13 @@ def test_link_llvm_modules_calls_ffi_with_c_array():
             kernel_name="kernel",
             prune=True,
             internalize=True,
+            preserve_globals=["g_data"],
         )
 
         # Validate call
         fake_lib.ProteusPY_linkModules.assert_called_once()
+        args = fake_lib.ProteusPY_linkModules.call_args.args
+        assert args[7] == 1
 
         # Validate return wrapped in ModuleRef
         assert isinstance(out, jit.ModuleRef)

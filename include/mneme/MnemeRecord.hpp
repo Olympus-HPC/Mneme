@@ -7,6 +7,7 @@
 #include <assert.h>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <dlfcn.h>
 
 #include "llvm/Support/raw_ostream.h"
@@ -115,6 +116,74 @@ private:
   DeviceError_t (*origSetDeviceID)(int id);
   DeviceError_t (*origGetDeviceID)(int *id);
 
+  bool pointerIsMnemeAllocation(const void *Ptr) const {
+    for (const auto &[BasePtr, Blob] : AllocatedBlobs) {
+      DeviceAddressRange Range{Blob.getBlobAddr(), Blob.getSize()};
+      if (Range.contains(Ptr))
+        return true;
+    }
+    return false;
+  }
+
+  std::optional<std::string>
+  findGlobalForPointer(const void *Ptr, ::JitDeviceImplT &Proteus,
+                       CapturedGlobals &SnapshotGlobals) {
+    std::optional<std::string> Match;
+    for (auto &[Handle, BinInfo] : Proteus.HandleToBinaryInfo) {
+      for (const auto &[Name, GVI] : BinInfo.getVarNameToGlobalInfo()) {
+        DeviceAddressRange Range{GVI.DevAddr, GVI.VarSize};
+        if (!Range.contains(Ptr))
+          continue;
+
+        SnapshotGlobals.add(Name, GVI);
+        if (Match && *Match != Name)
+          LOG_FATAL("Device pointer " + util::pointerToHexString(Ptr) +
+                    " aliases multiple Proteus globals: " + *Match + " and " +
+                    Name);
+        Match = Name;
+      }
+    }
+    return Match;
+  }
+
+  CapturedGlobals
+  buildSnapshotGlobals(proteus::JITKernelInfo &KInfo, void **Args,
+                       ::JitDeviceImplT &Proteus,
+                       llvm::ArrayRef<KernelArgPointerSlot> PointerSlots) {
+    CapturedGlobals SnapshotGlobals;
+    for (const auto &[Name, GVI] :
+         KInfo.getBinaryInfo().getVarNameToGlobalInfo())
+      SnapshotGlobals.add(Name, GVI);
+
+    auto *F = KInfo.getModule().getFunction(KInfo.getName());
+    if (!F)
+      LOG_FATAL("Could not find kernel function in extracted LLVM module");
+    auto KernelArgSizes = mneme::getFuncDescr(*F);
+    for (auto PointerSlot : PointerSlots) {
+      PointerSlot.validateAgainst(KernelArgSizes);
+      void *RecordedPtr = PointerSlot.readFrom(Args);
+      if (!RecordedPtr)
+        continue;
+
+      if (pointerIsMnemeAllocation(RecordedPtr))
+        continue;
+
+      if (SnapshotGlobals.findContaining(RecordedPtr))
+        continue;
+
+      if (findGlobalForPointer(RecordedPtr, Proteus, SnapshotGlobals))
+        continue;
+
+      LOG_FATAL("Kernel argument pointer at arg " +
+                std::to_string(PointerSlot.ArgIndex) + " offset " +
+                std::to_string(PointerSlot.ByteOffset) + " points to " +
+                util::pointerToHexString(RecordedPtr) +
+                ", which is neither a Mneme allocation nor a Proteus "
+                "registered global");
+    }
+    return SnapshotGlobals;
+  }
+
 public:
   DeviceError_t rtMalloc(void **ptr, size_t size) {
     if (!PM) {
@@ -200,8 +269,9 @@ public:
 
     auto &Proteus = JitDeviceImplT::instance();
     auto OptionalKernelInfo = Proteus.getJITKernelInfo(func);
-    // NOTE: Here we do something conceptually different. We no longer go through
-    // proteus. We call immediately the vendor launcher. Thus we avoid overheads from caching etc.
+    // NOTE: Here we do something conceptually different. We no longer go
+    // through proteus. We call immediately the vendor launcher. Thus we avoid
+    // overheads from caching etc.
     LOG_DEBUG("Received OptionalKernel Info {}", (void *)origLaunchKernel);
     if (!OptionalKernelInfo) {
       LOG_DEBUG("Information for kernel  {} is not included", func);
@@ -214,9 +284,18 @@ public:
     auto Hash = Proteus.getStaticHash(KInfo);
     LOG_INFO("Hash value is {}", Hash.getValue());
 
+    auto &Module = KInfo.getModule();
+    auto *F = Module.getFunction(KInfo.getName());
+    if (!F)
+      LOG_FATAL("Could not find kernel function in extracted LLVM module");
+
+    auto PointerSlots = mneme::getKernelPointerSlots(*F);
+    auto SnapshotGlobals =
+        buildSnapshotGlobals(KInfo, Args, Proteus, PointerSlots);
     auto RecordAction = DB.takeSnapshot<VendorTypes>(
-        PM->getVAStart(), PM->getTotalVASize(), KInfo, AllocatedBlobs, GridDim,
-        BlockDim, Args, SharedMem, Stream);
+        PM->getVAStart(), PM->getTotalVASize(), KInfo, SnapshotGlobals, Proteus,
+        PointerSlots, AllocatedBlobs, GridDim, BlockDim, Args, SharedMem,
+        Stream);
     if (RecordAction)
       LOG_INFO("Successfully Recorded Prologue of Kernel {} NAME:{} GRID:({}, "
                "{}, {}) "
@@ -227,8 +306,7 @@ public:
     auto ret =
         origLaunchKernel(func, GridDim, BlockDim, Args, SharedMem, Stream);
     if (RecordAction) {
-      (*RecordAction)(KInfo.getBinaryInfo().getVarNameToGlobalInfo(),
-                      AllocatedBlobs, Args, Stream);
+      (*RecordAction)(SnapshotGlobals, AllocatedBlobs, Args, Stream);
       LOG_INFO("Successfully Recorded Epilogue of Kernel {} NAME:{} GRID:({}, "
                "{}, {}) "
                "BLOCK:({}, {}, "

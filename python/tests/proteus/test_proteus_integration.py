@@ -446,6 +446,8 @@ def test_link_llvm_modules(tmp_path):
     ; ModuleID = 'module_b'
     target triple = "amdgcn-amd-amdhsa"
 
+    @g_data = addrspace(1) global [4 x i32] zeroinitializer
+
     define amdgpu_kernel void @kernel_b(i32 addrspace(1)* %ptr, i32 %val) {
     entry:
       %tid = call i32 @llvm.amdgcn.workitem.id.x()
@@ -481,3 +483,7 @@ def test_link_llvm_modules(tmp_path):
         "define internal amdgpu_kernel void @kernel_b(ptr addrspace(1) %ptr, i32 %val)"
         in str(mod)
     )
+    mod = jit.link_llvm_modules(
+        modules, "kernel_a", False, True, preserve_globals=["g_data"]
+    )
+    assert "@g_data = addrspace(1) global" in str(mod)

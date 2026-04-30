@@ -1,4 +1,5 @@
 #include <cstdint>
+#include <cstring>
 #include <llvm/Bitcode/BitcodeReader.h>
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/Module.h>
@@ -98,6 +99,21 @@ private:
     }
     std::unique_ptr<void *[]> ArgUniquePtr{Args};
     return ArgUniquePtr;
+  }
+
+  void relocatePointerArgsForGlobal(void *RecordedGlobalAddr,
+                                    void *ReplayGlobalAddr, size_t GlobalSize) {
+    DeviceAddressRange RecordedRange{RecordedGlobalAddr, GlobalSize};
+    for (auto PointerSlot : KInfo->PointerSlots) {
+      void *RecordedPtr = PointerSlot.readFrom(*KInfo);
+      if (!RecordedRange.contains(RecordedPtr))
+        continue;
+
+      void *RelocatedPtr = RecordedRange.rebase(RecordedPtr, ReplayGlobalAddr);
+      PointerSlot.writeTo(*KInfo, RelocatedPtr);
+      LOG_DEBUG("Relocated recorded global pointer arg from {} to {}",
+                RecordedPtr, RelocatedPtr);
+    }
   }
 
 public:
@@ -207,6 +223,7 @@ public:
   void initializeGlobals(DeviceModule_t VendorMod) {
     LOG_INFO("Initializing {} Globals", GlobalVars.size());
     for (auto &KV : GlobalVars) {
+      void *RecordedAddr = KV.second.DevAddr;
       auto [LoadedAddr, LoadedSize] =
           DeviceTraits<VendorTypes>::getGlobalAddrFromModule(VendorMod,
                                                              KV.first);
@@ -222,6 +239,9 @@ public:
                   "has a different size between record and replay\n" +
                   "Record Size:" + std::to_string(KV.second.VarSize) +
                   "\nReplay Size:" + std::to_string(LoadedSize));
+
+      relocatePointerArgsForGlobal(RecordedAddr, KV.second.DevAddr,
+                                   KV.second.VarSize);
 
       auto EC = DeviceTraits<VendorTypes>::DeviceErrorCheck(
           DeviceTraits<VendorTypes>::DeviceCopy(

@@ -6,10 +6,14 @@
 #include <llvm/Support/JSON.h>
 #include <llvm/Support/MemoryBuffer.h>
 #include <llvm/Support/raw_ostream.h>
+#include <llvm/Transforms/Utils/Cloning.h>
 #include <optional>
 #include <regex>
+#include <unordered_map>
+#include <unordered_set>
 
 #include "llvm/Demangle/Demangle.h"
+#include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/StableHashing.h>
 #include <llvm/ADT/StringRef.h>
 #include <string>
@@ -62,6 +66,41 @@ struct ReplayGlobalVar {
   }
 };
 
+class CapturedGlobals {
+  std::unordered_map<std::string, proteus::GlobalVarInfo> Globals;
+
+public:
+  void add(const std::string &Name, const proteus::GlobalVarInfo &GVI) {
+    auto [It, Inserted] = Globals.try_emplace(Name, GVI);
+    if (!Inserted && (It->second.DevAddr != GVI.DevAddr ||
+                      It->second.VarSize != GVI.VarSize))
+      LOG_FATAL("Proteus registered global name collision for '" + Name +
+                "' with different device storage");
+  }
+
+  size_t size() const { return Globals.size(); }
+
+  const std::unordered_map<std::string, proteus::GlobalVarInfo> &items() const {
+    return Globals;
+  }
+
+  std::optional<std::string> findContaining(const void *Ptr) const {
+    std::optional<std::string> Match;
+    for (const auto &[Name, GVI] : Globals) {
+      DeviceAddressRange Range{GVI.DevAddr, GVI.VarSize};
+      if (!Range.contains(Ptr))
+        continue;
+
+      if (Match && *Match != Name)
+        LOG_FATAL("Device pointer " + util::pointerToHexString(Ptr) +
+                  " aliases multiple Proteus globals: " + *Match + " and " +
+                  Name);
+      Match = Name;
+    }
+    return Match;
+  }
+};
+
 template <DeviceVendors VendorTypes> class MnemeSnapshot {
   using MnemeDeviceRT = DeviceTraits<VendorTypes>;
   using DeviceError_t = typename MnemeDeviceRT::DeviceError_t;
@@ -87,10 +126,11 @@ public:
   }
 
   std::filesystem::path static takeMnemeSnapshot(
-      std::unordered_map<std::string, proteus::GlobalVarInfo> &GlobalVars,
+      const CapturedGlobals &GlobalVars,
       llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &DeviceMemory,
       std::filesystem::path &Filename,
       llvm::SmallVector<size_t> &KernelArgSizes, void **Args,
+      llvm::ArrayRef<KernelArgPointerSlot> PointerSlots,
       DeviceStream_t Stream) {
     LOG_DEBUG("Storing mneme snapshot: {}", Filename.string());
     std::error_code EC;
@@ -109,7 +149,7 @@ public:
     LOG_DEBUG("Number of Globals in snapshot:{} stored at position:{}",
               TotalGlobals, OutBC.tell());
 
-    for (const auto &[VarName, GV] : GlobalVars) {
+    for (const auto &[VarName, GV] : GlobalVars.items()) {
       std::cout << "Reading " << VarName << " " << GV.HostAddr << " "
                 << GV.DevAddr << " " << GV.VarSize << "\n";
       uint8_t *HostData = new uint8_t[GV.VarSize];
@@ -160,6 +200,20 @@ public:
                                KernelArgSizes[I]);
     }
 
+    uint64_t NumPointerOffsets = PointerSlots.size();
+    LOG_DEBUG("Number of pointer offsets in snapshot:{} stored at position:{}",
+              NumPointerOffsets, OutBC.tell());
+    OutBC << llvm::StringRef(reinterpret_cast<const char *>(&NumPointerOffsets),
+                             sizeof(NumPointerOffsets));
+    for (auto PointerSlot : PointerSlots) {
+      OutBC << llvm::StringRef(
+          reinterpret_cast<const char *>(&PointerSlot.ArgIndex),
+          sizeof(PointerSlot.ArgIndex));
+      OutBC << llvm::StringRef(
+          reinterpret_cast<const char *>(&PointerSlot.ByteOffset),
+          sizeof(PointerSlot.ByteOffset));
+    }
+
     return std::filesystem::canonical(Filename);
   }
 
@@ -182,6 +236,7 @@ public:
     // Get a pointer to the raw data in the MemoryBuffer
     llvm::MemoryBuffer *Buffer = bufferOrErr.get().get();
     auto *Start = Buffer->getBufferStart();
+    auto *End = Buffer->getBufferEnd();
     auto *CurrentPtr = Start;
     size_t TotalGlobals = util::extractScalar<size_t>(CurrentPtr);
     LOG_DEBUG("Snapshot contains {} Globals at location {}", TotalGlobals,
@@ -209,6 +264,19 @@ public:
     for (auto A = 0; A < TotalArguments; A++) {
       KInfo->KernelArgSizes[A] = util::extractScalar<size_t>(CurrentPtr);
       KInfo->setArgData(CurrentPtr, A);
+    }
+
+    KInfo->PointerSlots.clear();
+    if (CurrentPtr < End) {
+      auto TotalPointerOffsets = util::extractScalar<uint64_t>(CurrentPtr);
+      LOG_DEBUG("Snapshot contains {} pointer offsets starting at location {}",
+                TotalPointerOffsets, (uintptr_t)CurrentPtr - (uintptr_t)Start);
+      for (auto I = 0; I < TotalPointerOffsets; ++I) {
+        KernelArgPointerSlot PointerSlot;
+        PointerSlot.ArgIndex = util::extractScalar<uint64_t>(CurrentPtr);
+        PointerSlot.ByteOffset = util::extractScalar<uint64_t>(CurrentPtr);
+        KInfo->PointerSlots.emplace_back(PointerSlot);
+      }
     }
   }
 };
@@ -256,14 +324,18 @@ class KernelInstancesCollection {
   llvm::SmallVector<bool> KernelSpecializations;
   llvm::SmallVector<std::function<double(void *)>> ConvertArgToDouble;
   llvm::SmallVector<std::string> ModuleFiles;
+  llvm::SmallVector<KernelArgPointerSlot> PointerSlots;
+  std::unordered_set<std::string> CapturedGlobalNames;
+  std::unordered_set<std::string> StoredSidecarGlobals;
   const std::string KName;
 
 private:
   std::string StoreModule(llvm::Module &M, const std::string &RecordReplayDir,
-                          uint64_t StaticHash) {
+                          uint64_t StaticHash, const std::string &Suffix = "") {
     std::string Filename(
         std::filesystem::path(llvm::Twine(RecordReplayDir + "/RecordedIR_" +
-                                          std::to_string(StaticHash) + ".bc")
+                                          std::to_string(StaticHash) + Suffix +
+                                          ".bc")
                                   .str())
             .string());
 
@@ -292,6 +364,10 @@ public:
         (pos != std::string::npos) ? KName.substr(0, pos) : KName;
     Collection["DemangledName"] = llvm::demangle(Orig);
     Collection["Modules"] = llvm::json::Array(ModuleFiles);
+    llvm::json::Array Globals;
+    for (const auto &Name : CapturedGlobalNames)
+      Globals.emplace_back(Name);
+    Collection["Globals"] = std::move(Globals);
     Collection["BinaryBlobs"] = llvm::json::Array();
     Collection["ArgNames"] = llvm::json::Array(KernelArgNames);
     Collection["Specializations"] = llvm::json::Array(KernelSpecializations);
@@ -303,11 +379,15 @@ public:
     return Collection;
   }
 
-  KernelInstancesCollection(const std::string &MnemeDirectory, void *VAddr,
-                            uint64_t VASize, proteus::JITKernelInfo &KInfo,
-                            int MaxRecordings)
-      : VAddr(VAddr), VASize(VASize), MaxRecordings(MaxRecordings),
-        NumRecords(0), KName(KInfo.getName()) {
+  KernelInstancesCollection(
+      const std::string &MnemeDirectory, void *VAddr, uint64_t VASize,
+      proteus::JITKernelInfo &KInfo,
+      llvm::ArrayRef<KernelArgPointerSlot> KernelPointerSlots,
+      int MaxRecordings)
+      : VAddr(VAddr), VASize(VASize), NumRecords(0),
+        MaxRecordings(MaxRecordings),
+        PointerSlots(KernelPointerSlots.begin(), KernelPointerSlots.end()),
+        KName(KInfo.getName()) {
     auto &Module = KInfo.getModule();
     auto *F = Module.getFunction(KInfo.getName());
     KernelArgSizes = mneme::getFuncDescr(*F);
@@ -316,6 +396,61 @@ public:
     ConvertArgToDouble = mneme::convertToDouble(*F);
     ModuleFiles.emplace_back(
         StoreModule(Module, MnemeDirectory, KInfo.getStaticHash().getValue()));
+  }
+
+  void addCapturedGlobalNames(const CapturedGlobals &GlobalVars) {
+    for (const auto &[Name, GVI] : GlobalVars.items())
+      CapturedGlobalNames.insert(Name);
+  }
+
+  template <typename ProteusT>
+  void addGlobalSidecarModules(std::filesystem::path &MnemeDir,
+                               uint64_t StaticHash,
+                               proteus::JITKernelInfo &KInfo, ProteusT &Proteus,
+                               const CapturedGlobals &GlobalVars) {
+    auto HasDefinition = [](llvm::Module &M, const std::string &Name) {
+      auto *GV = M.getGlobalVariable(Name);
+      return GV && !GV->isDeclaration();
+    };
+
+    auto &KernelModule = KInfo.getModule();
+    for (const auto &[Name, GVI] : GlobalVars.items()) {
+      if (HasDefinition(KernelModule, Name) || StoredSidecarGlobals.count(Name))
+        continue;
+
+      bool Stored = false;
+      for (auto &[Handle, BinInfo] : Proteus.HandleToBinaryInfo) {
+        if (!BinInfo.hasExtractedModules())
+          Proteus.extractModules(BinInfo);
+
+        for (auto ModuleRef : BinInfo.getExtractedModules()) {
+          llvm::Module &M = ModuleRef.get();
+          if (!HasDefinition(M, Name))
+            continue;
+
+          llvm::ValueToValueMapTy VMap;
+          auto Sidecar =
+              llvm::CloneModule(M, VMap, [&](const llvm::GlobalValue *GV) {
+                if (auto *GVar = llvm::dyn_cast<llvm::GlobalVariable>(GV))
+                  return GVar->getName() == Name;
+                return false;
+              });
+          ModuleFiles.emplace_back(StoreModule(
+              *Sidecar, MnemeDir.string(), StaticHash,
+              ".globals." + std::to_string(StoredSidecarGlobals.size())));
+          StoredSidecarGlobals.insert(Name);
+          Stored = true;
+          break;
+        }
+        if (Stored)
+          break;
+      }
+
+      if (!Stored)
+        LOG_FATAL("Captured global '" + Name +
+                  "' was registered by Proteus but no LLVM definition was "
+                  "available for replay");
+    }
   }
 
   llvm::stable_hash computeHash(dim3 &GridDim, dim3 &BlockDim,
@@ -332,12 +467,11 @@ public:
 
   template <DeviceVendors VendorTypes>
   std::optional<std::function<
-      void(std::unordered_map<std::string, proteus::GlobalVarInfo> &,
+      void(const CapturedGlobals &,
            llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &, void **,
            typename DeviceTraits<VendorTypes>::DeviceStream_t)>>
   takeSnapshot(
-      std::filesystem::path &MnemeDir,
-      std::unordered_map<std::string, proteus::GlobalVarInfo> &GlobalVars,
+      std::filesystem::path &MnemeDir, const CapturedGlobals &GlobalVars,
       llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &DeviceMemory,
       dim3 &GridDim, dim3 &BlockDim, void **Args, size_t SharedMem,
       typename DeviceTraits<VendorTypes>::DeviceStream_t Stream,
@@ -370,17 +504,17 @@ public:
 
     Instances[DynamicHash].PrologueFn =
         MnemeSnapshot<VendorTypes>::takeMnemeSnapshot(
-            GlobalVars, DeviceMemory, Filename, KernelArgSizes, Args, Stream)
+            GlobalVars, DeviceMemory, Filename, KernelArgSizes, Args,
+            PointerSlots, Stream)
             .string();
 
-    std::function<void(
-        std::unordered_map<std::string, proteus::GlobalVarInfo> &,
-        llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &, void **,
-        typename DeviceTraits<VendorTypes>::DeviceStream_t)>
+    std::function<void(const CapturedGlobals &,
+                       llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &,
+                       void **,
+                       typename DeviceTraits<VendorTypes>::DeviceStream_t)>
         CaptureEpilogue =
             [this, DynamicHash, StaticHash, MnemeDir](
-                std::unordered_map<std::string, proteus::GlobalVarInfo>
-                    &GlobalVars,
+                const CapturedGlobals &GlobalVars,
                 llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>>
                     &DeviceMemory,
                 void **Args,
@@ -393,7 +527,7 @@ public:
               Instances[DynamicHash].EpilogueFn =
                   MnemeSnapshot<VendorTypes>::takeMnemeSnapshot(
                       GlobalVars, DeviceMemory, Filename, KernelArgSizes, Args,
-                      Stream)
+                      PointerSlots, Stream)
                       .string();
             };
     return CaptureEpilogue;
@@ -460,11 +594,13 @@ public:
 
   template <DeviceVendors VendorTypes>
   std::optional<std::function<
-      void(std::unordered_map<std::string, proteus::GlobalVarInfo> &,
+      void(const CapturedGlobals &,
            llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &, void **,
            typename DeviceTraits<VendorTypes>::DeviceStream_t)>>
   takeSnapshot(
       void *VAddr, uint64_t VASize, proteus::JITKernelInfo &KInfo,
+      const CapturedGlobals &GlobalVars, ::JitDeviceImplT &Proteus,
+      llvm::ArrayRef<KernelArgPointerSlot> PointerSlots,
       llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &DeviceMemory,
       dim3 &GridDim, dim3 &BlockDim, void **Args, size_t SharedMem,
       typename DeviceTraits<VendorTypes>::DeviceStream_t Stream) {
@@ -477,13 +613,16 @@ public:
 
     auto IT = KernelRecords.try_emplace(
         KInfo.getStaticHash().getValue(),
-        KernelInstancesCollection(getDir(), VAddr, VASize, KInfo,
+        KernelInstancesCollection(getDir(), VAddr, VASize, KInfo, PointerSlots,
                                   MaxRecordings));
     LOG_INFO("Created instance");
+    IT.first->second.addGlobalSidecarModules(MnemeDirectory,
+                                             KInfo.getStaticHash().getValue(),
+                                             KInfo, Proteus, GlobalVars);
+    IT.first->second.addCapturedGlobalNames(GlobalVars);
     return IT.first->second.takeSnapshot<VendorTypes>(
-        MnemeDirectory, KInfo.getBinaryInfo().getVarNameToGlobalInfo(),
-        DeviceMemory, GridDim, BlockDim, Args, SharedMem, Stream,
-        KInfo.getStaticHash().getValue());
+        MnemeDirectory, GlobalVars, DeviceMemory, GridDim, BlockDim, Args,
+        SharedMem, Stream, KInfo.getStaticHash().getValue());
   }
 
   const std::string getDir() const { return MnemeDirectory.string(); }

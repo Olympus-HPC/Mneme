@@ -46,6 +46,8 @@ ffi.lib.ProteusPY_linkModules.argtypes = [
     c_char_p,
     c_bool,
     c_bool,
+    POINTER(c_char_p),
+    c_int,
 ]
 ffi.lib.ProteusPY_linkModules.restype = ffi.LLVMModuleRef
 ffi.lib.ProteusPY_specializeArguments.argtypes = [
@@ -231,7 +233,11 @@ def codegen_object(
 
 
 def link_llvm_modules(
-    modules: List[str], kernel_name: str, prune: bool, internalize: bool
+    modules: List[str],
+    kernel_name: str,
+    prune: bool,
+    internalize: bool,
+    preserve_globals: List[str] = None,
 ) -> ModuleRef:
     """
     Link multiple LLVM IR modules into a single unified module.
@@ -255,9 +261,13 @@ def link_llvm_modules(
     ModuleRef
         Newly linked module.
     """
+    preserve_globals = preserve_globals or []
     c_strings = [c_char_p(s.encode("utf-8")) for s in modules]
     ArrayType = c_char_p * len(c_strings)
     c_array = ArrayType(*c_strings)
+    c_globals = [c_char_p(s.encode("utf-8")) for s in preserve_globals]
+    GlobalsArrayType = c_char_p * len(c_globals)
+    c_globals_array = GlobalsArrayType(*c_globals)
     Mod = ModuleRef(
         ffi.lib.ProteusPY_linkModules(
             c_array,
@@ -266,6 +276,8 @@ def link_llvm_modules(
             kernel_name.encode("utf-8"),
             prune,
             internalize,
+            c_globals_array,
+            len(preserve_globals),
         ),
         get_global_context(),
     )
