@@ -141,43 +141,24 @@ template <DeviceVendors VendorTypes> class MnemeSnapshot {
     }
   }
 
-  static size_t
-  countDeviceChangedRanges(const MnemeMemoryBlob<VendorTypes> &Blob) {
-    // Count the number of changed ranges between the device data and 
-    // the host data.
+  static void writeCountAndWriteChangedRanges(
+      llvm::raw_ostream &OS, MnemeMemoryBlob<VendorTypes> &Blob) {
     auto Size = Blob.getSize();
-    if (Size == 0)
-      return 0;
+
+    // early exit
+    if (Size == 0) {
+      size_t NumRanges = 0;
+      writeScalar(OS, NumRanges);
+      return;
+    }
 
     std::unique_ptr<uint8_t[]> Scratch(new uint8_t[DiffChunkSize]);
+    llvm::SmallVector<char, 0> DiffBytes;
+    llvm::raw_svector_ostream DiffOS(DiffBytes);
     auto *Base = Blob.getHostData().get();
     auto *DevAddr = static_cast<uint8_t *>(Blob.getBlobAddr());
     size_t NumRanges = 0;
-    for (size_t Offset = 0; Offset < Size; Offset += DiffChunkSize) {
-      size_t ChunkSize = std::min(DiffChunkSize, Size - Offset);
-      auto EC = DeviceTraits<VendorTypes>::DeviceErrorCheck(
-          DeviceTraits<VendorTypes>::DeviceCopy(
-              Scratch.get(), DevAddr + Offset, ChunkSize,
-              DeviceTraits<VendorTypes>::MemcpyDeviceToHostKind()));
-      if (EC)
-        LOG_FATAL("Error in copying data from device when diffing context\n"
-                  "Device Error Msg: " +
-                  EC.value() + "\n");
-      NumRanges +=
-          countChangedRanges(Base + Offset, Scratch.get(), ChunkSize);
-    }
-    return NumRanges;
-  }
 
-  static void writeDeviceChangedRangesAndUpdate(
-      llvm::raw_ostream &OS, MnemeMemoryBlob<VendorTypes> &Blob) {
-    auto Size = Blob.getSize();
-    if (Size == 0)
-      return;
-
-    std::unique_ptr<uint8_t[]> Scratch(new uint8_t[DiffChunkSize]);
-    auto *Base = Blob.getHostData().get();
-    auto *DevAddr = static_cast<uint8_t *>(Blob.getBlobAddr());
     for (size_t Offset = 0; Offset < Size; Offset += DiffChunkSize) {
       size_t ChunkSize = std::min(DiffChunkSize, Size - Offset);
       auto EC = DeviceTraits<VendorTypes>::DeviceErrorCheck(
@@ -188,9 +169,31 @@ template <DeviceVendors VendorTypes> class MnemeSnapshot {
         LOG_FATAL("Error in copying data from device when writing diff\n"
                   "Device Error Msg: " +
                   EC.value() + "\n");
-      writeChangedRanges(OS, Base + Offset, Scratch.get(), ChunkSize, Offset,
-                         Base + Offset);
+
+      size_t I = 0;
+      auto *ChunkBase = Base + Offset;
+      while (I < ChunkSize) {
+        while (I < ChunkSize && ChunkBase[I] == Scratch[I])
+          ++I;
+        if (I == ChunkSize)
+          break;
+
+        size_t Start = I;
+        while (I < ChunkSize && ChunkBase[I] != Scratch[I])
+          ++I;
+
+        size_t RangeOffset = Offset + Start;
+        size_t Len = I - Start;
+        writeScalar(DiffOS, RangeOffset);
+        writeScalar(DiffOS, Len);
+        writeBytes(DiffOS, Scratch.get() + Start, Len);
+        std::memcpy(ChunkBase + Start, Scratch.get() + Start, Len);
+        ++NumRanges;
+      }
     }
+
+    writeScalar(OS, NumRanges);
+    writeBytes(OS, DiffBytes.data(), DiffBytes.size());
   }
 
   static std::string readSizedString(const char *&Buffer) {
@@ -460,9 +463,8 @@ public:
       writeScalar(OutBC, BlobAddr);
       auto MD = Blob.getMetadata();
       mneme::metadata::serialize(OutBC, MD);
-      size_t NumRanges = countDeviceChangedRanges(Blob);
-      writeScalar(OutBC, NumRanges);
-      writeDeviceChangedRangesAndUpdate(OutBC, Blob);
+
+      writeCountAndWriteChangedRanges(OutBC, Blob);
     }
 
     return std::filesystem::canonical(Filename);
