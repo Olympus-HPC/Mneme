@@ -235,6 +235,12 @@ class Record:
             default=4,
             help="The maximum number of times to record the same GPU kernel (function) with different dynamic hashes",
         )
+        parser.add_argument(
+            "--epilogue-format",
+            choices=["bytes", "diff"],
+            default="bytes",
+            help="The format to use when saving epilogue snapshots, either as full bytes or as diffs from the prologue",
+        )
         parser.add_argument("cmd", nargs=argparse.REMAINDER)
         parser.set_defaults(func=Record.run, parser=parser)
 
@@ -266,6 +272,8 @@ class Record:
 
         logger.debug(f"MNEME_DATA_DIR={str(record_db_dir)}")
         record_env["MNEME_DATA_DIR"] = str(record_db_dir)
+
+        record_env["MNEME_EPILOGUE_TYPE"] = args.epilogue_format.lower()
 
         if verbosity is not None:
             logger.debug(f"MNEME_LOG_LEVEL={verbosity}")

@@ -76,6 +76,7 @@ template <DeviceVendors VendorTypes> class MnemeSnapshot {
   static constexpr size_t DiffMagicSize = sizeof(DiffMagic) - 1;
   static constexpr size_t DiffChunkSize = 1 << 20;
 
+
   template <typename Ty>
   static void writeScalar(llvm::raw_ostream &OS, const Ty &Value) {
     OS << llvm::StringRef(reinterpret_cast<const char *>(&Value),
@@ -95,6 +96,9 @@ template <DeviceVendors VendorTypes> class MnemeSnapshot {
 
   static size_t countChangedRanges(const uint8_t *Base, const uint8_t *Current,
                                    size_t Size) {
+    // Count the number of contiguous ranges that have changed between Base and
+    // Current. We want to write out the number of ranges so that the reader 
+    // can know how many ranges to read.
     size_t Count = 0;
     bool InRange = false;
     for (size_t I = 0; I < Size; ++I) {
@@ -114,6 +118,8 @@ template <DeviceVendors VendorTypes> class MnemeSnapshot {
                                  const uint8_t *Current, size_t Size,
                                  size_t BaseOffset,
                                  uint8_t *UpdateBase = nullptr) {
+    // Write out the contiguous ranges that have changed between Base 
+    // and Current.
     size_t I = 0;
     while (I < Size) {
       while (I < Size && Base[I] == Current[I])
@@ -137,6 +143,8 @@ template <DeviceVendors VendorTypes> class MnemeSnapshot {
 
   static size_t
   countDeviceChangedRanges(const MnemeMemoryBlob<VendorTypes> &Blob) {
+    // Count the number of changed ranges between the device data and 
+    // the host data.
     auto Size = Blob.getSize();
     if (Size == 0)
       return 0;
@@ -301,6 +309,8 @@ template <DeviceVendors VendorTypes> class MnemeSnapshot {
 public:
   using GlobalSnapshotData = std::unordered_map<std::string, std::vector<uint8_t>>;
 
+  enum class SnapshotType: uint8_t { Bytes = 0, Diff = 1 };
+
   static std::pair<std::string, ReplayGlobalVar>
   fromBuffer(const char *&Buffer) {
     std::string Name = readSizedString(Buffer);
@@ -315,7 +325,7 @@ public:
                                                    std::move(RGV));
   }
 
-  std::filesystem::path static takeMnemeSnapshot(
+  std::filesystem::path static takeMnemeBytesSnapshot(
       std::unordered_map<std::string, proteus::GlobalVarInfo> &GlobalVars,
       llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &DeviceMemory,
       std::filesystem::path &Filename,
@@ -456,6 +466,22 @@ public:
     }
 
     return std::filesystem::canonical(Filename);
+  }
+
+  std::filesystem::path static takeMnemeSnapshot(
+      std::unordered_map<std::string, proteus::GlobalVarInfo> &GlobalVars,
+      llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &DeviceMemory,
+      std::filesystem::path &Filename,
+      llvm::SmallVector<size_t> &KernelArgSizes, void **Args,
+      DeviceStream_t Stream, GlobalSnapshotData *CapturedGlobals = nullptr,
+      SnapshotType Type = SnapshotType::Bytes) {
+    if (Type == SnapshotType::Bytes) {
+      return takeMnemeBytesSnapshot(GlobalVars, DeviceMemory, Filename,
+                                   KernelArgSizes, Args, Stream, CapturedGlobals);
+    } else {
+      return takeMnemeDiffSnapshot(GlobalVars, DeviceMemory, Filename,
+                                  *CapturedGlobals, Stream);
+    }
   }
 
   void static readMnemeSnapShot(
@@ -618,7 +644,7 @@ public:
       llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &DeviceMemory,
       dim3 &GridDim, dim3 &BlockDim, void **Args, size_t SharedMem,
       typename DeviceTraits<VendorTypes>::DeviceStream_t Stream,
-      uint64_t StaticHash) {
+      uint64_t StaticHash, typename MnemeSnapshot<VendorTypes>::SnapshotType epilogueSnapshotType) {
 
     if (NumRecords >= MaxRecordings)
       return std::nullopt;
@@ -648,18 +674,20 @@ public:
     using SnapshotT = MnemeSnapshot<VendorTypes>;
     auto PrologueGlobals =
         std::make_shared<typename SnapshotT::GlobalSnapshotData>();
+    auto snapshotType = SnapshotT::SnapshotType::Bytes; // prologues are always Bytes
     Instances[DynamicHash].PrologueFn =
         SnapshotT::takeMnemeSnapshot(GlobalVars, DeviceMemory, Filename,
                                      KernelArgSizes, Args, Stream,
-                                     PrologueGlobals.get())
+                                     PrologueGlobals.get(), snapshotType)
             .string();
 
+    
     std::function<void(
         std::unordered_map<std::string, proteus::GlobalVarInfo> &,
         llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &, void **,
         typename DeviceTraits<VendorTypes>::DeviceStream_t)>
         CaptureEpilogue =
-            [this, DynamicHash, StaticHash, MnemeDir, PrologueGlobals](
+            [this, DynamicHash, StaticHash, MnemeDir, PrologueGlobals, epilogueSnapshotType](
                 std::unordered_map<std::string, proteus::GlobalVarInfo>
                     &GlobalVars,
                 llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>>
@@ -672,9 +700,9 @@ public:
                               std::to_string(DynamicHash) + ".mneme"));
 
               Instances[DynamicHash].EpilogueFn =
-                  SnapshotT::takeMnemeDiffSnapshot(
-                      GlobalVars, DeviceMemory, Filename, *PrologueGlobals,
-                      Stream)
+                  SnapshotT::takeMnemeSnapshot(
+                      GlobalVars, DeviceMemory, Filename, KernelArgSizes, Args, 
+                      Stream, PrologueGlobals.get(), epilogueSnapshotType)
                       .string();
             };
     return CaptureEpilogue;
@@ -688,9 +716,10 @@ class RecordDatabase {
   bool HasRegex;
   llvm::DenseMap<uint64_t, KernelInstancesCollection> KernelRecords;
   uint64_t MaxRecordings;
+  std::string epilogueSnapshotType;
 
 public:
-  RecordDatabase() : KernelWhiteList(""), HasRegex(false) {
+  RecordDatabase() : KernelWhiteList(""), HasRegex(false), epilogueSnapshotType("bytes") {
     auto WhiteList = std::getenv("MNEME_RR_KERNELS");
     if (WhiteList) {
       HasRegex = true;
@@ -712,6 +741,12 @@ public:
     if (UMaxRecordings) {
       MaxRecordings = std::atoi(UMaxRecordings);
     }
+
+    auto EpilogueSnapshotTypeEnv = std::getenv("MNEME_EPILOGUE_TYPE");
+    if (EpilogueSnapshotTypeEnv) {
+      epilogueSnapshotType = std::string(EpilogueSnapshotTypeEnv);
+    }
+
   }
 
   ~RecordDatabase() {
@@ -740,6 +775,17 @@ public:
   }
 
   template <DeviceVendors VendorTypes>
+  typename MnemeSnapshot<VendorTypes>::SnapshotType parseSnapshotType(const std::string &TypeStr) {
+    if (TypeStr == "bytes")
+      return MnemeSnapshot<VendorTypes>::SnapshotType::Bytes;
+    else if (TypeStr == "diff")
+      return MnemeSnapshot<VendorTypes>::SnapshotType::Diff;
+    else
+      LOG_FATAL("Invalid snapshot type: " + TypeStr);
+    return MnemeSnapshot<VendorTypes>::SnapshotType::Bytes;
+  }
+
+  template <DeviceVendors VendorTypes>
   std::optional<std::function<
       void(std::unordered_map<std::string, proteus::GlobalVarInfo> &,
            llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &, void **,
@@ -750,11 +796,15 @@ public:
       dim3 &GridDim, dim3 &BlockDim, void **Args, size_t SharedMem,
       typename DeviceTraits<VendorTypes>::DeviceStream_t Stream) {
     using namespace proteus;
+    using SnapshotT = MnemeSnapshot<VendorTypes>::SnapshotType;
 
     if (!shouldRecord(KInfo.getName())) {
       LOG_INFO("Skip record of Kernel");
       return std::nullopt;
     }
+
+    // how do we want to save the epilogue; parse here once we have vendor type
+    const SnapshotT epilogueType = parseSnapshotType<VendorTypes>(epilogueSnapshotType);
 
     auto IT = KernelRecords.try_emplace(
         KInfo.getStaticHash().getValue(),
@@ -764,7 +814,7 @@ public:
     return IT.first->second.takeSnapshot<VendorTypes>(
         MnemeDirectory, KInfo.getBinaryInfo().getVarNameToGlobalInfo(),
         DeviceMemory, GridDim, BlockDim, Args, SharedMem, Stream,
-        KInfo.getStaticHash().getValue());
+        KInfo.getStaticHash().getValue(), epilogueType);
   }
 
   const std::string getDir() const { return MnemeDirectory.string(); }
