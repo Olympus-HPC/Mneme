@@ -78,6 +78,7 @@ def test_record_happy_path(tmp_path, record_parser, monkeypatch):
     env = captured["env"]
     assert env["LD_PRELOAD"] == fake_lib
     assert env["MNEME_PAGE_SIZE"] == "8"
+    assert env["MNEME_MAX_RECORDINGS"] == "3"
     assert env["MNEME_DATA_DIR"] == str(record_dir)
     assert env["MNEME_LOG_LEVEL"] == "DEBUG"
 

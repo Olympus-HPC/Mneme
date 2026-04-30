@@ -257,6 +257,8 @@ class Record:
         record_env["LD_PRELOAD"] = librecord_path
         logger.debug(f"MNEME_PAGE_SIZE={args.virtual_address_space_size}")
         record_env["MNEME_PAGE_SIZE"] = str(args.virtual_address_space_size)
+        logger.debug(f"MNEME_MAX_RECORDINGS={args.per_kernel_max_recordings}")
+        record_env["MNEME_MAX_RECORDINGS"] = str(args.per_kernel_max_recordings)
         record_db_dir = Path(args.record_db_dir).resolve()
         if not record_db_dir.exists():
             raise FileNotFoundError(f"Directory '{args.record_db_dir}' does not exist")
