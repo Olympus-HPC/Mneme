@@ -48,6 +48,9 @@ endif()
 
 endfunction()
 
+BUILD_UNIT_TEST("Config" Config.cpp)
+add_test(NAME Config::Runtime COMMAND Config)
+
 BUILD_UNIT_TEST("SerializeGlobals" SerializeGlobals.cpp)
 add_test(NAME Serialize::Globals COMMAND SerializeGlobals)
 
@@ -59,5 +62,3 @@ add_test(NAME Serialize::RWSnapshot COMMAND ReadWriteSnapshot)
 
 BUILD_DEVICE_UNIT_TEST("CompareMemoryBlob" DeviceKernels.cpp)
 add_test(NAME DeviceKernel::CompareMemory COMMAND CompareMemoryBlob)
-
-

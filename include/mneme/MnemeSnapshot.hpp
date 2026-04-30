@@ -20,6 +20,7 @@
 #include <proteus/impl/JitEngineDevice.h>
 
 #include "mneme/DeviceTraits.hpp"
+#include "mneme/MnemeConfig.hpp"
 #include "mneme/MnemeKernelInfo.hpp"
 #include "mneme/MnemeLLVMUtils.hpp"
 #include "mneme/MnemeLogger.hpp"
@@ -410,27 +411,15 @@ class RecordDatabase {
 
 public:
   RecordDatabase() : KernelWhiteList(""), HasRegex(false) {
-    auto WhiteList = std::getenv("MNEME_RR_KERNELS");
-    if (WhiteList) {
+    const auto &Conf = Config::get();
+    if (Conf.KernelRegex) {
       HasRegex = true;
-      RegexStr = std::string(WhiteList);
-      KernelWhiteList = std::string(WhiteList);
+      RegexStr = *Conf.KernelRegex;
+      KernelWhiteList = RegexStr;
     }
 
-    auto Dir = std::getenv("MNEME_DATA_DIR");
-    MnemeDirectory =
-        (Dir ? std::string(Dir) : std::filesystem::current_path().string());
-
-    if (!std::filesystem::is_directory(MnemeDirectory)) {
-      throw std::runtime_error("Path :" + MnemeDirectory.string() +
-                               " does not exist.\n");
-    }
-    MnemeDirectory = std::filesystem::absolute(MnemeDirectory);
-    MaxRecordings = 4;
-    auto UMaxRecordings = std::getenv("MNEME_MAX_RECORDINGS");
-    if (UMaxRecordings) {
-      MaxRecordings = std::atoi(UMaxRecordings);
-    }
+    MnemeDirectory = Conf.getDataDirectory();
+    MaxRecordings = Conf.MaxRecordings;
   }
 
   ~RecordDatabase() {
