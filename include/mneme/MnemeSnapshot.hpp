@@ -77,18 +77,6 @@ template <DeviceVendors VendorTypes> class MnemeSnapshot {
   static constexpr size_t DiffChunkSize = 1 << 20;
 
 
-  template <typename Ty>
-  static void writeScalar(llvm::raw_ostream &OS, const Ty &Value) {
-    OS << llvm::StringRef(reinterpret_cast<const char *>(&Value),
-                          sizeof(Value));
-  }
-
-  static void writeBytes(llvm::raw_ostream &OS, const void *Data,
-                         size_t Size) {
-    if (Size)
-      OS << llvm::StringRef(reinterpret_cast<const char *>(Data), Size);
-  }
-
   static bool isDiffBuffer(llvm::StringRef Buffer) {
     return Buffer.size() >= DiffMagicSize &&
            Buffer.take_front(DiffMagicSize) == llvm::StringRef(DiffMagic);
@@ -133,9 +121,9 @@ template <DeviceVendors VendorTypes> class MnemeSnapshot {
 
       size_t Offset = BaseOffset + Start;
       size_t Len = I - Start;
-      writeScalar(OS, Offset);
-      writeScalar(OS, Len);
-      writeBytes(OS, Current + Start, Len);
+      util::writeScalar(OS, Offset);
+      util::writeScalar(OS, Len);
+      util::writeBytes(OS, Current + Start, Len);
       if (UpdateBase)
         std::memcpy(UpdateBase + Start, Current + Start, Len);
     }
@@ -148,7 +136,7 @@ template <DeviceVendors VendorTypes> class MnemeSnapshot {
     // early exit
     if (Size == 0) {
       size_t NumRanges = 0;
-      writeScalar(OS, NumRanges);
+      util::writeScalar(OS, NumRanges);
       return;
     }
 
@@ -184,23 +172,16 @@ template <DeviceVendors VendorTypes> class MnemeSnapshot {
 
         size_t RangeOffset = Offset + Start;
         size_t Len = I - Start;
-        writeScalar(DiffOS, RangeOffset);
-        writeScalar(DiffOS, Len);
-        writeBytes(DiffOS, Scratch.get() + Start, Len);
+        util::writeScalar(DiffOS, RangeOffset);
+        util::writeScalar(DiffOS, Len);
+        util::writeBytes(DiffOS, Scratch.get() + Start, Len);
         std::memcpy(ChunkBase + Start, Scratch.get() + Start, Len);
         ++NumRanges;
       }
     }
 
-    writeScalar(OS, NumRanges);
-    writeBytes(OS, DiffBytes.data(), DiffBytes.size());
-  }
-
-  static std::string readSizedString(const char *&Buffer) {
-    size_t StrLen = util::extractScalar<size_t>(Buffer);
-    std::string Name{Buffer, StrLen};
-    Buffer += StrLen;
-    return Name;
+    util::writeScalar(OS, NumRanges);
+    util::writeBytes(OS, DiffBytes.data(), DiffBytes.size());
   }
 
   static void applyDiffRanges(const char *&Buffer, uint8_t *Target,
@@ -268,7 +249,7 @@ template <DeviceVendors VendorTypes> class MnemeSnapshot {
                 " does not match prologue global count");
 
     for (size_t I = 0; I < TotalGlobals; ++I) {
-      std::string Name = readSizedString(CurrentPtr);
+      std::string Name = util::readSizedString(CurrentPtr);
       size_t VarSize = util::extractScalar<size_t>(CurrentPtr);
       void *DevAddr = util::extractScalar<void *>(CurrentPtr);
       size_t NumRanges = util::extractScalar<size_t>(CurrentPtr);
@@ -316,7 +297,7 @@ public:
 
   static std::pair<std::string, ReplayGlobalVar>
   fromBuffer(const char *&Buffer) {
-    std::string Name = readSizedString(Buffer);
+    std::string Name = util::readSizedString(Buffer);
     size_t VarSize = util::extractScalar<size_t>(Buffer);
     void *DevAddr = util::extractScalar<void *>(Buffer);
     ReplayGlobalVar RGV(DevAddr, VarSize);
@@ -423,10 +404,10 @@ public:
     if (EC)
       LOG_FATAL("Cannot write Mneme diff snapshot: " + EC.message());
 
-    writeBytes(OutBC, DiffMagic, DiffMagicSize);
+    util::writeBytes(OutBC, DiffMagic, DiffMagicSize);
 
     size_t TotalGlobals = GlobalVars.size();
-    writeScalar(OutBC, TotalGlobals);
+    util::writeScalar(OutBC, TotalGlobals);
     for (const auto &[VarName, GV] : GlobalVars) {
       auto BaseIt = PrologueGlobals.find(VarName);
       if (BaseIt == PrologueGlobals.end())
@@ -443,24 +424,24 @@ public:
         LOG_FATAL("Copying from device to host for global diff failed\n");
 
       size_t StrLen = VarName.size();
-      writeScalar(OutBC, StrLen);
-      writeBytes(OutBC, VarName.data(), StrLen);
-      writeScalar(OutBC, GV.VarSize);
-      writeScalar(OutBC, GV.DevAddr);
+      util::writeScalar(OutBC, StrLen);
+      util::writeBytes(OutBC, VarName.data(), StrLen);
+      util::writeScalar(OutBC, GV.VarSize);
+      util::writeScalar(OutBC, GV.DevAddr);
       size_t NumRanges =
           countChangedRanges(BaseIt->second.data(), Current.data(), GV.VarSize);
-      writeScalar(OutBC, NumRanges);
+      util::writeScalar(OutBC, NumRanges);
       writeChangedRanges(OutBC, BaseIt->second.data(), Current.data(),
                          GV.VarSize, 0);
     }
 
     size_t TotalBlobs = DeviceMemory.size();
-    writeScalar(OutBC, TotalBlobs);
+    util::writeScalar(OutBC, TotalBlobs);
     for (auto &[Ptr, Blob] : DeviceMemory) {
-      writeScalar(OutBC, Blob.getActualSize());
-      writeScalar(OutBC, Blob.getSize());
+      util::writeScalar(OutBC, Blob.getActualSize());
+      util::writeScalar(OutBC, Blob.getSize());
       auto *BlobAddr = Blob.getBlobAddr();
-      writeScalar(OutBC, BlobAddr);
+      util::writeScalar(OutBC, BlobAddr);
       auto MD = Blob.getMetadata();
       mneme::metadata::serialize(OutBC, MD);
 

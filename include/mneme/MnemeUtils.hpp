@@ -1,7 +1,10 @@
 #pragma once
+#include <cstddef>
 #include <cstdint>
 #include <iomanip>
 #include <iostream>
+#include <llvm/ADT/StringRef.h>
+#include <llvm/Support/raw_ostream.h>
 #include <string>
 
 #if MNEME_ENABLE_DEBUG
@@ -26,6 +29,22 @@ template <typename Ty> Ty extractScalar(char *&Buffer) {
   return Value;
 }
 
+template <typename Ty>
+void writeScalar(llvm::raw_ostream &OS, const Ty &Value) {
+  OS << llvm::StringRef(reinterpret_cast<const char *>(&Value), sizeof(Value));
+}
+
+inline void writeBytes(llvm::raw_ostream &OS, const void *Data, size_t Size) {
+  if (Size)
+    OS << llvm::StringRef(reinterpret_cast<const char *>(Data), Size);
+}
+
+inline std::string readSizedString(const char *&Buffer) {
+  size_t StrLen = extractScalar<size_t>(Buffer);
+  std::string Name{Buffer, StrLen};
+  Buffer += StrLen;
+  return Name;
+}
 
 template <typename T> std::string pointerToHexString(T *ptr) {
   std::ostringstream oss;
