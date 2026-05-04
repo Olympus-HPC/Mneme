@@ -10,7 +10,12 @@ file(GLOB MNEME_SRC "./*.cpp")
 file(GLOB TRANSFORMS "transforms/*.cpp")
 
 
-add_library(mneme SHARED ${LLVM_SRC} ${PROTEUS_SRC} ${MNEME_SRC} ${TRANSFORMS} ${MnemeCoreSrcDir}/MnemePageManager.cpp ${MnemeCoreSrcDir}/MnemeDeviceCode.cpp ${MnemeCoreSrcDir}/MnemeAnnotationInternal.cpp)
+add_library(mneme SHARED ${LLVM_SRC} ${PROTEUS_SRC} ${MNEME_SRC} ${TRANSFORMS}
+                  ${MnemeCoreSrcDir}/MnemePageManager.cpp
+                  ${MnemeCoreSrcDir}/MnemeDeviceCode.cpp
+                  ${MnemeCoreSrcDir}/MnemeAnnotationInternal.cpp
+                  ${MnemeCoreSrcDir}/MnemeEnv.cpp
+                  ${MnemeCoreSrcDir}/MnemeRank.cpp)
 message(STATUS "LLVM LIBS are found to be : ${llvm_libs}")
 
 if (MNEME_ENABLE_HIP)
