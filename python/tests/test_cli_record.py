@@ -286,18 +286,14 @@ def _capture_env_with_args(record_parser, tmp_path, monkeypatch, extra_args):
     return captured["env"]
 
 
-def test_record_record_ranks_explicit(record_parser, tmp_path, monkeypatch):
+@pytest.mark.parametrize("record_ranks", ["0,2", "all"])
+def test_record_record_ranks_explicit(
+    record_parser, tmp_path, monkeypatch, record_ranks
+):
     env = _capture_env_with_args(
-        record_parser, tmp_path, monkeypatch, ["--record-ranks", "0,2"]
+        record_parser, tmp_path, monkeypatch, ["--record-ranks", record_ranks]
     )
-    assert env["MNEME_RECORD_RANKS"] == "0,2"
-
-
-def test_record_record_ranks_all(record_parser, tmp_path, monkeypatch):
-    env = _capture_env_with_args(
-        record_parser, tmp_path, monkeypatch, ["--record-ranks", "all"]
-    )
-    assert env["MNEME_RECORD_RANKS"] == "all"
+    assert env["MNEME_RECORD_RANKS"] == record_ranks
 
 
 def test_record_record_ranks_default_unset(record_parser, tmp_path, monkeypatch):

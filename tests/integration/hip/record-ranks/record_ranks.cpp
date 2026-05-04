@@ -3,9 +3,8 @@
 // Each rank sets MNEME_DATA_DIR to <base>/rank-<rank> before any GPU work,
 // launches a small kernel a handful of times, then on rank 0 inspects every
 // rank's data dir for JSON files and asserts the ranks that produced JSONs
-// match the expected set derived from MNEME_RECORD_RANKS + the rank-count.
+// match the expected set passed by the test driver.
 
-#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -34,22 +33,7 @@ __global__ void smallKernel(int *Out, int Mode) {
 
 namespace {
 
-std::set<int> expectedRecordingRanks(int Size) {
-  const char *Spec = std::getenv("MNEME_RECORD_RANKS");
-  if (!Spec || Spec[0] == '\0') {
-    if (Size <= 1)
-      return {0};
-    return {0};
-  }
-  std::string Lower(Spec);
-  std::transform(Lower.begin(), Lower.end(), Lower.begin(),
-                 [](unsigned char C) { return std::tolower(C); });
-  if (Lower == "all") {
-    std::set<int> All;
-    for (int R = 0; R < Size; ++R)
-      All.insert(R);
-    return All;
-  }
+std::set<int> expectedRecordingRanks(const char *Spec) {
   std::set<int> Out;
   std::stringstream SS(Spec);
   std::string Tok;
@@ -80,6 +64,13 @@ int main(int argc, char **argv) {
   MPI_Comm_rank(MPI_COMM_WORLD, &Rank);
   MPI_Comm_size(MPI_COMM_WORLD, &Size);
 
+  if (argc != 2) {
+    if (Rank == 0)
+      std::cerr << "FAIL: expected comma-separated recording ranks argument\n";
+    MPI_Finalize();
+    return 1;
+  }
+
   const char *DataDirBase = std::getenv("MNEME_DATA_DIR_BASE");
   if (!DataDirBase) {
     if (Rank == 0)
@@ -96,7 +87,8 @@ int main(int argc, char **argv) {
   setenv("MNEME_DATA_DIR", PerRank.c_str(), 1);
 
   // Provide rank info to the recorder via the standard env vars in case the
-  // launcher only set its own (e.g. FLUX_TASK_RANK without OMPI_COMM_WORLD_RANK).
+  // launcher only set its own (e.g. FLUX_TASK_RANK without
+  // OMPI_COMM_WORLD_RANK).
   setenv("OMPI_COMM_WORLD_RANK", std::to_string(Rank).c_str(), 1);
   setenv("OMPI_COMM_WORLD_SIZE", std::to_string(Size).c_str(), 1);
 
@@ -114,7 +106,7 @@ int main(int argc, char **argv) {
 
   int ExitCode = 0;
   if (Rank == 0) {
-    auto Expected = expectedRecordingRanks(Size);
+    auto Expected = expectedRecordingRanks(argv[1]);
     std::cout << "Size=" << Size << " expected recording ranks={";
     bool First = true;
     for (int R : Expected) {
@@ -126,17 +118,22 @@ int main(int argc, char **argv) {
     std::cout << "}\n";
 
     for (int R = 0; R < Size; ++R) {
-      auto Dir = std::filesystem::path(DataDirBase) / ("rank-" + std::to_string(R));
+      auto Dir =
+          std::filesystem::path(DataDirBase) / ("rank-" + std::to_string(R));
       int NumJson = countJsonFiles(Dir);
       bool ShouldRecord = Expected.count(R) > 0;
-      std::cout << "rank " << R << " dir=" << Dir.string() << " json_count=" << NumJson
-                << " expect_recording=" << (ShouldRecord ? "yes" : "no") << "\n";
+      std::cout << "rank " << R << " dir=" << Dir.string()
+                << " json_count=" << NumJson
+                << " expect_recording=" << (ShouldRecord ? "yes" : "no")
+                << "\n";
       if (ShouldRecord && NumJson == 0) {
-        std::cerr << "FAIL: rank " << R << " was expected to record but produced 0 JSONs\n";
+        std::cerr << "FAIL: rank " << R
+                  << " was expected to record but produced 0 JSONs\n";
         ExitCode = 1;
       } else if (!ShouldRecord && NumJson != 0) {
-        std::cerr << "FAIL: rank " << R << " was expected to skip recording but produced "
-                  << NumJson << " JSONs\n";
+        std::cerr << "FAIL: rank " << R
+                  << " was expected to skip recording but produced " << NumJson
+                  << " JSONs\n";
         ExitCode = 1;
       }
     }
