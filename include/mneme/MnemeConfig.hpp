@@ -1,17 +1,21 @@
 #pragma once
 
-#include "mneme/MnemeEnv.hpp"
 #include "mneme/MnemeRank.hpp"
 
 #include <algorithm>
 #include <cctype>
+#include <cerrno>
+#include <climits>
 #include <cstdint>
 #include <cstdlib>
 #include <filesystem>
+#include <iostream>
 #include <optional>
 #include <set>
+#include <sstream>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 
 namespace mneme {
 
@@ -19,6 +23,34 @@ enum class LogLevel { Trace, Debug, Info, Warn, Error, Critical, Off };
 enum class EpilogueSnapshotType { Bytes, Diff };
 
 namespace config_detail {
+
+inline std::optional<int> parseInteger(std::string_view Text) {
+  if (Text.empty())
+    return std::nullopt;
+
+  std::string NullTerminated(Text);
+  errno = 0;
+  char *End = nullptr;
+  long Parsed = std::strtol(NullTerminated.c_str(), &End, 10);
+  if (errno == ERANGE || End == NullTerminated.c_str() || *End != '\0' ||
+      Parsed > INT_MAX || Parsed < INT_MIN)
+    return std::nullopt;
+
+  return static_cast<int>(Parsed);
+}
+
+inline void warnMalformedEnvironmentValue(const char *Description,
+                                          const char *Name,
+                                          std::string_view Value,
+                                          const char *Suffix = "") {
+  std::ostringstream Message;
+  Message << "[mneme] Ignoring malformed " << Description << " " << Name << "='"
+          << Value << "'";
+  if (Suffix && Suffix[0] != '\0')
+    Message << " " << Suffix;
+
+  std::cerr << Message.str() << "\n";
+}
 
 inline std::optional<std::string> getEnvOrDefaultString(const char *VarName) {
   const char *EnvValue = std::getenv(VarName);
@@ -100,7 +132,7 @@ parseRecordRanksList(const std::string &Value) {
     std::string Token = Value.substr(
         Start, Comma == std::string::npos ? std::string::npos : Comma - Start);
 
-    auto ParsedRank = env_detail::parseInteger(Token);
+    auto ParsedRank = parseInteger(Token);
     if (!ParsedRank || *ParsedRank < 0)
       return std::nullopt;
 
@@ -128,9 +160,9 @@ inline bool computeRecordingEnabledForCurrentRank() {
 
   auto ParsedRanks = parseRecordRanksList(Value);
   if (!ParsedRanks) {
-    env_detail::warnMalformedEnvironmentValue(
-        "environment variable", "MNEME_RECORD_RANKS", Value,
-        "; falling back to default rank policy");
+    warnMalformedEnvironmentValue("environment variable", "MNEME_RECORD_RANKS",
+                                  Value,
+                                  "; falling back to default rank policy");
     return defaultRecordingPolicy(DistributedRank);
   }
 

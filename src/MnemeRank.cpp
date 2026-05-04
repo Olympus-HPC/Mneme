@@ -1,6 +1,6 @@
 #include "mneme/MnemeRank.hpp"
 
-#include "mneme/MnemeEnv.hpp"
+#include "mneme/MnemeConfig.hpp"
 
 #include <cstdlib>
 
@@ -13,10 +13,10 @@ std::optional<int> firstSetRankEnv(const char *const *Names) {
     if (!Value)
       continue;
 
-    auto Parsed = env_detail::parseInteger(Value);
+    auto Parsed = config_detail::parseInteger(Value);
     if (!Parsed || *Parsed < 0) {
-      env_detail::warnMalformedEnvironmentValue("rank environment variable",
-                                                Name, Value);
+      config_detail::warnMalformedEnvironmentValue("rank environment variable",
+                                                   Name, Value);
       return std::nullopt;
     }
     return Parsed;
