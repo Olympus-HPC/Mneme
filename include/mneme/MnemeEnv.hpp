@@ -6,10 +6,10 @@
 namespace mneme {
 namespace env_detail {
 
-std::optional<int> parseNonNegativeInteger(std::string_view Text);
-void warnMalformedEnvironmentValue(
-    const char *Description, const char *Name, std::string_view Value,
-    const char *Suffix = "", std::optional<int> DetectedRank = std::nullopt);
+std::optional<int> parseInteger(std::string_view Text);
+void warnMalformedEnvironmentValue(const char *Description, const char *Name,
+                                   std::string_view Value,
+                                   const char *Suffix = "");
 
 } // namespace env_detail
 } // namespace mneme
