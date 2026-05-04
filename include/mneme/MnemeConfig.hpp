@@ -157,8 +157,9 @@ public:
   std::filesystem::path getDataDirectory() const {
     auto Dir = MnemeDataDir.value_or(std::filesystem::current_path().string());
     std::filesystem::path Path(Dir);
-    if (!std::filesystem::is_directory(Path))
+    if (!std::filesystem::is_directory(Path)) {
       throw std::runtime_error("Path :" + Path.string() + " does not exist.\n");
+    }
     return std::filesystem::absolute(Path);
   }
 
@@ -168,8 +169,9 @@ public:
   }
 
   std::optional<std::string> getLogDirectory() const {
-    if (MnemeLogDir && !std::filesystem::exists(*MnemeLogDir))
+    if (MnemeLogDir && !std::filesystem::exists(*MnemeLogDir)) {
       throw std::runtime_error("'MNEME_LOG_DIR' directory does not exist\n");
+    }
     return MnemeLogDir;
   }
 
