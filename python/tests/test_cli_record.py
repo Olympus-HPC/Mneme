@@ -260,3 +260,49 @@ def test_record_default_page_size(record_parser, tmp_path, monkeypatch):
 
     assert captured["env"]["MNEME_PAGE_SIZE"] == "4"  # default from code
     assert captured["env"]["MNEME_SKIP_RECORDINGS"] == "0"
+
+
+def _capture_env_with_args(record_parser, tmp_path, monkeypatch, extra_args):
+    record_dir = tmp_path / "records"
+    record_dir.mkdir()
+
+    monkeypatch.setattr(utils_mod, "get_mneme_record_library_name", lambda: "/tmp/x.so")
+
+    captured = {}
+
+    class FakeCode:
+        returncode = 0
+
+    def fake_run(cmd, env=None, **kwargs):
+        captured["env"] = env
+        return FakeCode
+
+    monkeypatch.setattr(record_mod.subprocess, "run", fake_run)
+
+    args = record_parser.parse_args(
+        ["--record-db-dir", str(record_dir), *extra_args, "--", "/usr/bin/true"]
+    )
+    Record.run(args, verbosity=None)
+    return captured["env"]
+
+
+def test_record_record_ranks_explicit(record_parser, tmp_path, monkeypatch):
+    env = _capture_env_with_args(
+        record_parser, tmp_path, monkeypatch, ["--record-ranks", "0,2"]
+    )
+    assert env["MNEME_RECORD_RANKS"] == "0,2"
+
+
+def test_record_record_ranks_all(record_parser, tmp_path, monkeypatch):
+    env = _capture_env_with_args(
+        record_parser, tmp_path, monkeypatch, ["--record-ranks", "all"]
+    )
+    assert env["MNEME_RECORD_RANKS"] == "all"
+
+
+def test_record_record_ranks_default_unset(record_parser, tmp_path, monkeypatch):
+    """Omitting --record-ranks must not set MNEME_RECORD_RANKS in env, so the
+    C++ default-policy logic sees env-absence and applies its rank-0-only rule."""
+    monkeypatch.delenv("MNEME_RECORD_RANKS", raising=False)
+    env = _capture_env_with_args(record_parser, tmp_path, monkeypatch, [])
+    assert "MNEME_RECORD_RANKS" not in env
