@@ -91,8 +91,8 @@ inline bool defaultRecordingPolicy(const std::optional<int> &DistributedRank) {
   return *DistributedRank == 0;
 }
 
-inline std::set<int> parseRecordRanksList(const char *VarName,
-                                          const std::string &Value) {
+inline std::optional<std::set<int>>
+parseRecordRanksList(const std::string &Value) {
   std::set<int> Parsed;
   size_t Start = 0;
   while (Start <= Value.size()) {
@@ -102,8 +102,7 @@ inline std::set<int> parseRecordRanksList(const char *VarName,
 
     auto ParsedRank = env_detail::parseInteger(Token);
     if (!ParsedRank || *ParsedRank < 0)
-      throw std::runtime_error("Malformed environment variable " +
-                               std::string(VarName) + "='" + Value + "'");
+      return std::nullopt;
 
     Parsed.insert(*ParsedRank);
     if (Comma == std::string::npos)
@@ -127,9 +126,15 @@ inline bool computeRecordingEnabledForCurrentRank() {
   if (Lower == "all")
     return true;
 
-  const auto ParsedRanks = parseRecordRanksList("MNEME_RECORD_RANKS", Value);
+  auto ParsedRanks = parseRecordRanksList(Value);
+  if (!ParsedRanks) {
+    env_detail::warnMalformedEnvironmentValue(
+        "environment variable", "MNEME_RECORD_RANKS", Value,
+        "; falling back to default rank policy");
+    return defaultRecordingPolicy(DistributedRank);
+  }
 
-  return ParsedRanks.count(DistributedRank.value_or(0)) > 0;
+  return ParsedRanks->count(DistributedRank.value_or(0)) > 0;
 }
 
 } // namespace config_detail

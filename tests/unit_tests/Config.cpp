@@ -252,6 +252,23 @@ int main() {
   }
 
   clearMnemeEnv();
+  setenv("MNEME_RECORD_RANKS", "0,abc,2", 1);
+  setenv("OMPI_COMM_WORLD_RANK", "0", 1);
+  {
+    auto Conf = Config::createFromEnvironment();
+    expect(Conf.isRecordingEnabledForCurrentRank(),
+           "Malformed MNEME_RECORD_RANKS should fall back to default policy "
+           "(rank 0 records)");
+  }
+  setenv("OMPI_COMM_WORLD_RANK", "1", 1);
+  {
+    auto Conf = Config::createFromEnvironment();
+    expect(!Conf.isRecordingEnabledForCurrentRank(),
+           "Malformed MNEME_RECORD_RANKS should fall back to default policy "
+           "(non-zero rank excluded)");
+  }
+
+  clearMnemeEnv();
   std::filesystem::remove_all(TempDir);
   return 0;
 }
