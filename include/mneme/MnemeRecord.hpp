@@ -24,9 +24,12 @@
 #include <proteus/KernelMetadata.h>
 
 #include "mneme/DeviceTraits.hpp"
+#include "mneme/MnemeConfig.hpp"
 #include "mneme/MnemeKernelInfo.hpp"
 #include "mneme/MnemeLogger.hpp"
+#include "mneme/MnemeRank.hpp"
 #include "mneme/MnemeSnapshot.hpp"
+#include <iostream>
 
 namespace mneme {
 
@@ -54,7 +57,7 @@ public:
   using KernelFunction_t = typename MnemeDeviceRT::KernelFunction_t;
 
   bool setMetadataForPointer(const void *ptr, Metadata md) {
-    if (!ptr)
+    if (Disabled || !ptr)
       return false;
 
     auto It = AllocatedBlobs.find(const_cast<void *>(ptr));
@@ -66,7 +69,7 @@ public:
   }
 
   bool getMetadataForPointer(const void *ptr, Metadata &md) const {
-    if (!ptr)
+    if (Disabled || !ptr)
       return false;
 
     auto It = AllocatedBlobs.find(const_cast<void *>(ptr));
@@ -78,7 +81,7 @@ public:
   }
 
   bool eraseMetadataForPointer(const void *ptr) {
-    if (!ptr)
+    if (Disabled || !ptr)
       return false;
 
     auto It = AllocatedBlobs.find(const_cast<void *>(ptr));
@@ -93,6 +96,7 @@ private:
   bool ExtractedIR;
   RecordDatabase DB;
   std::once_flag ExtractFlag;
+  const bool Disabled;
 
   DeviceError_t (*origLaunchKernel)(const void *func, dim3 gridDim,
                                     dim3 blockDim, void **args,
@@ -116,6 +120,8 @@ private:
 
 public:
   DeviceError_t rtMalloc(void **ptr, size_t size) {
+    if (Disabled)
+      return origMallocDevice(ptr, size);
     if (!PM) {
       // NOTE: We need this arch cause internally we initialize the device.
       // FIXME: We need to have a DeviceTrait function to initialize the GPU
@@ -142,6 +148,8 @@ public:
 
   DeviceError_t rtManagedMalloc(void **ptr, size_t size, unsigned int flags) {
     auto ret = origMallocManaged(ptr, size, flags);
+    if (Disabled)
+      return ret;
     LOG_DEBUG("Intercepted Managed Malloc PTR:{} SIZE:{}", *ptr, size);
     LOG_WARN("Will not be able to replay Kernels acessing:{}", *ptr);
     return ret;
@@ -149,11 +157,15 @@ public:
 
   DeviceError_t rtHostMalloc(void **ptr, size_t size, unsigned int flags) {
     auto ret = origMallocPinned(ptr, size, flags);
+    if (Disabled)
+      return ret;
     LOG_WARN("Intercepted Pinned|Host Malloc PTR:{} SIZE:{}", *ptr, size);
     return ret;
   }
 
   DeviceError_t rtFree(void *ptr) {
+    if (Disabled)
+      return origFreeDevice(ptr);
     if (ptr == nullptr) {
       LOG_WARN("Mneme was instructed to de-allocate nullptr..., skipping");
       return MnemeDeviceRT::DeviceSuccess;
@@ -181,6 +193,9 @@ public:
   DeviceError_t rtLaunchKernel(const void *func, dim3 &GridDim, dim3 &BlockDim,
                                void **Args, size_t SharedMem,
                                DeviceStream_t Stream) {
+    if (Disabled)
+      return origLaunchKernel(func, GridDim, BlockDim, Args, SharedMem, Stream);
+
     if (!PM) {
       // NOTE: We need this arch cause internally we initialize the device.
       // FIXME: We need to have a DeviceTrait function to initialize the GPU
@@ -231,6 +246,8 @@ public:
   }
 
   DeviceError_t rtSetDevice(int deviceID) {
+    if (Disabled)
+      return origSetDeviceID(deviceID);
     auto ret = origSetDeviceID(deviceID);
     if (DeviceID == -1) {
       DeviceID = deviceID;
@@ -245,12 +262,21 @@ public:
 
   DeviceError_t rtGetDevice(int *deviceID) { return origGetDeviceID(deviceID); }
 
-  MnemeRecorder() : ExtractedIR(true) {
+  MnemeRecorder()
+      : ExtractedIR(true),
+        Disabled(!Config::get().isRecordingEnabledForCurrentRank()) {
     VAStartAddr = nullptr;
     VATotalSize = 0;
     rtLib = MnemeDeviceRT::getRTLib();
     RecordReplayDir = DB.getDir();
     DeviceID = -1;
+
+    if (!Disabled && Config::get().RecordingDefaultPolicyApplied) {
+      auto Size = mneme::detectDistributedSize();
+      std::cerr << "[mneme] Multi-rank run detected ("
+                << (Size ? std::to_string(*Size) : std::string("multi-rank"))
+                << " ranks). Recording on rank 0 only.\n";
+    }
 
     // Redirect overloaded device runtime functions.
     reinterpret_cast<void *&>(origLaunchKernel) =
