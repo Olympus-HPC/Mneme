@@ -4,6 +4,7 @@
 #include <cstring>
 #include <filesystem>
 #include <functional>
+#include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/JSON.h>
 #include <llvm/Support/MemoryBuffer.h>
@@ -86,14 +87,17 @@ template <DeviceVendors VendorTypes> class MnemeSnapshot {
            Buffer.take_front(DiffMagicSize) == llvm::StringRef(DiffMagic);
   }
 
-  static size_t countChangedRanges(const uint8_t *Base, const uint8_t *Current,
-                                   size_t Size) {
+  static size_t countChangedRanges(llvm::ArrayRef<uint8_t> Base,
+                                   llvm::ArrayRef<uint8_t> Current) {
+    if (Base.size() != Current.size())
+      LOG_FATAL("Cannot diff buffers with different sizes");
+
     // Count the number of contiguous ranges that have changed between Base and
     // Current. We want to write out the number of ranges so that the reader 
     // can know how many ranges to read.
     size_t Count = 0;
     bool InRange = false;
-    for (size_t I = 0; I < Size; ++I) {
+    for (size_t I = 0; I < Base.size(); ++I) {
       if (Base[I] != Current[I]) {
         if (!InRange) {
           Count++;
@@ -106,31 +110,39 @@ template <DeviceVendors VendorTypes> class MnemeSnapshot {
     return Count;
   }
 
-  static void writeChangedRanges(llvm::raw_ostream &OS, const uint8_t *Base,
-                                 const uint8_t *Current, size_t Size,
-                                 size_t BaseOffset,
-                                 uint8_t *UpdateBase = nullptr) {
+  static size_t
+  writeChangedRanges(llvm::raw_ostream &OS, llvm::ArrayRef<uint8_t> Base,
+                     llvm::ArrayRef<uint8_t> Current, size_t BaseOffset,
+                     llvm::MutableArrayRef<uint8_t> UpdateBase = {}) {
+    if (Base.size() != Current.size())
+      LOG_FATAL("Cannot diff buffers with different sizes");
+    if (!UpdateBase.empty() && UpdateBase.size() != Base.size())
+      LOG_FATAL("Cannot update diff base with mismatched buffer size");
+
     // Write out the contiguous ranges that have changed between Base 
     // and Current.
+    size_t Count = 0;
     size_t I = 0;
-    while (I < Size) {
-      while (I < Size && Base[I] == Current[I])
+    while (I < Base.size()) {
+      while (I < Base.size() && Base[I] == Current[I])
         ++I;
-      if (I == Size)
+      if (I == Base.size())
         break;
 
       size_t Start = I;
-      while (I < Size && Base[I] != Current[I])
+      while (I < Base.size() && Base[I] != Current[I])
         ++I;
 
       size_t Offset = BaseOffset + Start;
       size_t Len = I - Start;
       util::writeScalar(OS, Offset);
       util::writeScalar(OS, Len);
-      util::writeBytes(OS, Current + Start, Len);
-      if (UpdateBase)
-        std::memcpy(UpdateBase + Start, Current + Start, Len);
+      util::writeBytes(OS, Current.slice(Start, Len));
+      if (!UpdateBase.empty())
+        std::memcpy(UpdateBase.data() + Start, Current.data() + Start, Len);
+      ++Count;
     }
+    return Count;
   }
 
   static void writeCountAndWriteChangedRanges(
@@ -162,42 +174,28 @@ template <DeviceVendors VendorTypes> class MnemeSnapshot {
                   "Device Error Msg: " +
                   EC.value() + "\n");
 
-      size_t I = 0;
-      auto *ChunkBase = Base + Offset;
-      while (I < ChunkSize) {
-        while (I < ChunkSize && ChunkBase[I] == Scratch[I])
-          ++I;
-        if (I == ChunkSize)
-          break;
-
-        size_t Start = I;
-        while (I < ChunkSize && ChunkBase[I] != Scratch[I])
-          ++I;
-
-        size_t RangeOffset = Offset + Start;
-        size_t Len = I - Start;
-        util::writeScalar(DiffOS, RangeOffset);
-        util::writeScalar(DiffOS, Len);
-        util::writeBytes(DiffOS, Scratch.get() + Start, Len);
-        std::memcpy(ChunkBase + Start, Scratch.get() + Start, Len);
-        ++NumRanges;
-      }
+      llvm::ArrayRef<uint8_t> ChunkBase(Base + Offset, ChunkSize);
+      llvm::ArrayRef<uint8_t> ChunkCurrent(Scratch.get(), ChunkSize);
+      llvm::MutableArrayRef<uint8_t> UpdateBase(Base + Offset, ChunkSize);
+      NumRanges += writeChangedRanges(DiffOS, ChunkBase, ChunkCurrent, Offset,
+                                       UpdateBase);
     }
 
     util::writeScalar(OS, NumRanges);
-    util::writeBytes(OS, DiffBytes.data(), DiffBytes.size());
+    util::writeBytes(OS, llvm::StringRef(DiffBytes.data(), DiffBytes.size()));
   }
 
-  static void applyDiffRanges(const char *&Buffer, uint8_t *Target,
-                              size_t TargetSize, size_t NumRanges) {
+  static void applyDiffRanges(const char *&Buffer,
+                              llvm::MutableArrayRef<uint8_t> Target,
+                              size_t NumRanges) {
     for (size_t R = 0; R < NumRanges; ++R) {
       size_t Offset = util::extractScalar<size_t>(Buffer);
       size_t Size = util::extractScalar<size_t>(Buffer);
-      if (Offset > TargetSize || Size > TargetSize - Offset)
+      if (Offset > Target.size() || Size > Target.size() - Offset)
         LOG_FATAL("Malformed Mneme diff range: offset " +
                   std::to_string(Offset) + " size " + std::to_string(Size) +
-                  " exceeds target size " + std::to_string(TargetSize));
-      std::memcpy(Target + Offset, Buffer, Size);
+                  " exceeds target size " + std::to_string(Target.size()));
+      std::memcpy(Target.data() + Offset, Buffer, Size);
       Buffer += Size;
     }
   }
@@ -265,8 +263,11 @@ template <DeviceVendors VendorTypes> class MnemeSnapshot {
       if (It->second.VarSize != VarSize)
         LOG_FATAL("Mneme diff global size mismatch for: " + Name);
       It->second.DevAddr = DevAddr;
-      applyDiffRanges(CurrentPtr, static_cast<uint8_t *>(It->second.HostAddr),
-                      It->second.VarSize, NumRanges);
+      applyDiffRanges(
+          CurrentPtr,
+          llvm::MutableArrayRef<uint8_t>(
+              static_cast<uint8_t *>(It->second.HostAddr), It->second.VarSize),
+          NumRanges);
     }
 
     size_t TotalMemBlobs = util::extractScalar<size_t>(CurrentPtr);
@@ -289,8 +290,11 @@ template <DeviceVendors VendorTypes> class MnemeSnapshot {
       if (Blob.getActualSize() != ActualSize || Blob.getSize() != Size)
         LOG_FATAL("Mneme diff memory blob size mismatch");
       Blob.setMetadata(MD);
-      applyDiffRanges(CurrentPtr, Blob.getHostData().get(), Blob.getSize(),
-                      NumRanges);
+      applyDiffRanges(
+          CurrentPtr,
+          llvm::MutableArrayRef<uint8_t>(Blob.getHostData().get(),
+                                         Blob.getSize()),
+          NumRanges);
     }
   }
 
@@ -408,7 +412,7 @@ public:
     if (EC)
       LOG_FATAL("Cannot write Mneme diff snapshot: " + EC.message());
 
-    util::writeBytes(OutBC, DiffMagic, DiffMagicSize);
+    util::writeBytes(OutBC, llvm::StringRef(DiffMagic, DiffMagicSize));
 
     size_t TotalGlobals = GlobalVars.size();
     util::writeScalar(OutBC, TotalGlobals);
@@ -429,14 +433,12 @@ public:
 
       size_t StrLen = VarName.size();
       util::writeScalar(OutBC, StrLen);
-      util::writeBytes(OutBC, VarName.data(), StrLen);
+      util::writeBytes(OutBC, llvm::StringRef(VarName.data(), StrLen));
       util::writeScalar(OutBC, GV.VarSize);
       util::writeScalar(OutBC, GV.DevAddr);
-      size_t NumRanges =
-          countChangedRanges(BaseIt->second.data(), Current.data(), GV.VarSize);
+      size_t NumRanges = countChangedRanges(BaseIt->second, Current);
       util::writeScalar(OutBC, NumRanges);
-      writeChangedRanges(OutBC, BaseIt->second.data(), Current.data(),
-                         GV.VarSize, 0);
+      writeChangedRanges(OutBC, BaseIt->second, Current, 0);
     }
 
     size_t TotalBlobs = DeviceMemory.size();
@@ -792,7 +794,7 @@ public:
       dim3 &GridDim, dim3 &BlockDim, void **Args, size_t SharedMem,
       typename DeviceTraits<VendorTypes>::DeviceStream_t Stream) {
     using namespace proteus;
-    using SnapshotT = MnemeSnapshot<VendorTypes>::SnapshotType;
+    using SnapshotT = typename MnemeSnapshot<VendorTypes>::SnapshotType;
 
     if (!shouldRecord(KInfo.getName())) {
       LOG_INFO("Skip record of Kernel");
