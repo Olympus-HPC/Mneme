@@ -9,6 +9,7 @@
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/SmallVector.h>
 #include <memory>
+#include <optional>
 #include <random>
 
 using namespace mneme;
@@ -95,8 +96,10 @@ int main(int argc, char **argv) {
   DeviceMemMap.try_emplace((void *)BlobData.first, std::move(Blob));
   std::filesystem::path SnapshotFN("./test.mneme");
 
-  MnemeSnapshot<Vendor>::takeMnemeSnapshot(GVars, DeviceMemMap, SnapshotFN,
-                                           TestKernel->KernelArgSizes, Args, 0);
+  MnemeSnapshot<Vendor>::GlobalSnapshotData PrologueGlobals;
+  MnemeSnapshot<Vendor>::takeMnemeBytesSnapshot(
+      GVars, DeviceMemMap, SnapshotFN, TestKernel->KernelArgSizes, Args, 0,
+      &PrologueGlobals);
 
   std::unordered_map<std::string, ReplayGlobalVar> ReadGVars;
   llvm::DenseMap<void *, MnemeMemoryBlobDevice> ReadDeviceMemMap;
@@ -220,13 +223,115 @@ int main(int argc, char **argv) {
     return 0;
   }();
 
-  auto Ret = ValidateGlobalMem | ValidateDeviceMem | ValidateKernelArgs;
+  // make some changes to the device memory and global memory to test diffing
+  BlobData.second[0] ^= 0x7;
+  BlobData.second[63] ^= 0x11;
+  BlobData.second[64] ^= 0x23;
+  BlobData.second[127] ^= 0x42;
+  GlobalData.second[2] ^= 0x5;
+  GlobalData.second[3] ^= 0x9;
+  GlobalData.second[4] ^= 0x13;
+
+  auto EC = MnemeDeviceRT::DeviceErrorCheck(MnemeDeviceRT::DeviceCopy(
+      BlobData.first, BlobData.second, 128,
+      MnemeDeviceRT::MemcpyHostToDeviceKind()));
+  if (EC)
+    LOG_FATAL("Could not update device blob data");
+
+  EC = MnemeDeviceRT::DeviceErrorCheck(MnemeDeviceRT::DeviceCopy(
+      GlobalData.first, GlobalData.second, 128,
+      MnemeDeviceRT::MemcpyHostToDeviceKind()));
+  if (EC)
+    LOG_FATAL("Could not update device global data");
+
+  std::filesystem::path DiffSnapshotFN("./test.epilogue.mneme");
+  MnemeSnapshot<Vendor>::takeMnemeDiffSnapshot(
+      GVars, DeviceMemMap, DiffSnapshotFN, PrologueGlobals, 0);
+
+  std::unordered_map<std::string, ReplayGlobalVar> DiffGVars;
+  llvm::DenseMap<void *, MnemeMemoryBlobDevice> DiffDeviceMemMap;
+  std::shared_ptr<KernelInfo> DiffKernel =
+      std::make_shared<KernelInfo>(KernelName);
+  MnemeSnapshot<Vendor>::readMnemeSnapShot(
+      DiffSnapshotFN, DiffGVars, DiffDeviceMemMap, DiffKernel,
+      std::optional<std::string>(SnapshotFN.string()));
+
+  auto ValidateDiffGlobalMem = [&]() {
+    auto it = DiffGVars.find("Test");
+    if (it == DiffGVars.end())
+      return 8;
+    auto &RGV = it->second;
+
+    if (RGV.VarSize != GV.VarSize) {
+      std::cerr << "Diff VarSize differs " << RGV.VarSize << " " << GV.VarSize
+                << "\n";
+      return 8;
+    }
+
+    if (std::memcmp(GlobalData.second, RGV.HostAddr, 128) != 0) {
+      std::cerr << "Diff global memory did not reconstruct epilogue data\n";
+      return 8;
+    }
+    return 0;
+  }();
+
+  auto ValidateDiffDeviceMem = [&]() {
+    auto it = DiffDeviceMemMap.find((void *)BlobData.first);
+    if (it == DiffDeviceMemMap.end()) {
+      std::cerr << "Diff device map is missing blob address\n";
+      return 16;
+    }
+
+    auto &RBlob = it->second;
+    if (RBlob.getActualSize() != 128 || RBlob.getSize() != 128) {
+      std::cerr << "Diff blob sizes differ\n";
+      return 16;
+    }
+
+    if (RBlob.getMetadata().builtin != BuiltinDType::F64 ||
+        RBlob.getMetadata().norm != Norm::L2 ||
+        RBlob.getMetadata().threshold != 0.5 ||
+        RBlob.getMetadata().threshold_kind != ThresholdKind::Relative ||
+        RBlob.getMetadata().tag.value() != "Test") {
+      std::cerr << "Diff blob metadata differs\n";
+      return 16;
+    }
+
+    if (std::memcmp(BlobData.second, RBlob.getHostData().get(), 128) != 0) {
+      std::cerr << "Diff device memory did not reconstruct epilogue data\n";
+      return 16;
+    }
+    return 0;
+  }();
+
+  auto ValidateDiffKernelArgs = [&]() {
+    if (TestKernel->getNumArgs() != DiffKernel->getNumArgs()) {
+      std::cerr << "Diff snapshot did not inherit prologue arguments\n";
+      return 32;
+    }
+
+    auto WArgSizes = TestKernel->getArgSizes();
+    auto RArgSizes = DiffKernel->getArgSizes();
+    auto RArgData = DiffKernel->getArgData();
+    for (auto A = 0; A < TestKernel->getNumArgs(); A++) {
+      if (WArgSizes[A] != RArgSizes[A] ||
+          std::memcmp(Args[A], RArgData[A].get(), WArgSizes[A]) != 0) {
+        std::cerr << "Diff snapshot argument " << A
+                  << " differs from prologue\n";
+        return 32;
+      }
+    }
+    return 0;
+  }();
+
+  auto Ret = ValidateGlobalMem | ValidateDeviceMem | ValidateKernelArgs |
+             ValidateDiffGlobalMem | ValidateDiffDeviceMem |
+             ValidateDiffKernelArgs;
 
   delete[] GlobalData.second;
   delete[] BlobData.second;
 
-  auto EC = MnemeDeviceRT::DeviceErrorCheck(
-      MnemeDeviceRT::DeviceFree(GlobalData.first));
+  EC = MnemeDeviceRT::DeviceErrorCheck(MnemeDeviceRT::DeviceFree(GlobalData.first));
   if (EC)
     LOG_FATAL("Could not release device memory\n");
 

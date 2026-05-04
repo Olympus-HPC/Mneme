@@ -10,6 +10,7 @@
 namespace mneme {
 
 enum class LogLevel { Trace, Debug, Info, Warn, Error, Critical, Off };
+enum class EpilogueSnapshotType { Bytes, Diff };
 
 namespace config_detail {
 
@@ -62,6 +63,21 @@ inline LogLevel getEnvOrDefaultLogLevel(const char *VarName, LogLevel Default) {
   return LogLevel::Info;
 }
 
+inline EpilogueSnapshotType getEnvOrDefaultEpilogueSnapshotType(
+    const char *VarName, EpilogueSnapshotType Default) {
+  auto EnvValue = getEnvOrDefaultString(VarName);
+  if (!EnvValue)
+    return Default;
+
+  if (*EnvValue == "bytes")
+    return EpilogueSnapshotType::Bytes;
+  if (*EnvValue == "diff")
+    return EpilogueSnapshotType::Diff;
+
+  throw std::runtime_error("Invalid MNEME_EPILOGUE_TYPE value '" + *EnvValue +
+                           "'. Expected 'bytes' or 'diff'.");
+}
+
 } // namespace config_detail
 
 class Config {
@@ -77,6 +93,7 @@ public:
   const uint64_t MaxRecordings;
   const std::optional<long> PageSizeGiB;
   const LogLevel MnemeLogLevel;
+  const EpilogueSnapshotType EpilogueType;
 
   std::filesystem::path getDataDirectory() const {
     auto Dir = MnemeDataDir.value_or(std::filesystem::current_path().string());
@@ -111,6 +128,8 @@ private:
             config_detail::getEnvOrDefaultPageSizeGiB("MNEME_PAGE_SIZE")),
         MnemeLogLevel(config_detail::getEnvOrDefaultLogLevel(
             "MNEME_LOG_LEVEL", LogLevel::Critical)),
+        EpilogueType(config_detail::getEnvOrDefaultEpilogueSnapshotType(
+            "MNEME_EPILOGUE_TYPE", EpilogueSnapshotType::Bytes)),
         MnemeDataDir(config_detail::getEnvOrDefaultString("MNEME_DATA_DIR")),
         MnemeLogDir(config_detail::getEnvOrDefaultString("MNEME_LOG_DIR")) {}
 };

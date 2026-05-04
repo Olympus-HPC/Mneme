@@ -26,14 +26,14 @@ import json
 from ctypes import POINTER, c_bool, c_char_p, c_int, c_void_p
 from enum import Enum
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 from .llvm import ffi
 from .mneme_types import dim3
 from .proteus import jit
 
 MnemeRecordStateRef = ffi._make_opaque_ref("MnemeRecordState")
-ffi.lib.MnemePy_initializeMemState.argtypes = [c_char_p, c_char_p, c_bool]
+ffi.lib.MnemePy_initializeMemState.argtypes = [c_char_p, c_char_p, c_char_p, c_bool]
 ffi.lib.MnemePy_initializeMemState.restype = MnemeRecordStateRef
 
 ffi.lib.MnemePy_DisposeMemState.argtypes = [MnemeRecordStateRef]
@@ -132,12 +132,25 @@ class MemStateRef:
         If the snapshot file does not exist.
     """
 
-    def __init__(self, fn: str, kernel_name: str, snap_type: SnapshotType):
+    def __init__(
+        self,
+        fn: str,
+        kernel_name: str,
+        snap_type: SnapshotType,
+        base_prologue_fn: Optional[str] = None,
+    ):
         if not Path(fn).exists():
-            raise RuntimeError(f"Expected prologue file: {fn} to exist")
+            raise RuntimeError(f"Expected snapshot file: {fn} to exist")
+        if snap_type == SnapshotType.EPILOGUE and base_prologue_fn is None:
+            raise RuntimeError("Epilogue snapshots require a base prologue path")
+        if base_prologue_fn is not None and not Path(base_prologue_fn).exists():
+            raise RuntimeError(
+                f"Expected base prologue file: {base_prologue_fn} to exist"
+            )
         self.fn = fn
         self.kernel_name = kernel_name
         self.s_type = snap_type
+        self.base_prologue_fn = base_prologue_fn
         self._state = None
         self._load = False
         self._num_args = None
@@ -157,9 +170,11 @@ class MemStateRef:
             Returns self for convenient chaining / context-manager usage.
         """
         if self._state is None:
+            base_fn = self.base_prologue_fn or ""
             self._state = ffi.lib.MnemePy_initializeMemState(
                 c_char_p(self.kernel_name.encode("utf-8")),
                 c_char_p(self.fn.encode("utf-8")),
+                c_char_p(base_fn.encode("utf-8")),
                 c_bool(self.s_type == SnapshotType.PROLOGUE),
             )
 
@@ -369,7 +384,12 @@ class RecordedExecution:
                     self.available_specializations.append(i)
             self.occ = occ
             self.prologue = MemStateRef(prologue_fn, kernel_name, SnapshotType.PROLOGUE)
-            self.epilogue = MemStateRef(epilogue_fn, kernel_name, SnapshotType.EPILOGUE)
+            self.epilogue = MemStateRef(
+                epilogue_fn,
+                kernel_name,
+                SnapshotType.EPILOGUE,
+                base_prologue_fn=prologue_fn,
+            )
 
         def __hash__(self):
             return hash(self.dynamic_hash + self.static_hash)

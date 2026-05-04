@@ -1,9 +1,12 @@
 #pragma once
 #include "llvm/ADT/DenseMapInfo.h"
+#include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/SmallVector.h>
+#include <llvm/ADT/StringRef.h>
 #include <llvm/ADT/Twine.h>
 #include <llvm/IR/Function.h>
 #include <llvm/IR/Module.h>
+#include <llvm/Support/raw_ostream.h>
 
 #include "mneme/MnemeLogger.hpp"
 
@@ -26,6 +29,23 @@ template <> struct DenseMapInfo<std::string> {
 } // namespace llvm
 //
 namespace mneme {
+namespace util {
+template <typename Ty>
+void writeScalar(llvm::raw_ostream &OS, const Ty &Value) {
+  OS << llvm::StringRef(reinterpret_cast<const char *>(&Value), sizeof(Value));
+}
+
+inline void writeBytes(llvm::raw_ostream &OS, llvm::StringRef Data) {
+  if (!Data.empty())
+    OS << Data;
+}
+
+inline void writeBytes(llvm::raw_ostream &OS, llvm::ArrayRef<uint8_t> Data) {
+  writeBytes(OS, llvm::StringRef(reinterpret_cast<const char *>(Data.data()),
+                                 Data.size()));
+}
+} // namespace util
+
 inline static llvm::SmallVector<std::string> getArgNames(llvm::Function &F) {
   llvm::SmallVector<std::string> Info;
   for (auto &A : F.args()) {

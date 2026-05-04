@@ -1,4 +1,5 @@
 #pragma once
+#include <cstddef>
 #include <cstdint>
 #include <iomanip>
 #include <iostream>
@@ -26,6 +27,12 @@ template <typename Ty> Ty extractScalar(char *&Buffer) {
   return Value;
 }
 
+inline std::string readSizedString(const char *&Buffer) {
+  size_t StrLen = extractScalar<size_t>(Buffer);
+  std::string Name{Buffer, StrLen};
+  Buffer += StrLen;
+  return Name;
+}
 
 template <typename T> std::string pointerToHexString(T *ptr) {
   std::ostringstream oss;

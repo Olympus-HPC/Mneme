@@ -104,9 +104,29 @@ This mechanism enables faithful reproduction of kernel behavior and
 forms the foundation for replay, verification, and performance
 experimentation.
 
-The prologue and epilogue files contain serialized descriptors of GPU
-memory contents and associated metadata, including the number of memory
-regions, their sizes, and kernel argument mappings.
+The prologue file contains a full serialized snapshot of GPU memory,
+global variables, metadata, and kernel argument mappings. By default,
+the epilogue file is also stored as a full byte snapshot of the
+post-kernel state.
+
+Epilogue snapshots can optionally be stored as binary diffs against the
+matching prologue by recording with:
+
+```bash
+mneme record --epilogue-format diff -- <application> [args...]
+```
+
+The default format is equivalent to:
+
+```bash
+mneme record --epilogue-format bytes -- <application> [args...]
+```
+
+Diff epilogues contain descriptors for the recorded globals and memory
+regions plus the changed byte ranges needed to reconstruct the
+post-kernel state. Using the diff format can save significant amounts
+of disk space if the kernels do not change much output data; it is
+less helpful for dense and/or in-place kernels.
 
 ### Blob annotation metadata
 

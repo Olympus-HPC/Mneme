@@ -33,6 +33,51 @@ def test_memstate_open_initializes_and_loads():
             fake.MnemePy_LoadMemState.assert_called_once_with("STATE")
 
 
+def test_epilogue_memstate_requires_base_prologue():
+    with patch("mneme.recorded_execution.Path.exists", return_value=True):
+        with pytest.raises(RuntimeError):
+            MemStateRef("snap.epi", "kernelA", SnapshotType.EPILOGUE)
+
+
+def test_epilogue_memstate_passes_base_prologue_to_ffi():
+    with patch("mneme.recorded_execution.Path.exists", return_value=True):
+        with patch("mneme.recorded_execution.ffi.lib") as fake:
+            fake.MnemePy_initializeMemState.return_value = "STATE"
+
+            m = MemStateRef(
+                "snap.epi",
+                "kernelA",
+                SnapshotType.EPILOGUE,
+                base_prologue_fn="snap.pro",
+            )
+            m.open()
+
+            args, _ = fake.MnemePy_initializeMemState.call_args
+            assert args[1].value == b"snap.epi"
+            assert args[2].value == b"snap.pro"
+            assert args[3].value is False
+
+
+@pytest.mark.parametrize("epilogue_fn", ["snap.bytes.epi", "snap.diff.epi"])
+def test_epilogue_formats_share_base_prologue_interface(epilogue_fn):
+    with patch("mneme.recorded_execution.Path.exists", return_value=True):
+        with patch("mneme.recorded_execution.ffi.lib") as fake:
+            fake.MnemePy_initializeMemState.return_value = "STATE"
+
+            m = MemStateRef(
+                epilogue_fn,
+                "kernelA",
+                SnapshotType.EPILOGUE,
+                base_prologue_fn="snap.pro",
+            )
+            m.open()
+
+            args, _ = fake.MnemePy_initializeMemState.call_args
+            assert args[1].value == epilogue_fn.encode("utf-8")
+            assert args[2].value == b"snap.pro"
+            assert args[3].value is False
+
+
 def test_memstate_args_lazy_loaded_once():
     with patch("mneme.recorded_execution.Path.exists", return_value=True):
         with patch("mneme.recorded_execution.ffi.lib") as fake:
@@ -182,4 +227,5 @@ def test_recorded_execution_from_json_reconstructs():
     assert inst.block_dim.x == 1
     assert inst.grid_dim.z == 6
     assert inst.occ == 3
-
+    assert inst.epilogue.base_prologue_fn == "file.pro"
+    assert inst.epilogue.s_type == SnapshotType.EPILOGUE

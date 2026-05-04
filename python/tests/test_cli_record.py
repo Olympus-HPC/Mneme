@@ -80,7 +80,50 @@ def test_record_happy_path(tmp_path, record_parser, monkeypatch):
     assert env["MNEME_PAGE_SIZE"] == "8"
     assert env["MNEME_MAX_RECORDINGS"] == "3"
     assert env["MNEME_DATA_DIR"] == str(record_dir)
+    assert env["MNEME_EPILOGUE_TYPE"] == "bytes"
     assert env["MNEME_LOG_LEVEL"] == "DEBUG"
+
+
+def test_record_epilogue_format_sets_env(tmp_path, record_parser, monkeypatch):
+    """--epilogue-format controls the MNEME_EPILOGUE_TYPE runtime config."""
+    record_dir = tmp_path / "records"
+    record_dir.mkdir()
+
+    monkeypatch.setattr(utils_mod, "get_mneme_record_library_name", lambda: "/tmp/x.so")
+
+    captured = {}
+
+    class FakeCode:
+        returncode = 0
+
+    def fake_run(cmd, env=None, **kwargs):
+        captured["env"] = env or {}
+        return FakeCode
+
+    monkeypatch.setattr(record_mod.subprocess, "run", fake_run)
+
+    args = record_parser.parse_args(
+        [
+            "--record-db-dir",
+            str(record_dir),
+            "--epilogue-format",
+            "diff",
+            "--",
+            "/usr/bin/true",
+        ]
+    )
+
+    Record.run(args, verbosity=None)
+
+    assert captured["env"]["MNEME_EPILOGUE_TYPE"] == "diff"
+
+
+def test_record_rejects_invalid_epilogue_format(record_parser):
+    """argparse rejects epilogue formats not supported by the native config."""
+    with pytest.raises(SystemExit):
+        record_parser.parse_args(
+            ["--epilogue-format", "delta", "--", "/usr/bin/true"]
+        )
 
 
 def test_record_requires_dash_dash(record_parser, monkeypatch):
