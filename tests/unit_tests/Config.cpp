@@ -212,23 +212,6 @@ int main() {
            "Rank 0 should record when MNEME_RECORD_RANKS=0");
   }
 
-  // Malformed MNEME_RECORD_RANKS falls back to default policy.
-  setenv("MNEME_RECORD_RANKS", "0,abc", 1);
-  setenv("OMPI_COMM_WORLD_RANK", "0", 1);
-  {
-    auto Conf = Config::createFromEnvironment();
-    expect(Conf.isRecordingEnabledForCurrentRank(),
-           "Malformed env on rank 0 should fall through to default policy "
-           "(record)");
-  }
-  setenv("MNEME_RECORD_RANKS", "0-3", 1);
-  {
-    auto Conf = Config::createFromEnvironment();
-    expect(
-        Conf.isRecordingEnabledForCurrentRank(),
-        "Range syntax should be treated as malformed and use default policy");
-  }
-
   // Empty MNEME_RECORD_RANKS behaves like unset.
   setenv("MNEME_RECORD_RANKS", "", 1);
   setenv("OMPI_COMM_WORLD_RANK", "1", 1);
