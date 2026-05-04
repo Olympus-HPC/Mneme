@@ -78,6 +78,7 @@ def test_record_happy_path(tmp_path, record_parser, monkeypatch):
     env = captured["env"]
     assert env["LD_PRELOAD"] == fake_lib
     assert env["MNEME_PAGE_SIZE"] == "8"
+    assert env["MNEME_MAX_RECORDINGS"] == "3"
     assert env["MNEME_DATA_DIR"] == str(record_dir)
     assert env["MNEME_LOG_LEVEL"] == "DEBUG"
 
@@ -94,18 +95,24 @@ def test_record_requires_dash_dash(record_parser, monkeypatch):
         Record.run(args, verbosity=None)
 
 
-def test_record_fails_if_dir_missing(record_parser, tmp_path, monkeypatch):
-    """record-db-dir must exist."""
-    missing = tmp_path / "nope"
+def test_record_creates_dir_if_missing(record_parser, tmp_path, monkeypatch):
+    """A missing record-db-dir is created automatically."""
+    missing = tmp_path / "nested" / "nope"
 
     monkeypatch.setattr(utils_mod, "get_mneme_record_library_name", lambda: "/tmp/x.so")
+
+    class FakeCode:
+        returncode = 0
+
+    monkeypatch.setattr(record_mod.subprocess, "run", lambda cmd, env=None, **kw: FakeCode)
 
     args = record_parser.parse_args(
         ["--record-db-dir", str(missing), "--", "/usr/bin/true"]
     )
 
-    with pytest.raises(FileNotFoundError):
-        Record.run(args, verbosity=None)
+    Record.run(args, verbosity=None)
+
+    assert missing.is_dir()
 
 
 def test_record_fails_if_not_a_directory(record_parser, tmp_path, monkeypatch):

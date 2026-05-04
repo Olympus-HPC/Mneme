@@ -17,6 +17,9 @@
 #include "llvm/Demangle/Demangle.h"
 #include <llvm/ADT/StableHashing.h>
 #include <llvm/ADT/StringRef.h>
+#include <llvm/Bitcode/BitcodeReader.h>
+#include <llvm/IR/LLVMContext.h>
+#include <llvm/IR/Module.h>
 #include <string>
 #include <sys/types.h>
 
@@ -25,6 +28,7 @@
 #include <proteus/impl/JitEngineDevice.h>
 
 #include "mneme/DeviceTraits.hpp"
+#include "mneme/MnemeConfig.hpp"
 #include "mneme/MnemeKernelInfo.hpp"
 #include "mneme/MnemeLLVMUtils.hpp"
 #include "mneme/MnemeLogger.hpp"
@@ -545,8 +549,32 @@ class KernelInstancesCollection {
   const std::string KName;
 
 private:
-  std::string StoreModule(llvm::Module &M, const std::string &RecordReplayDir,
-                          uint64_t StaticHash) {
+  // Parse Proteus's serialized bitcode in a Mneme-owned LLVMContext and
+  // extract per-argument metadata. Operating on a Mneme-owned Module 
+  // keeps Mneme's LLVM runtime from touching any
+  // Proteus-owned LLVM C++ object across the DSO boundary.
+  void extractArgInfoFromBitcode(llvm::StringRef Bitcode) {
+    auto Ctx = std::make_unique<llvm::LLVMContext>();
+    llvm::MemoryBufferRef BufRef(Bitcode, KName);
+    auto ModOrErr = llvm::parseBitcodeFile(BufRef, *Ctx);
+    if (!ModOrErr)
+      LOG_FATAL("parseBitcodeFile failed for kernel " + KName + ": " +
+                llvm::toString(ModOrErr.takeError()));
+    std::unique_ptr<llvm::Module> Mod = std::move(*ModOrErr);
+
+    llvm::Function *F = Mod->getFunction(KName);
+    if (!F)
+      LOG_FATAL("Function " + KName + " not found in parsed bitcode");
+
+    KernelArgSizes = mneme::getFuncDescr(*F);
+    KernelArgNames = mneme::getArgNames(*F);
+    KernelSpecializations = mneme::canSpecialize(*F);
+    ConvertArgToDouble = mneme::convertToDouble(*F);
+  }
+
+  std::string StoreModuleBytes(llvm::StringRef Bytes,
+                               const std::string &RecordReplayDir,
+                               uint64_t StaticHash) {
     std::string Filename(
         std::filesystem::path(llvm::Twine(RecordReplayDir + "/RecordedIR_" +
                                           std::to_string(StaticHash) + ".bc")
@@ -555,13 +583,13 @@ private:
 
     std::error_code EC;
     llvm::raw_fd_ostream OutBC(Filename, EC);
-    llvm::WriteBitcodeToFile(M, OutBC);
     if (EC)
       LOG_FATAL("Cannot write module ir file");
+    OutBC << Bytes;
+    OutBC.close();
 
     LOG_DEBUG("Stored Blob with StaticHash:{} to file {}", StaticHash,
               std::filesystem::canonical(Filename).string());
-    OutBC.close();
     return std::filesystem::canonical(Filename).string();
   }
 
@@ -594,14 +622,14 @@ public:
                             int MaxRecordings)
       : VAddr(VAddr), VASize(VASize), MaxRecordings(MaxRecordings),
         NumRecords(0), KName(KInfo.getName()) {
-    auto &Module = KInfo.getModule();
-    auto *F = Module.getFunction(KInfo.getName());
-    KernelArgSizes = mneme::getFuncDescr(*F);
-    KernelArgNames = mneme::getArgNames(*F);
-    KernelSpecializations = mneme::canSpecialize(*F);
-    ConvertArgToDouble = mneme::convertToDouble(*F);
-    ModuleFiles.emplace_back(
-        StoreModule(Module, MnemeDirectory, KInfo.getStaticHash().getValue()));
+    // Non-owning view of Proteus's cached bitcode.
+    llvm::StringRef Bitcode = KInfo.getBitcode().getBuffer();
+    if (Bitcode.empty())
+      LOG_FATAL("Empty bitcode for kernel " + KName);
+
+    extractArgInfoFromBitcode(Bitcode);
+    ModuleFiles.emplace_back(StoreModuleBytes(
+        Bitcode, MnemeDirectory, KInfo.getStaticHash().getValue()));
   }
 
   llvm::stable_hash computeHash(dim3 &GridDim, dim3 &BlockDim,
@@ -702,34 +730,16 @@ class RecordDatabase {
   std::string epilogueSnapshotType;
 
 public:
-  RecordDatabase() : KernelWhiteList(""), HasRegex(false), epilogueSnapshotType("bytes") {
-    auto WhiteList = std::getenv("MNEME_RR_KERNELS");
-    if (WhiteList) {
+  RecordDatabase() : KernelWhiteList(""), HasRegex(false) {
+    const auto &Conf = Config::get();
+    if (Conf.KernelRegex) {
       HasRegex = true;
-      RegexStr = std::string(WhiteList);
-      KernelWhiteList = std::string(WhiteList);
+      RegexStr = *Conf.KernelRegex;
+      KernelWhiteList = RegexStr;
     }
 
-    auto Dir = std::getenv("MNEME_DATA_DIR");
-    MnemeDirectory =
-        (Dir ? std::string(Dir) : std::filesystem::current_path().string());
-
-    if (!std::filesystem::is_directory(MnemeDirectory)) {
-      throw std::runtime_error("Path :" + MnemeDirectory.string() +
-                               " does not exist.\n");
-    }
-    MnemeDirectory = std::filesystem::absolute(MnemeDirectory);
-    MaxRecordings = 4;
-    auto UMaxRecordings = std::getenv("MNEME_MAX_RECORDINGS");
-    if (UMaxRecordings) {
-      MaxRecordings = std::atoi(UMaxRecordings);
-    }
-
-    auto EpilogueSnapshotTypeEnv = std::getenv("MNEME_EPILOGUE_TYPE");
-    if (EpilogueSnapshotTypeEnv) {
-      epilogueSnapshotType = std::string(EpilogueSnapshotTypeEnv);
-    }
-
+    MnemeDirectory = Conf.getDataDirectory();
+    MaxRecordings = Conf.MaxRecordings;
   }
 
   ~RecordDatabase() {
