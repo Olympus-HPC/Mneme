@@ -105,15 +105,28 @@ forms the foundation for replay, verification, and performance
 experimentation.
 
 The prologue file contains a full serialized snapshot of GPU memory,
-global variables, metadata, and kernel argument mappings. New epilogue
-files are stored as binary diffs against the matching prologue: they
-contain descriptors for the recorded globals and memory regions plus the
-changed byte ranges needed to reconstruct the post-kernel state.
+global variables, metadata, and kernel argument mappings. By default,
+the epilogue file is also stored as a full byte snapshot of the
+post-kernel state.
 
-Replay supplies both paths explicitly. The epilogue diff does not embed
-the prologue path, so moving or copying a recording only needs to keep
-the JSON `Prologue` and `Epilogue` fields pointing at the relocated
-files. Legacy full epilogue snapshots remain readable.
+Epilogue snapshots can optionally be stored as binary diffs against the
+matching prologue by recording with:
+
+```bash
+mneme record --epilogue-format diff -- <application> [args...]
+```
+
+The default format is equivalent to:
+
+```bash
+mneme record --epilogue-format bytes -- <application> [args...]
+```
+
+Diff epilogues contain descriptors for the recorded globals and memory
+regions plus the changed byte ranges needed to reconstruct the
+post-kernel state. Using the diff format can save significant amounts
+of disk space if the kernels do not change much output data; it is
+less helpful for dense and/or in-place kernels.
 
 ### Blob annotation metadata
 
