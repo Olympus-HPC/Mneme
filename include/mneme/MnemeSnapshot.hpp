@@ -574,7 +574,7 @@ private:
 
     LOG_DEBUG("Stored Blob with StaticHash:{} to file {}", StaticHash,
               std::filesystem::canonical(Filename).string());
-    return std::filesystem::canonical(Filename).string();
+    return std::filesystem::path(Filename).filename().string();
   }
 
 public:
@@ -673,6 +673,7 @@ public:
         SnapshotT::takeMnemeBytesSnapshot(GlobalVars, DeviceMemory, Filename,
                                           KernelArgSizes, Args, Stream,
                                           PrologueGlobals.get())
+            .filename()
             .string();
 
     std::function<void(
@@ -699,6 +700,7 @@ public:
                     SnapshotT::takeMnemeBytesSnapshot(
                         GlobalVars, DeviceMemory, Filename, KernelArgSizes,
                         Args, Stream)
+                        .filename()
                         .string();
                 break;
               case EpilogueSnapshotType::Diff:
@@ -706,6 +708,7 @@ public:
                     SnapshotT::takeMnemeDiffSnapshot(
                         GlobalVars, DeviceMemory, Filename, *PrologueGlobals,
                         Stream)
+                        .filename()
                         .string();
                 break;
               }

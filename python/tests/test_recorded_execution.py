@@ -190,12 +190,33 @@ def test_recorded_execution_link_llvm_modules_calls_jit():
         assert out == "MOD"
 
 
-def test_recorded_execution_from_json_reconstructs():
+@pytest.mark.parametrize("path_style", ["basename", "absolute"])
+def test_recorded_execution_from_json_reconstructs(tmp_path, path_style):
+    """
+    from_json must resolve relative path entries against the JSON file's
+    parent directory and pass absolute path entries through unchanged. In
+    both cases, the in-memory paths end up absolute under tmp_path.
+    """
+    mod_path = tmp_path / "modA.ll"
+    pro_path = tmp_path / "file.pro"
+    epi_path = tmp_path / "file.epi"
+    for p in (mod_path, pro_path, epi_path):
+        p.touch()
+
+    if path_style == "basename":
+        modules = [mod_path.name]
+        prologue = pro_path.name
+        epilogue = epi_path.name
+    else:
+        modules = [str(mod_path)]
+        prologue = str(pro_path)
+        epilogue = str(epi_path)
+
     data = {
         "StaticHash": "S",
         "KernelName": "K",
         "DemangledName": "DK",
-        "Modules": ["modA.ll"],
+        "Modules": modules,
         "ArgNames": ["x"],
         "Specializations": [True, True, False],
         "VAddr": "ADDR",
@@ -207,19 +228,16 @@ def test_recorded_execution_from_json_reconstructs():
                 "BlockDims": {"x": 1, "y": 2, "z": 3},
                 "GridDims": {"x": 4, "y": 5, "z": 6},
                 "Occurrences": 3,
-                "Prologue": "file.pro",
-                "Epilogue": "file.epi",
+                "Prologue": prologue,
+                "Epilogue": epilogue,
             }
         },
     }
 
-    with tempfile.NamedTemporaryFile("w", delete=False) as f:
-        json.dump(data, f)
-        fname = f.name
+    json_path = tmp_path / "db.json"
+    json_path.write_text(json.dumps(data))
 
-    # Pretend all the module/prologue/epilogue files exist
-    with patch("mneme.recorded_execution.Path.exists", return_value=True):
-        r = RecordedExecution.from_json(fname)
+    r = RecordedExecution.from_json(str(json_path))
 
     assert r.kernel_name == "K"
     assert "H" in r.kernel_instances
@@ -227,5 +245,68 @@ def test_recorded_execution_from_json_reconstructs():
     assert inst.block_dim.x == 1
     assert inst.grid_dim.z == 6
     assert inst.occ == 3
-    assert inst.epilogue.base_prologue_fn == "file.pro"
+
+    assert r.llvm_files == [str(mod_path)]
+    assert inst.prologue.fn == str(pro_path)
+    assert inst.epilogue.fn == str(epi_path)
+    assert inst.epilogue.base_prologue_fn == str(pro_path)
     assert inst.epilogue.s_type == SnapshotType.EPILOGUE
+
+
+@pytest.mark.parametrize("layout", ["in_dir", "out_of_dir"])
+def test_to_json_relativizes_in_dir_files_only(tmp_path, layout):
+    """
+    to_json writes basenames for artifacts in the JSON's parent directory and
+    keeps absolute paths for artifacts outside it.
+    """
+    json_dir = tmp_path / "db"
+    json_dir.mkdir()
+    artifact_dir = json_dir if layout == "in_dir" else (tmp_path / "elsewhere")
+    if layout != "in_dir":
+        artifact_dir.mkdir()
+
+    mod_path = artifact_dir / "mod.bc"
+    pro_path = artifact_dir / "kernel.pro"
+    epi_path = artifact_dir / "kernel.epi"
+    for p in (mod_path, pro_path, epi_path):
+        p.touch()
+
+    instance = RecordedExecution.KernelInstance(
+        static_hash="S",
+        dynamic_hash="H",
+        kernel_name="K",
+        args=[True],
+        shared_mem=0,
+        block_dim=dim3(1, 1, 1),
+        grid_dim=dim3(1, 1, 1),
+        specializations=[True],
+        occ=1,
+        prologue_fn=str(pro_path),
+        epilogue_fn=str(epi_path),
+    )
+
+    r = RecordedExecution(
+        static_hash="S",
+        kernel_name="K",
+        demangled_name="DK",
+        llvm_files=[str(mod_path)],
+        arg_names=["x"],
+        specializations=[True],
+        va_addr="0x100",
+        va_size=64,
+        kernel_instances={"H": instance},
+    )
+
+    json_path = json_dir / "db.json"
+    r.to_json(str(json_path))
+
+    written = json.loads(json_path.read_text())
+
+    if layout == "in_dir":
+        assert written["Modules"] == ["mod.bc"]
+        assert written["instances"]["H"]["Prologue"] == "kernel.pro"
+        assert written["instances"]["H"]["Epilogue"] == "kernel.epi"
+    else:
+        assert written["Modules"] == [str(mod_path)]
+        assert written["instances"]["H"]["Prologue"] == str(pro_path)
+        assert written["instances"]["H"]["Epilogue"] == str(epi_path)
