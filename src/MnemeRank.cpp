@@ -14,10 +14,12 @@ std::optional<int> firstSetRankEnv(const char *const *Names) {
       continue;
 
     auto Parsed = env_detail::parseInteger(Value);
-    if (!Parsed || *Parsed < 0)
+    if (!Parsed || *Parsed < 0) {
       env_detail::warnMalformedEnvironmentValue("rank environment variable",
                                                 Name, Value);
-    return Parsed && *Parsed >= 0 ? Parsed : std::nullopt;
+      return std::nullopt;
+    }
+    return Parsed;
   }
   return std::nullopt;
 }
