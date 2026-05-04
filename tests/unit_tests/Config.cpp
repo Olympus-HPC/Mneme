@@ -3,6 +3,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <iostream>
+#include <stdexcept>
 #include <string>
 #include <unistd.h>
 
@@ -26,6 +27,7 @@ void clearMnemeEnv() {
   unsetenv("MNEME_PAGE_SIZE");
   unsetenv("MNEME_LOG_LEVEL");
   unsetenv("MNEME_LOG_DIR");
+  unsetenv("MNEME_EPILOGUE_TYPE");
 }
 
 std::filesystem::path makeTempDir() {
@@ -53,6 +55,8 @@ int main() {
     expect(Conf.MnemeLogLevel == LogLevel::Critical,
            "MNEME_LOG_LEVEL should default to critical");
     expect(!Conf.getLogDirectory(), "MNEME_LOG_DIR should default to unset");
+    expect(Conf.EpilogueType == EpilogueSnapshotType::Bytes,
+           "MNEME_EPILOGUE_TYPE should default to bytes");
   }
 
   auto TempDir = makeTempDir();
@@ -62,6 +66,7 @@ int main() {
   setenv("MNEME_PAGE_SIZE", "3", 1);
   setenv("MNEME_LOG_LEVEL", "debug", 1);
   setenv("MNEME_LOG_DIR", TempDir.c_str(), 1);
+  setenv("MNEME_EPILOGUE_TYPE", "diff", 1);
   {
     auto Conf = Config::createFromEnvironment();
     expect(Conf.KernelRegex && *Conf.KernelRegex == "_two",
@@ -78,6 +83,8 @@ int main() {
            "MNEME_LOG_LEVEL should map debug");
     expect(Conf.getLogDirectory() && *Conf.getLogDirectory() == TempDir,
            "MNEME_LOG_DIR should use the configured directory");
+    expect(Conf.EpilogueType == EpilogueSnapshotType::Diff,
+           "MNEME_EPILOGUE_TYPE should map diff");
   }
 
   setenv("MNEME_MAX_RECORDINGS", "12abc", 1);
@@ -95,12 +102,27 @@ int main() {
 
   setenv("MNEME_MAX_RECORDINGS", "abc", 1);
   setenv("MNEME_PAGE_SIZE", "abc", 1);
+  setenv("MNEME_EPILOGUE_TYPE", "bytes", 1);
   {
     auto Conf = Config::createFromEnvironment();
     expect(Conf.MaxRecordings == 0,
            "invalid MNEME_MAX_RECORDINGS should parse to 0");
     expect(Conf.PageSizeGiB && *Conf.PageSizeGiB == 0,
            "invalid MNEME_PAGE_SIZE should parse to 0");
+    expect(Conf.EpilogueType == EpilogueSnapshotType::Bytes,
+           "MNEME_EPILOGUE_TYPE should map bytes");
+  }
+
+  setenv("MNEME_EPILOGUE_TYPE", "delta", 1);
+  {
+    bool Threw = false;
+    try {
+      auto Conf = Config::createFromEnvironment();
+      (void)Conf;
+    } catch (const std::runtime_error &) {
+      Threw = true;
+    }
+    expect(Threw, "invalid MNEME_EPILOGUE_TYPE should throw");
   }
 
   clearMnemeEnv();

@@ -727,7 +727,7 @@ class RecordDatabase {
   bool HasRegex;
   llvm::DenseMap<uint64_t, KernelInstancesCollection> KernelRecords;
   uint64_t MaxRecordings;
-  std::string epilogueSnapshotType;
+  EpilogueSnapshotType EpilogueType;
 
 public:
   RecordDatabase() : KernelWhiteList(""), HasRegex(false) {
@@ -740,6 +740,7 @@ public:
 
     MnemeDirectory = Conf.getDataDirectory();
     MaxRecordings = Conf.MaxRecordings;
+    EpilogueType = Conf.EpilogueType;
   }
 
   ~RecordDatabase() {
@@ -768,14 +769,16 @@ public:
   }
 
   template <DeviceVendors VendorTypes>
-  typename MnemeSnapshot<VendorTypes>::SnapshotType parseSnapshotType(const std::string &TypeStr) {
-    if (TypeStr == "bytes")
-      return MnemeSnapshot<VendorTypes>::SnapshotType::Bytes;
-    else if (TypeStr == "diff")
-      return MnemeSnapshot<VendorTypes>::SnapshotType::Diff;
-    else
-      LOG_FATAL("Invalid snapshot type: " + TypeStr);
-    return MnemeSnapshot<VendorTypes>::SnapshotType::Bytes;
+  typename MnemeSnapshot<VendorTypes>::SnapshotType
+  toSnapshotType(EpilogueSnapshotType Type) {
+    using SnapshotT = typename MnemeSnapshot<VendorTypes>::SnapshotType;
+    switch (Type) {
+    case EpilogueSnapshotType::Bytes:
+      return SnapshotT::Bytes;
+    case EpilogueSnapshotType::Diff:
+      return SnapshotT::Diff;
+    }
+    return SnapshotT::Bytes;
   }
 
   template <DeviceVendors VendorTypes>
@@ -796,8 +799,7 @@ public:
       return std::nullopt;
     }
 
-    // how do we want to save the epilogue; parse here once we have vendor type
-    const SnapshotT epilogueType = parseSnapshotType<VendorTypes>(epilogueSnapshotType);
+    const SnapshotT epilogueType = toSnapshotType<VendorTypes>(EpilogueType);
 
     auto IT = KernelRecords.try_emplace(
         KInfo.getStaticHash().getValue(),
