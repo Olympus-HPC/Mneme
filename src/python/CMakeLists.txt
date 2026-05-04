@@ -14,7 +14,6 @@ add_library(mneme SHARED ${LLVM_SRC} ${PROTEUS_SRC} ${MNEME_SRC} ${TRANSFORMS}
                   ${MnemeCoreSrcDir}/MnemePageManager.cpp
                   ${MnemeCoreSrcDir}/MnemeDeviceCode.cpp
                   ${MnemeCoreSrcDir}/MnemeAnnotationInternal.cpp
-                  ${MnemeCoreSrcDir}/MnemeEnv.cpp
                   ${MnemeCoreSrcDir}/MnemeRank.cpp)
 message(STATUS "LLVM LIBS are found to be : ${llvm_libs}")
 
