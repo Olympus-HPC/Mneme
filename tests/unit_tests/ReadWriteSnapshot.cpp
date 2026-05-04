@@ -97,9 +97,9 @@ int main(int argc, char **argv) {
   std::filesystem::path SnapshotFN("./test.mneme");
 
   MnemeSnapshot<Vendor>::GlobalSnapshotData PrologueGlobals;
-  MnemeSnapshot<Vendor>::takeMnemeSnapshot(GVars, DeviceMemMap, SnapshotFN,
-                                           TestKernel->KernelArgSizes, Args, 0,
-                                           &PrologueGlobals);
+  MnemeSnapshot<Vendor>::takeMnemeBytesSnapshot(
+      GVars, DeviceMemMap, SnapshotFN, TestKernel->KernelArgSizes, Args, 0,
+      &PrologueGlobals);
 
   std::unordered_map<std::string, ReplayGlobalVar> ReadGVars;
   llvm::DenseMap<void *, MnemeMemoryBlobDevice> ReadDeviceMemMap;

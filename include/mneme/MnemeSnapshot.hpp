@@ -301,8 +301,6 @@ template <DeviceVendors VendorTypes> class MnemeSnapshot {
 public:
   using GlobalSnapshotData = std::unordered_map<std::string, std::vector<uint8_t>>;
 
-  enum class SnapshotType: uint8_t { Bytes = 0, Diff = 1 };
-
   static std::pair<std::string, ReplayGlobalVar>
   fromBuffer(const char *&Buffer) {
     std::string Name = util::readSizedString(Buffer);
@@ -455,22 +453,6 @@ public:
     }
 
     return std::filesystem::canonical(Filename);
-  }
-
-  std::filesystem::path static takeMnemeSnapshot(
-      std::unordered_map<std::string, proteus::GlobalVarInfo> &GlobalVars,
-      llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &DeviceMemory,
-      std::filesystem::path &Filename,
-      llvm::SmallVector<size_t> &KernelArgSizes, void **Args,
-      DeviceStream_t Stream, GlobalSnapshotData *CapturedGlobals = nullptr,
-      SnapshotType Type = SnapshotType::Bytes) {
-    if (Type == SnapshotType::Bytes) {
-      return takeMnemeBytesSnapshot(GlobalVars, DeviceMemory, Filename,
-                                   KernelArgSizes, Args, Stream, CapturedGlobals);
-    } else {
-      return takeMnemeDiffSnapshot(GlobalVars, DeviceMemory, Filename,
-                                  *CapturedGlobals, Stream);
-    }
   }
 
   void static readMnemeSnapShot(
@@ -657,7 +639,7 @@ public:
       llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &DeviceMemory,
       dim3 &GridDim, dim3 &BlockDim, void **Args, size_t SharedMem,
       typename DeviceTraits<VendorTypes>::DeviceStream_t Stream,
-      uint64_t StaticHash, typename MnemeSnapshot<VendorTypes>::SnapshotType epilogueSnapshotType) {
+      uint64_t StaticHash, EpilogueSnapshotType EpilogueType) {
 
     if (NumRecords >= MaxRecordings)
       return std::nullopt;
@@ -687,20 +669,19 @@ public:
     using SnapshotT = MnemeSnapshot<VendorTypes>;
     auto PrologueGlobals =
         std::make_shared<typename SnapshotT::GlobalSnapshotData>();
-    auto snapshotType = SnapshotT::SnapshotType::Bytes; // prologues are always Bytes
     Instances[DynamicHash].PrologueFn =
-        SnapshotT::takeMnemeSnapshot(GlobalVars, DeviceMemory, Filename,
-                                     KernelArgSizes, Args, Stream,
-                                     PrologueGlobals.get(), snapshotType)
+        SnapshotT::takeMnemeBytesSnapshot(GlobalVars, DeviceMemory, Filename,
+                                          KernelArgSizes, Args, Stream,
+                                          PrologueGlobals.get())
             .string();
 
-    
     std::function<void(
         std::unordered_map<std::string, proteus::GlobalVarInfo> &,
         llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &, void **,
         typename DeviceTraits<VendorTypes>::DeviceStream_t)>
         CaptureEpilogue =
-            [this, DynamicHash, StaticHash, MnemeDir, PrologueGlobals, epilogueSnapshotType](
+            [this, DynamicHash, StaticHash, MnemeDir, PrologueGlobals,
+             EpilogueType](
                 std::unordered_map<std::string, proteus::GlobalVarInfo>
                     &GlobalVars,
                 llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>>
@@ -712,11 +693,22 @@ public:
                               std::to_string(StaticHash) + "." +
                               std::to_string(DynamicHash) + ".mneme"));
 
-              Instances[DynamicHash].EpilogueFn =
-                  SnapshotT::takeMnemeSnapshot(
-                      GlobalVars, DeviceMemory, Filename, KernelArgSizes, Args, 
-                      Stream, PrologueGlobals.get(), epilogueSnapshotType)
-                      .string();
+              switch (EpilogueType) {
+              case EpilogueSnapshotType::Bytes:
+                Instances[DynamicHash].EpilogueFn =
+                    SnapshotT::takeMnemeBytesSnapshot(
+                        GlobalVars, DeviceMemory, Filename, KernelArgSizes,
+                        Args, Stream)
+                        .string();
+                break;
+              case EpilogueSnapshotType::Diff:
+                Instances[DynamicHash].EpilogueFn =
+                    SnapshotT::takeMnemeDiffSnapshot(
+                        GlobalVars, DeviceMemory, Filename, *PrologueGlobals,
+                        Stream)
+                        .string();
+                break;
+              }
             };
     return CaptureEpilogue;
   }
@@ -771,19 +763,6 @@ public:
   }
 
   template <DeviceVendors VendorTypes>
-  typename MnemeSnapshot<VendorTypes>::SnapshotType
-  toSnapshotType(EpilogueSnapshotType Type) {
-    using SnapshotT = typename MnemeSnapshot<VendorTypes>::SnapshotType;
-    switch (Type) {
-    case EpilogueSnapshotType::Bytes:
-      return SnapshotT::Bytes;
-    case EpilogueSnapshotType::Diff:
-      return SnapshotT::Diff;
-    }
-    return SnapshotT::Bytes;
-  }
-
-  template <DeviceVendors VendorTypes>
   std::optional<std::function<
       void(std::unordered_map<std::string, proteus::GlobalVarInfo> &,
            llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &, void **,
@@ -794,14 +773,11 @@ public:
       dim3 &GridDim, dim3 &BlockDim, void **Args, size_t SharedMem,
       typename DeviceTraits<VendorTypes>::DeviceStream_t Stream) {
     using namespace proteus;
-    using SnapshotT = typename MnemeSnapshot<VendorTypes>::SnapshotType;
 
     if (!shouldRecord(KInfo.getName())) {
       LOG_INFO("Skip record of Kernel");
       return std::nullopt;
     }
-
-    const SnapshotT epilogueType = toSnapshotType<VendorTypes>(EpilogueType);
 
     auto IT = KernelRecords.try_emplace(
         KInfo.getStaticHash().getValue(),
@@ -811,7 +787,7 @@ public:
     return IT.first->second.takeSnapshot<VendorTypes>(
         MnemeDirectory, KInfo.getBinaryInfo().getVarNameToGlobalInfo(),
         DeviceMemory, GridDim, BlockDim, Args, SharedMem, Stream,
-        KInfo.getStaticHash().getValue(), epilogueType);
+        KInfo.getStaticHash().getValue(), EpilogueType);
   }
 
   const std::string getDir() const { return MnemeDirectory.string(); }
