@@ -391,7 +391,7 @@ public:
                                KernelArgSizes[I]);
     }
 
-    return std::filesystem::canonical(Filename);
+    return Filename.filename();
   }
 
   std::filesystem::path static takeMnemeDiffSnapshot(
@@ -452,7 +452,7 @@ public:
       writeCountAndWriteChangedRanges(OutBC, Blob);
     }
 
-    return std::filesystem::canonical(Filename);
+    return Filename.filename();
   }
 
   void static readMnemeSnapShot(
@@ -673,7 +673,6 @@ public:
         SnapshotT::takeMnemeBytesSnapshot(GlobalVars, DeviceMemory, Filename,
                                           KernelArgSizes, Args, Stream,
                                           PrologueGlobals.get())
-            .filename()
             .string();
 
     std::function<void(
@@ -700,7 +699,6 @@ public:
                     SnapshotT::takeMnemeBytesSnapshot(
                         GlobalVars, DeviceMemory, Filename, KernelArgSizes,
                         Args, Stream)
-                        .filename()
                         .string();
                 break;
               case EpilogueSnapshotType::Diff:
@@ -708,7 +706,6 @@ public:
                     SnapshotT::takeMnemeDiffSnapshot(
                         GlobalVars, DeviceMemory, Filename, *PrologueGlobals,
                         Stream)
-                        .filename()
                         .string();
                 break;
               }
