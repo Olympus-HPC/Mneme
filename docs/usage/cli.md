@@ -99,8 +99,7 @@ snapshots and multiplies storage and runtime overhead by N. By default,
 - **Multi-rank runs** (rank detected via `FLUX_TASK_RANK`,
   `OMPI_COMM_WORLD_RANK`, `PMI_RANK`, `MPI_RANK`, `SLURM_PROCID`,
   `JSM_NAMESPACE_RANK`, `PMIX_RANK`, or `PBS_TASKNUM`): record on rank 0
-  only. Rank 0 prints a one-line discovery message to stderr at startup:
-  `[mneme] Multi-rank run detected (N ranks). Recording on rank 0 only.`
+  only.
 
 To override the default, pass `--record-ranks`:
 

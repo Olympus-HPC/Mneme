@@ -43,46 +43,35 @@ popd
 run_scenario() {
     local label="$1"
     local nranks="$2"
-    shift 2
+    local expected_ranks="$3"
+    local record_ranks="${4:-}"
     local data_base
     data_base=$(mktemp -d)
 
-    # Capture rank-0 stderr so we can grep for the disclosure line.
-    local err_log
-    err_log=$(mktemp)
+    (
+        export LD_PRELOAD="${INSTALL_PREFIX}/lib64/librecord.so:${INSTALL_PREFIX}/lib64/libproteus.so"
+        export MNEME_DATA_DIR_BASE="${data_base}"
+        if [[ -n "${record_ranks}" ]]; then
+            export MNEME_RECORD_RANKS="${record_ranks}"
+        fi
 
-    LD_PRELOAD="${INSTALL_PREFIX}/lib64/librecord.so:${INSTALL_PREFIX}/lib64/libproteus.so" \
-    MNEME_DATA_DIR_BASE="${data_base}" \
-    "$@" \
-    run_mpi "${nranks}" ./build/record_ranks 2>"${err_log}"
-
-    cat "${err_log}" >&2
+        run_mpi "${nranks}" ./build/record_ranks "${expected_ranks}"
+    )
     echo "=> PASSED record-ranks (${label})"
 
-    # Stash the err log path for callers that want to grep it.
-    LAST_ERR_LOG="${err_log}"
     LAST_DATA_BASE="${data_base}"
 }
 
-# Scenario 1: default policy, multi-rank — expect rank 0 only + disclosure on stderr.
-run_scenario "default-policy-4rank" 4
-if ! grep -F "[mneme] Multi-rank run detected (4 ranks). Recording on rank 0 only." "${LAST_ERR_LOG}" >/dev/null; then
-    echo "FAIL: default-policy disclosure line not found on stderr"
-    exit 1
-fi
-echo "=> PASSED record-ranks (default-policy-disclosure-grep)"
-rm -rf "${LAST_DATA_BASE}" "${LAST_ERR_LOG}"
+# Scenario 1: default policy, multi-rank — expect rank 0 only.
+run_scenario "default-policy-4rank" 4 "0"
+rm -rf "${LAST_DATA_BASE}"
 
 # Scenario 2: explicit all — every rank records.
-run_scenario "explicit-all-4rank" 4 env MNEME_RECORD_RANKS=all
-rm -rf "${LAST_DATA_BASE}" "${LAST_ERR_LOG}"
+run_scenario "explicit-all-4rank" 4 "0,1,2,3" "all"
+rm -rf "${LAST_DATA_BASE}"
 
 # Scenario 3: explicit subset — ranks 0 and 2 record.
-run_scenario "subset-0,2-4rank" 4 env MNEME_RECORD_RANKS=0,2
-rm -rf "${LAST_DATA_BASE}" "${LAST_ERR_LOG}"
-
-# Scenario 4: single-rank — default policy treats no-rank as single-process and records.
-run_scenario "single-rank" 1
-rm -rf "${LAST_DATA_BASE}" "${LAST_ERR_LOG}"
+run_scenario "subset-0,2-4rank" 4 "0,2" "0,2"
+rm -rf "${LAST_DATA_BASE}"
 
 echo "ALL PASSED"

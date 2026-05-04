@@ -1,4 +1,5 @@
 #include "mneme/MnemeConfig.hpp"
+#include "mneme/MnemeRank.hpp"
 
 #include <cstdlib>
 #include <filesystem>
@@ -38,6 +39,12 @@ void clearMnemeEnv() {
   unsetenv("JSM_NAMESPACE_RANK");
   unsetenv("PMIX_RANK");
   unsetenv("PBS_TASKNUM");
+  unsetenv("FLUX_JOB_SIZE");
+  unsetenv("FLUX_NTASKS");
+  unsetenv("OMPI_COMM_WORLD_SIZE");
+  unsetenv("PMI_SIZE");
+  unsetenv("SLURM_NTASKS");
+  unsetenv("PMIX_SIZE");
 }
 
 std::filesystem::path makeTempDir() {
@@ -151,14 +158,8 @@ int main() {
   // MNEME_RECORD_RANKS: default policy, no rank env -> single-process records.
   {
     auto Conf = Config::createFromEnvironment();
-    expect(!Conf.RecordRanks,
-           "RecordRanks should default to nullopt when env is unset");
-    expect(!Conf.RecordRanksExplicitAll,
-           "RecordRanksExplicitAll should be false when env is unset");
     expect(Conf.isRecordingEnabledForCurrentRank(),
            "Single-process run (no rank env) should record by default");
-    expect(!Conf.RecordingDefaultPolicyApplied,
-           "RecordingDefaultPolicyApplied should be false when no rank detected");
   }
 
   // MNEME_RECORD_RANKS: default policy, rank 0 in MPI run.
@@ -167,8 +168,6 @@ int main() {
     auto Conf = Config::createFromEnvironment();
     expect(Conf.isRecordingEnabledForCurrentRank(),
            "Default policy should record on rank 0");
-    expect(Conf.RecordingDefaultPolicyApplied,
-           "Default policy flag should be set when rank detected and env unset");
   }
 
   // MNEME_RECORD_RANKS: default policy, rank 1 in MPI run -> excluded.
@@ -177,8 +176,6 @@ int main() {
     auto Conf = Config::createFromEnvironment();
     expect(!Conf.isRecordingEnabledForCurrentRank(),
            "Default policy should exclude rank 1");
-    expect(Conf.RecordingDefaultPolicyApplied,
-           "Default policy flag should be set when rank detected and env unset");
   }
 
   // MNEME_RECORD_RANKS=all overrides default policy.
@@ -188,10 +185,6 @@ int main() {
     auto Conf = Config::createFromEnvironment();
     expect(Conf.isRecordingEnabledForCurrentRank(),
            "Explicit 'all' should record on every rank");
-    expect(Conf.RecordRanksExplicitAll,
-           "RecordRanksExplicitAll should be true for env=='all'");
-    expect(!Conf.RecordingDefaultPolicyApplied,
-           "Default policy flag should be false when env is explicit");
   }
 
   // MNEME_RECORD_RANKS subset hit / miss.
@@ -199,16 +192,15 @@ int main() {
   setenv("OMPI_COMM_WORLD_RANK", "1", 1);
   {
     auto Conf = Config::createFromEnvironment();
-    expect(Conf.RecordRanks && Conf.RecordRanks->size() == 3,
-           "Subset should parse to 3 ranks");
     expect(Conf.isRecordingEnabledForCurrentRank(),
            "Rank 1 should record when listed in MNEME_RECORD_RANKS=0,1,3");
   }
   setenv("OMPI_COMM_WORLD_RANK", "2", 1);
   {
     auto Conf = Config::createFromEnvironment();
-    expect(!Conf.isRecordingEnabledForCurrentRank(),
-           "Rank 2 should not record when not listed in MNEME_RECORD_RANKS=0,1,3");
+    expect(
+        !Conf.isRecordingEnabledForCurrentRank(),
+        "Rank 2 should not record when not listed in MNEME_RECORD_RANKS=0,1,3");
   }
 
   // Single-rank explicit list.
@@ -216,8 +208,6 @@ int main() {
   setenv("OMPI_COMM_WORLD_RANK", "0", 1);
   {
     auto Conf = Config::createFromEnvironment();
-    expect(Conf.RecordRanks && Conf.RecordRanks->size() == 1,
-           "Singleton list should parse to 1 rank");
     expect(Conf.isRecordingEnabledForCurrentRank(),
            "Rank 0 should record when MNEME_RECORD_RANKS=0");
   }
@@ -227,18 +217,25 @@ int main() {
   setenv("OMPI_COMM_WORLD_RANK", "0", 1);
   {
     auto Conf = Config::createFromEnvironment();
-    expect(!Conf.RecordRanks,
-           "Malformed MNEME_RECORD_RANKS should not populate RecordRanks");
-    expect(!Conf.RecordRanksExplicitAll,
-           "Malformed MNEME_RECORD_RANKS should not set ExplicitAll");
     expect(Conf.isRecordingEnabledForCurrentRank(),
-           "Malformed env on rank 0 should fall through to default policy (record)");
+           "Malformed env on rank 0 should fall through to default policy "
+           "(record)");
   }
   setenv("MNEME_RECORD_RANKS", "0-3", 1);
   {
     auto Conf = Config::createFromEnvironment();
-    expect(!Conf.RecordRanks,
-           "Range syntax should be treated as malformed (out of scope)");
+    expect(
+        Conf.isRecordingEnabledForCurrentRank(),
+        "Range syntax should be treated as malformed and use default policy");
+  }
+
+  // Empty MNEME_RECORD_RANKS behaves like unset.
+  setenv("MNEME_RECORD_RANKS", "", 1);
+  setenv("OMPI_COMM_WORLD_RANK", "1", 1);
+  {
+    auto Conf = Config::createFromEnvironment();
+    expect(!Conf.isRecordingEnabledForCurrentRank(),
+           "Empty MNEME_RECORD_RANKS should use default rank policy");
   }
 
   // Rank-detection precedence: Open MPI takes priority over SLURM.
@@ -248,7 +245,27 @@ int main() {
   {
     auto Conf = Config::createFromEnvironment();
     expect(!Conf.isRecordingEnabledForCurrentRank(),
-           "OMPI_COMM_WORLD_RANK=2 should win over SLURM_PROCID=0 (rank 2 excluded)");
+           "OMPI_COMM_WORLD_RANK=2 should win over SLURM_PROCID=0 (rank 2 "
+           "excluded)");
+  }
+
+  // Rank-detection precedence: first configured rank variable wins.
+  clearMnemeEnv();
+  setenv("FLUX_TASK_RANK", "3", 1);
+  setenv("OMPI_COMM_WORLD_RANK", "0", 1);
+  {
+    auto Rank = detectDistributedRank();
+    expect(Rank && *Rank == 3,
+           "FLUX_TASK_RANK should win over later configured rank variables");
+  }
+
+  // Malformed first-set rank variables do not fall through to later launchers.
+  setenv("FLUX_TASK_RANK", "abc", 1);
+  setenv("OMPI_COMM_WORLD_RANK", "0", 1);
+  {
+    auto Rank = detectDistributedRank();
+    expect(!Rank,
+           "Malformed first-set rank variable should stop rank detection");
   }
 
   clearMnemeEnv();

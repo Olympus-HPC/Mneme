@@ -25,7 +25,13 @@ inline std::string getLogFileName() {
     exit(-1);
   }
 
-  return "mneme-" + std::string(hostname) + "-" + getRankIdString() + ".log";
+  std::string RankId;
+  if (auto Rank = detectDistributedRank())
+    RankId = std::to_string(*Rank);
+  else
+    RankId = std::to_string(getpid());
+
+  return "mneme-" + std::string(hostname) + "-" + RankId + ".log";
 }
 
 inline spdlog::level::level_enum toSpdLogLevel(LogLevel Level) {
@@ -106,8 +112,8 @@ public:
 #define LOG_CRITICAL(...) ((void)0)
 #define LOG_FATAL(...)                                                         \
   do {                                                                         \
-  std::cout << "Error in file" << std::string(__FILE__) << ":" << __LINE__     \
-            << "\n";                                                           \
-  abort();                                                                     \
+    std::cout << "Error in file" << std::string(__FILE__) << ":" << __LINE__   \
+              << "\n";                                                         \
+    abort();                                                                   \
   } while (0)
 #endif // ENABLE_LOGGING
