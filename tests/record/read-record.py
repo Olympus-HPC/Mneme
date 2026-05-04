@@ -84,13 +84,7 @@ data_dir = sys.argv[1] if len(sys.argv) > 1 else "."
 for fn in sorted(glob.glob(os.path.join(data_dir, "*.json"))):
     with open(fn, "r") as fd:
         rr_data = json.load(fd)
-    # Snapshot paths in the JSON may be basenames (relative to the JSON's
-    # parent dir) or absolute paths. Resolve so .exists() works regardless
-    # of cwd.
     base_dir = Path(fn).resolve().parent
-
-    def _resolve(p):
-        return p if Path(p).is_absolute() else str(base_dir / p)
 
     d_name = rr_data["DemangledName"]
     print("DemangledName:", rr_data["DemangledName"])
@@ -111,12 +105,12 @@ for fn in sorted(glob.glob(os.path.join(data_dir, "*.json"))):
                 instance["GridDims"]["z"],
             )
         )
-        prologue_path = _resolve(instance["Prologue"])
-        epilogue_path = _resolve(instance["Epilogue"])
-        if not Path(prologue_path).exists():
+        prologue_path = base_dir / instance["Prologue"]
+        epilogue_path = base_dir / instance["Epilogue"]
+        if not prologue_path.exists():
             print("Expected prologue file to exist")
             sys.exit(-1)
-        if not Path(epilogue_path).exists():
+        if not epilogue_path.exists():
             print("Expected epilogue file to exist")
             sys.exit(-1)
 

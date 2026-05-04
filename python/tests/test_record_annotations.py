@@ -119,19 +119,15 @@ def test_record_annotations_complex_cases(build_annotation_test_program, tmp_pat
     instances = rr["instances"]
     assert len(instances) >= 2, "Expected at least two dynamic kernel instances"
 
-    # Snapshot paths in the JSON are basenames relative to the JSON's parent.
     record_dir = json_records[0].resolve().parent
-
-    def _resolve(p):
-        return Path(p) if Path(p).is_absolute() else record_dir / p
 
     saw_in_vec = False
     saw_out_loose = False
     saw_out_tight = False
 
     for instance in instances.values():
-        prologue = _resolve(instance["Prologue"])
-        epilogue = _resolve(instance["Epilogue"])
+        prologue = record_dir / instance["Prologue"]
+        epilogue = record_dir / instance["Epilogue"]
         assert prologue.exists(), f"Missing prologue snapshot: {prologue}"
         assert epilogue.exists(), f"Missing epilogue snapshot: {epilogue}"
 
