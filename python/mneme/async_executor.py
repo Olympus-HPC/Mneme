@@ -87,6 +87,7 @@ class TuneWorkerHandle:
         device_id: int,
         iterations: int,
         results_db_dir: str,
+        warmup: int = 2,
     ):
         """
         Construct a worker handle and start the worker process + monitor thread.
@@ -108,6 +109,8 @@ class TuneWorkerHandle:
             Number of kernel iterations used by the worker for the tracked execution.
         results_db_dir : str
             Directory where the worker writes logs and optional artifacts.
+        warmup : int
+            Number of warmup iterations executed before measured iterations.
 
         Notes
         -----
@@ -129,6 +132,7 @@ class TuneWorkerHandle:
         self.device_id = device_id
         self.iterations = iterations
         self.results_db_dir = results_db_dir
+        self.warmup = warmup
 
         self._state = None  # ProcessEvent
         self._process = None  # Process
@@ -173,6 +177,7 @@ class TuneWorkerHandle:
                 self.iterations,
                 self.results_db_dir,
                 self._state,
+                self.warmup,
             ),
             daemon=False,
         )
@@ -364,6 +369,7 @@ class AsyncReplayExecutor:
         iterations: int,
         results_db_dir: str,
         num_workers: int,
+        warmup: int = 2,
     ):
         """
         Construct an asynchronous executor with a fixed-size worker pool.
@@ -380,12 +386,15 @@ class AsyncReplayExecutor:
             Directory where workers write logs and optional output artifacts.
         num_workers : int
             Number of worker processes to launch.
+        warmup : int
+            Number of warmup iterations each worker executes before measured iterations.
         """
         self.global_q = ThreadQueue()
         self._futures: Dict[int, EvalFuture] = {}
         self._next_id = 0
         self._lock = threading.Lock()
         self.iterations = iterations
+        self.warmup = warmup
 
         self.workers = [
             TuneWorkerHandle(
@@ -396,6 +405,7 @@ class AsyncReplayExecutor:
                 i,
                 iterations,
                 results_db_dir,
+                warmup=warmup,
             )
             for i in range(num_workers)
         ]
