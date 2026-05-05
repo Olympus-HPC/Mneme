@@ -108,6 +108,7 @@ class BaseExecutor:
         record_id: str = "",
         iterations: int = 3,
         device_id: int = 0,
+        warmup: int = 2,
     ):
         self.record_db = record_db
         self.record_id = record_id
@@ -122,6 +123,7 @@ class BaseExecutor:
         self._prologue = None
         self._page_manager = None
         self._iterations = iterations
+        self._warmup = warmup
         self.num_devices = get_device_count()
         set_device(device_id)
         logger.debug(
@@ -607,10 +609,10 @@ class BaseExecutor:
         ir_module = transform.remove_auto_initialize(ir_module.clone())
         # Done with verification. Moving to next stage
 
-        # NOTE: 3. We build and run. We set tracking on and we always execute iterations +2,
+        # NOTE: 3. We build and run. We set tracking on and execute warmups plus iterations,
         # to enalbe later computation of statistical metrics etc.
         mem_buffer = self._build(result, config, ir_module, True)
-        self._run(result, config, mem_buffer, self.prologue, self.epilogue, False, True, self._iterations + 2)
+        self._run(result, config, mem_buffer, self.prologue, self.epilogue, False, True, self._iterations + self._warmup)
         result.executed = True
 
         return ir_module
@@ -716,6 +718,7 @@ class TuneWorker(BaseExecutor):
         iterations: int,
         results_db_dir: str,
         state: Event,
+        warmup: int = 2,
     ):
         """
         Worker process entry point: initialize resources and serve requests from a queue.
@@ -758,6 +761,8 @@ class TuneWorker(BaseExecutor):
             Number of kernel iterations to execute during the tracked run (the full
             execution may include additional runs for verification/warmup depending
             on the executor pipeline).
+        warmup : int
+            Number of warmup iterations to execute before measured iterations.
         results_db_dir : str
             Directory where per-worker logs and output artifacts are written.
         state : multiprocessing.Event
@@ -786,6 +791,7 @@ class TuneWorker(BaseExecutor):
             record_id=record_id,
             device_id=device_id,
             iterations=iterations,
+            warmup=warmup,
         )
         # Open GPU memory, setup prologue epilogue and create a single
         # LLVM IR file to start working on optimizations
