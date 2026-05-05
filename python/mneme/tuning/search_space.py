@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from collections import defaultdict
+import random
 from typing import Any, Dict, List, Tuple, Iterable
 
 from optuna.trial import Trial
@@ -329,9 +330,14 @@ def sample_random_param(param: BaseParam) -> Any:
     elif isinstance(param, RealRangeParam):
         return random.uniform(param.low, param.high)
     elif isinstance(param, PipelineParam):
-        if param.pipelines is not None:
-            return random.choice(param.pipelines)
-        return param.generator()
+        selected = []
+        for pass_name in param.available_passes[: param.num_draws]:
+            if random.choice([False, True]):
+                selected.append(pass_name)
+        concrete_passes = param.pass_manager.get_concrete_passes()
+        return param.pass_manager.to_string(
+            [concrete_passes[name] for name in selected]
+        )
 
     else:
         raise TypeError(f"Unsupported parameter type: {type(param)}")
@@ -530,7 +536,7 @@ class SearchSpace(ABC):
         value_lists = []
         for dim in dims.values():
             if isinstance(dim, FixedParam):
-                value_lists.append([dim.config])
+                value_lists.append([dim.value])
             elif isinstance(dim, BoolParam):
                 value_lists.append(list(dim.choices))
             elif isinstance(dim, IntRangeParam):
