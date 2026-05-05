@@ -31,50 +31,9 @@
 #include "mneme/MnemeLogger.hpp"
 #include "mneme/MnemeMemory.hpp"
 #include "mneme/MnemeUtils.hpp"
+#include <proteus/KernelMetadata.h>
 
 namespace mneme {
-
-struct RecordedGlobalVar {
-  const void *HostAddr;
-  const void *DevAddr;
-  uint64_t VarSize;
-};
-
-using RecordedGlobalVars = std::unordered_map<std::string, RecordedGlobalVar>;
-
-struct RecordedStaticHash {
-  uint64_t Value = 0;
-
-  uint64_t getValue() const { return Value; }
-};
-
-struct RecordedBitcode {
-  std::vector<char> Bytes;
-
-  llvm::StringRef getBuffer() const {
-    return llvm::StringRef(Bytes.data(), Bytes.size());
-  }
-};
-
-struct RecordedBinaryInfo {
-  RecordedGlobalVars GlobalVars;
-
-  const RecordedGlobalVars &getVarNameToGlobalInfo() const {
-    return GlobalVars;
-  }
-};
-
-struct RecordedKernelMetadata {
-  std::string Name;
-  RecordedStaticHash StaticHash;
-  RecordedBitcode Bitcode;
-  RecordedBinaryInfo BinaryInfo;
-
-  const std::string &getName() const { return Name; }
-  RecordedStaticHash getStaticHash() const { return StaticHash; }
-  const RecordedBitcode &getBitcode() const { return Bitcode; }
-  const RecordedBinaryInfo &getBinaryInfo() const { return BinaryInfo; }
-};
 
 struct ReplayGlobalVar {
   void *HostAddr;
@@ -354,7 +313,7 @@ public:
   }
 
   std::filesystem::path static takeMnemeBytesSnapshot(
-      const RecordedGlobalVars &GlobalVars,
+      const proteus::runtime::GlobalMetadataMap &GlobalVars,
       llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &DeviceMemory,
       std::filesystem::path &Filename,
       llvm::SmallVector<size_t> &KernelArgSizes, void **Args,
@@ -433,7 +392,7 @@ public:
   }
 
   std::filesystem::path static takeMnemeDiffSnapshot(
-      const RecordedGlobalVars &GlobalVars,
+      const proteus::runtime::GlobalMetadataMap &GlobalVars,
       llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &DeviceMemory,
       std::filesystem::path &Filename,
       const GlobalSnapshotData &PrologueGlobals, DeviceStream_t Stream) {
@@ -641,17 +600,18 @@ public:
 
   KernelInstancesCollection(const std::string &MnemeDirectory, void *VAddr,
                             uint64_t VASize,
-                            const RecordedKernelMetadata &KInfo,
+                            const proteus::runtime::KernelMetadata &KInfo,
                             int MaxRecordings)
       : VAddr(VAddr), VASize(VASize), MaxRecordings(MaxRecordings),
         NumRecords(0), KName(KInfo.getName()) {
-    llvm::StringRef Bitcode = KInfo.getBitcode().getBuffer();
+    const auto &BitcodeBytes = KInfo.getBitcode();
+    llvm::StringRef Bitcode(BitcodeBytes.data(), BitcodeBytes.size());
     if (Bitcode.empty())
       LOG_FATAL("Empty bitcode for kernel " + KName);
 
     extractArgInfoFromBitcode(Bitcode);
-    ModuleFiles.emplace_back(StoreModuleBytes(
-        Bitcode, MnemeDirectory, KInfo.getStaticHash().getValue()));
+    ModuleFiles.emplace_back(
+        StoreModuleBytes(Bitcode, MnemeDirectory, KInfo.getStaticHash()));
   }
 
   llvm::stable_hash computeHash(dim3 &GridDim, dim3 &BlockDim,
@@ -671,7 +631,8 @@ public:
       void(llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &, void **,
            typename DeviceTraits<VendorTypes>::DeviceStream_t)>>
   takeSnapshot(
-      std::filesystem::path &MnemeDir, const RecordedGlobalVars &GlobalVars,
+      std::filesystem::path &MnemeDir,
+      const proteus::runtime::GlobalMetadataMap &GlobalVars,
       llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &DeviceMemory,
       dim3 &GridDim, dim3 &BlockDim, void **Args, size_t SharedMem,
       typename DeviceTraits<VendorTypes>::DeviceStream_t Stream,
@@ -800,7 +761,8 @@ public:
       void(llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &, void **,
            typename DeviceTraits<VendorTypes>::DeviceStream_t)>>
   takeSnapshot(
-      void *VAddr, uint64_t VASize, const RecordedKernelMetadata &KInfo,
+      void *VAddr, uint64_t VASize,
+      const proteus::runtime::KernelMetadata &KInfo,
       llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &DeviceMemory,
       dim3 &GridDim, dim3 &BlockDim, void **Args, size_t SharedMem,
       typename DeviceTraits<VendorTypes>::DeviceStream_t Stream) {
@@ -809,15 +771,14 @@ public:
       return std::nullopt;
     }
 
-    auto StaticHash = KInfo.getStaticHash().getValue();
+    auto StaticHash = KInfo.getStaticHash();
     auto IT = KernelRecords.try_emplace(
         StaticHash, KernelInstancesCollection(getDir(), VAddr, VASize, KInfo,
                                               MaxRecordings));
     LOG_INFO("Created instance");
     return IT.first->second.takeSnapshot<VendorTypes>(
-        MnemeDirectory, KInfo.getBinaryInfo().getVarNameToGlobalInfo(),
-        DeviceMemory, GridDim, BlockDim, Args, SharedMem, Stream, StaticHash,
-        EpilogueType);
+        MnemeDirectory, KInfo.getGlobals(), DeviceMemory, GridDim, BlockDim,
+        Args, SharedMem, Stream, StaticHash, EpilogueType);
   }
 
   const std::string getDir() const { return MnemeDirectory.string(); }

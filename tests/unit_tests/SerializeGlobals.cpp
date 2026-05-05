@@ -41,7 +41,7 @@ int main(int argc, char **argv) {
   if (EC)
     LOG_FATAL("Could not allocate device data");
 
-  RecordedGlobalVar GV{HData, DData, 128};
+  proteus::runtime::GlobalMetadata GV{HData, DData, 128};
   llvm::SmallVector<char, 128> Buffer;
   std::string VarName("Test");
 
