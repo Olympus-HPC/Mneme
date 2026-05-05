@@ -119,13 +119,15 @@ def test_record_annotations_complex_cases(build_annotation_test_program, tmp_pat
     instances = rr["instances"]
     assert len(instances) >= 2, "Expected at least two dynamic kernel instances"
 
+    record_dir = json_records[0].resolve().parent
+
     saw_in_vec = False
     saw_out_loose = False
     saw_out_tight = False
 
     for instance in instances.values():
-        prologue = Path(instance["Prologue"])
-        epilogue = Path(instance["Epilogue"])
+        prologue = record_dir / instance["Prologue"]
+        epilogue = record_dir / instance["Epilogue"]
         assert prologue.exists(), f"Missing prologue snapshot: {prologue}"
         assert epilogue.exists(), f"Missing epilogue snapshot: {epilogue}"
 

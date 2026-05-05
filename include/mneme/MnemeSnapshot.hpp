@@ -391,7 +391,7 @@ public:
                                KernelArgSizes[I]);
     }
 
-    return std::filesystem::canonical(Filename);
+    return Filename.filename();
   }
 
   std::filesystem::path static takeMnemeDiffSnapshot(
@@ -452,7 +452,7 @@ public:
       writeCountAndWriteChangedRanges(OutBC, Blob);
     }
 
-    return std::filesystem::canonical(Filename);
+    return Filename.filename();
   }
 
   void static readMnemeSnapShot(
@@ -574,7 +574,7 @@ private:
 
     LOG_DEBUG("Stored Blob with StaticHash:{} to file {}", StaticHash,
               std::filesystem::canonical(Filename).string());
-    return std::filesystem::canonical(Filename).string();
+    return std::filesystem::path(Filename).filename().string();
   }
 
 public:

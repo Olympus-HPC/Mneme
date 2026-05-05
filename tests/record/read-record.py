@@ -84,6 +84,8 @@ data_dir = sys.argv[1] if len(sys.argv) > 1 else "."
 for fn in sorted(glob.glob(os.path.join(data_dir, "*.json"))):
     with open(fn, "r") as fd:
         rr_data = json.load(fd)
+    base_dir = Path(fn).resolve().parent
+
     d_name = rr_data["DemangledName"]
     print("DemangledName:", rr_data["DemangledName"])
     print("NumModules:", len(rr_data["Modules"]))
@@ -103,16 +105,18 @@ for fn in sorted(glob.glob(os.path.join(data_dir, "*.json"))):
                 instance["GridDims"]["z"],
             )
         )
-        if not Path(instance["Prologue"]).exists():
+        prologue_path = base_dir / instance["Prologue"]
+        epilogue_path = base_dir / instance["Epilogue"]
+        if not prologue_path.exists():
             print("Expected prologue file to exist")
             sys.exit(-1)
-        if not Path(instance["Epilogue"]).exists():
+        if not epilogue_path.exists():
             print("Expected epilogue file to exist")
             sys.exit(-1)
 
         # Parse the prologue binary to report any non-default blob metadata.
         try:
-            mds = _parse_prologue_metadata(instance["Prologue"])
+            mds = _parse_prologue_metadata(prologue_path)
             for md in mds:
                 if (md["threshold"] != 0.0 or md["builtin"] != 0
                         or md["norm"] != 0 or md["threshold_kind"] != 0
