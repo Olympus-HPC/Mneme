@@ -360,6 +360,85 @@ def test_link_ir_forwards_prune_and_internalize(monkeypatch):
     assert rec.link_calls == [(True, True)]
 
 
+@pytest.mark.parametrize(
+    ("ir_input", "file_mode", "file_contents", "expected_parser", "expected_data"),
+    [
+        (
+            "define void @K() { ret void }",
+            None,
+            None,
+            "asm",
+            "define void @K() { ret void }",
+        ),
+        (
+            "kernel.ll",
+            "w",
+            "define void @K() { ret void }",
+            "asm",
+            "define void @K() { ret void }",
+        ),
+        ("kernel.bc", "wb", b"bitcode", "bitcode", b"bitcode"),
+    ],
+)
+def test_set_new_ir_parses_and_prunes_replacement_ir(
+    monkeypatch,
+    tmp_path,
+    ir_input,
+    file_mode,
+    file_contents,
+    expected_parser,
+    expected_data,
+):
+    mod = _reload_with_identity_decorators(monkeypatch)
+
+    kernel = FakeKernelDescr(kernel_name="K")
+    rec = FakeRecordedExecution(kernel)
+
+    monkeypatch.setattr(
+        mod.RecordedExecution, "from_json", staticmethod(lambda _: rec), raising=True
+    )
+    monkeypatch.setattr(mod, "set_device", lambda _: None, raising=True)
+    monkeypatch.setattr(mod, "get_device_arch", lambda: "sm", raising=True)
+    monkeypatch.setattr(mod, "get_device_count", lambda: 1, raising=True)
+
+    parsed_module = FakeModule("parsed")
+    calls = []
+
+    def fake_parse_assembly(data):
+        calls.append(("asm", data))
+        return parsed_module
+
+    def fake_parse_bitcode(data):
+        calls.append(("bitcode", data))
+        return parsed_module
+
+    def fake_internalize(ir, kernel_name):
+        calls.append(("internalize", ir, kernel_name))
+
+    def fake_prune(ir):
+        calls.append(("prune", ir))
+
+    monkeypatch.setattr(mod, "parse_assembly", fake_parse_assembly, raising=True)
+    monkeypatch.setattr(mod, "parse_bitcode", fake_parse_bitcode, raising=True)
+    monkeypatch.setattr(mod.jit, "internalize", fake_internalize, raising=True)
+    monkeypatch.setattr(mod.jit, "pruneIR", fake_prune, raising=True)
+
+    if file_mode is not None:
+        ir_path = tmp_path / ir_input
+        with open(ir_path, file_mode) as f:
+            f.write(file_contents)
+        ir_input = str(ir_path)
+
+    ex = mod.BaseExecutor(record_db="x", record_id="rid")
+
+    assert ex.set_new_ir(ir_input) is parsed_module
+    assert calls == [
+        (expected_parser, expected_data),
+        ("internalize", parsed_module, "K"),
+        ("prune", parsed_module),
+    ]
+
+
 def test_preprocess_ir_calls_jit_hooks_based_on_config(monkeypatch):
     mod = _reload_with_identity_decorators(monkeypatch)
 
@@ -633,6 +712,9 @@ def test_tuneworker_run_process_and_terminate(monkeypatch, tmp_path):
     monkeypatch.setattr(mod.os, "open", lambda *a, **k: 999, raising=True)
     monkeypatch.setattr(mod.os, "dup2", lambda *a, **k: None, raising=True)
 
+    set_ir_calls = []
+    process_ir_names = []
+
     class FakeWorker:
         def __init__(self, record_db, record_id, device_id, iterations, warmup):
             self.record_db = record_db
@@ -644,6 +726,10 @@ def test_tuneworker_run_process_and_terminate(monkeypatch, tmp_path):
         def link_ir(self):
             return FakeModule("root_ir")
 
+        def set_new_ir(self, ir_data):
+            set_ir_calls.append(ir_data)
+            return FakeModule("replacement_ir")
+
         def __enter__(self):
             return self
 
@@ -651,6 +737,7 @@ def test_tuneworker_run_process_and_terminate(monkeypatch, tmp_path):
             return False
 
         def process_payload(self, ir_module, config):
+            process_ir_names.append(ir_module.name)
             res = mod.ExperimentResult(executed=True, verified=True)
             return res, FakeModule("ir_out")
 
@@ -671,6 +758,7 @@ def test_tuneworker_run_process_and_terminate(monkeypatch, tmp_path):
 
     state = FakeEvent()
 
+    req_q.put({"payload": "set_ir", "data": "replacement asm"})
     req_q.put(
         {
             "payload": "process",
@@ -693,8 +781,74 @@ def test_tuneworker_run_process_and_terminate(monkeypatch, tmp_path):
     )
 
     assert state.set_called == 1
+    assert set_ir_calls == ["replacement asm"]
+    assert process_ir_names == ["replacement_ir_clone"]
     msg = resp_q.get_nowait()
     assert msg["payload"] == "result"
     assert msg["exp_id"] == 7
     assert isinstance(msg["data"], dict)
     assert msg["llvm_ir"] == ""
+
+
+def test_tuneworker_run_logs_failed_set_ir(monkeypatch, tmp_path):
+    mod = _reload_with_identity_decorators(monkeypatch)
+
+    real_run = mod.TuneWorker.run
+
+    monkeypatch.setattr(mod.os, "open", lambda *a, **k: 999, raising=True)
+    monkeypatch.setattr(mod.os, "dup2", lambda *a, **k: None, raising=True)
+
+    errors = []
+    monkeypatch.setattr(
+        mod.logger, "error", lambda msg: errors.append(msg), raising=True
+    )
+
+    class FakeWorker:
+        def __init__(self, record_db, record_id, device_id, iterations):
+            self.device_id = device_id
+
+        def link_ir(self):
+            return FakeModule("root_ir")
+
+        def set_new_ir(self, ir_data):
+            return None
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    monkeypatch.setattr(
+        mod, "TuneWorker", lambda *a, **k: FakeWorker(*a, **k), raising=True
+    )
+
+    req_q = queue.Queue()
+    resp_q = queue.Queue()
+
+    class FakeEvent:
+        def __init__(self):
+            self.set_called = 0
+
+        def set(self):
+            self.set_called += 1
+
+    state = FakeEvent()
+
+    req_q.put({"payload": "set_ir", "data": "bad asm"})
+    req_q.put({"payload": "terminate"})
+
+    real_run(
+        request_q=req_q,
+        response_q=resp_q,
+        record_db="db.json",
+        record_id="rid",
+        device_id=3,
+        iterations=3,
+        results_db_dir=str(tmp_path),
+        state=state,
+    )
+
+    assert state.set_called == 1
+    assert errors == ["Worker 3 failed to set new IR"]
+    assert resp_q.empty()
