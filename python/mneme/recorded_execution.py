@@ -102,14 +102,20 @@ def find_non_jsonables(obj, where="$"):
 
 def _make_path_relative(p, base_dir):
     """
-    Return ``p`` as a basename if it is an absolute path whose parent equals
-    ``base_dir``. Otherwise return ``p`` unchanged. If ``base_dir`` is ``None``,
-    no relativization is performed.
+    Return ``p`` as a basename if it lives directly under ``base_dir``.
+
+    If ``p`` is already a basename, return it unchanged so this transform is
+    idempotent. Relative paths with directory components are ambiguous here
+    because JSON readers resolve them against ``base_dir``.
     """
     if base_dir is None or not p:
         return p
     pp = Path(p)
-    if pp.is_absolute() and pp.parent.resolve() == base_dir:
+    if not pp.is_absolute():
+        if pp.parent == Path("."):
+            return p
+        raise ValueError(f"Expected absolute path or basename, got relative path: {p}")
+    if pp.parent.resolve() == base_dir:
         return pp.name
     return p
 

@@ -7,6 +7,7 @@ from mneme.recorded_execution import (
     MemStateRef,
     RecordedExecution,
     SnapshotType,
+    _make_path_relative,
 )
 from mneme.mneme_types import dim3
 
@@ -188,6 +189,17 @@ def test_recorded_execution_link_llvm_modules_calls_jit():
 
         fake_link.assert_called_once_with(["a.ll", "b.ll"], "K", True, False)
         assert out == "MOD"
+
+
+def test_make_path_relative_accepts_basename_but_rejects_nested_relative(tmp_path):
+    """
+    The path transform is idempotent for already-relative basenames, but
+    rejects relative paths that would be reinterpreted relative to the JSON file.
+    """
+    assert _make_path_relative("file.epi", tmp_path) == "file.epi"
+
+    with pytest.raises(ValueError, match="Expected absolute path or basename"):
+        _make_path_relative("record-db/file.epi", tmp_path)
 
 
 @pytest.mark.parametrize("path_style", ["basename", "absolute"])
