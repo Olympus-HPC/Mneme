@@ -8,6 +8,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <dlfcn.h>
+#include <optional>
 
 #include "llvm/Support/raw_ostream.h"
 #include <filesystem>
@@ -21,8 +22,7 @@
 #include <llvm/IR/Module.h>
 #include <mutex>
 
-#include <proteus/impl/CompilerInterfaceDevice.h>
-#include <proteus/impl/JitEngineDevice.h>
+#include <proteus/RecordInterface.h>
 
 #include "mneme/DeviceTraits.hpp"
 #include "mneme/MnemeKernelInfo.hpp"
@@ -94,6 +94,51 @@ private:
   bool ExtractedIR;
   RecordDatabase DB;
   std::once_flag ExtractFlag;
+
+  static std::optional<RecordedKernelMetadata>
+  captureProteusKernelMetadata(const void *Kernel) {
+    ProteusRecordedKernel *Record = nullptr;
+    ProteusRecordStatus Status =
+        __proteus_record_capture_kernel(Kernel, &Record);
+    if (Status == PROTEUS_RECORD_KERNEL_NOT_FOUND)
+      return std::nullopt;
+    if (Status != PROTEUS_RECORD_OK || !Record)
+      LOG_FATAL("Proteus failed to capture kernel metadata");
+
+    struct RecordReleaser {
+      void operator()(ProteusRecordedKernel *Record) const {
+        __proteus_record_release_kernel(Record);
+      }
+    };
+    std::unique_ptr<ProteusRecordedKernel, RecordReleaser> RecordOwner(Record);
+
+    const char *KernelName = __proteus_record_kernel_name(Record);
+    if (!KernelName)
+      LOG_FATAL("Proteus recorded kernel has no name");
+
+    RecordedKernelMetadata KInfo;
+    KInfo.Name = KernelName;
+    KInfo.StaticHash.Value = __proteus_record_static_hash(Record);
+
+    const void *BitcodeData = __proteus_record_bitcode_data(Record);
+    size_t BitcodeSize = __proteus_record_bitcode_size(Record);
+    if (!BitcodeData || BitcodeSize == 0)
+      LOG_FATAL("Proteus recorded kernel has empty bitcode");
+    const auto *BitcodeBegin = static_cast<const char *>(BitcodeData);
+    KInfo.Bitcode.Bytes.assign(BitcodeBegin, BitcodeBegin + BitcodeSize);
+
+    size_t NumGlobals = __proteus_record_global_count(Record);
+    for (size_t I = 0; I < NumGlobals; ++I) {
+      ProteusRecordedGlobal Global = __proteus_record_global_at(Record, I);
+      if (!Global.Name)
+        LOG_FATAL("Proteus recorded global has no name");
+      KInfo.BinaryInfo.GlobalVars.try_emplace(
+          Global.Name,
+          RecordedGlobalVar{Global.HostAddr, Global.DevAddr, Global.Size});
+    }
+
+    return KInfo;
+  }
 
   DeviceError_t (*origLaunchKernel)(const void *func, dim3 gridDim,
                                     dim3 blockDim, void **args,
@@ -182,9 +227,6 @@ public:
   DeviceError_t rtLaunchKernel(const void *func, dim3 &GridDim, dim3 &BlockDim,
                                void **Args, size_t SharedMem,
                                DeviceStream_t Stream) {
-    using namespace llvm;
-    using namespace proteus;
-
     if (!PM) {
       // NOTE: We need this arch cause internally we initialize the device.
       // FIXME: We need to have a DeviceTrait function to initialize the GPU
@@ -198,21 +240,18 @@ public:
           DeviceID, (void *)MnemeDeviceRT::getSuggestedAddr());
     }
 
-    auto &Proteus = JitDeviceImplT::instance();
-    auto OptionalKernelInfo = Proteus.getJITKernelInfo(func);
-    // NOTE: Here we do something conceptually different. We no longer go through
-    // proteus. We call immediately the vendor launcher. Thus we avoid overheads from caching etc.
+    // NOTE: Here we do something conceptually different. We no longer go
+    // through proteus. We call immediately the vendor launcher. Thus we avoid
+    // overheads from caching etc.
     LOG_DEBUG("Received OptionalKernel Info {}", (void *)origLaunchKernel);
+    auto OptionalKernelInfo = captureProteusKernelMetadata(func);
     if (!OptionalKernelInfo) {
       LOG_DEBUG("Information for kernel  {} is not included", func);
       return origLaunchKernel(func, GridDim, BlockDim, Args, SharedMem, Stream);
     }
-    auto &KInfo = OptionalKernelInfo.value().get();
+    auto &KInfo = OptionalKernelInfo.value();
     LOG_DEBUG("Continue with {}", KInfo.getName());
-    Proteus.extractModuleAndBitcode(KInfo);
-
-    auto Hash = Proteus.getStaticHash(KInfo);
-    LOG_INFO("Hash value is {}", Hash.getValue());
+    LOG_INFO("Hash value is {}", KInfo.getStaticHash().getValue());
 
     auto RecordAction = DB.takeSnapshot<VendorTypes>(
         PM->getVAStart(), PM->getTotalVASize(), KInfo, AllocatedBlobs, GridDim,
@@ -227,8 +266,7 @@ public:
     auto ret =
         origLaunchKernel(func, GridDim, BlockDim, Args, SharedMem, Stream);
     if (RecordAction) {
-      (*RecordAction)(KInfo.getBinaryInfo().getVarNameToGlobalInfo(),
-                      AllocatedBlobs, Args, Stream);
+      (*RecordAction)(AllocatedBlobs, Args, Stream);
       LOG_INFO("Successfully Recorded Epilogue of Kernel {} NAME:{} GRID:({}, "
                "{}, {}) "
                "BLOCK:({}, {}, "

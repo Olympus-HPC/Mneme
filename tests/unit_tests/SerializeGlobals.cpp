@@ -17,7 +17,7 @@ void initializeRandomBuffer(uint8_t *Buffer, size_t Size) {
   // Random number generation setup
   std::mt19937 gen(4); // Mersenne Twister random number generator
   std::uniform_int_distribution<uint8_t> dis(
-    0, 255); // Uniform distribution for char range
+      0, 255); // Uniform distribution for char range
 
   // Fill the buffer with random values
   for (int I = 0; I < Size; I++) {
@@ -32,16 +32,16 @@ int main(int argc, char **argv) {
   void *DData;
 
   auto EC = MnemeDeviceRT::DeviceErrorCheck(
-    MnemeDeviceRT::DeviceMalloc((void **)&DData, 128));
+      MnemeDeviceRT::DeviceMalloc((void **)&DData, 128));
   if (EC)
     LOG_FATAL("Could not allocate device data");
 
   EC = MnemeDeviceRT::DeviceErrorCheck(MnemeDeviceRT::DeviceCopy(
-    DData, HData, 128, MnemeDeviceRT::MemcpyHostToDeviceKind()));
+      DData, HData, 128, MnemeDeviceRT::MemcpyHostToDeviceKind()));
   if (EC)
     LOG_FATAL("Could not allocate device data");
 
-  proteus::GlobalVarInfo GV(HData, DData, 128);
+  RecordedGlobalVar GV{HData, DData, 128};
   llvm::SmallVector<char, 128> Buffer;
   std::string VarName("Test");
 
@@ -61,18 +61,18 @@ int main(int argc, char **argv) {
   auto Buff = const_cast<const char *>(Buffer.data());
   auto tmp = mneme::MnemeSnapshot<Vendor>::fromBuffer(Buff);
   auto &GName = tmp.first;
-  auto &GVR   = tmp.second;
+  auto &GVR = tmp.second;
 
   auto Ret = [&]() {
     if (GName != VarName) {
-      std::cerr << "Global Variables differ in name " << GName << " "
-        << GName << "\n";
+      std::cerr << "Global Variables differ in name " << GName << " " << GName
+                << "\n";
       return -1;
     }
 
     if (GVR.VarSize != GV.VarSize) {
       std::cerr << "VarSize differs " << GVR.VarSize << " " << GV.VarSize
-        << "\n";
+                << "\n";
       return -1;
     }
 

@@ -24,10 +24,6 @@
 #include <string>
 #include <sys/types.h>
 
-#include "proteus/impl/CompilerInterfaceDevice.h"
-#include "proteus/impl/Hashing.h"
-#include <proteus/impl/JitEngineDevice.h>
-
 #include "mneme/DeviceTraits.hpp"
 #include "mneme/MnemeConfig.hpp"
 #include "mneme/MnemeKernelInfo.hpp"
@@ -37,6 +33,48 @@
 #include "mneme/MnemeUtils.hpp"
 
 namespace mneme {
+
+struct RecordedGlobalVar {
+  const void *HostAddr;
+  const void *DevAddr;
+  uint64_t VarSize;
+};
+
+using RecordedGlobalVars = std::unordered_map<std::string, RecordedGlobalVar>;
+
+struct RecordedStaticHash {
+  uint64_t Value = 0;
+
+  uint64_t getValue() const { return Value; }
+};
+
+struct RecordedBitcode {
+  std::vector<char> Bytes;
+
+  llvm::StringRef getBuffer() const {
+    return llvm::StringRef(Bytes.data(), Bytes.size());
+  }
+};
+
+struct RecordedBinaryInfo {
+  RecordedGlobalVars GlobalVars;
+
+  const RecordedGlobalVars &getVarNameToGlobalInfo() const {
+    return GlobalVars;
+  }
+};
+
+struct RecordedKernelMetadata {
+  std::string Name;
+  RecordedStaticHash StaticHash;
+  RecordedBitcode Bitcode;
+  RecordedBinaryInfo BinaryInfo;
+
+  const std::string &getName() const { return Name; }
+  RecordedStaticHash getStaticHash() const { return StaticHash; }
+  const RecordedBitcode &getBitcode() const { return Bitcode; }
+  const RecordedBinaryInfo &getBinaryInfo() const { return BinaryInfo; }
+};
 
 struct ReplayGlobalVar {
   void *HostAddr;
@@ -81,7 +119,6 @@ template <DeviceVendors VendorTypes> class MnemeSnapshot {
   static constexpr size_t DiffMagicSize = sizeof(DiffMagic) - 1;
   static constexpr size_t DiffChunkSize = 1 << 20;
 
-
   static bool isDiffBuffer(llvm::StringRef Buffer) {
     return Buffer.size() >= DiffMagicSize &&
            Buffer.take_front(DiffMagicSize) == llvm::StringRef(DiffMagic);
@@ -93,7 +130,7 @@ template <DeviceVendors VendorTypes> class MnemeSnapshot {
       LOG_FATAL("Cannot diff buffers with different sizes");
 
     // Count the number of contiguous ranges that have changed between Base and
-    // Current. We want to write out the number of ranges so that the reader 
+    // Current. We want to write out the number of ranges so that the reader
     // can know how many ranges to read.
     size_t Count = 0;
     bool InRange = false;
@@ -119,7 +156,7 @@ template <DeviceVendors VendorTypes> class MnemeSnapshot {
     if (!UpdateBase.empty() && UpdateBase.size() != Base.size())
       LOG_FATAL("Cannot update diff base with mismatched buffer size");
 
-    // Write out the contiguous ranges that have changed between Base 
+    // Write out the contiguous ranges that have changed between Base
     // and Current.
     size_t Count = 0;
     size_t I = 0;
@@ -145,8 +182,9 @@ template <DeviceVendors VendorTypes> class MnemeSnapshot {
     return Count;
   }
 
-  static void writeCountAndWriteChangedRanges(
-      llvm::raw_ostream &OS, MnemeMemoryBlob<VendorTypes> &Blob) {
+  static void
+  writeCountAndWriteChangedRanges(llvm::raw_ostream &OS,
+                                  MnemeMemoryBlob<VendorTypes> &Blob) {
     auto Size = Blob.getSize();
 
     // early exit
@@ -178,7 +216,7 @@ template <DeviceVendors VendorTypes> class MnemeSnapshot {
       llvm::ArrayRef<uint8_t> ChunkCurrent(Scratch.get(), ChunkSize);
       llvm::MutableArrayRef<uint8_t> UpdateBase(Base + Offset, ChunkSize);
       NumRanges += writeChangedRanges(DiffOS, ChunkBase, ChunkCurrent, Offset,
-                                       UpdateBase);
+                                      UpdateBase);
     }
 
     util::writeScalar(OS, NumRanges);
@@ -290,16 +328,16 @@ template <DeviceVendors VendorTypes> class MnemeSnapshot {
       if (Blob.getActualSize() != ActualSize || Blob.getSize() != Size)
         LOG_FATAL("Mneme diff memory blob size mismatch");
       Blob.setMetadata(MD);
-      applyDiffRanges(
-          CurrentPtr,
-          llvm::MutableArrayRef<uint8_t>(Blob.getHostData().get(),
-                                         Blob.getSize()),
-          NumRanges);
+      applyDiffRanges(CurrentPtr,
+                      llvm::MutableArrayRef<uint8_t>(Blob.getHostData().get(),
+                                                     Blob.getSize()),
+                      NumRanges);
     }
   }
 
 public:
-  using GlobalSnapshotData = std::unordered_map<std::string, std::vector<uint8_t>>;
+  using GlobalSnapshotData =
+      std::unordered_map<std::string, std::vector<uint8_t>>;
 
   static std::pair<std::string, ReplayGlobalVar>
   fromBuffer(const char *&Buffer) {
@@ -316,7 +354,7 @@ public:
   }
 
   std::filesystem::path static takeMnemeBytesSnapshot(
-      std::unordered_map<std::string, proteus::GlobalVarInfo> &GlobalVars,
+      const RecordedGlobalVars &GlobalVars,
       llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &DeviceMemory,
       std::filesystem::path &Filename,
       llvm::SmallVector<size_t> &KernelArgSizes, void **Args,
@@ -395,7 +433,7 @@ public:
   }
 
   std::filesystem::path static takeMnemeDiffSnapshot(
-      std::unordered_map<std::string, proteus::GlobalVarInfo> &GlobalVars,
+      const RecordedGlobalVars &GlobalVars,
       llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &DeviceMemory,
       std::filesystem::path &Filename,
       const GlobalSnapshotData &PrologueGlobals, DeviceStream_t Stream) {
@@ -534,7 +572,7 @@ class KernelInstancesCollection {
 
 private:
   // Parse Proteus's serialized bitcode in a Mneme-owned LLVMContext and
-  // extract per-argument metadata. Operating on a Mneme-owned Module 
+  // extract per-argument metadata. Operating on a Mneme-owned Module
   // keeps Mneme's LLVM runtime from touching any
   // Proteus-owned LLVM C++ object across the DSO boundary.
   void extractArgInfoFromBitcode(llvm::StringRef Bitcode) {
@@ -602,11 +640,11 @@ public:
   }
 
   KernelInstancesCollection(const std::string &MnemeDirectory, void *VAddr,
-                            uint64_t VASize, proteus::JITKernelInfo &KInfo,
+                            uint64_t VASize,
+                            const RecordedKernelMetadata &KInfo,
                             int MaxRecordings)
       : VAddr(VAddr), VASize(VASize), MaxRecordings(MaxRecordings),
         NumRecords(0), KName(KInfo.getName()) {
-    // Non-owning view of Proteus's cached bitcode.
     llvm::StringRef Bitcode = KInfo.getBitcode().getBuffer();
     if (Bitcode.empty())
       LOG_FATAL("Empty bitcode for kernel " + KName);
@@ -630,12 +668,10 @@ public:
 
   template <DeviceVendors VendorTypes>
   std::optional<std::function<
-      void(std::unordered_map<std::string, proteus::GlobalVarInfo> &,
-           llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &, void **,
+      void(llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &, void **,
            typename DeviceTraits<VendorTypes>::DeviceStream_t)>>
   takeSnapshot(
-      std::filesystem::path &MnemeDir,
-      std::unordered_map<std::string, proteus::GlobalVarInfo> &GlobalVars,
+      std::filesystem::path &MnemeDir, const RecordedGlobalVars &GlobalVars,
       llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &DeviceMemory,
       dim3 &GridDim, dim3 &BlockDim, void **Args, size_t SharedMem,
       typename DeviceTraits<VendorTypes>::DeviceStream_t Stream,
@@ -675,15 +711,12 @@ public:
                                           PrologueGlobals.get())
             .string();
 
-    std::function<void(
-        std::unordered_map<std::string, proteus::GlobalVarInfo> &,
-        llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &, void **,
-        typename DeviceTraits<VendorTypes>::DeviceStream_t)>
+    std::function<void(llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &,
+                       void **,
+                       typename DeviceTraits<VendorTypes>::DeviceStream_t)>
         CaptureEpilogue =
             [this, DynamicHash, StaticHash, MnemeDir, PrologueGlobals,
-             EpilogueType](
-                std::unordered_map<std::string, proteus::GlobalVarInfo>
-                    &GlobalVars,
+             GlobalVars, EpilogueType](
                 llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>>
                     &DeviceMemory,
                 void **Args,
@@ -696,16 +729,16 @@ public:
               switch (EpilogueType) {
               case EpilogueSnapshotType::Bytes:
                 Instances[DynamicHash].EpilogueFn =
-                    SnapshotT::takeMnemeBytesSnapshot(
-                        GlobalVars, DeviceMemory, Filename, KernelArgSizes,
-                        Args, Stream)
+                    SnapshotT::takeMnemeBytesSnapshot(GlobalVars, DeviceMemory,
+                                                      Filename, KernelArgSizes,
+                                                      Args, Stream)
                         .string();
                 break;
               case EpilogueSnapshotType::Diff:
                 Instances[DynamicHash].EpilogueFn =
-                    SnapshotT::takeMnemeDiffSnapshot(
-                        GlobalVars, DeviceMemory, Filename, *PrologueGlobals,
-                        Stream)
+                    SnapshotT::takeMnemeDiffSnapshot(GlobalVars, DeviceMemory,
+                                                     Filename, *PrologueGlobals,
+                                                     Stream)
                         .string();
                 break;
               }
@@ -764,30 +797,27 @@ public:
 
   template <DeviceVendors VendorTypes>
   std::optional<std::function<
-      void(std::unordered_map<std::string, proteus::GlobalVarInfo> &,
-           llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &, void **,
+      void(llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &, void **,
            typename DeviceTraits<VendorTypes>::DeviceStream_t)>>
   takeSnapshot(
-      void *VAddr, uint64_t VASize, proteus::JITKernelInfo &KInfo,
+      void *VAddr, uint64_t VASize, const RecordedKernelMetadata &KInfo,
       llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &DeviceMemory,
       dim3 &GridDim, dim3 &BlockDim, void **Args, size_t SharedMem,
       typename DeviceTraits<VendorTypes>::DeviceStream_t Stream) {
-    using namespace proteus;
-
     if (!shouldRecord(KInfo.getName())) {
       LOG_INFO("Skip record of Kernel");
       return std::nullopt;
     }
 
+    auto StaticHash = KInfo.getStaticHash().getValue();
     auto IT = KernelRecords.try_emplace(
-        KInfo.getStaticHash().getValue(),
-        KernelInstancesCollection(getDir(), VAddr, VASize, KInfo,
-                                  MaxRecordings));
+        StaticHash, KernelInstancesCollection(getDir(), VAddr, VASize, KInfo,
+                                              MaxRecordings));
     LOG_INFO("Created instance");
     return IT.first->second.takeSnapshot<VendorTypes>(
         MnemeDirectory, KInfo.getBinaryInfo().getVarNameToGlobalInfo(),
-        DeviceMemory, GridDim, BlockDim, Args, SharedMem, Stream,
-        KInfo.getStaticHash().getValue(), EpilogueType);
+        DeviceMemory, GridDim, BlockDim, Args, SharedMem, Stream, StaticHash,
+        EpilogueType);
   }
 
   const std::string getDir() const { return MnemeDirectory.string(); }

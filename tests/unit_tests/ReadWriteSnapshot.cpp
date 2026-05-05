@@ -73,7 +73,7 @@ int main(int argc, char **argv) {
 
   Blob.setHostData(std::unique_ptr<uint8_t[]>(new uint8_t[128]));
 
-  proteus::GlobalVarInfo GV(GlobalData.second, GlobalData.first, 128);
+  RecordedGlobalVar GV{GlobalData.second, GlobalData.first, 128};
 
   std::string KernelName("TestKernel");
   std::shared_ptr<KernelInfo> TestKernel =
@@ -90,16 +90,16 @@ int main(int argc, char **argv) {
   TestKernel->setArgSizes(ArgSizes);
 
   // Create a raw_svector_ostream using the buffer
-  std::unordered_map<std::string, proteus::GlobalVarInfo> GVars;
+  RecordedGlobalVars GVars;
   GVars.try_emplace("Test", GV);
   llvm::DenseMap<void *, MnemeMemoryBlobDevice> DeviceMemMap;
   DeviceMemMap.try_emplace((void *)BlobData.first, std::move(Blob));
   std::filesystem::path SnapshotFN("./test.mneme");
 
   MnemeSnapshot<Vendor>::GlobalSnapshotData PrologueGlobals;
-  MnemeSnapshot<Vendor>::takeMnemeBytesSnapshot(
-      GVars, DeviceMemMap, SnapshotFN, TestKernel->KernelArgSizes, Args, 0,
-      &PrologueGlobals);
+  MnemeSnapshot<Vendor>::takeMnemeBytesSnapshot(GVars, DeviceMemMap, SnapshotFN,
+                                                TestKernel->KernelArgSizes,
+                                                Args, 0, &PrologueGlobals);
 
   std::unordered_map<std::string, ReplayGlobalVar> ReadGVars;
   llvm::DenseMap<void *, MnemeMemoryBlobDevice> ReadDeviceMemMap;
@@ -232,15 +232,15 @@ int main(int argc, char **argv) {
   GlobalData.second[3] ^= 0x9;
   GlobalData.second[4] ^= 0x13;
 
-  auto EC = MnemeDeviceRT::DeviceErrorCheck(MnemeDeviceRT::DeviceCopy(
-      BlobData.first, BlobData.second, 128,
-      MnemeDeviceRT::MemcpyHostToDeviceKind()));
+  auto EC = MnemeDeviceRT::DeviceErrorCheck(
+      MnemeDeviceRT::DeviceCopy(BlobData.first, BlobData.second, 128,
+                                MnemeDeviceRT::MemcpyHostToDeviceKind()));
   if (EC)
     LOG_FATAL("Could not update device blob data");
 
-  EC = MnemeDeviceRT::DeviceErrorCheck(MnemeDeviceRT::DeviceCopy(
-      GlobalData.first, GlobalData.second, 128,
-      MnemeDeviceRT::MemcpyHostToDeviceKind()));
+  EC = MnemeDeviceRT::DeviceErrorCheck(
+      MnemeDeviceRT::DeviceCopy(GlobalData.first, GlobalData.second, 128,
+                                MnemeDeviceRT::MemcpyHostToDeviceKind()));
   if (EC)
     LOG_FATAL("Could not update device global data");
 
@@ -331,7 +331,8 @@ int main(int argc, char **argv) {
   delete[] GlobalData.second;
   delete[] BlobData.second;
 
-  EC = MnemeDeviceRT::DeviceErrorCheck(MnemeDeviceRT::DeviceFree(GlobalData.first));
+  EC = MnemeDeviceRT::DeviceErrorCheck(
+      MnemeDeviceRT::DeviceFree(GlobalData.first));
   if (EC)
     LOG_FATAL("Could not release device memory\n");
 
