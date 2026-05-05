@@ -393,6 +393,65 @@ def test_async_executor_evaluate(monkeypatch):
     assert out.executed is True
 
 
+def test_async_executor_set_ir_sends_ir_to_all_workers(monkeypatch):
+    workers = []
+
+    class FakeHandle:
+        def __init__(self):
+            self._ipc_write_q = queue.Queue()
+            workers.append(self)
+
+    monkeypatch.setattr(
+        "mneme.async_executor.TuneWorkerHandle", lambda *a, **k: FakeHandle()
+    )
+
+    exe = AsyncReplayExecutor(
+        record_db="db",
+        record_id="rid",
+        iterations=3,
+        results_db_dir="/tmp",
+        num_workers=2,
+    )
+
+    exe.set_ir("define void @kernel() { ret void }")
+
+    for worker in workers:
+        assert worker._ipc_write_q.get_nowait() == {
+            "payload": "set_ir",
+            "data": "define void @kernel() { ret void }",
+        }
+        assert worker._ipc_write_q.empty()
+
+
+def test_async_executor_set_ir_normalizes_path(monkeypatch, tmp_path):
+    workers = []
+
+    class FakeHandle:
+        def __init__(self):
+            self._ipc_write_q = queue.Queue()
+            workers.append(self)
+
+    monkeypatch.setattr(
+        "mneme.async_executor.TuneWorkerHandle", lambda *a, **k: FakeHandle()
+    )
+
+    exe = AsyncReplayExecutor(
+        record_db="db",
+        record_id="rid",
+        iterations=3,
+        results_db_dir="/tmp",
+        num_workers=1,
+    )
+    ir_path = tmp_path / "kernel.ll"
+
+    exe.set_ir(ir_path)
+
+    assert workers[0]._ipc_write_q.get_nowait() == {
+        "payload": "set_ir",
+        "data": str(ir_path.absolute()),
+    }
+
+
 def test_async_executor_shutdown(monkeypatch):
     joined = []
 
