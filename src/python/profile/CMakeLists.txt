@@ -1,5 +1,7 @@
 if (MNEME_ENABLE_HIP)
-  add_library(mneme_profile SHARED rocr_profile.cpp)
+  add_library(mneme_profile SHARED
+    rocr_profile.cpp
+    ${MnemeCoreSrcDir}/MnemeRank.cpp)
 
   find_package(rocprofiler-sdk QUIET CONFIG)
   target_include_directories(mneme_profile PRIVATE ${HIP_INCLUDE_DIRS})
@@ -21,7 +23,9 @@ if (MNEME_ENABLE_HIP)
     target_link_libraries(mneme_profile PRIVATE "${ROCPROFILER_SDK_LIBRARY}" dl pthread)
   endif()
 elseif(MNEME_ENABLE_CUDA)
-  add_library(mneme_profile SHARED cupti_profile.cpp)
+  add_library(mneme_profile SHARED
+    cupti_profile.cpp
+    ${MnemeCoreSrcDir}/MnemeRank.cpp)
   target_link_libraries(mneme_profile PRIVATE CUDA::cudart CUDA::cuda_driver  CUDA::cupti)
 endif()
 
