@@ -50,7 +50,7 @@ log "End copying mneme src to ${mneme_src} from ${mneme_orig_src}"
 
 if [[ "$SYS_TYPE" == "toss_4_x86_64_ib" ]]; then
   unset CUDA_VISIBLE_DEVICES
-  ml load cuda/12.2
+  ml load cuda/12.2.2
   setup_conda_env "${test_dir}/miniconda3" "${MNEME_CI_LLVM_VERSION}" "${MNEME_CI_PYTHON_VERSION}"
   export LLVM_INSTALL_DIR=$(llvm-config --prefix)
 elif [[ "$SYS_TYPE" == "toss_4_x86_64_ib_cray" ]]; then
@@ -93,7 +93,7 @@ pushd ${mneme_src}
 pytest --cov-report=xml:coverage-${CI_JOB_ID}.xml --cov-config=.coveragerc python/tests/
 
 # we only need to upload reports once and we only need to test editable installs once.
-if [[ "${MNEME_CI_PYTHON_VERSION}" == "3.10" && "${MNEME_CI_ROCM_VERSION}" == "6.4.2" ]]; then 
+if [[ "${MNEME_CI_PYTHON_VERSION}" == "3.10" && "${MNEME_CI_ROCM_VERSION}" == "7.2.0" ]]; then
   # Upload to Codecov (only if token is available)
   if [[ -n "$CODECOV_TOKEN" ]]; then
     log "Uploading coverage to Codecov..."

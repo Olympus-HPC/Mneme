@@ -6,8 +6,8 @@ using Mneme.
 ## Prerequisites
 
 - A capable system:
-    - AMD supporting ROCM 6.3, 6.4 or 7.1 or,
-    - NVIDIA supporting CUDA 12.2 with an LLVM of version 18, 19 or 20.
+    - AMD supporting ROCm 6.4.3, 7.1.1, or 7.2.0 or,
+    - NVIDIA supporting CUDA 12.2.2 with LLVM 19.1.7, 20.1.8, or 22.1.0.
 - CMake and a C++ compiler
 - Python 3.9+
 
@@ -28,7 +28,7 @@ pip install -e .
 NVIDIA systems do not provide a proper LLVM installation. You can install one LLVM installation by using conda:
 ```bash
 export MINICONDA_DIR=miniconda
-export LLVM_VERSION=18.1.8
+export LLVM_VERSION=22.1.0
 PYTHON_VERSION=3.10
 mkdir -p ${MINICONDA_DIR}
 wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-$(uname -m).sh -O ${MINICONDA_DIR}/miniconda.sh

@@ -140,6 +140,7 @@ cmake \
 elif [[ "$SYS_TYPE" == "toss_4_x86_64_ib_cray" ]]; then
   ml load rocm/${MNEME_CI_ROCM_VERSION}
   export LLVM_INSTALL_DIR=${ROCM_PATH}/llvm
+  export CMAKE_HIP_ARCHITECTURES="gfx942;gfx90a"
   echo "LLVM INSTALL DIR is ${LLVM_INSTALL_DIR}"
 
   build_proteus "ON" "OFF" $installDir
@@ -155,6 +156,7 @@ elif [[ "$SYS_TYPE" == "toss_4_x86_64_ib_cray" ]]; then
     -DCMAKE_INSTALL_PREFIX=$installDir \
     -DCMAKE_CXX_COMPILER=amdclang++ \
     -DCMAKE_C_COMPILER=amdclang \
+    -DCMAKE_HIP_ARCHITECTURES=${CMAKE_HIP_ARCHITECTURES} \
     -DLLVM_INSTALL_DIR=${LLVM_INSTALL_DIR} \
     -DMNEME_ENABLE_HIP=On \
     -DMNEME_ENABLE_LOGGER=${MNEME_CI_ENABLE_LOGGER} \
