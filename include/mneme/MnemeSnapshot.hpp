@@ -78,6 +78,7 @@ template <DeviceVendors VendorTypes> class MnemeSnapshot {
   static constexpr size_t DiffMagicSize = sizeof(DiffMagic) - 1;
   static constexpr size_t DiffChunkSize = 1 << 20;
 
+
   static bool isDiffBuffer(llvm::StringRef Buffer) {
     return Buffer.size() >= DiffMagicSize &&
            Buffer.take_front(DiffMagicSize) == llvm::StringRef(DiffMagic);
@@ -89,7 +90,7 @@ template <DeviceVendors VendorTypes> class MnemeSnapshot {
       LOG_FATAL("Cannot diff buffers with different sizes");
 
     // Count the number of contiguous ranges that have changed between Base and
-    // Current. We want to write out the number of ranges so that the reader
+    // Current. We want to write out the number of ranges so that the reader 
     // can know how many ranges to read.
     size_t Count = 0;
     bool InRange = false;
@@ -115,7 +116,7 @@ template <DeviceVendors VendorTypes> class MnemeSnapshot {
     if (!UpdateBase.empty() && UpdateBase.size() != Base.size())
       LOG_FATAL("Cannot update diff base with mismatched buffer size");
 
-    // Write out the contiguous ranges that have changed between Base
+    // Write out the contiguous ranges that have changed between Base 
     // and Current.
     size_t Count = 0;
     size_t I = 0;
@@ -141,9 +142,8 @@ template <DeviceVendors VendorTypes> class MnemeSnapshot {
     return Count;
   }
 
-  static void
-  writeCountAndWriteChangedRanges(llvm::raw_ostream &OS,
-                                  MnemeMemoryBlob<VendorTypes> &Blob) {
+  static void writeCountAndWriteChangedRanges(
+      llvm::raw_ostream &OS, MnemeMemoryBlob<VendorTypes> &Blob) {
     auto Size = Blob.getSize();
 
     // early exit
@@ -175,7 +175,7 @@ template <DeviceVendors VendorTypes> class MnemeSnapshot {
       llvm::ArrayRef<uint8_t> ChunkCurrent(Scratch.get(), ChunkSize);
       llvm::MutableArrayRef<uint8_t> UpdateBase(Base + Offset, ChunkSize);
       NumRanges += writeChangedRanges(DiffOS, ChunkBase, ChunkCurrent, Offset,
-                                      UpdateBase);
+                                       UpdateBase);
     }
 
     util::writeScalar(OS, NumRanges);
@@ -287,16 +287,16 @@ template <DeviceVendors VendorTypes> class MnemeSnapshot {
       if (Blob.getActualSize() != ActualSize || Blob.getSize() != Size)
         LOG_FATAL("Mneme diff memory blob size mismatch");
       Blob.setMetadata(MD);
-      applyDiffRanges(CurrentPtr,
-                      llvm::MutableArrayRef<uint8_t>(Blob.getHostData().get(),
-                                                     Blob.getSize()),
-                      NumRanges);
+      applyDiffRanges(
+          CurrentPtr,
+          llvm::MutableArrayRef<uint8_t>(Blob.getHostData().get(),
+                                         Blob.getSize()),
+          NumRanges);
     }
   }
 
 public:
-  using GlobalSnapshotData =
-      std::unordered_map<std::string, std::vector<uint8_t>>;
+  using GlobalSnapshotData = std::unordered_map<std::string, std::vector<uint8_t>>;
 
   static std::pair<std::string, ReplayGlobalVar>
   fromBuffer(const char *&Buffer) {
@@ -531,7 +531,7 @@ class KernelInstancesCollection {
 
 private:
   // Parse Proteus's serialized bitcode in a Mneme-owned LLVMContext and
-  // extract per-argument metadata. Operating on a Mneme-owned Module
+  // extract per-argument metadata. Operating on a Mneme-owned Module 
   // keeps Mneme's LLVM runtime from touching any
   // Proteus-owned LLVM C++ object across the DSO boundary.
   void extractArgInfoFromBitcode(llvm::StringRef Bitcode) {
@@ -610,8 +610,8 @@ public:
       LOG_FATAL("Empty bitcode for kernel " + KName);
 
     extractArgInfoFromBitcode(Bitcode);
-    ModuleFiles.emplace_back(
-        StoreModuleBytes(Bitcode, MnemeDirectory, KInfo.getStaticHash()));
+    ModuleFiles.emplace_back(StoreModuleBytes(
+        Bitcode, MnemeDirectory, KInfo.getStaticHash()));
   }
 
   llvm::stable_hash computeHash(dim3 &GridDim, dim3 &BlockDim,
@@ -690,16 +690,16 @@ public:
               switch (EpilogueType) {
               case EpilogueSnapshotType::Bytes:
                 Instances[DynamicHash].EpilogueFn =
-                    SnapshotT::takeMnemeBytesSnapshot(GlobalVars, DeviceMemory,
-                                                      Filename, KernelArgSizes,
-                                                      Args, Stream)
+                    SnapshotT::takeMnemeBytesSnapshot(
+                        GlobalVars, DeviceMemory, Filename, KernelArgSizes,
+                        Args, Stream)
                         .string();
                 break;
               case EpilogueSnapshotType::Diff:
                 Instances[DynamicHash].EpilogueFn =
-                    SnapshotT::takeMnemeDiffSnapshot(GlobalVars, DeviceMemory,
-                                                     Filename, *PrologueGlobals,
-                                                     Stream)
+                    SnapshotT::takeMnemeDiffSnapshot(
+                        GlobalVars, DeviceMemory, Filename, *PrologueGlobals,
+                        Stream)
                         .string();
                 break;
               }

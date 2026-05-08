@@ -194,9 +194,8 @@ public:
           DeviceID, (void *)MnemeDeviceRT::getSuggestedAddr());
     }
 
-    // NOTE: Here we do something conceptually different. We no longer go
-    // through proteus. We call immediately the vendor launcher. Thus we avoid
-    // overheads from caching etc.
+    // NOTE: Here we do something conceptually different. We no longer go through
+    // proteus. We call immediately the vendor launcher. Thus we avoid overheads from caching etc.
     LOG_DEBUG("Received OptionalKernel Info {}", (void *)origLaunchKernel);
     auto OptionalKernelInfo = proteus::runtime::captureKernelMetadata(func);
     if (!OptionalKernelInfo) {
