@@ -1,6 +1,6 @@
 
 set(MnemeCoreSrcDir ${CMAKE_CURRENT_SOURCE_DIR})
-set(AnnotationRuntimeSRC MnemeAnnotation.cpp MnemeRank.cpp)
+set(AnnotationRuntimeSRC MnemeAnnotation.cpp)
 set(RecordLibSRC MnemeAnnotationInternal.cpp)
 set(ReplaySRC MnemeReplay.cpp MnemePageManager.cpp MnemeDeviceCode.cpp MnemeAnnotationInternal.cpp)
 
