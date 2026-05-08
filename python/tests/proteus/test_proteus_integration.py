@@ -419,8 +419,15 @@ def test_launch_bounds(gpu_backend, native_arch):
         assert '"amdgpu-flat-work-group-size"="1,128"' in str(mod)
         assert '"amdgpu-waves-per-eu"="2,2"' in str(mod)
     elif gpu_backend == "cuda":
-        assert '!5 = !{ptr @kernel_add, !"maxntid", i32 128}' in str(mod)
-        assert '!6 = !{ptr @kernel_add, !"minctasm", i32 2}' in str(mod)
+        mod_str = str(mod)
+        has_max_threads = '"nvvm.maxntid"="128"' in mod_str or re.search(
+            r'!\d+ = !{ptr @kernel_add, !"maxntid", i32 128}', mod_str
+        )
+        has_min_blocks = '"nvvm.minctasm"="2"' in mod_str or re.search(
+            r'!\d+ = !{ptr @kernel_add, !"minctasm", i32 2}', mod_str
+        )
+        assert has_max_threads
+        assert has_min_blocks
     else:
         raise RuntimeError("Unknown backend")
 

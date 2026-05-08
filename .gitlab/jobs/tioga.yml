@@ -57,7 +57,7 @@ variables:
   parallel:
     matrix:
       - MNEME_CI_ENABLE_LOGGER: ["on", "off"]
-        MNEME_CI_ROCM_VERSION: ["6.3.1", "6.4.2", "7.1.1"]
+        MNEME_CI_ROCM_VERSION: ["6.4.3", "7.1.1", "7.2.0"]
 
 build-and-test-tioga:
   extends: [.base-job, .build-variants]

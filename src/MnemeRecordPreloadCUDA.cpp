@@ -77,7 +77,7 @@ cudaError_t cudaGetDevice(int *deviceID) {
   return mneme.rtGetDevice(deviceID);
 }
 
-cudaError_t __jit_launch_kernel(void *Kernel, dim3 GridDim, dim3 BlockDim,
+cudaError_t __proteus_launch_kernel(void *Kernel, dim3 GridDim, dim3 BlockDim,
                                void **KernelArgs, uint64_t ShmemSize,
                                void *Stream) {
   LOG_DEBUG("Enetering Mneme to launch kernel");
