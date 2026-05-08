@@ -21,8 +21,7 @@
 #include <llvm/IR/Module.h>
 #include <mutex>
 
-#include <proteus/impl/CompilerInterfaceDevice.h>
-#include <proteus/impl/JitEngineDevice.h>
+#include <proteus/KernelMetadata.h>
 
 #include "mneme/DeviceTraits.hpp"
 #include "mneme/MnemeKernelInfo.hpp"
@@ -182,9 +181,6 @@ public:
   DeviceError_t rtLaunchKernel(const void *func, dim3 &GridDim, dim3 &BlockDim,
                                void **Args, size_t SharedMem,
                                DeviceStream_t Stream) {
-    using namespace llvm;
-    using namespace proteus;
-
     if (!PM) {
       // NOTE: We need this arch cause internally we initialize the device.
       // FIXME: We need to have a DeviceTrait function to initialize the GPU
@@ -198,21 +194,17 @@ public:
           DeviceID, (void *)MnemeDeviceRT::getSuggestedAddr());
     }
 
-    auto &Proteus = JitDeviceImplT::instance();
-    auto OptionalKernelInfo = Proteus.getJITKernelInfo(func);
     // NOTE: Here we do something conceptually different. We no longer go through
     // proteus. We call immediately the vendor launcher. Thus we avoid overheads from caching etc.
     LOG_DEBUG("Received OptionalKernel Info {}", (void *)origLaunchKernel);
+    auto OptionalKernelInfo = proteus::runtime::captureKernelMetadata(func);
     if (!OptionalKernelInfo) {
       LOG_DEBUG("Information for kernel  {} is not included", func);
       return origLaunchKernel(func, GridDim, BlockDim, Args, SharedMem, Stream);
     }
-    auto &KInfo = OptionalKernelInfo.value().get();
+    auto &KInfo = OptionalKernelInfo.value();
     LOG_DEBUG("Continue with {}", KInfo.getName());
-    Proteus.extractModuleAndBitcode(KInfo);
-
-    auto Hash = Proteus.getStaticHash(KInfo);
-    LOG_INFO("Hash value is {}", Hash.getValue());
+    LOG_INFO("Hash value is {}", KInfo.getStaticHash());
 
     auto RecordAction = DB.takeSnapshot<VendorTypes>(
         PM->getVAStart(), PM->getTotalVASize(), KInfo, AllocatedBlobs, GridDim,
@@ -227,8 +219,7 @@ public:
     auto ret =
         origLaunchKernel(func, GridDim, BlockDim, Args, SharedMem, Stream);
     if (RecordAction) {
-      (*RecordAction)(KInfo.getBinaryInfo().getVarNameToGlobalInfo(),
-                      AllocatedBlobs, Args, Stream);
+      (*RecordAction)(AllocatedBlobs, Args, Stream);
       LOG_INFO("Successfully Recorded Epilogue of Kernel {} NAME:{} GRID:({}, "
                "{}, {}) "
                "BLOCK:({}, {}, "
