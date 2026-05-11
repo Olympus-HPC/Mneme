@@ -107,6 +107,53 @@ def test_pipeline_roundtrip():
     assert "mem2reg" in s
 
 
+def test_pipeline_roundtrip_generic_o3_passes_with_options():
+    pm = PipelineManager()
+    pipeline = (
+        "function<eager-inv>("
+        "instcombine<max-iterations=1;no-use-loop-info;no-verify-fixpoint>,"
+        "loop-unroll<O3>,"
+        "mldst-motion<no-split-footer-bb>,"
+        "speculative-execution<only-if-divergent-target>,"
+        "correlated-propagation)"
+    )
+    parsed = pm.from_string(pipeline)
+    s = pm.to_string(parsed)
+
+    assert len(parsed) == 5
+    assert "instcombine<max-iterations=1;no-use-loop-info;no-verify-fixpoint>" in s
+    assert "loop-unroll<O3>" in s
+    assert "mldst-motion<no-split-footer-bb>" in s
+    assert "speculative-execution<only-if-divergent-target>" in s
+    assert "correlated-propagation" in s
+
+
+def test_pipeline_roundtrip_amdgpu_middle_end_passes():
+    pm = PipelineManager()
+    pipeline = (
+        "amdgpu-printf-runtime-binding,"
+        "amdgpu-unify-metadata,"
+        "function("
+        "amdgpu-promote-kernel-arguments,"
+        "amdgpu-lower-kernel-attributes,"
+        "amdgpu-promote-alloca-to-vector,"
+        "amdgpu-usenative,"
+        "amdgpu-simplifylib)"
+    )
+    parsed = pm.from_string(pipeline)
+    s = pm.to_string(parsed)
+
+    assert len(parsed) == 7
+    assert "amdgpu-printf-runtime-binding" in s
+    assert "amdgpu-unify-metadata" in s
+    assert "function<eager-inv>(" in s
+    assert "amdgpu-promote-kernel-arguments" in s
+    assert "amdgpu-lower-kernel-attributes" in s
+    assert "amdgpu-promote-alloca-to-vector" in s
+    assert "amdgpu-usenative" in s
+    assert "amdgpu-simplifylib" in s
+
+
 # ------------------------------------------------------------
 # Random pipeline generation
 # ------------------------------------------------------------
@@ -129,4 +176,3 @@ def test_generate_length_clamped_max():
     max_len = len(pm._passes)
     p = pm._generate_random_pipeline(mean_passes=max_len * 10, std_passes=1)
     assert len(p) == max_len
-

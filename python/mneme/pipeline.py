@@ -9,6 +9,8 @@ from mneme.mneme_logging import logger
 
 __all_passes__ = """Module passes:
   always-inline
+  amdgpu-printf-runtime-binding
+  amdgpu-unify-metadata
   annotation2metadata
   attributor
   attributor-light
@@ -149,6 +151,11 @@ Function passes:
   add-discriminators
   aggressive-instcombine
   alignment-from-assumptions
+  amdgpu-lower-kernel-attributes
+  amdgpu-promote-alloca-to-vector
+  amdgpu-promote-kernel-arguments
+  amdgpu-simplifylib
+  amdgpu-usenative
   annotation-remarks
   assume-builder
   assume-simplify
@@ -746,6 +753,33 @@ class PipelineManager:
         }
         current_state = None
         passes = list()
+        allowed_skipped_passes = {
+            "amdgpu-lower-kernel-attributes",
+            "amdgpu-printf-runtime-binding",
+            "amdgpu-promote-alloca-to-vector",
+            "amdgpu-promote-kernel-arguments",
+            "amdgpu-simplifylib",
+            "amdgpu-unify-metadata",
+            "amdgpu-usenative",
+            "annotation-remarks",
+            "cg-profile",
+            "chr",
+            "coro-cleanup",
+            "coro-early",
+            "coro-elide",
+            "coro-split",
+            "correlated-propagation",
+            "ee-instrument",
+            "forceattrs",
+            "heterogeneous-debug-verify",
+            "inject-tli-mappings",
+            "instcombine",
+            "libcalls-shrinkwrap",
+            "loop-unroll",
+            "mldst-motion",
+            "speculative-execution",
+            "transform-warning",
+        }
         skip = {
             "lowerswitch",
             "flattencfg",
@@ -873,18 +907,25 @@ class PipelineManager:
             # We skip all analysis
             if options[1]:
                 continue
+
+            name = line
+            params = None
+            if options[0] or "<" in line:
+                name, params = parse_llvm_pass_options(line)
+
             skipflag = False
             for v in skip:
                 if v in line:
                     skipflag = True
+            if name in allowed_skipped_passes:
+                skipflag = False
             if skipflag:
                 continue
 
-            if options[0]:
-                name, params = parse_llvm_pass_options(line)
+            if params is not None:
                 passes.append(AbstractPass(name, params, options[2], options[1]))
             else:
-                passes.append(AbstractPass(line, None, options[2], options[1]))
+                passes.append(AbstractPass(name, None, options[2], options[1]))
 
         return passes
 
