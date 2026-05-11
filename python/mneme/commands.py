@@ -236,6 +236,13 @@ class Record:
             help="The maximum number of times to record the same GPU kernel (function) with different dynamic hashes",
         )
         parser.add_argument(
+            "-sr",
+            "--per-kernel-skip-recordings",
+            type=int,
+            default=0,
+            help="The number of matching GPU kernel launches to skip before recording each kernel",
+        )
+        parser.add_argument(
             "--epilogue-format",
             choices=["bytes", "diff"],
             default="bytes",
@@ -265,6 +272,8 @@ class Record:
         record_env["MNEME_PAGE_SIZE"] = str(args.virtual_address_space_size)
         logger.debug(f"MNEME_MAX_RECORDINGS={args.per_kernel_max_recordings}")
         record_env["MNEME_MAX_RECORDINGS"] = str(args.per_kernel_max_recordings)
+        logger.debug(f"MNEME_SKIP_RECORDINGS={args.per_kernel_skip_recordings}")
+        record_env["MNEME_SKIP_RECORDINGS"] = str(args.per_kernel_skip_recordings)
         record_db_dir = Path(args.record_db_dir).resolve()
         if record_db_dir.exists() and not record_db_dir.is_dir():
             raise NotADirectoryError(f"Path '{args.record_db_dir}' is not a directory")

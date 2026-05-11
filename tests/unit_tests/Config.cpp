@@ -24,6 +24,7 @@ void clearMnemeEnv() {
   unsetenv("MNEME_RR_KERNELS");
   unsetenv("MNEME_DATA_DIR");
   unsetenv("MNEME_MAX_RECORDINGS");
+  unsetenv("MNEME_SKIP_RECORDINGS");
   unsetenv("MNEME_PAGE_SIZE");
   unsetenv("MNEME_LOG_LEVEL");
   unsetenv("MNEME_LOG_DIR");
@@ -47,6 +48,8 @@ int main() {
     expect(Conf.getDataDirectory() == std::filesystem::current_path(),
            "MNEME_DATA_DIR should default to current path");
     expect(Conf.MaxRecordings == 4, "MNEME_MAX_RECORDINGS should default to 4");
+    expect(Conf.SkipRecordings == 0,
+           "MNEME_SKIP_RECORDINGS should default to 0");
     expect(!Conf.PageSizeGiB, "MNEME_PAGE_SIZE should default to unset");
     expect(Conf.getPageSizeBytesOrDefault(64) == 64 * GiB,
            "HIP page size fallback should be 64 GiB");
@@ -63,6 +66,7 @@ int main() {
   setenv("MNEME_RR_KERNELS", "_two", 1);
   setenv("MNEME_DATA_DIR", TempDir.c_str(), 1);
   setenv("MNEME_MAX_RECORDINGS", "8", 1);
+  setenv("MNEME_SKIP_RECORDINGS", "2", 1);
   setenv("MNEME_PAGE_SIZE", "3", 1);
   setenv("MNEME_LOG_LEVEL", "debug", 1);
   setenv("MNEME_LOG_DIR", TempDir.c_str(), 1);
@@ -75,6 +79,8 @@ int main() {
            "MNEME_DATA_DIR should use the configured directory");
     expect(Conf.MaxRecordings == 8,
            "MNEME_MAX_RECORDINGS should use the configured value");
+    expect(Conf.SkipRecordings == 2,
+           "MNEME_SKIP_RECORDINGS should use the configured value");
     expect(Conf.PageSizeGiB && *Conf.PageSizeGiB == 3,
            "MNEME_PAGE_SIZE should parse as GiB");
     expect(Conf.getPageSizeBytesOrDefault(64) == 3 * GiB,
@@ -88,12 +94,15 @@ int main() {
   }
 
   setenv("MNEME_MAX_RECORDINGS", "12abc", 1);
+  setenv("MNEME_SKIP_RECORDINGS", "6abc", 1);
   setenv("MNEME_PAGE_SIZE", "5abc", 1);
   setenv("MNEME_LOG_LEVEL", "verbose", 1);
   {
     auto Conf = Config::createFromEnvironment();
     expect(Conf.MaxRecordings == 12,
            "MNEME_MAX_RECORDINGS should keep atoi-style parsing");
+    expect(Conf.SkipRecordings == 6,
+           "MNEME_SKIP_RECORDINGS should keep atoi-style parsing");
     expect(Conf.PageSizeGiB && *Conf.PageSizeGiB == 5,
            "MNEME_PAGE_SIZE should keep atol-style parsing");
     expect(Conf.MnemeLogLevel == LogLevel::Info,
@@ -101,12 +110,15 @@ int main() {
   }
 
   setenv("MNEME_MAX_RECORDINGS", "abc", 1);
+  setenv("MNEME_SKIP_RECORDINGS", "abc", 1);
   setenv("MNEME_PAGE_SIZE", "abc", 1);
   setenv("MNEME_EPILOGUE_TYPE", "bytes", 1);
   {
     auto Conf = Config::createFromEnvironment();
     expect(Conf.MaxRecordings == 0,
            "invalid MNEME_MAX_RECORDINGS should parse to 0");
+    expect(Conf.SkipRecordings == 0,
+           "invalid MNEME_SKIP_RECORDINGS should parse to 0");
     expect(Conf.PageSizeGiB && *Conf.PageSizeGiB == 0,
            "invalid MNEME_PAGE_SIZE should parse to 0");
     expect(Conf.EpilogueType == EpilogueSnapshotType::Bytes,

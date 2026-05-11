@@ -63,6 +63,8 @@ def test_record_happy_path(tmp_path, record_parser, monkeypatch):
             "8",
             "--per-kernel-max-recordings",
             "3",
+            "--per-kernel-skip-recordings",
+            "2",
             "--",
             fake_binary,
             "42",
@@ -79,6 +81,7 @@ def test_record_happy_path(tmp_path, record_parser, monkeypatch):
     assert env["LD_PRELOAD"] == fake_lib
     assert env["MNEME_PAGE_SIZE"] == "8"
     assert env["MNEME_MAX_RECORDINGS"] == "3"
+    assert env["MNEME_SKIP_RECORDINGS"] == "2"
     assert env["MNEME_DATA_DIR"] == str(record_dir)
     assert env["MNEME_EPILOGUE_TYPE"] == "bytes"
     assert env["MNEME_LOG_LEVEL"] == "DEBUG"
@@ -256,3 +259,4 @@ def test_record_default_page_size(record_parser, tmp_path, monkeypatch):
     Record.run(args, verbosity=None)
 
     assert captured["env"]["MNEME_PAGE_SIZE"] == "4"  # default from code
+    assert captured["env"]["MNEME_SKIP_RECORDINGS"] == "0"

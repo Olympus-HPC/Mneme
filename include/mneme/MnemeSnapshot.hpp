@@ -714,7 +714,9 @@ class RecordDatabase {
   std::string RegexStr;
   bool HasRegex;
   llvm::DenseMap<uint64_t, KernelInstancesCollection> KernelRecords;
+  llvm::DenseMap<uint64_t, uint64_t> KernelLaunchCounts;
   uint64_t MaxRecordings;
+  uint64_t SkipRecordings;
   EpilogueSnapshotType EpilogueType;
 
 public:
@@ -728,6 +730,7 @@ public:
 
     MnemeDirectory = Conf.getDataDirectory();
     MaxRecordings = Conf.MaxRecordings;
+    SkipRecordings = Conf.SkipRecordings;
     EpilogueType = Conf.EpilogueType;
   }
 
@@ -772,6 +775,14 @@ public:
     }
 
     auto StaticHash = KInfo.getStaticHash();
+    uint64_t &LaunchCount = KernelLaunchCounts[StaticHash];
+    LaunchCount++;
+    if (LaunchCount <= SkipRecordings) {
+      LOG_DEBUG("Skipping recording {} of {} for kernel {}", LaunchCount,
+                SkipRecordings, KInfo.getName());
+      return std::nullopt;
+    }
+
     auto IT = KernelRecords.try_emplace(
         StaticHash, KernelInstancesCollection(getDir(), VAddr, VASize, KInfo,
                                               MaxRecordings));
