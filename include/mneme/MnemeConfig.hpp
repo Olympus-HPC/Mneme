@@ -91,6 +91,7 @@ public:
 
   const std::optional<std::string> KernelRegex;
   const uint64_t MaxRecordings;
+  const uint64_t SkipRecordings;
   const std::optional<long> PageSizeGiB;
   const LogLevel MnemeLogLevel;
   const EpilogueSnapshotType EpilogueType;
@@ -124,6 +125,8 @@ private:
       : KernelRegex(config_detail::getEnvOrDefaultString("MNEME_RR_KERNELS")),
         MaxRecordings(config_detail::getEnvOrDefaultIntLenient(
             "MNEME_MAX_RECORDINGS", 4)),
+        SkipRecordings(config_detail::getEnvOrDefaultIntLenient(
+            "MNEME_SKIP_RECORDINGS", 0)),
         PageSizeGiB(
             config_detail::getEnvOrDefaultPageSizeGiB("MNEME_PAGE_SIZE")),
         MnemeLogLevel(config_detail::getEnvOrDefaultLogLevel(
