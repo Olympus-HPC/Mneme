@@ -16,3 +16,4 @@ __pycache__/
 *.mneme
 *.o
 *.egginfo/
+*.egg-info/
