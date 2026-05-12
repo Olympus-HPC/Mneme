@@ -1,11 +1,21 @@
 #pragma once
 
+#include "mneme/MnemeRank.hpp"
+
+#include <algorithm>
+#include <cctype>
+#include <cerrno>
+#include <climits>
 #include <cstdint>
 #include <cstdlib>
 #include <filesystem>
+#include <iostream>
 #include <optional>
+#include <set>
+#include <sstream>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 
 namespace mneme {
 
@@ -13,6 +23,34 @@ enum class LogLevel { Trace, Debug, Info, Warn, Error, Critical, Off };
 enum class EpilogueSnapshotType { Bytes, Diff };
 
 namespace config_detail {
+
+inline std::optional<int> parseInteger(std::string_view Text) {
+  if (Text.empty())
+    return std::nullopt;
+
+  std::string NullTerminated(Text);
+  errno = 0;
+  char *End = nullptr;
+  long Parsed = std::strtol(NullTerminated.c_str(), &End, 10);
+  if (errno == ERANGE || End == NullTerminated.c_str() || *End != '\0' ||
+      Parsed > INT_MAX || Parsed < INT_MIN)
+    return std::nullopt;
+
+  return static_cast<int>(Parsed);
+}
+
+inline void warnMalformedEnvironmentValue(const char *Description,
+                                          const char *Name,
+                                          std::string_view Value,
+                                          const char *Suffix = "") {
+  std::ostringstream Message;
+  Message << "[mneme] Ignoring malformed " << Description << " " << Name << "='"
+          << Value << "'";
+  if (Suffix && Suffix[0] != '\0')
+    Message << " " << Suffix;
+
+  std::cerr << Message.str() << "\n";
+}
 
 inline std::optional<std::string> getEnvOrDefaultString(const char *VarName) {
   const char *EnvValue = std::getenv(VarName);
@@ -78,6 +116,58 @@ inline EpilogueSnapshotType getEnvOrDefaultEpilogueSnapshotType(
                            "'. Expected 'bytes' or 'diff'.");
 }
 
+inline bool defaultRecordingPolicy(const std::optional<int> &DistributedRank) {
+  if (!DistributedRank)
+    return true;
+  return *DistributedRank == 0;
+}
+
+inline std::optional<std::set<int>>
+parseRecordRanksList(const std::string &Value) {
+  std::set<int> Parsed;
+  size_t Start = 0;
+  while (Start <= Value.size()) {
+    size_t Comma = Value.find(',', Start);
+    std::string Token = Value.substr(
+        Start, Comma == std::string::npos ? std::string::npos : Comma - Start);
+
+    auto ParsedRank = parseInteger(Token);
+    if (!ParsedRank || *ParsedRank < 0)
+      return std::nullopt;
+
+    Parsed.insert(*ParsedRank);
+    if (Comma == std::string::npos)
+      break;
+    Start = Comma + 1;
+  }
+
+  return Parsed;
+}
+
+inline bool computeRecordingEnabledForCurrentRank() {
+  auto DistributedRank = detectDistributedRank();
+  const char *EnvValue = std::getenv("MNEME_RECORD_RANKS");
+  if (!EnvValue || EnvValue[0] == '\0')
+    return defaultRecordingPolicy(DistributedRank);
+
+  std::string Value(EnvValue);
+  std::string Lower = Value;
+  std::transform(Lower.begin(), Lower.end(), Lower.begin(),
+                 [](unsigned char C) { return std::tolower(C); });
+  if (Lower == "all")
+    return true;
+
+  auto ParsedRanks = parseRecordRanksList(Value);
+  if (!ParsedRanks) {
+    warnMalformedEnvironmentValue("environment variable", "MNEME_RECORD_RANKS",
+                                  Value,
+                                  "; falling back to default rank policy");
+    return defaultRecordingPolicy(DistributedRank);
+  }
+
+  return ParsedRanks->count(DistributedRank.value_or(0)) > 0;
+}
+
 } // namespace config_detail
 
 class Config {
@@ -95,6 +185,10 @@ public:
   const std::optional<long> PageSizeGiB;
   const LogLevel MnemeLogLevel;
   const EpilogueSnapshotType EpilogueType;
+
+  bool isRecordingEnabledForCurrentRank() const {
+    return RecordingEnabledThisRank;
+  }
 
   std::filesystem::path getDataDirectory() const {
     auto Dir = MnemeDataDir.value_or(std::filesystem::current_path().string());
@@ -120,6 +214,7 @@ public:
 private:
   const std::optional<std::string> MnemeDataDir;
   const std::optional<std::string> MnemeLogDir;
+  const bool RecordingEnabledThisRank;
 
   Config()
       : KernelRegex(config_detail::getEnvOrDefaultString("MNEME_RR_KERNELS")),
@@ -134,7 +229,9 @@ private:
         EpilogueType(config_detail::getEnvOrDefaultEpilogueSnapshotType(
             "MNEME_EPILOGUE_TYPE", EpilogueSnapshotType::Bytes)),
         MnemeDataDir(config_detail::getEnvOrDefaultString("MNEME_DATA_DIR")),
-        MnemeLogDir(config_detail::getEnvOrDefaultString("MNEME_LOG_DIR")) {}
+        MnemeLogDir(config_detail::getEnvOrDefaultString("MNEME_LOG_DIR")),
+        RecordingEnabledThisRank(
+            config_detail::computeRecordingEnabledForCurrentRank()) {}
 };
 
 } // namespace mneme

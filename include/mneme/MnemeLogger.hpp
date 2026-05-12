@@ -3,9 +3,9 @@
 #ifdef MNEME_ENABLE_LOGGER
 
 #include "mneme/MnemeConfig.hpp"
+#include "mneme/MnemeRank.hpp"
 #include "spdlog/spdlog.h"
 #include <climits>
-#include <cstdlib> // getenv
 #include <filesystem>
 #include <iostream>
 #include <memory>
@@ -25,18 +25,13 @@ inline std::string getLogFileName() {
     exit(-1);
   }
 
-  std::string id;
-  if (const char *rid = std::getenv("SLURM_PROCID")) {
-    id = std::string(rid);
-  } else if (const char *jsm = std::getenv("JSM_NAMESPACE_RANK")) {
-    id = std::string(jsm);
-  } else if (const char *pmi = std::getenv("PMIX_RANK")) {
-    id = std::stoi(pmi);
-  } else {
-    id = std::to_string(getpid());
-  }
-  id = "mneme-" + std::string(hostname) + "-" + id + ".log";
-  return id;
+  std::string RankId;
+  if (auto Rank = detectDistributedRank())
+    RankId = std::to_string(*Rank);
+  else
+    RankId = std::to_string(getpid());
+
+  return "mneme-" + std::string(hostname) + "-" + RankId + ".log";
 }
 
 inline spdlog::level::level_enum toSpdLogLevel(LogLevel Level) {

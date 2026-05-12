@@ -1,4 +1,5 @@
 #include "mneme/MnemeConfig.hpp"
+#include "mneme/MnemeRank.hpp"
 
 #include <cstdlib>
 #include <filesystem>
@@ -29,6 +30,21 @@ void clearMnemeEnv() {
   unsetenv("MNEME_LOG_LEVEL");
   unsetenv("MNEME_LOG_DIR");
   unsetenv("MNEME_EPILOGUE_TYPE");
+  unsetenv("MNEME_RECORD_RANKS");
+  unsetenv("FLUX_TASK_RANK");
+  unsetenv("OMPI_COMM_WORLD_RANK");
+  unsetenv("PMI_RANK");
+  unsetenv("MPI_RANK");
+  unsetenv("SLURM_PROCID");
+  unsetenv("JSM_NAMESPACE_RANK");
+  unsetenv("PMIX_RANK");
+  unsetenv("PBS_TASKNUM");
+  unsetenv("FLUX_JOB_SIZE");
+  unsetenv("FLUX_NTASKS");
+  unsetenv("OMPI_COMM_WORLD_SIZE");
+  unsetenv("PMI_SIZE");
+  unsetenv("SLURM_NTASKS");
+  unsetenv("PMIX_SIZE");
 }
 
 std::filesystem::path makeTempDir() {
@@ -135,6 +151,121 @@ int main() {
       Threw = true;
     }
     expect(Threw, "invalid MNEME_EPILOGUE_TYPE should throw");
+  }
+
+  clearMnemeEnv();
+
+  // MNEME_RECORD_RANKS: default policy, no rank env -> single-process records.
+  {
+    auto Conf = Config::createFromEnvironment();
+    expect(Conf.isRecordingEnabledForCurrentRank(),
+           "Single-process run (no rank env) should record by default");
+  }
+
+  // MNEME_RECORD_RANKS: default policy, rank 0 in MPI run.
+  setenv("OMPI_COMM_WORLD_RANK", "0", 1);
+  {
+    auto Conf = Config::createFromEnvironment();
+    expect(Conf.isRecordingEnabledForCurrentRank(),
+           "Default policy should record on rank 0");
+  }
+
+  // MNEME_RECORD_RANKS: default policy, rank 1 in MPI run -> excluded.
+  setenv("OMPI_COMM_WORLD_RANK", "1", 1);
+  {
+    auto Conf = Config::createFromEnvironment();
+    expect(!Conf.isRecordingEnabledForCurrentRank(),
+           "Default policy should exclude rank 1");
+  }
+
+  // MNEME_RECORD_RANKS=all overrides default policy.
+  setenv("OMPI_COMM_WORLD_RANK", "2", 1);
+  setenv("MNEME_RECORD_RANKS", "all", 1);
+  {
+    auto Conf = Config::createFromEnvironment();
+    expect(Conf.isRecordingEnabledForCurrentRank(),
+           "Explicit 'all' should record on every rank");
+  }
+
+  // MNEME_RECORD_RANKS subset hit / miss.
+  setenv("MNEME_RECORD_RANKS", "0,1,3", 1);
+  setenv("OMPI_COMM_WORLD_RANK", "1", 1);
+  {
+    auto Conf = Config::createFromEnvironment();
+    expect(Conf.isRecordingEnabledForCurrentRank(),
+           "Rank 1 should record when listed in MNEME_RECORD_RANKS=0,1,3");
+  }
+  setenv("OMPI_COMM_WORLD_RANK", "2", 1);
+  {
+    auto Conf = Config::createFromEnvironment();
+    expect(
+        !Conf.isRecordingEnabledForCurrentRank(),
+        "Rank 2 should not record when not listed in MNEME_RECORD_RANKS=0,1,3");
+  }
+
+  // Single-rank explicit list.
+  setenv("MNEME_RECORD_RANKS", "0", 1);
+  setenv("OMPI_COMM_WORLD_RANK", "0", 1);
+  {
+    auto Conf = Config::createFromEnvironment();
+    expect(Conf.isRecordingEnabledForCurrentRank(),
+           "Rank 0 should record when MNEME_RECORD_RANKS=0");
+  }
+
+  // Empty MNEME_RECORD_RANKS behaves like unset.
+  setenv("MNEME_RECORD_RANKS", "", 1);
+  setenv("OMPI_COMM_WORLD_RANK", "1", 1);
+  {
+    auto Conf = Config::createFromEnvironment();
+    expect(!Conf.isRecordingEnabledForCurrentRank(),
+           "Empty MNEME_RECORD_RANKS should use default rank policy");
+  }
+
+  // Rank-detection precedence: Open MPI takes priority over SLURM.
+  unsetenv("MNEME_RECORD_RANKS");
+  setenv("OMPI_COMM_WORLD_RANK", "2", 1);
+  setenv("SLURM_PROCID", "0", 1);
+  {
+    auto Conf = Config::createFromEnvironment();
+    expect(!Conf.isRecordingEnabledForCurrentRank(),
+           "OMPI_COMM_WORLD_RANK=2 should win over SLURM_PROCID=0 (rank 2 "
+           "excluded)");
+  }
+
+  // Rank-detection precedence: first configured rank variable wins.
+  clearMnemeEnv();
+  setenv("FLUX_TASK_RANK", "3", 1);
+  setenv("OMPI_COMM_WORLD_RANK", "0", 1);
+  {
+    auto Rank = detectDistributedRank();
+    expect(Rank && *Rank == 3,
+           "FLUX_TASK_RANK should win over later configured rank variables");
+  }
+
+  // Malformed rank variables fall through to later valid launcher values.
+  setenv("FLUX_TASK_RANK", "abc", 1);
+  setenv("OMPI_COMM_WORLD_RANK", "0", 1);
+  {
+    auto Rank = detectDistributedRank();
+    expect(Rank && *Rank == 0,
+           "Malformed rank variable should fall through to later valid value");
+  }
+
+  clearMnemeEnv();
+  setenv("MNEME_RECORD_RANKS", "0,abc,2", 1);
+  setenv("OMPI_COMM_WORLD_RANK", "0", 1);
+  {
+    auto Conf = Config::createFromEnvironment();
+    expect(Conf.isRecordingEnabledForCurrentRank(),
+           "Malformed MNEME_RECORD_RANKS should fall back to default policy "
+           "(rank 0 records)");
+  }
+  setenv("OMPI_COMM_WORLD_RANK", "1", 1);
+  {
+    auto Conf = Config::createFromEnvironment();
+    expect(!Conf.isRecordingEnabledForCurrentRank(),
+           "Malformed MNEME_RECORD_RANKS should fall back to default policy "
+           "(non-zero rank excluded)");
   }
 
   clearMnemeEnv();

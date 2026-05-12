@@ -48,6 +48,7 @@ artifact.
 | `-rdb`, `--record-db-dir`               | Path to a **existing** directory where recorded artifacts (metadata, LLVM IR, and device memory snapshots) will be stored |
 | `-vass`, `--virtual-address-space-size` | Size (in **GB**) of the virtual address space allocated by Mneme for recording                                            |
 | `-mr`, `--per-kernel-max-recordings`    | Maximum number of times the same GPU kernel may be recorded with different dynamic hashes                                 |
+| `-rr`, `--record-ranks`                 | Restrict recording to a comma-separated set of MPI ranks (e.g. `0`, `0,1,3`) or `all` for every rank. See *Multi-rank recording* below. |
 | `-h`, `--help`                          | Show help message and exit                                                                                                |
 
 ### Recording database
@@ -80,6 +81,31 @@ mneme record -rdb record-dir -mr 1 -- ./vecAdd 1024
 mneme record -rdb record-dir -vass 64 -- ./vecAdd 1024
 ```
 
+4. Record only on rank 0 of a 4-rank MPI run (this is also the default for distributed runs):
+
+```bash
+mneme record -rdb record-dir --record-ranks 0 -- mpirun -n 4 ./app
+```
+
+### Multi-rank recording
+
+For SPMD applications, every rank runs the same kernel code on different per-rank
+data. Recording on every rank produces N copies of nominally-equivalent
+snapshots and multiplies storage and runtime overhead by N. By default,
+`mneme record` therefore restricts recording to rank 0 in distributed runs:
+
+- **Single-process runs** (no rank environment variable detected): record as
+  before.
+- **Multi-rank runs** (rank detected via `FLUX_TASK_RANK`,
+  `OMPI_COMM_WORLD_RANK`, `PMI_RANK`, `MPI_RANK`, `SLURM_PROCID`,
+  `JSM_NAMESPACE_RANK`, `PMIX_RANK`, or `PBS_TASKNUM`): record on rank 0
+  only.
+
+To override the default, pass `--record-ranks`:
+
+- `--record-ranks all` records on every rank (previous default behavior).
+- `--record-ranks 0,2` records only on the listed ranks.
+
 ### Notes
 
 !!! note
@@ -87,6 +113,13 @@ mneme record -rdb record-dir -vass 64 -- ./vecAdd 1024
 
 !!! note
     The virtual address space size should be chosen large enough to accommodate all device allocations performed by the application during kernel execution
+
+!!! note
+    `--record-ranks` is equivalent to setting the environment variable
+    `MNEME_RECORD_RANKS` directly (e.g., when launching the recording
+    library via `LD_PRELOAD` outside of `mneme record`). Omitting both the
+    flag and the env var triggers the default policy (rank 0 only in
+    distributed runs).
 
 ### Exit status
 
