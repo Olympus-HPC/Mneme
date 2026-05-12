@@ -42,7 +42,7 @@ inline std::optional<int> firstSetRankEnv(const char *const *Names) {
     auto Parsed = parseInteger(Value);
     if (!Parsed || *Parsed < 0) {
       warnMalformedRankEnvironmentValue(Name, Value);
-      return std::nullopt;
+      continue;
     }
     return Parsed;
   }

@@ -242,13 +242,13 @@ int main() {
            "FLUX_TASK_RANK should win over later configured rank variables");
   }
 
-  // Malformed first-set rank variables do not fall through to later launchers.
+  // Malformed rank variables fall through to later valid launcher values.
   setenv("FLUX_TASK_RANK", "abc", 1);
   setenv("OMPI_COMM_WORLD_RANK", "0", 1);
   {
     auto Rank = detectDistributedRank();
-    expect(!Rank,
-           "Malformed first-set rank variable should stop rank detection");
+    expect(Rank && *Rank == 0,
+           "Malformed rank variable should fall through to later valid value");
   }
 
   clearMnemeEnv();
