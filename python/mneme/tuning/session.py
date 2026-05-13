@@ -48,12 +48,13 @@ EXIT_INTERNAL_ERROR = 5
 
 @dataclass
 class TuneOptions:
+    # TODO -- consider a 'profile' option that expands into space_preset, sampler, and trials defaults.
 
     # Required options: record_database and record_id identify the kernel to tune in the mneme db
     record_database: str
     record_id: str
 
-    preset: str = "standard"
+    space_preset: str = "standard"
     sampler: str = "random"
     trials: Optional[int] = None
     timeout: Optional[float] = None
@@ -315,7 +316,7 @@ class TuningSession:
 
         space = BuiltinTuneSearchSpace(
             kernel,
-            preset=self.options.preset,
+            preset=self.options.space_preset,
             launch_dim=self.options.launch_dim,
             launch_safety=self.options.launch_safety,
             passes=self.options.passes,
@@ -332,7 +333,7 @@ class TuningSession:
             max_threads_range=self.options.max_threads_range,
             max_threads_policy=self.options.max_threads_policy,
         )
-        return space, describe_search_space(space, preset=self.options.preset)
+        return space, describe_search_space(space, preset=self.options.space_preset)
 
     def _baseline_config(self, space: Any, kernel: RecordedExecution.KernelInstance) -> ExperimentConfiguration:
         if hasattr(space, "baseline"):
@@ -723,7 +724,7 @@ class TuningSession:
         self._print(f"  record database: {self.options.record_database}")
         self._print(f"  record id:       {self.options.record_id}")
         self._print(f"  kernel:          {kernel.kernel_name}")
-        self._print(f"  preset:          {self.options.preset if not self.options.space_module else 'custom'}")
+        self._print(f"  space preset:    {self.options.space_preset if not self.options.space_module else 'custom'}")
         self._print(f"  sampler:         {self.options.sampler}")
         self._print(f"  trials:          {self.options.trials}")
         self._print(f"  workers:         {self.options.workers}")

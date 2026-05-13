@@ -13,7 +13,7 @@ def _none_bool_action() -> Any:
 def add_tune_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("-rdb", "--record-database", dest="record_database", default=None)
     parser.add_argument("-rid", "--record-id", dest="record_id", default=None)
-    parser.add_argument("--preset", choices=["quick", "standard", "launch", "compiler", "full"], default=None)
+    parser.add_argument("--space-preset", choices=["quick", "standard", "launch", "compiler", "full"], default=None)
     parser.add_argument("--sampler", choices=["random", "tpe", "grid", "exhaustive"], default=None)
     parser.add_argument("--trials", type=int, default=None)
     parser.add_argument("--timeout", type=float, default=None)
