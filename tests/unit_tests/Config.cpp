@@ -74,8 +74,8 @@ int main() {
     expect(Conf.MnemeLogLevel == LogLevel::Critical,
            "MNEME_LOG_LEVEL should default to critical");
     expect(!Conf.getLogDirectory(), "MNEME_LOG_DIR should default to unset");
-    expect(Conf.EpilogueType == EpilogueSnapshotType::Bytes,
-           "MNEME_EPILOGUE_TYPE should default to bytes");
+    expect(Conf.EpilogueType == EpilogueSnapshotType::Diff,
+           "MNEME_EPILOGUE_TYPE should default to diff");
   }
 
   auto TempDir = makeTempDir();

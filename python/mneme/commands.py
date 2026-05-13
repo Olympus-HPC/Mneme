@@ -245,7 +245,7 @@ class Record:
         parser.add_argument(
             "--epilogue-format",
             choices=["bytes", "diff"],
-            default="bytes",
+            default="diff",
             help="The format to use when saving epilogue snapshots, either as full bytes or as diffs from the prologue",
         )
         parser.add_argument(

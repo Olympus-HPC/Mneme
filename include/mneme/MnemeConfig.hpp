@@ -227,7 +227,7 @@ private:
         MnemeLogLevel(config_detail::getEnvOrDefaultLogLevel(
             "MNEME_LOG_LEVEL", LogLevel::Critical)),
         EpilogueType(config_detail::getEnvOrDefaultEpilogueSnapshotType(
-            "MNEME_EPILOGUE_TYPE", EpilogueSnapshotType::Bytes)),
+            "MNEME_EPILOGUE_TYPE", EpilogueSnapshotType::Diff)),
         MnemeDataDir(config_detail::getEnvOrDefaultString("MNEME_DATA_DIR")),
         MnemeLogDir(config_detail::getEnvOrDefaultString("MNEME_LOG_DIR")),
         RecordingEnabledThisRank(
