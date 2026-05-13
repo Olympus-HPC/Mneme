@@ -908,8 +908,6 @@ class TuningSession:
         self._print("Wrote:")
         self._print(f"  results:       {self.options.results_dir}")
         self._print("  best:          best.json")
-        if self.options.emit_best_replay_command:
-            self._print("  replay:        best_replay.sh")
         if self.options.proteus_enabled and self.options.proteus_output:
             self._print(f"  Proteus JSON:  {self.options.proteus_output}")
             self._print("")
