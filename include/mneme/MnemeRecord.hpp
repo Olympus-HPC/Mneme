@@ -18,14 +18,33 @@ public:
   using KernelFunction_t = typename MnemeDeviceRT::KernelFunction_t;
 
 private:
-  std::unique_ptr<RecorderBackend<VendorTypes>> Backend;
+  static NullRecorder<VendorTypes>& getStaticNullRecorder() {
+    static NullRecorder<VendorTypes> instance;
+    return instance;
+  }
+
+  // non-owning pointer to avoid destruction issues during shutdown
+  RecorderBackend<VendorTypes>* Backend = nullptr;
 
 public:
+  MnemeRecorder(const MnemeRecorder&) = delete;
+  MnemeRecorder& operator=(const MnemeRecorder&) = delete;
+  MnemeRecorder(MnemeRecorder&&) = delete;
+  MnemeRecorder& operator=(MnemeRecorder&&) = delete;
+
   MnemeRecorder() {
     if (Config::get().isRecordingEnabledForCurrentRank())
-      Backend = std::make_unique<RecordingBackend<VendorTypes>>();
+      Backend = new RecordingBackend<VendorTypes>();
     else
-      Backend = std::make_unique<NullRecorder<VendorTypes>>();
+      Backend = &getStaticNullRecorder();
+  }
+
+  ~MnemeRecorder() {
+    // repoint to the static NullRecorder before deleting so Backend doesn't point to freed mem
+    RecorderBackend<VendorTypes>* old = Backend;
+    Backend = &getStaticNullRecorder();
+    if (old && old != &getStaticNullRecorder())
+      delete old;
   }
 
   bool setMetadataForPointer(const void *ptr, Metadata md) {
