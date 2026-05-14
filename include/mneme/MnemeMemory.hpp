@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <cstdint>
 #include <cstring>
 #include <llvm/ADT/StringRef.h>
@@ -32,12 +33,20 @@ protected:
   uint64_t Size;
   std::unique_ptr<uint8_t[]> HostData;
   bool IsMapped;
+  uint64_t blob_id;  // Unique ID for tracking
+
+  static std::atomic<uint64_t> next_blob_id;
+
+  uint64_t allocate_blob_id() {
+    return next_blob_id.fetch_add(1, std::memory_order_relaxed);
+  }
 
 public:
   MnemeMemoryBlob(uint64_t ActualSize = 0, void *BlobAddr = nullptr,
                   uint64_t Size = 0)
       : ActualSize(ActualSize), BlobAddr(BlobAddr), Size(Size),
-        HostData(new uint8_t[Size]), IsMapped(false) {}
+        HostData(new uint8_t[Size]), IsMapped(false), blob_id(allocate_blob_id()) {
+  }
 
   DeviceError_t map(void *VA, uint64_t ActualSize, uint64_t Size) {
     this->Size = Size;
@@ -61,8 +70,9 @@ public:
   }
 
   DeviceError_t release() {
-    if (!BlobAddr)
+    if (!BlobAddr) {
       return MnemeDeviceRT::DeviceSuccess;
+    }
 
     if (!IsMapped) {
       auto ret = MnemeDeviceRT::DeviceFree(BlobAddr);
@@ -79,7 +89,8 @@ public:
 
   ~MnemeMemoryBlob() {
     if (BlobAddr != 0 && IsMapped) {
-      LOG_FATAL("Destroying memory descriptor without releasing device memory");
+      LOG_FATAL("[BLOB-{}] Destroying memory descriptor without releasing device memory at addr={}, size={}",
+                blob_id, (void*)BlobAddr, Size);
     }
   }
 
@@ -195,4 +206,8 @@ llvm::raw_ostream &operator<<(llvm::raw_ostream &OS,
 
   return OS;
 }
+
+template <DeviceVendors VendorTypes>
+std::atomic<uint64_t> MnemeMemoryBlob<VendorTypes>::next_blob_id{0};
+
 } // namespace mneme
