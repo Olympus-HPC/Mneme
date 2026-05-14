@@ -116,6 +116,22 @@ class TuneOptions:
             data["proteus_output"] = str(Path(data["results_dir"]) / "proteus_tuned_kernels.json")
         return data
 
+    def _validate(self) -> None:
+        """ an early, quick check to validate some settings before any tuning is started """
+
+        # check trials is positive and compatible with sampler choice
+        if self.trials is not None and self.trials <= 0:
+            raise ValueError("--trials must be a positive integer")
+        
+        if self.sampler in {"grid", "exhaustive"} and self.trials is not None:
+            raise ValueError("--trials cannot be used with grid or exhaustive sampler since the search space size is determined by the grid")
+
+        if self.sampler in {"random", "tpe"} and self.trials is None:
+            raise ValueError("--trials is required for random and tpe samplers")
+
+    def __post_init__(self):
+        self._validate()
+
 
 @dataclass
 class Candidate:
