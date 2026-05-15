@@ -64,9 +64,9 @@ def add_tune_args(parser: argparse.ArgumentParser) -> None:
     )
     search.add_argument(
         "--metric",
-        choices=["mean", "median", "min"],
+        choices=["mean", "median", "min", "max"],
         default=None,
-        help="Timing statistic computed from replay samples and used to rank candidates.",
+        help="Timing statistic used to summarize multiple evaluations of the same candidate configuration.",
     )
     search.add_argument(
         "--objective",
@@ -105,7 +105,7 @@ def add_tune_args(parser: argparse.ArgumentParser) -> None:
         dest="fail_fast",
         action="store_false",
         default=None,
-        help="Continue evaluating candidates after errors.",
+        help="Continue evaluating candidates after errors. Default behavior.",
     )
 
     output = parser.add_argument_group("output and run mode")
