@@ -78,7 +78,7 @@ def test_tuning_session_writes_core_artifacts(monkeypatch, tmp_path):
     opts = TuneOptions(
         record_database="db.json",
         record_id="rid",
-        preset="compiler",
+        space_preset="compiler",
         sampler="exhaustive",
         trials=4,
         iterations=3,
@@ -131,7 +131,7 @@ def test_tune_cli_wires_options(monkeypatch):
             "db.json",
             "-rid",
             "rid",
-            "--preset",
+            "--space-preset",
             "compiler",
             "--trials",
             "3",
@@ -142,6 +142,6 @@ def test_tune_cli_wires_options(monkeypatch):
     assert tune_cli.run_tune(args, None) == 0
     assert captured["options"].record_database == "db.json"
     assert captured["options"].record_id == "rid"
-    assert captured["options"].preset == "compiler"
+    assert captured["options"].space_preset == "compiler"
     assert captured["options"].trials == 3
     assert captured["options"].proteus_enabled is False
