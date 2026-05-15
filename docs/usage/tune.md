@@ -257,7 +257,7 @@ python tuning_vecadd_exhaustive.py \
 
 ## Interpreting the output
 
-The output will be simillar to:
+The output will be similar to:
 ```bash
 Baseline configuration:
 {
@@ -303,15 +303,190 @@ BEST: passes=default<O1> blockDim.x=128 mean=73486.14285714286 speedup=1.1222368
 From this you should be able to identify:
 - The baseline configuration and its exec_time samples
 - One line per candidate configuration
-- A final BEST line with:
-- the best passes
-- best blockDim.x
-- mean time
-- speedup vs baseline
+- A final BEST line with the best passes, best `blockDim.x`, mean time, and
+  speedup vs baseline
 
 !!! note
-    This example uses `ExhaustiveSamplingStrategy`, which is ideal for small search spaces. Briefly, in the above example we execute 80 different configurations in 7.09seconds and every configurations performs 7 executions of the benchmark resulting in a throughput of 78replay(s)/second.  For larger spaces, switch to a sampling-based strategy (e.g., Optuna) and persist results to a dedicated tuning database.
+    This example uses `ExhaustiveSamplingStrategy`, which is ideal for small search spaces. The run above evaluates 80 configurations in 7.09 seconds, with each configuration performing 7 benchmark executions, for a throughput of approximately 78 replays/second. For larger spaces, switch to a sampling-based strategy such as Optuna and persist results to a dedicated tuning database.
 
 
 ## Example: exhaustive tuning of `passes` and `blockDim.x` with the CLI API
 
+The `mneme tune` command can run the same search space through the CLI by loading
+the `EntireSpace` class from the Python example above. This keeps the tuning
+problem identical: all combinations of `passes` and `blockDim.x` are enumerated,
+the recorded launch is used as the baseline, and candidates are ranked by mean
+execution time.
+
+```bash
+mneme tune \
+  --record-database record-example-dir/15941914485064662553.json \
+  --record-id 16313427880266313990 \
+  --space-module examples/tuning_vecadd_exhaustive.py:EntireSpace \
+  --sampler exhaustive \
+  --iterations 5 \
+  --warmup 2 \
+  --workers 1 \
+  --metric mean \
+  --objective time \
+  --results-dir mneme-tune-results/vecadd-exhaustive
+```
+
+The same run can be captured in a configuration file, for example
+`examples/hip_vec_add/config.yml`:
+
+```yaml
+record_database: record-example-dir/15941914485064662553.json
+record_id: "16313427880266313990"
+space_module: examples/tuning_vecadd_exhaustive.py:EntireSpace
+
+sampler: exhaustive
+iterations: 5
+warmup: 2
+workers: 1
+metric: mean
+objective: time
+
+results_dir: mneme-tune-results/vecadd-exhaustive
+```
+
+Run it with:
+
+```bash
+mneme tune --config examples/hip_vec_add/config.yml
+```
+
+CLI arguments override values from the config file, so a common pattern is to
+keep stable search settings in YAML and pass record-specific values on the
+command line.
+
+You can also use the built-in search space instead of providing a custom
+`SearchSpace` class. This does not reproduce the exact `blockDim.x = 64..1024`
+range from the Python example; the built-in space derives valid `block_shape`
+candidates from the recorded launch and the selected launch axes. It is the
+recommended path when the generated launch space is sufficient.
+
+```bash
+mneme tune \
+  --record-database record-example-dir/15941914485064662553.json \
+  --record-id 16313427880266313990 \
+  --space-preset launch \
+  --launch-dim x \
+  --launch-safety aggressive \
+  --passes 'default<O1>' 'default<O2>' 'default<O3>' 'default<Os>' 'default<Oz>' \
+  --fixed-codegen-opt 3 \
+  --sampler exhaustive \
+  --iterations 5 \
+  --warmup 2 \
+  --workers 1 \
+  --metric mean \
+  --objective time \
+  --results-dir mneme-tune-results/vecadd-builtin
+```
+
+The equivalent config file is:
+
+```yaml
+record_database: record-example-dir/15941914485064662553.json
+record_id: "16313427880266313990"
+
+space_preset: launch
+launch_dim: x
+launch_safety: aggressive
+passes:
+  - default<O1>
+  - default<O2>
+  - default<O3>
+  - default<Os>
+  - default<Oz>
+fixed_codegen_opt: 3
+
+sampler: exhaustive
+iterations: 5
+warmup: 2
+workers: 1
+metric: mean
+objective: time
+
+results_dir: mneme-tune-results/vecadd-builtin
+```
+
+## Tuning CLI Specification
+
+`mneme tune` tunes one recorded kernel instance. The required inputs are:
+
+- `--record-database`: path to the Mneme recording database JSON file
+- `--record-id`: dynamic kernel instance id within that database
+
+### Search spaces
+
+Use `--space-module MODULE_OR_PATH:CLASS` to load a custom `SearchSpace` class.
+The class is constructed with the recorded kernel instance. Extra constructor
+arguments may be passed with repeated `--space-arg KEY=VALUE` options; values are
+decoded as JSON when possible.
+
+Without `--space-module`, the built-in search space is used. Select its scope
+with `--space-preset`:
+
+- `quick`: small exploratory space
+- `standard`: default balanced space
+- `launch`: focus on launch/block-shape parameters
+- `compiler`: focus on compiler pipeline and codegen choices
+- `full`: broader launch, compiler, specialization, and launch-bounds space
+
+Built-in launch controls include `--launch-dim`, `--launch-safety`, and
+`--adaptive-invalid-ban` / `--no-adaptive-invalid-ban`. Compiler controls include
+`--passes`, `--fixed-passes`, `--pipeline-file`, `--codegen-opt-range`, and
+`--fixed-codegen-opt`. Boolean configuration dimensions such as specialization
+and launch bounds use `fixed`, `on`, `off`, or `on-off` modes.
+
+### Sampling and evaluation
+
+`--sampler` selects how candidates are generated:
+
+- `random`: random sampling; requires `--trials`
+- `tpe`: Optuna TPE sampling; requires `--trials`
+- `grid` / `exhaustive`: enumerate the finite search space
+
+Use `--seed` for reproducible random or TPE sampling, and `--timeout` to stop
+submitting new trials after a fixed number of seconds. Each candidate is replayed
+with `--warmup` warmup iterations and `--iterations` measured iterations.
+`--workers` controls concurrent replay workers.
+
+The ranking metric is selected with `--metric` (`mean`, `median`, `min`, or
+`max`). `--objective time` minimizes the selected time metric, while
+`--objective speedup` maximizes speedup relative to the baseline.
+
+### Outputs and resuming
+
+If `--results-dir` is not provided, Mneme creates a timestamped directory under
+`mneme-tune-results/`. A tuning run writes:
+
+- `config.json`: resolved configuration
+- `search_space.json`: resolved search-space description
+- `baseline.json`: baseline replay result
+- `trials.jsonl`: one record per evaluated candidate
+- `best.json`: best verified configuration
+- `summary.json`: aggregate trial counts and best speedup
+- `logs/tune.log`: tuning log file
+
+Use `--resume` with an existing results directory to skip completed
+configurations. Use `--rerun-baseline` to recompute the baseline while resuming.
+
+Additional run modes are available for inspection and validation:
+
+- `--print-space`: print the resolved search space and exit
+- `--dry-run`: print the baseline configuration and search space without replay
+- `--baseline-only`: run only the baseline replay
+- `--dump-config PATH`: write the resolved configuration and exit
+- `--quiet`: suppress progress output
+
+### Optuna and Proteus integration
+
+For Optuna-backed runs, use `--sampler tpe` with optional `--study-name`,
+`--optuna-storage`, and `--pruner`. Persistent Optuna storage is useful when
+resuming or inspecting studies outside Mneme.
+
+By default, successful tuning writes Proteus tuned-kernel metadata to
+`proteus_tuned_kernels.json` in the results directory. Override the path with
+`--proteus-output`, or disable export with `--no-proteus-output`.
