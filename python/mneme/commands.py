@@ -237,10 +237,29 @@ class Record:
             help="The maximum number of times to record the same GPU kernel (function) with different dynamic hashes",
         )
         parser.add_argument(
+            "-sr",
+            "--per-kernel-skip-recordings",
+            type=int,
+            default=0,
+            help="The number of matching GPU kernel launches to skip before recording each kernel",
+        )
+        parser.add_argument(
             "--epilogue-format",
             choices=["bytes", "diff"],
-            default="bytes",
+            default="diff",
             help="The format to use when saving epilogue snapshots, either as full bytes or as diffs from the prologue",
+        )
+        parser.add_argument(
+            "-rr",
+            "--record-ranks",
+            dest="record_ranks",
+            default=None,
+            help=(
+                "Restrict recording to a comma-separated set of MPI ranks "
+                "(e.g. '0', '0,1,3'), or 'all' for every rank. "
+                "When omitted, distributed runs default to recording on rank 0 only; "
+                "single-process runs always record."
+            ),
         )
         parser.add_argument("cmd", nargs=argparse.REMAINDER)
         parser.set_defaults(func=Record.run, parser=parser)
@@ -266,6 +285,8 @@ class Record:
         record_env["MNEME_PAGE_SIZE"] = str(args.virtual_address_space_size)
         logger.debug(f"MNEME_MAX_RECORDINGS={args.per_kernel_max_recordings}")
         record_env["MNEME_MAX_RECORDINGS"] = str(args.per_kernel_max_recordings)
+        logger.debug(f"MNEME_SKIP_RECORDINGS={args.per_kernel_skip_recordings}")
+        record_env["MNEME_SKIP_RECORDINGS"] = str(args.per_kernel_skip_recordings)
         record_db_dir = Path(args.record_db_dir).resolve()
         if record_db_dir.exists() and not record_db_dir.is_dir():
             raise NotADirectoryError(f"Path '{args.record_db_dir}' is not a directory")
@@ -275,6 +296,10 @@ class Record:
         record_env["MNEME_DATA_DIR"] = str(record_db_dir)
 
         record_env["MNEME_EPILOGUE_TYPE"] = args.epilogue_format.lower()
+
+        if args.record_ranks is not None:
+            logger.debug(f"MNEME_RECORD_RANKS={args.record_ranks}")
+            record_env["MNEME_RECORD_RANKS"] = str(args.record_ranks)
 
         if verbosity is not None:
             logger.debug(f"MNEME_LOG_LEVEL={verbosity}")

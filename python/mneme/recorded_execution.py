@@ -100,6 +100,26 @@ def find_non_jsonables(obj, where="$"):
         print("Non-JSON type:", where, "->", type(obj))
 
 
+def _make_path_relative(p, base_dir):
+    """
+    Return ``p`` as a basename if it lives directly under ``base_dir``.
+
+    If ``p`` is already a basename, return it unchanged so this transform is
+    idempotent. Relative paths with directory components are ambiguous here
+    because JSON readers resolve them against ``base_dir``.
+    """
+    if base_dir is None or not p:
+        return p
+    pp = Path(p)
+    if not pp.is_absolute():
+        if pp.parent == Path("."):
+            return p
+        raise ValueError(f"Expected absolute path or basename, got relative path: {p}")
+    if pp.parent.resolve() == base_dir:
+        return pp.name
+    return p
+
+
 class MemStateRef:
     """
     Handle to a recorded memory snapshot (prologue/epilogue).
@@ -397,9 +417,13 @@ class RecordedExecution:
         def __str__(self):
             return f"Grid:{self.grid_dim}, BlockDim: {self.block_dim}, Shared Memory {self.shared_mem}"
 
-        def to_dict(self):
+        def to_dict(self, base_dir: "Path | None" = None):
             """
             Convert this instance into a JSON-friendly dictionary.
+
+            If ``base_dir`` is provided, snapshot paths whose parent directory
+            equals ``base_dir`` are written as basenames (relative form).
+            Otherwise paths are written as-is.
 
             Returns
             -------
@@ -413,8 +437,8 @@ class RecordedExecution:
             res["GridDims"] = self.grid_dim.to_dict()
             res["Occurrences"] = self.occ
             res["SharedMem"] = self.shared_mem
-            res["Epilogue"] = self.epilogue.fn
-            res["Prologue"] = self.prologue.fn
+            res["Epilogue"] = _make_path_relative(self.epilogue.fn, base_dir)
+            res["Prologue"] = _make_path_relative(self.prologue.fn, base_dir)
 
             return res
 
@@ -499,34 +523,41 @@ class RecordedExecution:
 
         return self._link_mod
 
-    def to_dict(self):
+    def to_dict(self, base_dir: "Path | None" = None):
         res = {}
         res["ArgNames"] = self.arg_names
         res["BinaryBlobs"] = []
         res["DemangledName"] = self.demangled_name
         res["KernelName"] = self.kernel_name
-        res["Modules"] = self.llvm_files
+        res["Modules"] = [_make_path_relative(m, base_dir) for m in self.llvm_files]
         res["Specializations"] = self.specializations
         res["StaticHash"] = self.static_hash
         res["VASize"] = self.va_size
         res["VAddr"] = self.va_addr
         res["instances"] = {}
         for k, v in self.items():
-            res["instances"][k] = v.to_dict()
+            res["instances"][k] = v.to_dict(base_dir)
         return res
 
     def to_json(self, fn: str):
         """
         Serialize this record database to a JSON file.
 
+        Paths to artifacts that live in the same directory as the JSON file
+        are written as basenames so that the resulting database is relocatable
+        with plain ``cp`` / ``mv``. Paths outside that directory are kept as
+        absolute paths.
+
         Parameters
         ----------
         fn : str
             Output JSON path.
         """
-        find_non_jsonables(self.to_dict())
+        base_dir = Path(fn).resolve().parent
+        d = self.to_dict(base_dir=base_dir)
+        find_non_jsonables(d)
         with open(fn, "w") as fd:
-            json.dump(self.to_dict(), fd, indent=2)
+            json.dump(d, fd, indent=2)
 
     @classmethod
     def from_json(cls, fn: str):
@@ -557,6 +588,14 @@ class RecordedExecution:
         with open(fn, "r") as fd:
             record_db = json.load(fd)
 
+        # Paths in the JSON may be either absolute (legacy) or relative to the
+        # JSON file's parent directory. Resolve to absolute so all in-memory
+        # consumers see a stable, cwd-independent path.
+        base_dir = Path(fn).resolve().parent
+
+        def _resolve(p: str) -> str:
+            return p if Path(p).is_absolute() else str(base_dir / p)
+
         instances = {}
         for dhash, inst in record_db["instances"].items():
             block_dim = dim3(
@@ -575,11 +614,12 @@ class RecordedExecution:
                 grid_dim,
                 record_db["Specializations"],
                 inst["Occurrences"],
-                inst["Prologue"],
-                inst["Epilogue"],
+                _resolve(inst["Prologue"]),
+                _resolve(inst["Epilogue"]),
             )
 
-        for llvm_fn in record_db["Modules"]:
+        resolved_modules = [_resolve(m) for m in record_db["Modules"]]
+        for llvm_fn in resolved_modules:
             if not Path(llvm_fn).exists():
                 raise RuntimeError(f"File {llvm_fn} does not exist")
 
@@ -587,7 +627,7 @@ class RecordedExecution:
             record_db["StaticHash"],
             record_db["KernelName"],
             record_db["DemangledName"],
-            record_db["Modules"],
+            resolved_modules,
             record_db["ArgNames"],
             record_db["Specializations"],
             record_db["VAddr"],

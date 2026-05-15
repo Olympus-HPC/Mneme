@@ -63,6 +63,8 @@ def test_record_happy_path(tmp_path, record_parser, monkeypatch):
             "8",
             "--per-kernel-max-recordings",
             "3",
+            "--per-kernel-skip-recordings",
+            "2",
             "--",
             fake_binary,
             "42",
@@ -79,13 +81,14 @@ def test_record_happy_path(tmp_path, record_parser, monkeypatch):
     assert env["LD_PRELOAD"] == fake_lib
     assert env["MNEME_PAGE_SIZE"] == "8"
     assert env["MNEME_MAX_RECORDINGS"] == "3"
+    assert env["MNEME_SKIP_RECORDINGS"] == "2"
     assert env["MNEME_DATA_DIR"] == str(record_dir)
-    assert env["MNEME_EPILOGUE_TYPE"] == "bytes"
+    assert env["MNEME_EPILOGUE_TYPE"] == "diff"
     assert env["MNEME_LOG_LEVEL"] == "DEBUG"
 
 
 def test_record_epilogue_format_sets_env(tmp_path, record_parser, monkeypatch):
-    """--epilogue-format controls the MNEME_EPILOGUE_TYPE runtime config."""
+    """--epilogue-format overrides the MNEME_EPILOGUE_TYPE runtime config."""
     record_dir = tmp_path / "records"
     record_dir.mkdir()
 
@@ -107,7 +110,7 @@ def test_record_epilogue_format_sets_env(tmp_path, record_parser, monkeypatch):
             "--record-db-dir",
             str(record_dir),
             "--epilogue-format",
-            "diff",
+            "bytes",
             "--",
             "/usr/bin/true",
         ]
@@ -115,7 +118,7 @@ def test_record_epilogue_format_sets_env(tmp_path, record_parser, monkeypatch):
 
     Record.run(args, verbosity=None)
 
-    assert captured["env"]["MNEME_EPILOGUE_TYPE"] == "diff"
+    assert captured["env"]["MNEME_EPILOGUE_TYPE"] == "bytes"
 
 
 def test_record_rejects_invalid_epilogue_format(record_parser):
@@ -256,3 +259,46 @@ def test_record_default_page_size(record_parser, tmp_path, monkeypatch):
     Record.run(args, verbosity=None)
 
     assert captured["env"]["MNEME_PAGE_SIZE"] == "4"  # default from code
+    assert captured["env"]["MNEME_SKIP_RECORDINGS"] == "0"
+
+
+def _capture_env_with_args(record_parser, tmp_path, monkeypatch, extra_args):
+    record_dir = tmp_path / "records"
+    record_dir.mkdir()
+
+    monkeypatch.setattr(utils_mod, "get_mneme_record_library_name", lambda: "/tmp/x.so")
+
+    captured = {}
+
+    class FakeCode:
+        returncode = 0
+
+    def fake_run(cmd, env=None, **kwargs):
+        captured["env"] = env
+        return FakeCode
+
+    monkeypatch.setattr(record_mod.subprocess, "run", fake_run)
+
+    args = record_parser.parse_args(
+        ["--record-db-dir", str(record_dir), *extra_args, "--", "/usr/bin/true"]
+    )
+    Record.run(args, verbosity=None)
+    return captured["env"]
+
+
+@pytest.mark.parametrize("record_ranks", ["0,2", "all"])
+def test_record_record_ranks_explicit(
+    record_parser, tmp_path, monkeypatch, record_ranks
+):
+    env = _capture_env_with_args(
+        record_parser, tmp_path, monkeypatch, ["--record-ranks", record_ranks]
+    )
+    assert env["MNEME_RECORD_RANKS"] == record_ranks
+
+
+def test_record_record_ranks_default_unset(record_parser, tmp_path, monkeypatch):
+    """Omitting --record-ranks must not set MNEME_RECORD_RANKS in env, so the
+    C++ default-policy logic sees env-absence and applies its rank-0-only rule."""
+    monkeypatch.delenv("MNEME_RECORD_RANKS", raising=False)
+    env = _capture_env_with_args(record_parser, tmp_path, monkeypatch, [])
+    assert "MNEME_RECORD_RANKS" not in env

@@ -24,10 +24,6 @@
 #include <string>
 #include <sys/types.h>
 
-#include "proteus/impl/CompilerInterfaceDevice.h"
-#include "proteus/impl/Hashing.h"
-#include <proteus/impl/JitEngineDevice.h>
-
 #include "mneme/DeviceTraits.hpp"
 #include "mneme/MnemeConfig.hpp"
 #include "mneme/MnemeKernelInfo.hpp"
@@ -35,6 +31,7 @@
 #include "mneme/MnemeLogger.hpp"
 #include "mneme/MnemeMemory.hpp"
 #include "mneme/MnemeUtils.hpp"
+#include <proteus/KernelMetadata.h>
 
 namespace mneme {
 
@@ -316,7 +313,7 @@ public:
   }
 
   std::filesystem::path static takeMnemeBytesSnapshot(
-      std::unordered_map<std::string, proteus::GlobalVarInfo> &GlobalVars,
+      const proteus::runtime::GlobalMetadataMap &GlobalVars,
       llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &DeviceMemory,
       std::filesystem::path &Filename,
       llvm::SmallVector<size_t> &KernelArgSizes, void **Args,
@@ -391,11 +388,11 @@ public:
                                KernelArgSizes[I]);
     }
 
-    return std::filesystem::canonical(Filename);
+    return Filename.filename();
   }
 
   std::filesystem::path static takeMnemeDiffSnapshot(
-      std::unordered_map<std::string, proteus::GlobalVarInfo> &GlobalVars,
+      const proteus::runtime::GlobalMetadataMap &GlobalVars,
       llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &DeviceMemory,
       std::filesystem::path &Filename,
       const GlobalSnapshotData &PrologueGlobals, DeviceStream_t Stream) {
@@ -452,7 +449,7 @@ public:
       writeCountAndWriteChangedRanges(OutBC, Blob);
     }
 
-    return std::filesystem::canonical(Filename);
+    return Filename.filename();
   }
 
   void static readMnemeSnapShot(
@@ -574,7 +571,7 @@ private:
 
     LOG_DEBUG("Stored Blob with StaticHash:{} to file {}", StaticHash,
               std::filesystem::canonical(Filename).string());
-    return std::filesystem::canonical(Filename).string();
+    return std::filesystem::path(Filename).filename().string();
   }
 
 public:
@@ -602,18 +599,19 @@ public:
   }
 
   KernelInstancesCollection(const std::string &MnemeDirectory, void *VAddr,
-                            uint64_t VASize, proteus::JITKernelInfo &KInfo,
+                            uint64_t VASize,
+                            const proteus::runtime::KernelMetadata &KInfo,
                             int MaxRecordings)
       : VAddr(VAddr), VASize(VASize), MaxRecordings(MaxRecordings),
         NumRecords(0), KName(KInfo.getName()) {
-    // Non-owning view of Proteus's cached bitcode.
-    llvm::StringRef Bitcode = KInfo.getBitcode().getBuffer();
+    const auto &BitcodeBytes = KInfo.getBitcode();
+    llvm::StringRef Bitcode(BitcodeBytes.data(), BitcodeBytes.size());
     if (Bitcode.empty())
       LOG_FATAL("Empty bitcode for kernel " + KName);
 
     extractArgInfoFromBitcode(Bitcode);
     ModuleFiles.emplace_back(StoreModuleBytes(
-        Bitcode, MnemeDirectory, KInfo.getStaticHash().getValue()));
+        Bitcode, MnemeDirectory, KInfo.getStaticHash()));
   }
 
   llvm::stable_hash computeHash(dim3 &GridDim, dim3 &BlockDim,
@@ -630,12 +628,11 @@ public:
 
   template <DeviceVendors VendorTypes>
   std::optional<std::function<
-      void(std::unordered_map<std::string, proteus::GlobalVarInfo> &,
-           llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &, void **,
+      void(llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &, void **,
            typename DeviceTraits<VendorTypes>::DeviceStream_t)>>
   takeSnapshot(
       std::filesystem::path &MnemeDir,
-      std::unordered_map<std::string, proteus::GlobalVarInfo> &GlobalVars,
+      const proteus::runtime::GlobalMetadataMap &GlobalVars,
       llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &DeviceMemory,
       dim3 &GridDim, dim3 &BlockDim, void **Args, size_t SharedMem,
       typename DeviceTraits<VendorTypes>::DeviceStream_t Stream,
@@ -675,15 +672,12 @@ public:
                                           PrologueGlobals.get())
             .string();
 
-    std::function<void(
-        std::unordered_map<std::string, proteus::GlobalVarInfo> &,
-        llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &, void **,
-        typename DeviceTraits<VendorTypes>::DeviceStream_t)>
+    std::function<void(llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &,
+                       void **,
+                       typename DeviceTraits<VendorTypes>::DeviceStream_t)>
         CaptureEpilogue =
             [this, DynamicHash, StaticHash, MnemeDir, PrologueGlobals,
-             EpilogueType](
-                std::unordered_map<std::string, proteus::GlobalVarInfo>
-                    &GlobalVars,
+             GlobalVars, EpilogueType](
                 llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>>
                     &DeviceMemory,
                 void **Args,
@@ -720,7 +714,9 @@ class RecordDatabase {
   std::string RegexStr;
   bool HasRegex;
   llvm::DenseMap<uint64_t, KernelInstancesCollection> KernelRecords;
+  llvm::DenseMap<uint64_t, uint64_t> KernelLaunchCounts;
   uint64_t MaxRecordings;
+  uint64_t SkipRecordings;
   EpilogueSnapshotType EpilogueType;
 
 public:
@@ -734,6 +730,7 @@ public:
 
     MnemeDirectory = Conf.getDataDirectory();
     MaxRecordings = Conf.MaxRecordings;
+    SkipRecordings = Conf.SkipRecordings;
     EpilogueType = Conf.EpilogueType;
   }
 
@@ -764,30 +761,35 @@ public:
 
   template <DeviceVendors VendorTypes>
   std::optional<std::function<
-      void(std::unordered_map<std::string, proteus::GlobalVarInfo> &,
-           llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &, void **,
+      void(llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &, void **,
            typename DeviceTraits<VendorTypes>::DeviceStream_t)>>
   takeSnapshot(
-      void *VAddr, uint64_t VASize, proteus::JITKernelInfo &KInfo,
+      void *VAddr, uint64_t VASize,
+      const proteus::runtime::KernelMetadata &KInfo,
       llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &DeviceMemory,
       dim3 &GridDim, dim3 &BlockDim, void **Args, size_t SharedMem,
       typename DeviceTraits<VendorTypes>::DeviceStream_t Stream) {
-    using namespace proteus;
-
     if (!shouldRecord(KInfo.getName())) {
       LOG_INFO("Skip record of Kernel");
       return std::nullopt;
     }
 
+    auto StaticHash = KInfo.getStaticHash();
+    uint64_t &LaunchCount = KernelLaunchCounts[StaticHash];
+    LaunchCount++;
+    if (LaunchCount <= SkipRecordings) {
+      LOG_DEBUG("Skipping recording {} of {} for kernel {}", LaunchCount,
+                SkipRecordings, KInfo.getName());
+      return std::nullopt;
+    }
+
     auto IT = KernelRecords.try_emplace(
-        KInfo.getStaticHash().getValue(),
-        KernelInstancesCollection(getDir(), VAddr, VASize, KInfo,
-                                  MaxRecordings));
+        StaticHash, KernelInstancesCollection(getDir(), VAddr, VASize, KInfo,
+                                              MaxRecordings));
     LOG_INFO("Created instance");
     return IT.first->second.takeSnapshot<VendorTypes>(
-        MnemeDirectory, KInfo.getBinaryInfo().getVarNameToGlobalInfo(),
-        DeviceMemory, GridDim, BlockDim, Args, SharedMem, Stream,
-        KInfo.getStaticHash().getValue(), EpilogueType);
+        MnemeDirectory, KInfo.getGlobals(), DeviceMemory, GridDim, BlockDim,
+        Args, SharedMem, Stream, StaticHash, EpilogueType);
   }
 
   const std::string getDir() const { return MnemeDirectory.string(); }

@@ -5,15 +5,17 @@
 #include <chrono>
 #include <iostream>
 #include <llvm-c/Types.h>
+#include <llvm/ADT/StringRef.h>
 #include <llvm/Bitcode/BitcodeReader.h>
 #include <llvm/IR/Module.h>
 #include <mneme/MnemeLogger.hpp>
+#include <optional>
 #include <proteus/CompilerInterfaceTypes.h>
 #include <proteus/impl/CompilerInterfaceRuntimeConstantInfo.h>
 #include <proteus/impl/CoreLLVM.h>
 #include <proteus/impl/CoreLLVMDevice.h>
 #include <proteus/impl/Hashing.h>
-
+#include <string>
 
 #ifdef MNEME_ENABLE_HIP
 constexpr const char *getRTCMethod() { return "serial"; }
@@ -35,6 +37,21 @@ inline std::optional<CodegenOption> fromString(std::string str) {
   return std::nullopt;
 }
 
+OptimizationPipelineConfig makeOptimizationConfig(const char *OptLevel,
+                                                  unsigned CodegenOptLevel) {
+  llvm::StringRef OptLevelRef(OptLevel ? OptLevel : "");
+  if (OptLevelRef.size() == 2 && OptLevelRef[0] == 'O') {
+    char SimpleOptLevel = OptLevelRef[1];
+    if (SimpleOptLevel == '0' || SimpleOptLevel == '1' ||
+        SimpleOptLevel == '2' || SimpleOptLevel == '3' ||
+        SimpleOptLevel == 's' || SimpleOptLevel == 'z')
+      return OptimizationPipelineConfig(std::nullopt, SimpleOptLevel,
+                                        CodegenOptLevel);
+  }
+
+  return OptimizationPipelineConfig(OptLevelRef.str(), '3', CodegenOptLevel);
+}
+
 } // namespace
 
 extern "C" {
@@ -53,7 +70,7 @@ ProteusPY_optimize(LLVMModuleRef Mod, const char *DeviceArch,
                    const char *OptLevel, unsigned CodegenOptLevel) {
   auto *M = llvm::unwrap(Mod);
   auto start = std::chrono::high_resolution_clock::now();
-  optimizeIR(*M, DeviceArch, OptLevel, CodegenOptLevel);
+  optimizeIR(*M, DeviceArch, makeOptimizationConfig(OptLevel, CodegenOptLevel));
   auto end = std::chrono::high_resolution_clock::now();
   std::chrono::duration<float> duration = end - start;
   float seconds = duration.count();
@@ -69,8 +86,15 @@ ProteusPY_codeGenObject(LLVMModuleRef Mod, const char *DeviceArch, unsigned Code
   llvm::SmallPtrSet<void *, 8> GlobalLinkedBinaries;
   auto *M = llvm::unwrap(Mod);
   auto start = std::chrono::high_resolution_clock::now();
+#ifdef MNEME_ENABLE_HIP
+  auto OptConfig =
+      OptimizationPipelineConfig(std::nullopt, '3', CodegenOptLevel);
+  auto DeviceObject = proteus::codegenObject(
+      *M, DeviceArch, GlobalLinkedBinaries, proteus_rtc.value(), OptConfig);
+#else
   auto DeviceObject = proteus::codegenObject(
       *M, DeviceArch, GlobalLinkedBinaries, proteus_rtc.value());
+#endif
   auto end = std::chrono::high_resolution_clock::now();
 
   // Calculate duration and convert to seconds as float

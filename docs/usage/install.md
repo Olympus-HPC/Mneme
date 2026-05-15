@@ -8,9 +8,9 @@ recent features.
 
 ## Dependencies and compatibility
 
-Mneme depends on a small set of external components. Compatibility is
-defined in terms of supported ROCm versions, Python versions, and a
-specific Proteus commit.
+Mneme depends on a small set of external components.
+Compatibility is defined in terms of supported ROCm versions,
+CUDA/LLVM versions, Python versions, and a specific Proteus release.
 
 ### Compatibility matrix
 
@@ -20,28 +20,30 @@ on internal test systems.
 
 #### AMD Systems
 
-| ROCm version | Python 3.9 | Python 3.10 | Python 3.11 | Python 3.12 |
-|-------------|------------|-------------|-------------|-------------|
-| **6.3**     | ✅         | ✅          | ✅          | ✅          |
-| **6.4**     | ✅         | ✅          | ✅          | ✅          |
-| **7.1**     | ✅         | ✅          | ✅          | ✅          |
+| ROCm version | LLVM version | Python 3.9 | Python 3.10 | Python 3.11 | Python 3.12 |
+|-------------|--------------|------------|-------------|-------------|-------------|
+| **6.4.3**   | **19**       | ✅         | ✅          | ✅          | ✅          |
+| **7.1.1**   | **20**       | ✅         | ✅          | ✅          | ✅          |
+| **7.2.0**   | **22**       | ✅         | ✅          | ✅          | ✅          |
 
 #### NVIDIA Systems
 
-For NVIDIA systems we assume `cuda@12.2`, yet newer versions should also be functional,
-but not tested.
+For NVIDIA systems,
+Mneme follows Proteus CI and tests CUDA 12.2.2 with the LLVM versions below.
+Newer CUDA versions may be functional,
+but are not part of the tested matrix.
 
-| LLVM version | Python 3.9 | Python 3.10 | Python 3.11 | Python 3.12 |
-|-------------|------------|-------------|-------------|-------------|
-| **18**     | ✅         | ✅          | ✅          | ✅          |
-| **19**     | ✅         | ✅          | ✅          | ✅          |
-| **20**     | ✅         | ✅          | ✅          | ✅          |
+| CUDA version | LLVM version | Python 3.10 |
+|-------------|--------------|-------------|
+| **12.2.2**  | **19.1.7**   | ✅          |
+| **12.2.2**  | **20.1.8**   | ✅          |
+| **12.2.2**  | **22.1.0**   | ✅          |
 
 #### Notes
 
 - ✅ **Supported**: configuration is tested and fully supported.
 - Mneme relies on the LLVM/Clang toolchain shipped with the corresponding
-  ROCm release.
+  ROCm release on AMD systems.
 - Python support refers to the Python version used to run the Mneme CLI and
   Python API; it does not affect device compilation.
 
@@ -66,8 +68,8 @@ use the corresponding Proteus release to avoid incompatibilities.
 #### Tested Proteus release
 
 - Repository: https://github.com/Olympus-HPC/Proteus
-- Release: `v2026.03.0`
-- Commit: `496cdd70b5acef5b31688250616b091b3928fad3`
+- Release: `v2026.05.0`
+- Commit: `1f1e0307a0a340b42947be600bb7be0a61745c0a`
 - Tested with: Mneme `develop`
 
 Proteus must be configured with:
@@ -101,9 +103,13 @@ The following tools and libraries must be available:
 - `clang` / `clang++`
 - LLVM libraries
 
-These tools are provided by the **LLVM distribution bundled with ROCm**.
-Mneme is currently tested with **LLVM 18, 19, and 20** as shipped by
-supported ROCm releases (6.3, 6.4, and 7.1 respectively).
+These tools are provided by the **LLVM distribution bundled with ROCm**
+on AMD systems.
+Mneme is currently tested with LLVM **19**, **20**, and **22** as shipped by
+supported ROCm releases 6.4.3, 7.1.1, and 7.2.0 respectively.
+On NVIDIA systems,
+Mneme is tested with CUDA 12.2.2 and LLVM **19.1.7**, **20.1.8**,
+and **22.1.0**.
 
 !!! note
     Mneme expects the ROCm-provided LLVM toolchain to be used.
@@ -132,7 +138,7 @@ pip install -e .
 NVIDIA systems do not provide a proper LLVM installation. You can install one LLVM installation by using conda:
 ```bash
 export MINICONDA_DIR=miniconda
-export LLVM_VERSION=18.1.8
+export LLVM_VERSION=22.1.0
 PYTHON_VERSION=3.10
 mkdir -p ${MINICONDA_DIR}
 wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-$(uname -m).sh -O ${MINICONDA_DIR}/miniconda.sh
@@ -183,8 +189,8 @@ On AMD systems:
 ```bash
 export PROTEUS_DIR=/path/to/proteus/install-prefix
 export MNEME_ENABLE_TESTS=On
-source scripts/setup-rocm.sh 6.4.1
-cd build-$(hostname | sed 's/[0-9]//g')-rocm-6.4.1
+source scripts/setup-rocm.sh 7.2.0
+cd build-$(hostname | sed 's/[0-9]//g')-rocm-7.2.0
 cmake --build . --parallel 10
 ctest --output-on-failure
 cmake --install .
@@ -223,7 +229,7 @@ arguments.
 For example:
 
 ```bash
-source scripts/setup-rocm.sh 6.4.1 -DCMAKE_BUILD_TYPE=RelWithDebInfo
+source scripts/setup-rocm.sh 7.2.0 -DCMAKE_BUILD_TYPE=RelWithDebInfo
 source scripts/setup-cuda.sh /path/to/llvm 12.2.2 -DCMAKE_BUILD_TYPE=RelWithDebInfo
 ```
 
@@ -256,7 +262,7 @@ external Proteus installation:
 - `PROTEUS_DIR`: Path to an existing Proteus installation prefix.
   This directory must allow `find_package(proteus)` to succeed.
 
-External Proteus installations must use release `v2026.03.0` and must be
+External Proteus installations must use release `v2026.05.0` and must be
 built with `-DBUILD_SHARED=On -DPROTEUS_INSTALL_IMPL_HEADERS=On`.
 
 When either of these variables is set, Mneme will use the specified

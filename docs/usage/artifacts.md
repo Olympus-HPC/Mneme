@@ -106,17 +106,17 @@ experimentation.
 
 The prologue file contains a full serialized snapshot of GPU memory,
 global variables, metadata, and kernel argument mappings. By default,
-the epilogue file is also stored as a full byte snapshot of the
-post-kernel state.
+the epilogue file is stored as a binary diff against the matching
+prologue.
 
-Epilogue snapshots can optionally be stored as binary diffs against the
-matching prologue by recording with:
+The default format is equivalent to:
 
 ```bash
 mneme record --epilogue-format diff -- <application> [args...]
 ```
 
-The default format is equivalent to:
+Epilogue snapshots can still be stored as full byte snapshots by
+recording with:
 
 ```bash
 mneme record --epilogue-format bytes -- <application> [args...]

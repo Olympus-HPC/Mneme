@@ -73,7 +73,7 @@ int main(int argc, char **argv) {
 
   Blob.setHostData(std::unique_ptr<uint8_t[]>(new uint8_t[128]));
 
-  proteus::GlobalVarInfo GV(GlobalData.second, GlobalData.first, 128);
+  proteus::runtime::GlobalMetadata GV{GlobalData.second, GlobalData.first, 128};
 
   std::string KernelName("TestKernel");
   std::shared_ptr<KernelInfo> TestKernel =
@@ -90,7 +90,7 @@ int main(int argc, char **argv) {
   TestKernel->setArgSizes(ArgSizes);
 
   // Create a raw_svector_ostream using the buffer
-  std::unordered_map<std::string, proteus::GlobalVarInfo> GVars;
+  proteus::runtime::GlobalMetadataMap GVars;
   GVars.try_emplace("Test", GV);
   llvm::DenseMap<void *, MnemeMemoryBlobDevice> DeviceMemMap;
   DeviceMemMap.try_emplace((void *)BlobData.first, std::move(Blob));
