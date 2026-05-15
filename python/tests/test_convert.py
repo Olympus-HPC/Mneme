@@ -201,3 +201,31 @@ def test_convert_to_json_always_writes_json_even_if_kernel_never_found(
     printed = capsys.readouterr().out
     assert '__attribute__((annotate("jit", 1,2)))' in printed
     assert "The kernel is defined in:" not in printed
+
+
+def test_export_proteus_tuned_kernel_writes_usage_file(monkeypatch, tmp_path, capsys):
+    """ Test that export_proteus_tuned_kernel writes a usage file with the expected content, including the attribute line and kernel source location if available."""
+    llvm = tmp_path / "a.bc"
+    llvm.write_bytes(b"dummy")
+
+    rec = _mk_recorded_execution(tmp_path, [llvm], demangled_name="demangled::name")
+    kd = _mk_kernel_descr(kernel_name="KERNEL", specializations=[True, False, True])
+    cfg = _mk_config()
+
+    root = tmp_path / "proj"
+    (root / "src").mkdir(parents=True)
+    src = "src/kernel.cu"
+    (root / src).write_text("// kernel")
+
+    func = DummyFunc(root=str(root), src=src, loc=123)
+    monkeypatch.setattr(m.module, "parse_bitcode", lambda ir: DummyMod({"KERNEL": func}))
+
+    out_json = tmp_path / "out.json"
+    usage = tmp_path / "usage.txt"
+    m.export_proteus_tuned_kernel(str(out_json), rec, kd, cfg, usage_filename=str(usage))
+
+    assert capsys.readouterr().out == ""
+    usage_text = usage.read_text()
+    assert '__attribute__((annotate("jit", 1,3)))' in usage_text
+    assert "Kernel source location:" in usage_text
+    assert "export PROTEUS_TUNED_KERNELS=" in usage_text
