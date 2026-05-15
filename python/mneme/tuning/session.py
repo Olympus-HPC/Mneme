@@ -50,21 +50,28 @@ EXIT_INTERNAL_ERROR = 5
 class TuneOptions:
     # TODO -- consider a 'profile' option that expands into space_preset, sampler, and trials defaults.
 
-    # Required options: record_database and record_id identify the kernel to tune in the mneme db
+    # Record selection: identifies the kernel to tune in the Mneme database.
     record_database: str
     record_id: str
 
+    # Search control.
     space_preset: str = "standard"
     sampler: str = "random"
     trials: Optional[int] = None
     timeout: Optional[float] = None
+
+    # Replay execution.
     iterations: int = 5
     warmup: int = 2
     workers: int = 1
+
+    # Output location, scoring, and reproducibility.
     results_dir: Optional[str] = None
     metric: str = "mean"
     objective: str = "time"
     seed: Optional[int] = None
+
+    # Run mode.
     resume: bool = False
     rerun_baseline: bool = False
     fail_fast: bool = False
@@ -74,18 +81,26 @@ class TuneOptions:
     proteus_output: Optional[str] = None
     proteus_enabled: bool = True
     quiet: bool = False
+
+    # Optuna integration.
     study_name: Optional[str] = None
     optuna_storage: Optional[str] = None
     pruner: str = "none"
+
+    # Launch-space controls.
     launch_dim: str = "auto"
     launch_safety: Optional[str] = None
     adaptive_invalid_ban: bool = True
+
+    # Compiler-space controls.
     passes: Optional[List[str]] = None
     fixed_passes: Optional[str] = None
     pipeline_file: Optional[str] = None
     codegen_opt_range: Optional[str] = None
     fixed_codegen_opt: Optional[int] = None
     codegen_method: Optional[str] = None
+
+    # Configuration-space controls.
     specialize_space: Optional[str] = None
     specialize_dims_space: Optional[str] = None
     launch_bounds_space: Optional[str] = None
@@ -93,8 +108,12 @@ class TuneOptions:
     fixed_min_blocks_per_sm: Optional[int] = None
     max_threads_range: Optional[str] = None
     max_threads_policy: str = "block-threads"
+
+    # Custom search space.
     space_module: Optional[str] = None
     space_arg: List[str] = field(default_factory=list)
+
+    # Configuration files.
     config: Optional[str] = None
     dump_config: Optional[str] = None
 
