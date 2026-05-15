@@ -34,7 +34,7 @@ The tuning workflow is:
 
 ---
 
-## Example: exhaustive tuning of `passes` and `blockDim.x`
+## Example: exhaustive tuning of `passes` and `blockDim.x` with the Python API
 
 Save the following as `examples/tuning_vecadd_exhaustive.py`:
 
@@ -311,3 +311,7 @@ From this you should be able to identify:
 
 !!! note
     This example uses `ExhaustiveSamplingStrategy`, which is ideal for small search spaces. Briefly, in the above example we execute 80 different configurations in 7.09seconds and every configurations performs 7 executions of the benchmark resulting in a throughput of 78replay(s)/second.  For larger spaces, switch to a sampling-based strategy (e.g., Optuna) and persist results to a dedicated tuning database.
+
+
+## Example: exhaustive tuning of `passes` and `blockDim.x` with the CLI API
+
