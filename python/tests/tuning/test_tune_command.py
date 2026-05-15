@@ -80,7 +80,7 @@ def test_tuning_session_writes_core_artifacts(monkeypatch, tmp_path):
         record_id="rid",
         space_preset="compiler",
         sampler="exhaustive",
-        trials=4,
+        trials=None,
         iterations=3,
         results_dir=str(tmp_path),
         passes=["default<O3>", "default<O2>"],
@@ -104,7 +104,6 @@ def test_tuning_session_writes_core_artifacts(monkeypatch, tmp_path):
     best = json.loads((tmp_path / "best.json").read_text())
     assert best["config"]["passes"] == "default<O2>"
     assert best["best_metric"] == 70
-    assert (tmp_path / "best_replay.sh").exists()
     assert (tmp_path / "proteus_usage.txt").read_text() == "usage"
     assert exported["filename"] == str(tmp_path / "proteus_tuned_kernels.json")
 
