@@ -151,6 +151,12 @@ class TuneOptions:
         if self.workers <= 0:
             raise ValueError("--workers must be a positive integer")
 
+        if self.iterations <= 0:
+            raise ValueError("--iterations must be a positive integer")
+        
+        if self.warmup < 0:
+            raise ValueError("--warmup must be a non-negative integer")
+
     def __post_init__(self):
         self._validate()
 
