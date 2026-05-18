@@ -148,6 +148,9 @@ class TuneOptions:
         if self.sampler in {"random", "tpe"} and self.trials is None:
             raise ValueError("--trials is required for random and tpe samplers")
 
+        if self.workers <= 0:
+            raise ValueError("--workers must be a positive integer")
+
     def __post_init__(self):
         self._validate()
 
