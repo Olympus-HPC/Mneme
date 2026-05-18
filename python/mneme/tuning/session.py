@@ -401,7 +401,7 @@ class TuningSession:
         immutable = [
             "record_database",
             "record_id",
-            "preset",
+            "space_preset",
             "space_module",
             "metric",
             "launch_dim",
