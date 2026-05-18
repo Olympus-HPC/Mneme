@@ -2,7 +2,6 @@
 set(MnemeCoreSrcDir ${CMAKE_CURRENT_SOURCE_DIR})
 set(AnnotationRuntimeSRC MnemeAnnotation.cpp)
 set(RecordLibSRC MnemeAnnotationInternal.cpp MnemeCrashHandler.cpp)
-set(ReplaySRC MnemeReplay.cpp MnemePageManager.cpp MnemeDeviceCode.cpp MnemeAnnotationInternal.cpp)
 
 if (MNEME_ENABLE_HIP)
   list(APPEND RecordLibSRC MnemeRecordPreloadHIP.cpp MnemePageManager.cpp)
@@ -19,40 +18,9 @@ target_include_directories(
 
 add_library(record SHARED ${RecordLibSRC})
 
-if(MNEME_LINK_SHARED_LLVM)
-  if(LLVM_LINK_LLVM_DYLIB)
-    llvm_config(record USE_SHARED)
-  else()
-    find_library(LLVM_SHARED_LIB
-      NAMES LLVM
-      PATHS "${LLVM_LIBRARY_DIR}"
-      NO_DEFAULT_PATH
-    )
-    if(LLVM_SHARED_LIB)
-      message(STATUS "Found libLLVM.so: ${LLVM_SHARED_LIB}")
-      set(llvm_libs ${LLVM_AVAILABLE_LIBS} CACHE INTERNAL "Points to the actual LLVM LIBS to be linked with")
-    else()
-      message(FATAL_ERROR "The LLVM installation at ${LLVM_DIR} does not provide libLLVM.so, required due to "
-      "MNEME_LINK_SHARED_LLVM=ON.
-      Change MNEME_LINK_SHARED_LLVM to OFF.
-      ")
-    endif()
-  endif()
-else()
-  if(LLVM_LINK_LLVM_DYLIB)
-    message(FATAL_ERROR "The LLVM installation at ${LLVM_DIR} requires to link with "
-    "the LLVM shared library, but MNEME_LINK_SHARED_LLVM=OFF.
-    Change MNEME_LINK_SHARED_LLVM to ON.")
-  endif()
-  set(llvm_libs ${LLVM_AVAILABLE_LIBS} CACHE INTERNAL "Points to the actual LLVM LIBS to be linked with")
-  # Some LLVM installations include in the LLVM_AVAILABLE_LIBS both an LLVM
-  # shared library AND static libraries. The LLVM shared library bundles those
-  # static libraries and we have to remove it to avoid static initialization
-  # errors from linking with both.
-  list(REMOVE_ITEM llvm_libs "LLVM")
+if(MNEME_LINK_SHARED_LLVM AND LLVM_LINK_LLVM_DYLIB)
+  llvm_config(record USE_SHARED)
 endif()
-
-message(STATUS "LLVM Libraries are: ${llvm_libs}")
 
 if (MNEME_ENABLE_HIP)
   set_source_files_properties(MnemeDeviceCode.cpp PROPERTIES LANGUAGE HIP)
@@ -77,14 +45,14 @@ endif()
 
 if(MNEME_ENABLE_HIP)
   target_link_libraries(record PRIVATE hip::host)
-  target_link_libraries(record PRIVATE ${llvm_libs})
+  target_link_libraries(record PRIVATE ${MNEME_LLVM_LIBS})
 elseif(MNEME_ENABLE_CUDA)
   target_link_libraries(record PRIVATE CUDA::cudart CUDA::cuda_driver)
-  target_link_libraries(record PRIVATE ${llvm_libs})
+  target_link_libraries(record PRIVATE ${MNEME_LLVM_LIBS})
 endif()
 
 set_target_properties(record PROPERTIES INSTALL_RPATH_USE_LINK_PATH TRUE)
 
-if (MNEME_ENABLE_AUTOTUNE)
+if (MNEME_ENABLE_PYTHON)
   add_subdirectory(python)
 endif()

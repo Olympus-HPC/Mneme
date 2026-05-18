@@ -218,7 +218,7 @@ The scripts can be configured with environment variables before sourcing:
 
 - `MNEME_ENABLE_TESTS`: configure the C++ test targets (`Off` by default).
 - `MNEME_ENABLE_LOGGER`: enable logging support (`Off` by default).
-- `MNEME_ENABLE_AUTOTUNE`: build autotuning/profile support (`Off` by default).
+- `MNEME_ENABLE_PYTHON`: build Python bindings, profiling, and autotuning (`Off` by default).
 - `MNEME_LINK_SHARED_LLVM`: link against shared LLVM libraries
   (`On` by default for CUDA, `Off` by default for ROCm).
 - `MNEME_CUDA_ARCHITECTURES`: CUDA architecture list for NVIDIA builds
@@ -282,12 +282,12 @@ Mneme uses pytest for its Python test suite.
 First, install the test dependencies:
 
 ```bash
-pip install pytest
+pip install -e ".[test]"
 ```
 
 Then run the tests:
 
-```
+```bash
 pytest python/tests
 ```
 

@@ -1,0 +1,7 @@
+#!@Python3_EXECUTABLE@
+# -*- coding: utf-8 -*-
+import re
+import sys
+from mneme.cli import main
+if __name__ == '__main__':
+    sys.exit(main())

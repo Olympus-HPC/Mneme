@@ -1,0 +1,11 @@
+{
+  "cc": "@CMAKE_C_COMPILER@",
+  "cxx": "@CMAKE_CXX_COMPILER@",
+  "prefix": "@PREFIX@",
+  "libdir": "@MNEME_CONFIG_LIBDIR@",
+  "includedir": "@PREFIX@/include",
+  "cmakedir": "@MNEME_CONFIG_LIBDIR@/cmake",
+  "cflags": "-fpass-plugin=@PROTEUS_LIBDIR@/libProteusPass.so -fplugin=@PROTEUS_LIBDIR@/libProteusPass.so -fno-discard-value-names -ftrivial-auto-var-init=zero -Xclang -mllvm -Xclang -force-proteus-jit-annotate-all",
+  "ldflags": "-L@LLVM_LIBRARY_DIR@ @LLVM_LIB_FLAGS@ @LLVM_SYSTEM_LIB_FLAGS@ -L@MNEME_CONFIG_LIBDIR@ -Wl,-rpath,@MNEME_CONFIG_LIBDIR@ -L@PROTEUS_LIBDIR@ -Wl,-rpath,@PROTEUS_LIBDIR@ -lmnemert -llldCommon -llldELF -lproteus",
+  "llvmdir": "@LLVM_INSTALL_PREFIX@"
+}
