@@ -505,13 +505,20 @@ class TuningSession:
         study = self._make_study()
         dims = space.dimensions()
         produced = 0
+        attempts = 0
         while produced < self.options.trials:
+            attempts += 1
+            if attempts > max(1000, self.options.trials * 100):
+                # TODO -- perhaps there's a safer way to check this or we should make the scaling
+                # parameter on trials cap configurable
+                raise RuntimeError("Could not sample enough valid candidates with Optuna")
+
             trial = study.ask()
             params = {
                 name: sample_optuna_param(trial, param)
                 for name, param in dims.items()
             }
-            
+
             if params.get("block_shape") in self._banned_block_shapes:
                 study.tell(trial, _objective_value("invalid_launch", None, None, self.options.objective))
                 continue
