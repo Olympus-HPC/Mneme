@@ -11,6 +11,8 @@ from setuptools.command.build_ext import build_ext
 from setuptools.command.build_py import build_py
 from setuptools.command.develop import develop
 from setuptools.command.egg_info import egg_info
+import shutil
+import glob
 
 
 # Helper function to run shell commands
@@ -83,6 +85,35 @@ def get_llvm_config(llvm_dir):
         "lib_names": run("--libnames"),
         "shared_mode": run("--shared-mode"),
     }
+
+
+class CopyPreBuilt(build_py):
+    """Bundles CMake-built libs/headers into the wheel.
+
+    CMake installs to staging dir, we copy into site-packages so the
+    Python package works standalone. Used by Spack and pip_wheel target.
+    """
+
+    def run(self):
+        super().run()
+
+        mneme_install_prefix = os.environ["MNEME_LIB_DIR"]
+        mneme_install_prefix = Path(mneme_install_prefix)
+        dst_native = Path(self.build_lib) / "mneme" / "native"
+
+        # Copy entire lib64/ directory
+        src_lib64 = mneme_install_prefix / "lib64"
+        if src_lib64.exists():
+            dst_lib64 = dst_native / "lib64"
+            print(f"Copying lib64/ directory to Python package")
+            shutil.copytree(src_lib64, dst_lib64, dirs_exist_ok=True)
+
+        # Copy entire include/ directory
+        src_include = mneme_install_prefix / "include"
+        if src_include.exists():
+            dst_include = dst_native / "include"
+            print(f"Copying include/ directory to Python package")
+            shutil.copytree(src_include, dst_include, dirs_exist_ok=True)
 
 
 # Custom build class for CMake
@@ -284,7 +315,7 @@ class CMakeBuild(build_ext):
             f"-DMNEME_ENABLE_HIP={self.has_amd}",
             f"-DMNEME_ENABLE_CUDA={self.has_nvidia}",
             "-DMNEME_ENABLE_TESTS=Off",
-            "-DMNEME_ENABLE_AUTOTUNE=On",
+            "-DMNEME_ENABLE_PYTHON=On",
             "-DCMAKE_INSTALL_RPATH=$ORIGIN",
             "-DCMAKE_SKIP_INSTALL_RPATH=OFF",
             "-DMNEME_ENABLE_LOGGER=On",
@@ -305,7 +336,6 @@ class CMakeBuild(build_ext):
         run_command(["cmake", mneme_path] + cmake_options, cwd=build_dir)
         run_command(["make", "-j10"], cwd=build_dir)
         run_command(["make", "-j10", "install"], cwd=build_dir)
-
 
 class CustomDevelop(develop):
     def run(self):
@@ -332,16 +362,25 @@ class CustomBuildPy(build_py):
         super().run()
 
 
-# Setup configuration data moved to setup.cfg and pyproject.toml.
-# Keep the custom build commands (cmdclass) here and invoke setup so
-# setuptools will read declarative metadata from setup.cfg.
 if __name__ == "__main__":
-    setup(
-        ext_modules=[],
-        cmdclass={
+    # check if we're using pre-built libs
+    mneme_lib_dir = os.environ.get("MNEME_LIB_DIR")
+
+    if mneme_lib_dir:
+        print(f"Using pre-built C++ libraries from: {mneme_lib_dir}")
+        cmdclass = {
+            "build_py": CopyPreBuilt,
+        }
+    else:
+        # Building from scratch (pip install)
+        cmdclass = {
             "build_ext": CMakeBuild,
             "build_py": CustomBuildPy,
             "develop": CustomDevelop,
             "egg_info": CustomEggInfo,
-        },
+        }
+
+    setup(
+        ext_modules=[],
+        cmdclass=cmdclass,
     )

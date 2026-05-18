@@ -1,3 +1,44 @@
 [build-system]
 requires = ["setuptools>=61", "wheel"]
 build-backend = "setuptools.build_meta"
+
+[project]
+name = "mneme"
+version = "0.1.0"
+description = "Python bindings for Mneme replay tool"
+readme = "README.md"
+license = "Apache-2.0 WITH LLVM-exception"
+license-files = ["LICENSE", "NOTICE"]
+authors = [
+    {name = "Konstantinos Parasyris", email = "koparasy@gmail.com"}
+]
+requires-python = ">=3.9"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "optuna>=4.4",
+    "scipy",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=7.0",
+    "pytest-mock>=3.0",
+    "pytest-cov",
+]
+
+[project.scripts]
+mneme = "mneme.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "python"}
+include-package-data = false
+
+[tool.setuptools.packages.find]
+where = ["python"]
+exclude = ["mneme.native", "mneme.native.*"]
+
+[tool.setuptools.package-data]
+mneme = ["native/**/*"]
