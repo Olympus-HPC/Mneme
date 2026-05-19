@@ -1,18 +1,15 @@
-import glob
 import json
 import os
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
 
-from setuptools import Extension, find_packages, setup
+from setuptools import setup
 from setuptools.command.build_ext import build_ext
 from setuptools.command.build_py import build_py
 from setuptools.command.develop import develop
 from setuptools.command.egg_info import egg_info
 import shutil
-import glob
 
 
 # Helper function to run shell commands
@@ -140,8 +137,6 @@ class CMakeBuild(build_ext):
         pkg_dir = src_pkg_dir if self.editable else build_pkg_dir
 
         self.install_dir = pkg_dir / "native"
-        self.config_json = self.install_dir / "config.json"
-
         self.install_dir.mkdir(parents=True, exist_ok=True)
         (self.install_dir / "lib64").mkdir(parents=True, exist_ok=True)
         (self.install_dir / "include").mkdir(parents=True, exist_ok=True)
@@ -167,40 +162,18 @@ class CMakeBuild(build_ext):
         else:
             self.cxx = f"{self.llvm_dir}/bin/clang++"
             self.cc = f"{self.llvm_dir}/bin/clang"
-        prefix = Path(self.install_dir).resolve()
-        libdir = prefix / "lib64"
-        includedir = prefix / "include"
-        cmake_dir = libdir / "cmake"
         self.llvm_config = get_llvm_config(self.llvm_dir)
-
-        cfg = {
-            "cc": self.cc,
-            "cxx": self.cxx,
-            "prefix": "@PREFIX@",
-            "libdir": "@PREFIX@/lib64",
-            "includedir": "@PREFIX@/include",
-            "cmakedir": "@PREFIX@/lib64/cmake",
-            "cflags": f"-fpass-plugin=@PREFIX@/lib64/libProteusPass.so -fplugin=@PREFIX@/lib64/libProteusPass.so -fno-discard-value-names -ftrivial-auto-var-init=zero -Xclang -mllvm -Xclang -force-proteus-jit-annotate-all",
-            "ldflags": f"-L{self.llvm_dir}/lib -L{self.llvm_dir}/llvm/lib {self.llvm_config['libs']} {self.llvm_config['system_libs']} -L@PREFIX@/lib64/ -Wl,-rpath,@PREFIX@/lib64/ -llldCommon -llldELF -lproteus",
-        }
-
-        if not prefix.exists():
-            prefix.mkdir(parents=True, exist_ok=True)
-        with open(self.config_json, "w") as fd:
-            json.dump(cfg, fd, indent=2)
 
     def run(self):
         self.build_scratch = Path(self.build_temp).resolve()
         self.build_scratch.mkdir(parents=True, exist_ok=True)
         self.build_scratch = str(self.build_scratch)
 
-        if "PROTEUS_DIR" in os.environ:
-            proteus_dir = os.environ["PROTEUS_DIR"]
-        else:
-            proteus_dir = self.clone_and_build_proteus()
+        if "PROTEUS_DIR" not in os.environ:
+            self.clone_and_build_proteus()
 
-        spdlog_dir = self.clone_and_build_spdlog()
-        self.build_mneme(proteus_dir, spdlog_dir)
+        self.clone_and_build_spdlog()
+        self.build_mneme()
 
     def clone_and_build_proteus(self):
         if "PROTEUS_SRC" in os.environ:
@@ -259,7 +232,6 @@ class CMakeBuild(build_ext):
         )
         run_command(["make", "-j10"], cwd=build_dir)
         run_command(["make", "install"], cwd=build_dir)
-        return self.install_dir
 
     def clone_and_build_spdlog(self):
         spdlog_path = os.path.abspath(f"{self.build_scratch}/spdlog")
@@ -296,9 +268,8 @@ class CMakeBuild(build_ext):
 
         run_command(["make", "-j10"], cwd=build_dir)
         run_command(["make", "install"], cwd=build_dir)
-        return self.install_dir
 
-    def build_mneme(self, proteus_dir, spdlog_dir):
+    def build_mneme(self):
         mneme_path = str(self.root_dir)
         build_dir = os.path.join(self.build_scratch, "mneme/build")
         os.makedirs(build_dir, exist_ok=True)

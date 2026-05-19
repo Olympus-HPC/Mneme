@@ -55,6 +55,18 @@ find_package(proteus REQUIRED)
 include(cmake/MnemeFunctions.cmake)
 get_target_property(proteus_link_dirs proteus INTERFACE_LINK_DIRECTORIES)
 
+# Get Proteus library directory for config.json
+if(NOT DEFINED PROTEUS_LIBDIR)
+  # cmake package detection
+  if(proteus_link_dirs)
+    list(GET proteus_link_dirs 0 PROTEUS_LIBDIR)
+  else()
+    message(FATAL_ERROR "Could not determine PROTEUS_LIBDIR. Please set -DPROTEUS_LIBDIR=/path/to/proteus/lib64")
+  endif()
+endif()
+
+message(STATUS "Proteus library directory: ${PROTEUS_LIBDIR}")
+
 
 add_subdirectory(src)
 

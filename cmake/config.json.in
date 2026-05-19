@@ -5,6 +5,7 @@
   "libdir": "@PREFIX@/lib64",
   "includedir": "@PREFIX@/include",
   "cmakedir": "@PREFIX@/lib64/cmake",
-  "cflags": "-fpass-plugin=@PREFIX@/lib64/libProteusPass.so -fplugin=@PREFIX@/lib64/libProteusPass.so -fno-discard-value-names -ftrivial-auto-var-init=zero -Xclang -mllvm -Xclang -force-proteus-jit-annotate-all",
-  "ldflags": "-L@LLVM_LIBRARY_DIR@ @LLVM_LIBS@ @LLVM_SYSTEM_LIBS@ -L@PREFIX@/lib64/ -Wl,-rpath,@PREFIX@/lib64/ -llldCommon -llldELF -lproteus"
+  "proteus_libdir": "@PROTEUS_LIBDIR@",
+  "cflags": "-fpass-plugin=@PROTEUS_LIBDIR@/libProteusPass.so -fplugin=@PROTEUS_LIBDIR@/libProteusPass.so -fno-discard-value-names -ftrivial-auto-var-init=zero -Xclang -mllvm -Xclang -force-proteus-jit-annotate-all",
+  "ldflags": "-L@LLVM_LIBRARY_DIR@ @LLVM_LIBS@ @LLVM_SYSTEM_LIBS@ -L@PREFIX@/lib64/ -Wl,-rpath,@PREFIX@/lib64/ -L@PROTEUS_LIBDIR@ -Wl,-rpath,@PROTEUS_LIBDIR@ -llldCommon -llldELF -lproteus"
 }
