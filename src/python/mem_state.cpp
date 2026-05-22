@@ -23,8 +23,10 @@ MnemePy_initializeMemState(const char *KernelName, const char *fn,
 }
 
 API_EXPORT(void) MnemePy_DisposeMemState(MnemeDeviceMemStateRef MemState) {
+  if (MemState == nullptr)
+    return;
   auto state = unwrap(MemState);
-  state->release();
+  delete state;
 }
 
 API_EXPORT(void) MnemePy_LoadMemState(MnemeDeviceMemStateRef MemState) {

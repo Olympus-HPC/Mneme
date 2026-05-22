@@ -91,7 +91,7 @@ private:
 
 public:
   ReplayMemState() = delete;
-  virtual ~ReplayMemState() = default;
+  virtual ~ReplayMemState() { release(); }
 
   // Materializes this state onto the device.
   virtual void load() = 0;
@@ -103,7 +103,9 @@ public:
 
   void release() {
     for (auto &[DevAddr, MemBlob] : DeviceMemoryState) {
-      MemBlob.release();
+      auto EC = DeviceTraits<VendorTypes>::DeviceErrorCheck(MemBlob.release());
+      if (EC)
+        LOG_FATAL("Could not release replay memory blob\nEC: " + EC.value());
     }
     DeviceMemoryState.clear();
   }

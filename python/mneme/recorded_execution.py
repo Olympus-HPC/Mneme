@@ -178,7 +178,13 @@ class MemStateRef:
 
     def _dispose(self):
         if self._state is not None:
-            ffi.lib.MnemePy_DisposeMemState(self._state)
+            try:
+                ffi.lib.MnemePy_DisposeMemState(self._state)
+            finally:
+                self._state = None
+                self._load = False
+                self._args = None
+                self._num_args = None
 
     def open(self):
         """
@@ -301,22 +307,8 @@ class MemStateRef:
 
     def __del__(self):
         try:
-            state = getattr(self, "_state", None)
-
-            # If no state, or constructor failed, or tests used fake values → skip cleanup
-            if not state or isinstance(state, str):
-                return
-
-            # Call disposer only if available and callable
-            dispose = getattr(ffi.lib, "MnemePy_DisposeMemState", None)
-            if callable(dispose):
-                try:
-                    dispose(state)
-                except Exception:
-                    pass
-
+            self._dispose()
         except Exception:
-            # Absolutely nothing should escape __del__
             pass
 
 
