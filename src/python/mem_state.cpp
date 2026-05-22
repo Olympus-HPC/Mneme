@@ -36,12 +36,16 @@ API_EXPORT(void) MnemePy_LoadMemState(MnemeDeviceMemStateRef MemState) {
 
 API_EXPORT(bool)
 MnemePy_CompareMemState(MnemeDeviceMemStateRef v1, MnemeDeviceMemStateRef v2) {
-  // Python calls this as prologue.__eq__(epilogue): v1 is the prologue and v2
-  // the epilogue.
-  auto *Prologue = unwrap(v1)->asPrologue();
-  auto *Epilogue = unwrap(v2)->asEpilogue();
+  // Accepts the prologue and epilogue in either argument order; each role is
+  // resolved by asking both states which one they are.
+  auto *S1 = unwrap(v1);
+  auto *S2 = unwrap(v2);
+
+  auto *Prologue = S1->asPrologue() ? S1->asPrologue() : S2->asPrologue();
+  auto *Epilogue = S1->asEpilogue() ? S1->asEpilogue() : S2->asEpilogue();
   if (!Prologue || !Epilogue)
-    LOG_FATAL("CompareMemState expects (prologue, epilogue)");
+    LOG_FATAL("CompareMemState expects one prologue and one epilogue");
+
   return Epilogue->matches(*Prologue);
 }
 
