@@ -1,6 +1,5 @@
 #pragma once
 
-#include <atomic>
 #include <cstdint>
 #include <cstring>
 #include <llvm/ADT/StringRef.h>
@@ -38,8 +37,7 @@ public:
   MnemeMemoryBlob(uint64_t ActualSize = 0, void *BlobAddr = nullptr,
                   uint64_t Size = 0)
       : ActualSize(ActualSize), BlobAddr(BlobAddr), Size(Size),
-        HostData(new uint8_t[Size]), IsMapped(false) {
-  }
+        HostData(new uint8_t[Size]), IsMapped(false) {}
 
   DeviceError_t map(void *VA, uint64_t ActualSize, uint64_t Size) {
     this->Size = Size;
@@ -63,9 +61,8 @@ public:
   }
 
   DeviceError_t release() {
-    if (!BlobAddr) {
+    if (!BlobAddr)
       return MnemeDeviceRT::DeviceSuccess;
-    }
 
     if (!IsMapped) {
       auto ret = MnemeDeviceRT::DeviceFree(BlobAddr);
@@ -199,5 +196,4 @@ llvm::raw_ostream &operator<<(llvm::raw_ostream &OS,
 
   return OS;
 }
-
 } // namespace mneme
