@@ -189,6 +189,8 @@ public:
       DeviceID = deviceID;
     } else if (PM == nullptr) {
       DeviceID = deviceID;
+    } else if (deviceID == DeviceID) {
+      // no change; ignore
     } else if (DeviceID != -1 && PM != nullptr) {
       LOG_CRITICAL("Setting Device ID although it already "
                    "set and memory is "
