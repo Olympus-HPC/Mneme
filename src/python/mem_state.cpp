@@ -36,8 +36,7 @@ API_EXPORT(void) MnemePy_LoadMemState(MnemeDeviceMemStateRef MemState) {
 
 API_EXPORT(bool)
 MnemePy_CompareMemState(MnemeDeviceMemStateRef v1, MnemeDeviceMemStateRef v2) {
-  // Accepts the prologue and epilogue in either argument order; each role is
-  // resolved by asking both states which one they are.
+  // The prologue and epilogue may be passed in either argument order.
   auto *S1 = unwrap(v1);
   auto *S2 = unwrap(v2);
 
