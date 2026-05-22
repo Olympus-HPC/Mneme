@@ -93,7 +93,6 @@ public:
   ReplayMemState() = delete;
   virtual ~ReplayMemState() { release(); }
 
-  // Materializes this state onto the device.
   virtual void load() = 0;
 
   void reset() {
@@ -119,8 +118,7 @@ public:
     return GlobalVars;
   }
 
-  // RTTI-free downcasts to a concrete role; each returns nullptr for the
-  // other role.
+  // RTTI-free downcasts to a concrete role.
   virtual PrologueState<VendorTypes> *asPrologue() { return nullptr; }
   virtual EpilogueState<VendorTypes> *asEpilogue() { return nullptr; }
 
@@ -159,8 +157,7 @@ public:
   }
 };
 
-// Replay state for the recorded kernel input. load() maps each memory blob back
-// to its recorded device address before copying the recorded data over.
+// Replay state for the recorded kernel input.
 template <DeviceVendors VendorTypes>
 class PrologueState : public ReplayMemState<VendorTypes> {
 public:
@@ -194,9 +191,9 @@ protected:
   bool isPrologue() const override { return true; }
 };
 
-// Intermediate base for the expected kernel output state. load() allocates
-// fresh device memory (the epilogue is output-only) before copying the
-// recorded data over. It is not directly constructible; use one of the
+// Intermediate base for the expected kernel output state. The epilogue is
+// output-only, so load() allocates fresh device memory rather than mapping to
+// recorded addresses. It is not directly constructible; use one of the
 // snapshot-format-specific subclasses below.
 template <DeviceVendors VendorTypes>
 class EpilogueState : public ReplayMemState<VendorTypes> {
@@ -241,9 +238,8 @@ public:
         Correct = false;
     }
 
-    // Global variables: only the prologue's globals are device-resident (the
-    // epilogue never loads globals). Fetch the prologue's post-kernel global
-    // off the device and compare against this epilogue's recorded bytes.
+    // Global variables: only the prologue's globals are device-resident; the
+    // epilogue never loads globals.
     for (auto &[GVName, ProGV] : Prologue.getGlobalVars()) {
       auto It = this->GlobalVars.find(GVName);
       if (It == this->GlobalVars.end()) {

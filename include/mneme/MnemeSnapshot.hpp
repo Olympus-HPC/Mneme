@@ -473,13 +473,11 @@ public:
     return Filename.filename();
   }
 
-  // Returns true if Filename holds a diff snapshot (carries the diff magic).
   static bool isDiffSnapshot(const std::string &Filename) {
     auto Buffer = openSnapshotFile(Filename);
     return isDiffBuffer(Buffer->getBuffer());
   }
 
-  // Reads a full "bytes" snapshot from Filename.
   static Snapshot<VendorTypes> readBytesSnapshot(std::string KernelName,
                                                  const std::string &Filename) {
     LOG_DEBUG("Opening bytes snapshot file {}", Filename);
