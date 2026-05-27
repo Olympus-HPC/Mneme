@@ -202,6 +202,25 @@ public:
   DeviceError_t rtGetDevice(int *deviceID) override {
     return Runtime.origGetDeviceID(deviceID);
   }
+
+  ~RecordingBackend() {
+    LOG_DEBUG("RecordingBackend destructor: releasing {} blobs", AllocatedBlobs.size());
+
+    // Release all unreleased blobs before the DenseMap destructs
+    for (auto &Entry : AllocatedBlobs) {
+      auto &Blob = Entry.second;
+      if (Blob.getBlobAddr() != nullptr) {
+        LOG_DEBUG("Releasing blob at addr={} during recorder cleanup",
+                  Blob.getBlobAddr());
+        Blob.release();
+      }
+    }
+
+    if (PM)
+      PM.reset();
+
+    LOG_DEBUG("RecordingBackend destructor complete");
+  }
 };
 
 } // namespace mneme
