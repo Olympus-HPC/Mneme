@@ -104,7 +104,7 @@ public:
     for (auto &[DevAddr, MemBlob] : DeviceMemoryState) {
       auto EC = DeviceTraits<VendorTypes>::DeviceErrorCheck(MemBlob.release());
       if (EC)
-        LOG_FATAL("Could not release replay memory blob\nEC: " + EC.value());
+        LOG_WARN("Could not release replay memory blob: {}", EC.value());
     }
     DeviceMemoryState.clear();
   }
