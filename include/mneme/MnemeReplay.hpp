@@ -191,18 +191,14 @@ protected:
   bool isPrologue() const override { return true; }
 };
 
-// Intermediate base for the expected kernel output state. The epilogue is
-// output-only, so load() allocates fresh device memory rather than mapping to
-// recorded addresses. It is not directly constructible; use one of the
-// snapshot-format-specific subclasses below.
+// Replay state for the expected kernel output. Unlike the prologue, load()
+// allocates fresh device memory rather than mapping to recorded addresses.
 template <DeviceVendors VendorTypes>
 class EpilogueState : public ReplayMemState<VendorTypes> {
-protected:
-  using ReplayMemState<VendorTypes>::ReplayMemState;
-
-  bool isPrologue() const override { return false; }
-
 public:
+  explicit EpilogueState(Snapshot<VendorTypes> SnapshotState)
+      : ReplayMemState<VendorTypes>(std::move(SnapshotState)) {}
+
   void load() override {
     for (auto &[DevAddr, MemBlob] : this->DeviceMemoryState) {
       auto EC = DeviceTraits<VendorTypes>::DeviceErrorCheck(
@@ -267,28 +263,9 @@ public:
     LOG_DEBUG("Memory States {}", Correct ? "are the same" : "differ");
     return Correct;
   }
-};
 
-// Epilogue state backed by a full "bytes" snapshot.
-template <DeviceVendors VendorTypes>
-class BytesEpilogueState : public EpilogueState<VendorTypes> {
-public:
-  BytesEpilogueState(const std::string &KernelName,
-                     const std::string &SnapshotFile)
-      : EpilogueState<VendorTypes>(
-            MnemeSnapshot<VendorTypes>::readBytesSnapshot(KernelName,
-                                                          SnapshotFile)) {}
-};
-
-// Epilogue state backed by a diff snapshot taken relative to a base prologue.
-template <DeviceVendors VendorTypes>
-class DiffEpilogueState : public EpilogueState<VendorTypes> {
-public:
-  DiffEpilogueState(const std::string &KernelName,
-                    const std::string &SnapshotFile,
-                    const std::string &BasePrologueFile)
-      : EpilogueState<VendorTypes>(MnemeSnapshot<VendorTypes>::readDiffSnapshot(
-            KernelName, SnapshotFile, BasePrologueFile)) {}
+protected:
+  bool isPrologue() const override { return false; }
 };
 
 template <DeviceVendors VendorTypes>
@@ -303,15 +280,10 @@ std::unique_ptr<ReplayMemState<VendorTypes>>
 makeReplayEpilogueState(const std::string &KernelName,
                         const std::string &SnapshotFile,
                         const std::string &BasePrologueFile) {
-  if (MnemeSnapshot<VendorTypes>::isDiffSnapshot(SnapshotFile)) {
-    if (BasePrologueFile.empty())
-      LOG_FATAL("Mneme diff epilogue requires an explicit base prologue "
-                "snapshot path");
-    return std::make_unique<DiffEpilogueState<VendorTypes>>(
-        KernelName, SnapshotFile, BasePrologueFile);
-  }
-  return std::make_unique<BytesEpilogueState<VendorTypes>>(KernelName,
-                                                           SnapshotFile);
+  Snapshot<VendorTypes> Snap =
+      MnemeSnapshot<VendorTypes>::openSnapshot(SnapshotFile)
+          ->reconstruct(KernelName, BasePrologueFile);
+  return std::make_unique<EpilogueState<VendorTypes>>(std::move(Snap));
 }
 
 } // namespace mneme

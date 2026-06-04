@@ -77,7 +77,53 @@ template <DeviceVendors VendorTypes> struct Snapshot {
   llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> DeviceMemory;
 };
 
+template <DeviceVendors VendorTypes> class MnemeSnapshot;
+
+// An opened snapshot file. The concrete subclass encodes the on-disk format
+// (full "bytes" vs diff), detected from the file's magic header. reconstruct()
+// turns the held buffer into the format-independent Snapshot that the replay
+// memory states consume.
+template <DeviceVendors VendorTypes> class SnapshotFile {
+public:
+  SnapshotFile(std::string Filename, std::unique_ptr<llvm::MemoryBuffer> Buffer)
+      : Filename(std::move(Filename)), Buffer(std::move(Buffer)) {}
+  virtual ~SnapshotFile() = default;
+
+  // Reconstructs the full snapshot contents. BasePrologueFile names the base
+  // prologue snapshot a diff is applied onto; self-contained formats ignore it.
+  virtual Snapshot<VendorTypes>
+  reconstruct(const std::string &KernelName,
+              const std::string &BasePrologueFile) const = 0;
+
+protected:
+  std::string Filename;
+  std::unique_ptr<llvm::MemoryBuffer> Buffer;
+};
+
+template <DeviceVendors VendorTypes>
+class BytesSnapshotFile : public SnapshotFile<VendorTypes> {
+public:
+  using SnapshotFile<VendorTypes>::SnapshotFile;
+
+  Snapshot<VendorTypes>
+  reconstruct(const std::string &KernelName,
+              const std::string &BasePrologueFile) const override;
+};
+
+template <DeviceVendors VendorTypes>
+class DiffSnapshotFile : public SnapshotFile<VendorTypes> {
+public:
+  using SnapshotFile<VendorTypes>::SnapshotFile;
+
+  Snapshot<VendorTypes>
+  reconstruct(const std::string &KernelName,
+              const std::string &BasePrologueFile) const override;
+};
+
 template <DeviceVendors VendorTypes> class MnemeSnapshot {
+  friend class BytesSnapshotFile<VendorTypes>;
+  friend class DiffSnapshotFile<VendorTypes>;
+
   using MnemeDeviceRT = DeviceTraits<VendorTypes>;
   using DeviceError_t = typename MnemeDeviceRT::DeviceError_t;
   using DeviceStream_t = typename MnemeDeviceRT::DeviceStream_t;
@@ -473,48 +519,61 @@ public:
     return Filename.filename();
   }
 
-  static bool isDiffSnapshot(const std::string &Filename) {
+  // Opens Filename and returns it as the concrete on-disk format detected from
+  // its magic header.
+  static std::unique_ptr<SnapshotFile<VendorTypes>>
+  openSnapshot(const std::string &Filename) {
+    LOG_DEBUG("Opening snapshot file {}", Filename);
     auto Buffer = openSnapshotFile(Filename);
-    return isDiffBuffer(Buffer->getBuffer());
+    if (isDiffBuffer(Buffer->getBuffer()))
+      return std::make_unique<DiffSnapshotFile<VendorTypes>>(Filename,
+                                                             std::move(Buffer));
+    return std::make_unique<BytesSnapshotFile<VendorTypes>>(Filename,
+                                                            std::move(Buffer));
   }
 
   static Snapshot<VendorTypes> readBytesSnapshot(std::string KernelName,
                                                  const std::string &Filename) {
-    LOG_DEBUG("Opening bytes snapshot file {}", Filename);
-    auto Buffer = openSnapshotFile(Filename);
-    if (isDiffBuffer(Buffer->getBuffer()))
-      LOG_FATAL("Mneme bytes snapshot loader received a diff snapshot: " +
-                Filename);
-
-    Snapshot<VendorTypes> Snap;
-    Snap.KInfo = std::make_shared<KernelInfo>(KernelName);
-    readFullMnemeSnapShot(Buffer.get(), Snap.GlobalVars, Snap.DeviceMemory,
-                          Snap.KInfo);
-    return Snap;
+    return openSnapshot(Filename)->reconstruct(KernelName, "");
   }
 
-  // Reads a diff snapshot from Filename, reconstructing the full state by
-  // applying the diff onto the base prologue snapshot at BasePrologueFile.
+  // Opens Filename and reconstructs it as a diff snapshot applied onto the base
+  // prologue snapshot at BasePrologueFile.
   static Snapshot<VendorTypes>
   readDiffSnapshot(std::string KernelName, const std::string &Filename,
                    const std::string &BasePrologueFile) {
-    LOG_DEBUG("Opening diff snapshot file {}", Filename);
-    if (BasePrologueFile.empty())
-      LOG_FATAL("Mneme diff epilogue requires an explicit base prologue "
-                "snapshot path");
-
-    Snapshot<VendorTypes> Snap = readBytesSnapshot(KernelName, BasePrologueFile);
-
-    auto DiffBuffer = openSnapshotFile(Filename);
-    if (!isDiffBuffer(DiffBuffer->getBuffer()))
-      LOG_FATAL("Mneme diff snapshot loader received a bytes snapshot: " +
-                Filename);
-
-    applyDiffMnemeSnapShot(Filename, Snap.GlobalVars, Snap.DeviceMemory,
-                           DiffBuffer.get());
-    return Snap;
+    return openSnapshot(Filename)->reconstruct(KernelName, BasePrologueFile);
   }
 };
+
+template <DeviceVendors VendorTypes>
+Snapshot<VendorTypes> BytesSnapshotFile<VendorTypes>::reconstruct(
+    const std::string &KernelName, const std::string &) const {
+  Snapshot<VendorTypes> Snap;
+  // KernelInfo's constructor takes a non-const std::string &, so name it with a
+  // mutable local.
+  std::string Name = KernelName;
+  Snap.KInfo = std::make_shared<KernelInfo>(Name);
+  MnemeSnapshot<VendorTypes>::readFullMnemeSnapShot(
+      this->Buffer.get(), Snap.GlobalVars, Snap.DeviceMemory, Snap.KInfo);
+  return Snap;
+}
+
+template <DeviceVendors VendorTypes>
+Snapshot<VendorTypes> DiffSnapshotFile<VendorTypes>::reconstruct(
+    const std::string &KernelName, const std::string &BasePrologueFile) const {
+  if (BasePrologueFile.empty())
+    LOG_FATAL("Mneme diff epilogue requires an explicit base prologue "
+              "snapshot path");
+
+  // A diff stores only changed ranges, so reconstruct the full base prologue
+  // first and then overlay the diff onto it.
+  Snapshot<VendorTypes> Snap =
+      MnemeSnapshot<VendorTypes>::readBytesSnapshot(KernelName, BasePrologueFile);
+  MnemeSnapshot<VendorTypes>::applyDiffMnemeSnapShot(
+      this->Filename, Snap.GlobalVars, Snap.DeviceMemory, this->Buffer.get());
+  return Snap;
+}
 
 struct KernelInstance {
   std::string PrologueFn;
