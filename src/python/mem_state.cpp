@@ -1,4 +1,5 @@
 #include "llvm/core.h"
+#include <memory>
 #include <mneme/MnemePython.hpp>
 #include <mneme/MnemeUtils.hpp>
 #include <string>
@@ -12,19 +13,20 @@ extern "C" {
 API_EXPORT(MnemeDeviceMemStateRef)
 MnemePy_initializeMemState(const char *KernelName, const char *fn,
                            const char *BasePrologueFn, bool isPrologue) {
-  DeviceMemState::InstanceType type =
-      isPrologue ? DeviceMemState::InstanceType::Prologue
-                 : DeviceMemState::InstanceType::Epilogue;
   std::string BaseSnapshotName =
       BasePrologueFn == nullptr ? "" : std::string(BasePrologueFn);
-  DeviceMemState *state =
-      new DeviceMemState(KernelName, fn, type, BaseSnapshotName);
-  return wrap(state);
+  std::unique_ptr<DeviceMemState> state =
+      isPrologue
+          ? makeReplayPrologueState<Vendor>(KernelName, fn)
+          : makeReplayEpilogueState<Vendor>(KernelName, fn, BaseSnapshotName);
+  return wrap(state.release());
 }
 
 API_EXPORT(void) MnemePy_DisposeMemState(MnemeDeviceMemStateRef MemState) {
+  if (MemState == nullptr)
+    return;
   auto state = unwrap(MemState);
-  state->release();
+  delete state;
 }
 
 API_EXPORT(void) MnemePy_LoadMemState(MnemeDeviceMemStateRef MemState) {
@@ -34,10 +36,16 @@ API_EXPORT(void) MnemePy_LoadMemState(MnemeDeviceMemStateRef MemState) {
 
 API_EXPORT(bool)
 MnemePy_CompareMemState(MnemeDeviceMemStateRef v1, MnemeDeviceMemStateRef v2) {
-  auto state1 = unwrap(v1);
-  auto state2 = unwrap(v2);
-  auto res = (*state1 == *state2);
-  return res;
+  // The prologue and epilogue may be passed in either argument order.
+  auto *S1 = unwrap(v1);
+  auto *S2 = unwrap(v2);
+
+  auto *Prologue = S1->asPrologue() ? S1->asPrologue() : S2->asPrologue();
+  auto *Epilogue = S1->asEpilogue() ? S1->asEpilogue() : S2->asEpilogue();
+  if (!Prologue || !Epilogue)
+    LOG_FATAL("CompareMemState expects one prologue and one epilogue");
+
+  return Epilogue->matches(*Prologue);
 }
 
 API_EXPORT(void)

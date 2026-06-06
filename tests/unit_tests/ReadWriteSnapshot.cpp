@@ -101,14 +101,11 @@ int main(int argc, char **argv) {
       GVars, DeviceMemMap, SnapshotFN, TestKernel->KernelArgSizes, Args, 0,
       &PrologueGlobals);
 
-  std::unordered_map<std::string, ReplayGlobalVar> ReadGVars;
-  llvm::DenseMap<void *, MnemeMemoryBlobDevice> ReadDeviceMemMap;
-  std::string RKernelName("TestKernel");
-  std::shared_ptr<KernelInfo> RTestKernel =
-      std::make_shared<KernelInfo>(KernelName);
-
-  MnemeSnapshot<Vendor>::readMnemeSnapShot(SnapshotFN, ReadGVars,
-                                           ReadDeviceMemMap, RTestKernel);
+  auto ReadSnap =
+      MnemeSnapshot<Vendor>::readBytesSnapshot(KernelName, SnapshotFN.string());
+  auto &ReadGVars = ReadSnap.GlobalVars;
+  auto &ReadDeviceMemMap = ReadSnap.DeviceMemory;
+  auto &RTestKernel = ReadSnap.KInfo;
 
   auto ValidateGlobalMem = [&]() {
     auto it = ReadGVars.find("Test");
@@ -248,13 +245,11 @@ int main(int argc, char **argv) {
   MnemeSnapshot<Vendor>::takeMnemeDiffSnapshot(
       GVars, DeviceMemMap, DiffSnapshotFN, PrologueGlobals, 0);
 
-  std::unordered_map<std::string, ReplayGlobalVar> DiffGVars;
-  llvm::DenseMap<void *, MnemeMemoryBlobDevice> DiffDeviceMemMap;
-  std::shared_ptr<KernelInfo> DiffKernel =
-      std::make_shared<KernelInfo>(KernelName);
-  MnemeSnapshot<Vendor>::readMnemeSnapShot(
-      DiffSnapshotFN, DiffGVars, DiffDeviceMemMap, DiffKernel,
-      std::optional<std::string>(SnapshotFN.string()));
+  auto DiffSnap = MnemeSnapshot<Vendor>::readDiffSnapshot(
+      KernelName, DiffSnapshotFN.string(), SnapshotFN.string());
+  auto &DiffGVars = DiffSnap.GlobalVars;
+  auto &DiffDeviceMemMap = DiffSnap.DeviceMemory;
+  auto &DiffKernel = DiffSnap.KInfo;
 
   auto ValidateDiffGlobalMem = [&]() {
     auto it = DiffGVars.find("Test");
