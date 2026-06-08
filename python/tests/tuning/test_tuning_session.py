@@ -378,7 +378,10 @@ def test_evaluate_baseline_uses_resumed_metric_without_executor_call(tmp_path):
     session.store.write_baseline(
         {
             "config": make_config().to_dict(),
-            "result": ExperimentResult(verified=True, executed=True, exec_time=[5, 3, 4]).to_dict(),
+            "result": dict(
+                ExperimentResult(verified=True, executed=True, exec_time=[5, 3, 4]).to_dict(),
+                metric=2.5,
+            ),
         }
     )
     executor = RecordingExecutor()
@@ -386,7 +389,7 @@ def test_evaluate_baseline_uses_resumed_metric_without_executor_call(tmp_path):
     result, metric = session._evaluate_baseline(executor, make_config())
 
     assert result.verified is True
-    assert metric == 3
+    assert metric == 2.5
     assert executor.evaluated == []
 
 
