@@ -206,6 +206,14 @@ def metric_value(result: ExperimentResult, metric: str, iterations: int) -> Opti
     raise ValueError(f"Unknown metric {metric!r}")
 
 
+def stored_result_and_metric(data: Mapping[str, Any]) -> Tuple[ExperimentResult, Optional[float]]:
+    """Load a stored result while keeping tuning-only metadata separate."""
+
+    metric = data.get("metric")
+    result = ExperimentResult.from_dict({k: v for k, v in data.items() if k != "metric"})
+    return result, metric
+
+
 def classify_result(result: ExperimentResult) -> str:
     """ Classify the result of an experiment into categories for easier analysis and reporting.
         Categories include:
@@ -615,11 +623,8 @@ class TuningSession:
             if status != "verified":
                 continue
 
-            result = ExperimentResult.from_dict(
-                {k: v for k, v in trial.get("result", {}).items() if k != "metric"}
-            )
+            result, metric = stored_result_and_metric(trial.get("result", {}))
             config = ExperimentConfiguration.from_dict(trial["config"])
-            metric = trial.get("result", {}).get("metric")
             speedup = trial.get("speedup")
 
             current = CompletedCandidate(
@@ -709,8 +714,7 @@ class TuningSession:
         if self.options.resume and not self.options.rerun_baseline:
             loaded = self.store.load_baseline()
             if loaded is not None:
-                result = ExperimentResult.from_dict(loaded["result"])
-                metric = loaded.get("result", {}).get("metric")
+                result, metric = stored_result_and_metric(loaded.get("result", {}))
 
                 if metric is None:
                     metric = metric_value(result, self.options.metric, self.options.iterations)
