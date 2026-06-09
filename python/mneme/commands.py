@@ -32,6 +32,7 @@ from mneme.pipeline import PipelineManager
 from mneme.profile import init_profiler
 from mneme.recorded_execution import RecordedExecution
 from mneme.replay_executor import BaseExecutor
+from mneme.tuning.cli import add_tune_args, run_tune
 from mneme.utils import MnemeEncoder
 
 
@@ -357,6 +358,21 @@ class Config:
             print(" ".join(value))
         else:
             print(value)
+
+
+class Tune:
+    """
+    Tune a recorded kernel using Mneme's in-process replay executor.
+    """
+
+    @staticmethod
+    def set_cli_args(parser):
+        add_tune_args(parser)
+        parser.set_defaults(func=Tune.run, parser=parser)
+
+    @staticmethod
+    def run(args, verbosity):
+        return run_tune(args, verbosity)
 
 
 class Replay(BaseExecutor):

@@ -556,11 +556,12 @@ def test_tuneworker_run_process_and_terminate(monkeypatch, tmp_path):
     monkeypatch.setattr(mod.os, "dup2", lambda *a, **k: None, raising=True)
 
     class FakeWorker:
-        def __init__(self, record_db, record_id, device_id, iterations):
+        def __init__(self, record_db, record_id, device_id, iterations, warmup):
             self.record_db = record_db
             self.record_id = record_id
             self.device_id = device_id
             self.iterations = iterations
+            self.warmup = warmup
 
         def link_ir(self):
             return FakeModule("root_ir")

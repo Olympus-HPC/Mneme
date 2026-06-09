@@ -1,9 +1,9 @@
-import types
 import pytest
 
 
 # Adjust this import to your real module path
 import mneme.tuning.search_space as mod
+from mneme.mneme_types import ExperimentConfiguration
 
 
 # -----------------------------------------------------------------------------
@@ -175,3 +175,121 @@ def test_sample_optuna_param_pipeline_param_builds_pipeline(monkeypatch):
     out = mod.sample_optuna_param(trial, p)
     assert out.startswith("PIPE[")
     # Ensure PipelineManager.to_string_
+
+
+class ConcreteSpace(mod.SearchSpace):
+    def __init__(self, valid_after=1, dimensions=None):
+        self.valid_after = valid_after
+        self.constraint_calls = 0
+        self._dimensions = dimensions or {
+            "fixed": mod.FixedParam("fixed", 7),
+            "flag": mod.BoolParam("flag"),
+            "level": mod.IntRangeParam("level", 1, 3),
+            "mode": mod.CategoricalParam("mode", ["a", "b"]),
+        }
+
+    def dimensions(self):
+        return self._dimensions
+
+    def derived(self, params):
+        return ExperimentConfiguration(codegen_opt=int(params.get("level", 1)))
+
+    def constraints(self, params):
+        self.constraint_calls += 1
+        return self.constraint_calls >= self.valid_after
+
+
+def test_sample_random_param_covers_all_non_pipeline_types(monkeypatch):
+    monkeypatch.setattr(mod.random, "choice", lambda choices: choices[-1])
+    monkeypatch.setattr(mod.random, "randrange", lambda n: n - 1)
+    monkeypatch.setattr(mod.random, "uniform", lambda low, high: high)
+
+    assert mod.sample_random_param(mod.FixedParam("x", "fixed")) == "fixed"
+    assert mod.sample_random_param(mod.BoolParam("flag")) is False
+    assert mod.sample_random_param(mod.CategoricalParam("cat", ["a", "b"])) == "b"
+    assert mod.sample_random_param(mod.IntRangeParam("i", 2, 6, step=2)) == 6
+    assert mod.sample_random_param(mod.RealRangeParam("r", 1.0, 2.0)) == 2.0
+
+
+def test_sample_random_param_pipeline_param(monkeypatch):
+    monkeypatch.setattr(mod, "PipelineManager", FakePipelineManager, raising=True)
+    monkeypatch.setattr(mod.random, "choice", lambda choices: True)
+
+    pipeline = mod.PipelineParam("passes", num_draws=2)
+
+    assert mod.sample_random_param(pipeline) == "PIPE[A,B]"
+
+
+def test_sample_random_param_rejects_unknown_param():
+    class UnknownParam(mod.BaseParam):
+        pass
+
+    with pytest.raises(TypeError, match="Unsupported parameter type"):
+        mod.sample_random_param(UnknownParam("unknown"))
+
+
+def test_search_space_sample_random_retries_until_valid(monkeypatch):
+    monkeypatch.setattr(mod.random, "choice", lambda choices: choices[0])
+    monkeypatch.setattr(mod.random, "randrange", lambda n: 0)
+    space = ConcreteSpace(valid_after=2)
+
+    sample = space.sample_random()
+
+    assert sample == {"parameters": {"fixed": 7, "flag": True, "level": 1, "mode": "a"}}
+    assert space.constraint_calls == 2
+
+
+def test_search_space_sample_random_raises_after_retry_budget(monkeypatch):
+    monkeypatch.setattr(mod.random, "choice", lambda choices: choices[0])
+    monkeypatch.setattr(mod.random, "randrange", lambda n: 0)
+    space = ConcreteSpace(valid_after=1001)
+
+    with pytest.raises(RuntimeError, match="Failed to produce a valid random sample"):
+        space.sample_random()
+
+    assert space.constraint_calls == 1000
+
+
+def test_search_space_sample_optuna_tells_invalid_then_returns_valid():
+    trials = [FakeTrial(), FakeTrial()]
+    study = FakeStudy(trials)
+    space = ConcreteSpace(valid_after=2)
+
+    config, trial = space.sample_optuna(study)
+
+    assert config.codegen_opt == 1
+    assert trial is trials[1]
+    assert study.tells == [(trials[0], (1 << 64) - 1)]
+
+
+def test_search_space_sample_optuna_raises_after_retry_budget():
+    trials = [FakeTrial() for _ in range(1000)]
+    study = FakeStudy(trials)
+    space = ConcreteSpace(valid_after=1001)
+
+    with pytest.raises(RuntimeError, match="Failed to generate a valid Optuna sample"):
+        space.sample_optuna(study)
+
+    assert len(study.tells) == 1000
+
+
+def test_search_space_sample_exhaustive_yields_valid_derived_configs():
+    space = ConcreteSpace(valid_after=1)
+
+    configs = list(space.sample_exhaustive())
+
+    assert len(configs) == 12
+    assert {config.codegen_opt for config in configs} == {1, 2, 3}
+
+
+def test_search_space_sample_exhaustive_rejects_non_enumerable_params():
+    real_space = ConcreteSpace(dimensions={"r": mod.RealRangeParam("r", 0.0, 1.0)})
+    with pytest.raises(ValueError, match="Cannot enumerate real space"):
+        list(real_space.sample_exhaustive())
+
+    class UnknownParam(mod.BaseParam):
+        pass
+
+    custom_space = ConcreteSpace(dimensions={"x": UnknownParam("x")})
+    with pytest.raises(ValueError, match="Cannot enumerate custom dimension"):
+        list(custom_space.sample_exhaustive())

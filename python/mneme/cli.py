@@ -15,6 +15,7 @@ from mneme.commands import (
     Replay,
     Move,
     Record,
+    Tune,
 )
 from mneme.mneme_logging import configure_replay_logging
 
@@ -63,12 +64,17 @@ def main(argv=None):
         "config", parents=[], help="Get mneme config options"
     )
 
+    p_tune = subparsers.add_parser(
+        "tune", parents=[], help="Tune a recorded kernel"
+    )
+
     Replay.set_cli_args(p_exec)
     Clean.set_cli_args(p_clean)
     Copy.set_cli_args(p_copy)
     Move.set_cli_args(p_move)
     Record.set_cli_args(p_record)
     Config.set_cli_args(p_config)
+    Tune.set_cli_args(p_tune)
 
     args = parser.parse_args(argv)
     verbosity = vars(args).pop("verbosity", None)
