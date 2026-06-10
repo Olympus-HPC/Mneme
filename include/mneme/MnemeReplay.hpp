@@ -1,4 +1,8 @@
+#include <algorithm>
+#include <cctype>
 #include <cstdint>
+#include <cstdlib>
+#include <cstring>
 #include <llvm/Bitcode/BitcodeReader.h>
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/Module.h>
@@ -6,9 +10,12 @@
 #include <llvm/Support/JSON.h>
 #include <llvm/Support/MemoryBuffer.h>
 #include <memory>
+#include <optional>
 #include <string>
+#include <vector>
 
 #include "mneme/DeviceTraits.hpp"
+#include "mneme/MnemeDeviceKernels.hpp"
 #include "mneme/MnemeLogger.hpp"
 #include "mneme/MnemeMemory.hpp"
 #include "mneme/MnemePageManager.hpp"
@@ -16,6 +23,33 @@
 #include "mneme/MnemeUtils.hpp"
 
 namespace mneme {
+
+enum class ReplayResetMode { Bytes, Diff };
+
+inline ReplayResetMode parseReplayResetMode(std::string Mode) {
+  std::transform(Mode.begin(), Mode.end(), Mode.begin(),
+                 [](unsigned char C) { return std::tolower(C); });
+  if (Mode == "bytes" || Mode == "full")
+    return ReplayResetMode::Bytes;
+  if (Mode == "diff")
+    return ReplayResetMode::Diff;
+  LOG_FATAL("Unknown Mneme replay reset mode: " + Mode +
+            ". Expected 'bytes' or 'diff'.");
+  return ReplayResetMode::Bytes;
+}
+
+inline size_t getEnvSizeOrDefault(const char *Name, size_t Default) {
+  const char *Value = std::getenv(Name);
+  if (!Value || !*Value)
+    return Default;
+  try {
+    return std::stoull(Value);
+  } catch (...) {
+    LOG_WARN("Invalid value '{}' for {}, using default {}", Value, Name,
+             Default);
+    return Default;
+  }
+}
 
 template <DeviceVendors VendorTypes> class PrologueState;
 template <DeviceVendors VendorTypes> class EpilogueState;
@@ -156,14 +190,23 @@ public:
   }
 };
 
-// Replay state for the recorded kernel input.
+// Replay state for the recorded kernel input. Besides the full byte reset
+// inherited from the base, a prologue can carry a diff reset plan: the byte
+// ranges the kernel mutated (taken from a diff epilogue snapshot), coalesced,
+// packed into device buffers, and restored in-place by a device scatter
+// kernel between replay iterations.
 template <DeviceVendors VendorTypes>
 class PrologueState : public ReplayMemState<VendorTypes> {
 public:
+  using MnemeDeviceRT = DeviceTraits<VendorTypes>;
+  using DeviceStream_t = typename MnemeDeviceRT::DeviceStream_t;
+
   PrologueState(const std::string &KernelName, const std::string &SnapshotFile)
       : ReplayMemState<VendorTypes>(
             MnemeSnapshot<VendorTypes>::readBytesSnapshot(KernelName,
                                                           SnapshotFile)) {}
+
+  ~PrologueState() override { releaseScatterPlan(); }
 
   void load() override {
     for (auto &[DevAddr, MemBlob] : this->DeviceMemoryState) {
@@ -186,8 +229,257 @@ public:
 
   PrologueState<VendorTypes> *asPrologue() override { return this; }
 
+  // Builds (or clears) the diff reset plan for this prologue from the
+  // epilogue's diff snapshot. With ReplayResetMode::Bytes the plan is simply
+  // released and reset() falls back to the full byte copy.
+  void prepareResetPlan(const EpilogueState<VendorTypes> &Epilogue,
+                        ReplayResetMode Mode) {
+    buildDiffResetPlan(Epilogue, Mode);
+  }
+
+  using ReplayMemState<VendorTypes>::reset;
+
+  void reset(ReplayResetMode Mode, DeviceStream_t Stream = 0) {
+    if (Mode == ReplayResetMode::Diff) {
+      resetFromDiffPlan(Stream);
+      return;
+    }
+    reset();
+  }
+
 protected:
   bool isPrologue() const override { return true; }
+
+private:
+  struct ResetSpan {
+    void *Dst = nullptr;
+    const uint8_t *Src = nullptr;
+    size_t Size = 0;
+  };
+
+  std::vector<ResetSpan> DiffResetSpans;
+  std::unique_ptr<uint8_t[]> HostScatterData;
+  DiffResetScatterTask *DeviceScatterTasks = nullptr;
+  uint8_t *DeviceScatterData = nullptr;
+  size_t ScatterTaskCount = 0;
+  size_t ScatterDataSize = 0;
+
+  void releaseScatterPlan() {
+    if (DeviceScatterTasks) {
+      auto EC = MnemeDeviceRT::DeviceErrorCheck(
+          MnemeDeviceRT::DeviceFree(DeviceScatterTasks));
+      if (EC)
+        LOG_FATAL("Could not release Mneme diff scatter task buffer EC: " +
+                  EC.value());
+      DeviceScatterTasks = nullptr;
+    }
+    if (DeviceScatterData) {
+      auto EC = MnemeDeviceRT::DeviceErrorCheck(
+          MnemeDeviceRT::DeviceFree(DeviceScatterData));
+      if (EC)
+        LOG_FATAL("Could not release Mneme diff scatter data buffer EC: " +
+                  EC.value());
+      DeviceScatterData = nullptr;
+    }
+    HostScatterData.reset();
+    ScatterTaskCount = 0;
+    ScatterDataSize = 0;
+  }
+
+  static std::vector<typename MnemeSnapshot<VendorTypes>::DiffRange>
+  coalesceRanges(
+      std::vector<typename MnemeSnapshot<VendorTypes>::DiffRange> Ranges,
+      size_t MaxGap) {
+    if (Ranges.empty())
+      return Ranges;
+    std::sort(Ranges.begin(), Ranges.end(),
+              [](auto &LHS, auto &RHS) { return LHS.Offset < RHS.Offset; });
+
+    std::vector<typename MnemeSnapshot<VendorTypes>::DiffRange> Coalesced;
+    auto Current = Ranges.front();
+    for (size_t I = 1; I < Ranges.size(); ++I) {
+      auto &Next = Ranges[I];
+      size_t CurrentEnd = Current.Offset + Current.Size;
+      if (Next.Offset <= CurrentEnd + MaxGap) {
+        size_t NextEnd = Next.Offset + Next.Size;
+        Current.Size = std::max(CurrentEnd, NextEnd) - Current.Offset;
+      } else {
+        Coalesced.push_back(Current);
+        Current = Next;
+      }
+    }
+    Coalesced.push_back(Current);
+    return Coalesced;
+  }
+
+  void addScatterSpans(
+      const std::vector<typename MnemeSnapshot<VendorTypes>::DiffRange> &Ranges,
+      const uint8_t *HostBase, uint8_t *DeviceBase, size_t MaxGap) {
+    auto Spans = coalesceRanges(Ranges, MaxGap);
+    for (auto &Range : Spans) {
+      DiffResetSpans.push_back(ResetSpan{DeviceBase + Range.Offset,
+                                         HostBase + Range.Offset, Range.Size});
+    }
+  }
+
+  void prepareDeviceScatterPlan(size_t TaskBytes) {
+    releaseScatterPlan();
+    if (DiffResetSpans.empty())
+      return;
+    if (TaskBytes == 0)
+      TaskBytes = 4096;
+
+    std::vector<DiffResetScatterTask> HostTasks;
+    HostTasks.reserve(DiffResetSpans.size());
+    for (auto &Span : DiffResetSpans)
+      ScatterDataSize += Span.Size;
+    HostScatterData = std::make_unique<uint8_t[]>(ScatterDataSize);
+
+    size_t PackedOffset = 0;
+    for (auto &Span : DiffResetSpans) {
+      size_t Offset = 0;
+      while (Offset < Span.Size) {
+        size_t ChunkSize = std::min(TaskBytes, Span.Size - Offset);
+        std::memcpy(HostScatterData.get() + PackedOffset, Span.Src + Offset,
+                    ChunkSize);
+        HostTasks.push_back(DiffResetScatterTask{
+            static_cast<uint8_t *>(Span.Dst) + Offset,
+            reinterpret_cast<const uint8_t *>(PackedOffset), ChunkSize});
+        PackedOffset += ChunkSize;
+        Offset += ChunkSize;
+      }
+    }
+
+    if (PackedOffset != ScatterDataSize)
+      LOG_FATAL("Internal Mneme diff scatter packing size mismatch");
+
+    auto EC = MnemeDeviceRT::DeviceErrorCheck(MnemeDeviceRT::DeviceMalloc(
+        reinterpret_cast<void **>(&DeviceScatterData), ScatterDataSize));
+    if (EC)
+      LOG_FATAL("Could not allocate Mneme diff scatter data buffer EC: " +
+                EC.value());
+
+    EC = MnemeDeviceRT::DeviceErrorCheck(MnemeDeviceRT::DeviceCopy(
+        DeviceScatterData, HostScatterData.get(), ScatterDataSize,
+        MnemeDeviceRT::MemcpyHostToDeviceKind()));
+    if (EC)
+      LOG_FATAL("Could not copy Mneme diff scatter data buffer EC: " +
+                EC.value());
+    HostScatterData.reset();
+
+    for (auto &Task : HostTasks)
+      Task.Src = DeviceScatterData + reinterpret_cast<uintptr_t>(Task.Src);
+
+    ScatterTaskCount = HostTasks.size();
+    EC = MnemeDeviceRT::DeviceErrorCheck(MnemeDeviceRT::DeviceMalloc(
+        reinterpret_cast<void **>(&DeviceScatterTasks),
+        ScatterTaskCount * sizeof(DiffResetScatterTask)));
+    if (EC)
+      LOG_FATAL("Could not allocate Mneme diff scatter task buffer EC: " +
+                EC.value());
+
+    EC = MnemeDeviceRT::DeviceErrorCheck(MnemeDeviceRT::DeviceCopy(
+        DeviceScatterTasks, HostTasks.data(),
+        ScatterTaskCount * sizeof(DiffResetScatterTask),
+        MnemeDeviceRT::MemcpyHostToDeviceKind()));
+    if (EC)
+      LOG_FATAL("Could not copy Mneme diff scatter task buffer EC: " +
+                EC.value());
+  }
+
+  bool buildDiffResetPlan(const EpilogueState<VendorTypes> &Epilogue,
+                          ReplayResetMode Mode) {
+    releaseScatterPlan();
+    DiffResetSpans.clear();
+
+    if (Mode == ReplayResetMode::Bytes)
+      return false;
+
+    const std::string &EpilogueSnapshot = Epilogue.getSnapshotPath();
+    std::string Error;
+    auto DiffPlan =
+        MnemeSnapshot<VendorTypes>::readDiffPlan(EpilogueSnapshot, &Error);
+    if (!DiffPlan) {
+      LOG_FATAL("Could not use diff reset for " + EpilogueSnapshot + ": " +
+                (Error.empty() ? "epilogue is not a diff snapshot" : Error));
+      return false;
+    }
+
+    if (DiffPlan->Globals.size() != this->GlobalVars.size()) {
+      Error = "diff global count does not match prologue";
+    } else if (DiffPlan->Blobs.size() != this->DeviceMemoryState.size()) {
+      Error = "diff blob count does not match prologue";
+    }
+
+    if (!Error.empty()) {
+      LOG_FATAL("Could not use diff reset: " + Error);
+      return false;
+    }
+
+    size_t MaxGap =
+        getEnvSizeOrDefault("MNEME_REPLAY_DIFF_SCATTER_MAX_GAP_BYTES", 0);
+    size_t ScatterTaskBytes =
+        getEnvSizeOrDefault("MNEME_REPLAY_DIFF_SCATTER_TASK_BYTES", 4096);
+
+    for (auto &Global : DiffPlan->Globals) {
+      auto It = this->GlobalVars.find(Global.Name);
+      if (It == this->GlobalVars.end()) {
+        Error = "diff references global missing from prologue: " + Global.Name;
+        break;
+      }
+      auto &GVI = It->second;
+      if (GVI.VarSize != Global.VarSize) {
+        Error = "diff global size mismatch for: " + Global.Name;
+        break;
+      }
+      addScatterSpans(Global.Ranges, static_cast<const uint8_t *>(GVI.HostAddr),
+                      static_cast<uint8_t *>(GVI.DevAddr), MaxGap);
+    }
+
+    if (Error.empty()) {
+      for (auto &BlobPlan : DiffPlan->Blobs) {
+        auto It = this->DeviceMemoryState.find(BlobPlan.DevAddr);
+        if (It == this->DeviceMemoryState.end()) {
+          Error = "diff references device allocation missing from prologue";
+          break;
+        }
+        auto &Blob = It->second;
+        if (Blob.getActualSize() != BlobPlan.ActualSize ||
+            Blob.getSize() != BlobPlan.Size) {
+          Error = "diff memory blob size mismatch";
+          break;
+        }
+        addScatterSpans(BlobPlan.Ranges, Blob.getHostData().get(),
+                        static_cast<uint8_t *>(Blob.getBlobAddr()), MaxGap);
+      }
+    }
+
+    if (!Error.empty()) {
+      LOG_FATAL("Could not use diff reset: " + Error);
+      return false;
+    }
+
+    prepareDeviceScatterPlan(ScatterTaskBytes);
+
+    LOG_INFO("Prepared Mneme diff reset plan");
+    return true;
+  }
+
+  void resetFromDiffPlan(DeviceStream_t Stream) {
+    if (ScatterTaskCount == 0)
+      return;
+    auto EC = MnemeDeviceRT::DeviceErrorCheck(
+        launchDiffResetScatterKernel<VendorTypes>(DeviceScatterTasks,
+                                                  ScatterTaskCount, Stream));
+    if (EC)
+      LOG_FATAL("Could not launch Mneme diff scatter reset kernel EC: " +
+                EC.value());
+    EC = MnemeDeviceRT::DeviceErrorCheck(
+        MnemeDeviceRT::DeviceStreamSynchronize(Stream));
+    if (EC)
+      LOG_FATAL("Could not synchronize Mneme diff scatter reset kernel EC: " +
+                EC.value());
+  }
 };
 
 // Replay state for the expected kernel output. Unlike the prologue, load()
@@ -195,8 +487,10 @@ protected:
 template <DeviceVendors VendorTypes>
 class EpilogueState : public ReplayMemState<VendorTypes> {
 public:
-  explicit EpilogueState(Snapshot<VendorTypes> SnapshotState)
-      : ReplayMemState<VendorTypes>(std::move(SnapshotState)) {}
+  explicit EpilogueState(Snapshot<VendorTypes> SnapshotState,
+                         std::string SnapshotPath = "")
+      : ReplayMemState<VendorTypes>(std::move(SnapshotState)),
+        SnapshotPath(std::move(SnapshotPath)) {}
 
   void load() override {
     for (auto &[DevAddr, MemBlob] : this->DeviceMemoryState) {
@@ -209,6 +503,10 @@ public:
   }
 
   EpilogueState<VendorTypes> *asEpilogue() override { return this; }
+
+  // Path of the snapshot file this state was reconstructed from. A diff reset
+  // plan re-reads this file to learn which byte ranges the kernel mutated.
+  const std::string &getSnapshotPath() const { return SnapshotPath; }
 
   // Verifies a replayed prologue against this expected-output epilogue. At call
   // time the prologue's device buffers hold the kernel's actual output.
@@ -265,6 +563,9 @@ public:
 
 protected:
   bool isPrologue() const override { return false; }
+
+private:
+  std::string SnapshotPath;
 };
 
 template <DeviceVendors VendorTypes>
@@ -282,7 +583,8 @@ makeReplayEpilogueState(const std::string &KernelName,
   Snapshot<VendorTypes> Snap =
       MnemeSnapshot<VendorTypes>::openSnapshot(SnapshotFile)
           ->reconstruct(KernelName, BasePrologueFile);
-  return std::make_unique<EpilogueState<VendorTypes>>(std::move(Snap));
+  return std::make_unique<EpilogueState<VendorTypes>>(std::move(Snap),
+                                                      SnapshotFile);
 }
 
 } // namespace mneme

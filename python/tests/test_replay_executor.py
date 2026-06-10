@@ -106,9 +106,18 @@ class FakeDeviceFunction:
         self.const_mem = 33
         self.local_mem = 44
 
-    def profile(self, grid, block, pro_state, epi_state, shared_mem, iterations):
+    def profile(
+        self,
+        grid,
+        block,
+        pro_state,
+        epi_state,
+        shared_mem,
+        iterations,
+        reset_mode="",
+    ):
         self.profile_calls.append(
-            (grid, block, pro_state, epi_state, shared_mem, iterations)
+            (grid, block, pro_state, epi_state, shared_mem, iterations, reset_mode)
         )
 
 
@@ -217,7 +226,11 @@ def test_baseexecutor_init_sets_gpu_affinity_and_loads_records(monkeypatch):
     )
 
     ex = mod.BaseExecutor(
-        record_db="db.json", record_id="rid", device_id=3, iterations=5
+        record_db="db.json",
+        record_id="rid",
+        device_id=3,
+        iterations=5,
+        reset_mode="diff",
     )
 
     assert ex.records is rec
@@ -227,6 +240,28 @@ def test_baseexecutor_init_sets_gpu_affinity_and_loads_records(monkeypatch):
     assert calls["set_device"] == [3]
     assert calls["from_json"] == ["db.json"]
     assert ex._iterations == 5
+    assert ex.reset_mode == "diff"
+
+
+def test_baseexecutor_reset_mode_env_and_validation(monkeypatch):
+    mod = _reload_with_identity_decorators(monkeypatch)
+
+    kernel = FakeKernelDescr()
+    rec = FakeRecordedExecution(kernel)
+
+    monkeypatch.setattr(
+        mod.RecordedExecution, "from_json", staticmethod(lambda _: rec), raising=True
+    )
+    monkeypatch.setattr(mod, "set_device", lambda _: None, raising=True)
+    monkeypatch.setattr(mod, "get_device_arch", lambda: "sm", raising=True)
+    monkeypatch.setattr(mod, "get_device_count", lambda: 1, raising=True)
+    monkeypatch.setenv("MNEME_REPLAY_RESET_MODE", "full")
+
+    ex = mod.BaseExecutor(record_db="x", record_id="rid")
+    assert ex.reset_mode == "bytes"
+
+    with pytest.raises(ValueError):
+        mod.BaseExecutor(record_db="x", record_id="rid", reset_mode="bogus")
 
 
 def test_open_close_context_manager_opens_and_closes_resources(monkeypatch):
@@ -496,9 +531,10 @@ def test_execute_orchestrates_verification_and_tracked_run(monkeypatch):
 
     out_ir = ex._execute(res, cfg, ir)
 
-    # Verification stage: track=False, iterations=1
+    # Final object verification stage: track=False, iterations=1
     # Tracked stage: track=True, iterations=self._iterations + 2 = 5
     assert run_calls == [(False, 1), (True, 5)]
+    assert build_calls == [("root_clone", True)]
     assert res.executed is True
     assert res.verified is True
 
@@ -556,12 +592,15 @@ def test_tuneworker_run_process_and_terminate(monkeypatch, tmp_path):
     monkeypatch.setattr(mod.os, "dup2", lambda *a, **k: None, raising=True)
 
     class FakeWorker:
-        def __init__(self, record_db, record_id, device_id, iterations, warmup):
+        def __init__(
+            self, record_db, record_id, device_id, iterations, warmup, reset_mode=None
+        ):
             self.record_db = record_db
             self.record_id = record_id
             self.device_id = device_id
             self.iterations = iterations
             self.warmup = warmup
+            self.reset_mode = reset_mode
 
         def link_ir(self):
             return FakeModule("root_ir")

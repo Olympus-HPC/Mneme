@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
+#include <fstream>
 #include <functional>
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/SmallVector.h>
@@ -128,6 +129,40 @@ template <DeviceVendors VendorTypes> class MnemeSnapshot {
   using DeviceError_t = typename MnemeDeviceRT::DeviceError_t;
   using DeviceStream_t = typename MnemeDeviceRT::DeviceStream_t;
   using KernelFunction_t = typename MnemeDeviceRT::KernelFunction_t;
+
+public:
+  using GlobalSnapshotData = std::unordered_map<std::string, std::vector<uint8_t>>;
+
+  struct DiffRange {
+    size_t Offset = 0;
+    size_t Size = 0;
+    llvm::StringRef Bytes;
+  };
+
+  struct DiffGlobal {
+    std::string Name;
+    size_t VarSize = 0;
+    void *DevAddr = nullptr;
+    std::vector<DiffRange> Ranges;
+  };
+
+  struct DiffBlob {
+    size_t ActualSize = 0;
+    size_t Size = 0;
+    void *DevAddr = nullptr;
+    Metadata Md;
+    std::vector<DiffRange> Ranges;
+  };
+
+  struct DiffPlan {
+    std::unique_ptr<llvm::MemoryBuffer> Storage;
+    std::vector<DiffGlobal> Globals;
+    std::vector<DiffBlob> Blobs;
+    size_t RawRangeCount = 0;
+    size_t ChangedBytes = 0;
+  };
+
+private:
   static constexpr const char DiffMagic[] = "MNEME_DIFF_V1";
   static constexpr size_t DiffMagicSize = sizeof(DiffMagic) - 1;
   static constexpr size_t DiffChunkSize = 1 << 20;
@@ -249,18 +284,64 @@ template <DeviceVendors VendorTypes> class MnemeSnapshot {
     util::writeBytes(OS, llvm::StringRef(DiffBytes.data(), DiffBytes.size()));
   }
 
-  static void applyDiffRanges(const char *&Buffer,
-                              llvm::MutableArrayRef<uint8_t> Target,
-                              size_t NumRanges) {
+  static void readDiffRanges(const char *&Buffer, size_t NumRanges,
+                             std::vector<DiffRange> &Ranges,
+                             DiffPlan &Plan) {
+    Ranges.reserve(NumRanges);
     for (size_t R = 0; R < NumRanges; ++R) {
       size_t Offset = util::extractScalar<size_t>(Buffer);
       size_t Size = util::extractScalar<size_t>(Buffer);
-      if (Offset > Target.size() || Size > Target.size() - Offset)
-        LOG_FATAL("Malformed Mneme diff range: offset " +
-                  std::to_string(Offset) + " size " + std::to_string(Size) +
-                  " exceeds target size " + std::to_string(Target.size()));
-      std::memcpy(Target.data() + Offset, Buffer, Size);
+      llvm::StringRef Bytes(Buffer, Size);
       Buffer += Size;
+      Ranges.push_back({Offset, Size, Bytes});
+      Plan.RawRangeCount++;
+      Plan.ChangedBytes += Size;
+    }
+  }
+
+  static DiffPlan parseDiffPayload(llvm::StringRef Bytes) {
+    const char *Buffer = Bytes.begin() + DiffMagicSize;
+    DiffPlan Plan;
+
+    size_t TotalGlobals = util::extractScalar<size_t>(Buffer);
+    Plan.Globals.reserve(TotalGlobals);
+    for (size_t I = 0; I < TotalGlobals; ++I) {
+      DiffGlobal Global;
+      Global.Name = util::readSizedString(Buffer);
+      Global.VarSize = util::extractScalar<size_t>(Buffer);
+      Global.DevAddr = util::extractScalar<void *>(Buffer);
+      size_t NumRanges = util::extractScalar<size_t>(Buffer);
+      readDiffRanges(Buffer, NumRanges, Global.Ranges, Plan);
+      Plan.Globals.push_back(std::move(Global));
+    }
+
+    size_t TotalMemBlobs = util::extractScalar<size_t>(Buffer);
+    Plan.Blobs.reserve(TotalMemBlobs);
+    for (size_t I = 0; I < TotalMemBlobs; ++I) {
+      DiffBlob Blob;
+      Blob.ActualSize = util::extractScalar<size_t>(Buffer);
+      Blob.Size = util::extractScalar<size_t>(Buffer);
+      Blob.DevAddr = util::extractScalar<void *>(Buffer);
+      Blob.Md = metadata::fromBuffer(Buffer);
+      size_t NumRanges = util::extractScalar<size_t>(Buffer);
+      readDiffRanges(Buffer, NumRanges, Blob.Ranges, Plan);
+      Plan.Blobs.push_back(std::move(Blob));
+    }
+
+    return Plan;
+  }
+
+  static void applyDiffRanges(llvm::ArrayRef<DiffRange> Ranges,
+                              llvm::MutableArrayRef<uint8_t> Target) {
+    for (auto &Range : Ranges) {
+      if (Range.Offset > Target.size() ||
+          Range.Size > Target.size() - Range.Offset)
+        LOG_FATAL("Malformed Mneme diff range: offset " +
+                  std::to_string(Range.Offset) + " size " +
+                  std::to_string(Range.Size) + " exceeds target size " +
+                  std::to_string(Target.size()));
+      std::memcpy(Target.data() + Range.Offset, Range.Bytes.data(),
+                  Range.Size);
     }
   }
 
@@ -307,63 +388,99 @@ template <DeviceVendors VendorTypes> class MnemeSnapshot {
       std::unordered_map<std::string, ReplayGlobalVar> &GlobalVars,
       llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &DeviceMemory,
       llvm::MemoryBuffer *DiffBuffer) {
-    auto *Start = DiffBuffer->getBufferStart();
-    auto *CurrentPtr = Start + DiffMagicSize;
-    size_t TotalGlobals = util::extractScalar<size_t>(CurrentPtr);
-    if (TotalGlobals != GlobalVars.size())
+    DiffPlan Diff = parseDiffPayload(DiffBuffer->getBuffer());
+
+    if (Diff.Globals.size() != GlobalVars.size())
       LOG_FATAL("Mneme diff " + Filename +
                 " does not match prologue global count");
 
-    for (size_t I = 0; I < TotalGlobals; ++I) {
-      std::string Name = util::readSizedString(CurrentPtr);
-      size_t VarSize = util::extractScalar<size_t>(CurrentPtr);
-      void *DevAddr = util::extractScalar<void *>(CurrentPtr);
-      size_t NumRanges = util::extractScalar<size_t>(CurrentPtr);
-
-      auto It = GlobalVars.find(Name);
+    for (auto &Global : Diff.Globals) {
+      auto It = GlobalVars.find(Global.Name);
       if (It == GlobalVars.end())
         LOG_FATAL("Mneme diff references global missing from prologue: " +
-                  Name);
-      if (It->second.VarSize != VarSize)
-        LOG_FATAL("Mneme diff global size mismatch for: " + Name);
-      It->second.DevAddr = DevAddr;
+                  Global.Name);
+      if (It->second.VarSize != Global.VarSize)
+        LOG_FATAL("Mneme diff global size mismatch for: " + Global.Name);
+      It->second.DevAddr = Global.DevAddr;
       applyDiffRanges(
-          CurrentPtr,
+          Global.Ranges,
           llvm::MutableArrayRef<uint8_t>(
-              static_cast<uint8_t *>(It->second.HostAddr), It->second.VarSize),
-          NumRanges);
+              static_cast<uint8_t *>(It->second.HostAddr), It->second.VarSize));
     }
 
-    size_t TotalMemBlobs = util::extractScalar<size_t>(CurrentPtr);
-    if (TotalMemBlobs != DeviceMemory.size())
+    if (Diff.Blobs.size() != DeviceMemory.size())
       LOG_FATAL("Mneme diff " + Filename +
                 " does not match prologue memory blob count");
 
-    for (size_t I = 0; I < TotalMemBlobs; ++I) {
-      size_t ActualSize = util::extractScalar<size_t>(CurrentPtr);
-      size_t Size = util::extractScalar<size_t>(CurrentPtr);
-      void *DeviceAddr = util::extractScalar<void *>(CurrentPtr);
-      auto MD = metadata::fromBuffer(CurrentPtr);
-      size_t NumRanges = util::extractScalar<size_t>(CurrentPtr);
-
-      auto It = DeviceMemory.find(DeviceAddr);
+    for (auto &BlobPlan : Diff.Blobs) {
+      auto It = DeviceMemory.find(BlobPlan.DevAddr);
       if (It == DeviceMemory.end())
         LOG_FATAL("Mneme diff references device allocation missing from "
                   "prologue");
       auto &Blob = It->second;
-      if (Blob.getActualSize() != ActualSize || Blob.getSize() != Size)
+      if (Blob.getActualSize() != BlobPlan.ActualSize ||
+          Blob.getSize() != BlobPlan.Size)
         LOG_FATAL("Mneme diff memory blob size mismatch");
-      Blob.setMetadata(MD);
+      Blob.setMetadata(BlobPlan.Md);
       applyDiffRanges(
-          CurrentPtr,
+          BlobPlan.Ranges,
           llvm::MutableArrayRef<uint8_t>(Blob.getHostData().get(),
-                                         Blob.getSize()),
-          NumRanges);
+                                         Blob.getSize()));
     }
   }
 
 public:
-  using GlobalSnapshotData = std::unordered_map<std::string, std::vector<uint8_t>>;
+  static bool isDiffSnapshotFile(const std::string &Filename,
+                                 std::string *Error = nullptr) {
+    if (!std::filesystem::exists(Filename)) {
+      if (Error)
+        *Error = "snapshot file does not exist";
+      return false;
+    }
+
+    std::ifstream Input(Filename, std::ios::binary);
+    if (!Input) {
+      if (Error)
+        *Error = "error when opening file";
+      return false;
+    }
+
+    char Magic[DiffMagicSize];
+    Input.read(Magic, DiffMagicSize);
+    if (Input.gcount() != static_cast<std::streamsize>(DiffMagicSize))
+      return false;
+    return llvm::StringRef(Magic, DiffMagicSize) ==
+           llvm::StringRef(DiffMagic, DiffMagicSize);
+  }
+
+  static std::optional<DiffPlan>
+  readDiffPlan(const std::string &Filename, std::string *Error = nullptr) {
+    auto SetError = [&](const std::string &Msg) -> std::optional<DiffPlan> {
+      if (Error)
+        *Error = Msg;
+      return std::nullopt;
+    };
+
+    if (!std::filesystem::exists(Filename))
+      return SetError("snapshot file does not exist");
+
+    if (!isDiffSnapshotFile(Filename, Error))
+      return SetError(Error && !Error->empty()
+                          ? *Error
+                          : "snapshot is not a Mneme diff snapshot");
+
+    llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> BufferOrErr =
+        llvm::MemoryBuffer::getFile(Filename, /*IsText=*/false,
+                                    /*RequiresNullTerminator=*/false);
+    if (std::error_code EC = BufferOrErr.getError())
+      return SetError("error when opening file " + EC.message());
+
+    auto Storage = std::move(BufferOrErr.get());
+    DiffPlan Plan = parseDiffPayload(Storage->getBuffer());
+    Plan.Storage = std::move(Storage);
+
+    return Plan;
+  }
 
   static std::pair<std::string, ReplayGlobalVar>
   fromBuffer(const char *&Buffer) {

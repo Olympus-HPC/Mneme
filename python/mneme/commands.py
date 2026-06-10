@@ -543,6 +543,13 @@ class Replay(BaseExecutor):
         )
 
         parser.add_argument(
+            "--reset-mode",
+            choices=("bytes", "diff"),
+            default=None,
+            help="Memory reset mode used between replay iterations (default: choose from epilogue snapshot, or MNEME_REPLAY_RESET_MODE)",
+        )
+
+        parser.add_argument(
             "--output-ll",
             "-ol",
             dest="output_ll",
@@ -573,6 +580,7 @@ class Replay(BaseExecutor):
         self.specialize_dims = kwargs.pop("specialize_dims", False)
         self.passes = kwargs.pop("passes", None)
         self.codegen_opt = kwargs.pop("codegen_opt", 3)
+        self.reset_mode = kwargs.get("reset_mode", None)
 
         self.output_ll = kwargs.pop("output_ll", None)
 

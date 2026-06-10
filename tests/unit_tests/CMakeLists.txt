@@ -57,7 +57,7 @@ add_test(NAME Serialize::Globals COMMAND SerializeGlobals)
 BUILD_UNIT_TEST("SerializeBlob" SerializeBlob.cpp)
 add_test(NAME Serialize::Blob COMMAND SerializeBlob)
 
-BUILD_UNIT_TEST("ReadWriteSnapshot" ReadWriteSnapshot.cpp)
+BUILD_DEVICE_UNIT_TEST("ReadWriteSnapshot" ReadWriteSnapshot.cpp)
 add_test(NAME Serialize::RWSnapshot COMMAND ReadWriteSnapshot)
 
 BUILD_DEVICE_UNIT_TEST("CompareMemoryBlob" DeviceKernels.cpp)

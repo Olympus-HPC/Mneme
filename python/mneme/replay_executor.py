@@ -34,7 +34,7 @@ TuneWorker:
 import os
 from datetime import datetime, timezone
 from multiprocessing import Event, Queue
-from typing import Tuple
+from typing import Optional, Tuple
 
 from mneme.device import (
     DeviceFunction,
@@ -53,6 +53,22 @@ from mneme.proteus import jit
 from mneme.recorded_execution import RecordedExecution, MemStateRef
 from mneme.transforms import transform
 from mneme.utils import cond_gpu_time, cond_time
+
+VALID_RESET_MODES = {"bytes", "diff"}
+
+
+def normalize_reset_mode(reset_mode: Optional[str]) -> str:
+    mode = reset_mode or os.environ.get("MNEME_REPLAY_RESET_MODE", "")
+    if not mode:
+        return ""
+    mode = mode.lower()
+    if mode == "full":
+        mode = "bytes"
+    if mode not in VALID_RESET_MODES:
+        raise ValueError(
+            f"Unknown reset mode '{mode}'. Expected one of: bytes, diff"
+        )
+    return mode
 
 
 class BaseExecutor:
@@ -109,6 +125,7 @@ class BaseExecutor:
         iterations: int = 3,
         device_id: int = 0,
         warmup: int = 2,
+        reset_mode: Optional[str] = None,
     ):
         self.record_db = record_db
         self.record_id = record_id
@@ -124,6 +141,7 @@ class BaseExecutor:
         self._page_manager = None
         self._iterations = iterations
         self._warmup = warmup
+        self.reset_mode = normalize_reset_mode(reset_mode)
         self.num_devices = get_device_count()
         set_device(device_id)
         logger.debug(
@@ -403,6 +421,7 @@ class BaseExecutor:
             self._epilogue._state,
             config.shared_mem,
             iterations,
+            reset_mode=self.reset_mode,
         )
 
     def _build(
@@ -598,21 +617,34 @@ class BaseExecutor:
         if self._prologue._state is None or self._epilogue._state is None:
             raise RuntimeError("States should never be none when executing a kernel")
 
-        # NOTE: 1. First we need to verify.
-        ver_mod = ir_module.clone()
-        mem_buffer = self._build(result, config, ver_mod, False)
-        self._run(result, config, mem_buffer, self.prologue, self.epilogue, True, False, 1)
-
-        # NOTE: 2. We apply a custom pass to delete all clang insered code.
+        # NOTE: 1. We apply a custom pass to delete all clang insered code.
         # It is hard to identify these cases, So we delete only things
         # that have been attributed by clang
         ir_module = transform.remove_auto_initialize(ir_module.clone())
-        # Done with verification. Moving to next stage
 
-        # NOTE: 3. We build and run. We set tracking on and execute warmups plus iterations,
-        # to enalbe later computation of statistical metrics etc.
+        # NOTE: 2. Build the final replay object, verify that exact object once,
+        # then run the tracked repetitions. Diff reset is only used after the
+        # native runtime has performed a full-reset first replay in each profile
+        # call, so failed verification never depends on the optimized reset path.
         mem_buffer = self._build(result, config, ir_module, True)
-        self._run(result, config, mem_buffer, self.prologue, self.epilogue, False, True, self._iterations + self._warmup)
+        self._run(
+            result, config, mem_buffer, self.prologue, self.epilogue, True, False, 1
+        )
+        if not result.verified:
+            return ir_module
+
+        # NOTE: 3. We set tracking on and execute warmups plus iterations,
+        # to enalbe later computation of statistical metrics etc.
+        self._run(
+            result,
+            config,
+            mem_buffer,
+            self.prologue,
+            self.epilogue,
+            False,
+            True,
+            self._iterations + self._warmup,
+        )
         result.executed = True
 
         return ir_module
@@ -719,6 +751,7 @@ class TuneWorker(BaseExecutor):
         results_db_dir: str,
         state: Event,
         warmup: int = 2,
+        reset_mode: Optional[str] = None,
     ):
         """
         Worker process entry point: initialize resources and serve requests from a queue.
@@ -768,6 +801,8 @@ class TuneWorker(BaseExecutor):
         state : multiprocessing.Event
             Event used to signal to the parent process that initialization is complete
             and the worker is ready to accept requests.
+        reset_mode : str, optional
+            Replay memory reset mode passed to the native runtime.
 
         Notes
         -----
@@ -792,6 +827,7 @@ class TuneWorker(BaseExecutor):
             device_id=device_id,
             iterations=iterations,
             warmup=warmup,
+            reset_mode=reset_mode,
         )
         # Open GPU memory, setup prologue epilogue and create a single
         # LLVM IR file to start working on optimizations

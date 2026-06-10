@@ -21,3 +21,27 @@ optimization pipelines or launch configurations.
 For a detailed explanation of the annotation API, metadata fields,
 threshold semantics, and a complete example, see
 **[Usage → Verification](verification.md)**.
+
+## Reset mode
+
+Replay restores the recorded prologue before each measured kernel run.
+When the recording has a diff epilogue, Mneme can avoid copying the
+entire prologue by restoring only the prologue byte ranges that differ
+in the epilogue:
+
+```bash
+mneme replay ... --reset-mode diff "default<O3>"
+```
+
+Supported modes are:
+
+| Mode | Behavior |
+| ---- | -------- |
+| `bytes` | Always use the original full prologue reset. |
+| `diff` | Require diff reset and fail if the epilogue is not a valid diff snapshot. Diff reset restores ranges with one device scatter kernel per warm reset. |
+
+When no reset mode is supplied, Mneme selects `diff` for diff epilogue
+snapshots and `bytes` otherwise. Diff reset uses raw ranges by default;
+tune optional coalescing with
+`MNEME_REPLAY_DIFF_SCATTER_MAX_GAP_BYTES` and chunk size with
+`MNEME_REPLAY_DIFF_SCATTER_TASK_BYTES`.

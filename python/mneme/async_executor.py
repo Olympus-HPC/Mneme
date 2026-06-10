@@ -92,6 +92,7 @@ class TuneWorkerHandle:
         on_startup_failure_limit: Optional[
             Callable[["TuneWorkerHandle", str], None]
         ] = None,
+        reset_mode: str = None,
     ):
         """
         Construct a worker handle and start the worker process + monitor thread.
@@ -143,6 +144,7 @@ class TuneWorkerHandle:
         self.max_startup_failures = max_startup_failures
         self._startup_failures = 0
         self._on_startup_failure_limit = on_startup_failure_limit
+        self.reset_mode = reset_mode
 
         self._state = None  # ProcessEvent
         self._process = None  # Process
@@ -188,6 +190,7 @@ class TuneWorkerHandle:
                 self.results_db_dir,
                 self._state,
                 self.warmup,
+                self.reset_mode,
             ),
             daemon=False,
         )
@@ -401,6 +404,7 @@ class AsyncReplayExecutor:
         num_workers: int,
         warmup: int = 2,
         max_startup_failures: int = 3,
+        reset_mode: str = None,
     ):
         """
         Construct an asynchronous executor with a fixed-size worker pool.
@@ -430,6 +434,7 @@ class AsyncReplayExecutor:
         self.iterations = iterations
         self.warmup = warmup
         self.max_startup_failures = max_startup_failures
+        self.reset_mode = reset_mode
         self._num_workers = num_workers
         self._failed_workers = set()
         self._broken_error = None
@@ -448,6 +453,7 @@ class AsyncReplayExecutor:
                     warmup=warmup,
                     max_startup_failures=max_startup_failures,
                     on_startup_failure_limit=self._handle_startup_failure_limit,
+                    reset_mode=reset_mode,
                 )
             )
 

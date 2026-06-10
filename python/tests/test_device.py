@@ -153,9 +153,11 @@ def test_device_function_profile_calls_ffi():
             epilogue_state=buf,
             shared_mem_size=0,
             iterations=5,
+            reset_mode="diff",
         )
 
         fake_lib.MnemePy_profile.assert_called_once()
+        assert fake_lib.MnemePy_profile.call_args[0][-1] == b"diff"
 
 
 def test_device_function_profile_fails_if_module_gc():
@@ -202,4 +204,3 @@ def test_set_device_calls_ffi():
 
         set_device(2)
         fake_lib.MnemePy_setDevice.assert_called_once_with(2)
-
