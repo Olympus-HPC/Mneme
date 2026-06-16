@@ -167,6 +167,7 @@ inline bool computeRecordingEnabledForCurrentRank() {
 
   return ParsedRanks->count(DistributedRank.value_or(0)) > 0;
 }
+
 } // namespace config_detail
 
 class Config {
