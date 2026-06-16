@@ -168,6 +168,18 @@ inline bool computeRecordingEnabledForCurrentRank() {
   return ParsedRanks->count(DistributedRank.value_or(0)) > 0;
 }
 
+inline bool getEnvOrDefaultBool(const char *VarName, bool Default) {
+  const char *EnvValue = std::getenv(VarName);
+  if (!EnvValue)
+    return Default;
+
+  std::string Value(EnvValue);
+  std::transform(Value.begin(), Value.end(), Value.begin(),
+                 [](unsigned char C) { return std::tolower(C); });
+
+  return Value == "1" || Value == "true" || Value == "yes" || Value == "on";
+}
+
 } // namespace config_detail
 
 class Config {
@@ -185,6 +197,7 @@ public:
   const std::optional<long> PageSizeGiB;
   const LogLevel MnemeLogLevel;
   const EpilogueSnapshotType EpilogueType;
+  const bool IncrementalKernelRecords;
 
   bool isRecordingEnabledForCurrentRank() const {
     return RecordingEnabledThisRank;
@@ -228,6 +241,8 @@ private:
             "MNEME_LOG_LEVEL", LogLevel::Critical)),
         EpilogueType(config_detail::getEnvOrDefaultEpilogueSnapshotType(
             "MNEME_EPILOGUE_TYPE", EpilogueSnapshotType::Diff)),
+        IncrementalKernelRecords(config_detail::getEnvOrDefaultBool(
+            "MNEME_INCREMENTAL_KERNEL_RECORDS", false)),
         MnemeDataDir(config_detail::getEnvOrDefaultString("MNEME_DATA_DIR")),
         MnemeLogDir(config_detail::getEnvOrDefaultString("MNEME_LOG_DIR")),
         RecordingEnabledThisRank(
