@@ -839,12 +839,17 @@ public:
     std::error_code EC;
     llvm::raw_fd_ostream JsonOS(JsonFilename.string(), EC);
     if (EC) {
-      LOG_WARN("Failed to write JSON for kernel {}: {}", StaticHash, EC.message());
+      LOG_WARN("Failed to open JSON file for kernel {}: {}", StaticHash, EC.message());
       return;
     }
 
     JsonOS << llvm::json::Value(std::move(JSONRecord));
     JsonOS.close();
+    if (JsonOS.has_error()) {
+      LOG_WARN("Failed to write JSON for kernel {}: {}", StaticHash,
+               JsonOS.error().message());
+      return;
+    }
   }
 
   bool shouldRecord(const std::string &KernelName) const {
