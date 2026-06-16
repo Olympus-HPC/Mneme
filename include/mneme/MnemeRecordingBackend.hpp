@@ -180,9 +180,7 @@ public:
                func, KInfo.getName(), GridDim.x, GridDim.y, GridDim.z,
                BlockDim.x, BlockDim.y, BlockDim.z, SharedMem);
       // write kernel record incrementally after epilogue is recorded
-      if (Config::get().IncrementalKernelRecords) {
-        DB.writeKernelJSON(KInfo.getStaticHash());
-      }
+      DB.writeKernelJSON(KInfo.getStaticHash());
     }
     return ret;
   }
