@@ -825,15 +825,30 @@ public:
     EpilogueType = Conf.EpilogueType;
   }
 
-  ~RecordDatabase() {
-    for (auto &[StaticHash, Record] : KernelRecords) {
-      auto JsonFilename =
-          MnemeDirectory / (std::to_string(StaticHash) + ".json");
-      std::error_code EC;
-      auto JSONRecord = Record.toJSON(StaticHash);
-      llvm::raw_fd_ostream JsonOS(JsonFilename.string(), EC);
-      JsonOS << llvm::json::Value(std::move(JSONRecord));
-      JsonOS.close();
+  void writeKernelJSON(uint64_t StaticHash) {
+    auto It = KernelRecords.find(StaticHash);
+    if (It == KernelRecords.end()) {
+      LOG_WARN("Attempted to write JSON for unrecorded kernel hash {}", StaticHash);
+      return;
+    }
+    auto* RecordPtr = &It->second;
+
+    auto JsonFilename = MnemeDirectory / (std::to_string(StaticHash) + ".json");
+    auto JSONRecord = RecordPtr->toJSON(StaticHash);
+
+    std::error_code EC;
+    llvm::raw_fd_ostream JsonOS(JsonFilename.string(), EC);
+    if (EC) {
+      LOG_WARN("Failed to open JSON file for kernel {}: {}", StaticHash, EC.message());
+      return;
+    }
+
+    JsonOS << llvm::json::Value(std::move(JSONRecord));
+    JsonOS.close();
+    if (JsonOS.has_error()) {
+      LOG_WARN("Failed to write JSON for kernel {}: {}", StaticHash,
+               JsonOS.error().message());
+      return;
     }
   }
 
