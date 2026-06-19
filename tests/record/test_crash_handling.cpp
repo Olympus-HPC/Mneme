@@ -5,8 +5,10 @@
 // RUN: rm -rf "%t.$$.mneme"
 // clang-format on
 
-// Test that signal handler is installed and catches crashes during mneme recording
-// This test verifies the functionality added in commit c3967ac
+// The mneme preload library installs a crash handler when its recorder
+// singleton is first constructed. This test launches a kernel (constructing the
+// singleton) and then dereferences a null pointer: the handler should print the
+// crash banner to stderr before the re-raised signal terminates the process.
 
 #include <climits>
 #include <cstdio>

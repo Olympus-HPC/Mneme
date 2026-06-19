@@ -1,4 +1,5 @@
 #include "MnemeAnnotationRuntime.hpp"
+#include "mneme/MnemeCrashHandler.hpp"
 #include "mneme/MnemeLLVMUtils.hpp"
 #include "mneme/MnemeLogger.hpp"
 #include "mneme/MnemeRecord.hpp"
@@ -24,6 +25,8 @@ private:
     // the initialization/de-initialization order.
     // FIXME: Fix de-init fiasco order in some proper way
     LOG_DEBUG("Initializing preloaded library");
+    // Installed on the first intercepted CUDA call, i.e. after main has started.
+    installCrashHandler();
   }
 
 public:
