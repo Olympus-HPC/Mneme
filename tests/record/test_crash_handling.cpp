@@ -5,10 +5,8 @@
 // RUN: rm -rf "%t.$$.mneme"
 // clang-format on
 
-// The mneme preload library installs a crash handler when its recorder
-// singleton is first constructed. This test launches a kernel (constructing the
-// singleton) and then dereferences a null pointer: the handler should print the
-// crash banner to stderr before the re-raised signal terminates the process.
+// A crash while mneme is recording should be reported by the preload's signal
+// handler rather than terminating silently.
 
 #include <climits>
 #include <cstdio>
