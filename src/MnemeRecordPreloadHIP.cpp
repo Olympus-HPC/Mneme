@@ -1,5 +1,6 @@
 #include "MnemeAnnotationRuntime.hpp"
 #include "mneme/DeviceTraits.hpp"
+#include "mneme/MnemeCrashHandler.hpp"
 #include "mneme/MnemeLLVMUtils.hpp"
 #include "mneme/MnemeLogger.hpp"
 #include "mneme/MnemeRecord.hpp"
@@ -14,6 +15,11 @@ private:
   static constexpr bool hasFatBinEnd = false;
   MnemeRecorderHIPPreload(MnemeRecorderHIPPreload &) = delete;
   MnemeRecorderHIPPreload(MnemeRecorderHIPPreload &&) = delete;
+
+  MnemeRecorderHIPPreload() {
+    // Installed on the first intercepted HIP call, i.e. after main has started.
+    installCrashHandler();
+  }
 
 public:
   static MnemeRecorderHIPPreload &instance() {
