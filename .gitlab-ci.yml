@@ -86,6 +86,7 @@ workflow:
           - "setup.py"
           - "src/**/*"
           - "tests/**/*"
+          - "packaging/spack/**/*"
       when: always
     - if: '$CI_COMMIT_BRANCH != $CI_DEFAULT_BRANCH'
       changes:
@@ -116,6 +117,7 @@ workflow:
 stages:
   - prerequisites
   - build-and-test
+  - test-spack
   - test-python-cov
 
 meta-only:
@@ -150,6 +152,20 @@ meta-only:
       # - artifact: '${CI_MACHINE}-jobs.yml'
       #   job: 'generate-job-file'
       # (See Umpire CI setup for an example).
+    strategy: depend
+    forward:
+      pipeline_variables: true
+
+.test-spack:
+  stage: test-spack
+  interruptible: true
+  trigger:
+    include:
+      - local: '.gitlab/custom-jobs-and-variables.yml'
+      - project: 'radiuss/radiuss-shared-ci'
+        ref: 'v2025.12.1'
+        file: 'pipelines/${CI_MACHINE}.yml'
+      - local: '.gitlab/jobs/${CI_MACHINE}-spack.yml'
     strategy: depend
     forward:
       pipeline_variables: true
