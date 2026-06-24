@@ -1,6 +1,7 @@
-# Copyright Spack Project Developers. See COPYRIGHT file for details.
+# Copyright 2024-2026 Lawrence Livermore National Security, LLC and
+# Mneme developers. See the top-level COPYRIGHT file for details.
 #
-# SPDX-License-Identifier: (Apache-2.0 OR MIT)
+# SPDX-License-Identifier: (Apache-2.0 WITH LLVM-exception)
 
 from spack_repo.builtin.build_systems.cuda import CudaPackage
 from spack_repo.builtin.build_systems.rocm import ROCmPackage
