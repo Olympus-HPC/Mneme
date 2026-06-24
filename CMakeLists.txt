@@ -58,7 +58,11 @@ option(MNEME_ENABLE_TESTS "Enable Testing" OFF)
 option(MNEME_ENABLE_LOGGER "Enable logging on mneme" OFF)
 option(MNEME_ENABLE_PYTHON "Build Python bindings, profiling, and autotuning" OFF)
 option(MNEME_PYTHON_WHEEL "Build using Python wheel layout" OFF)
-option(MNEME_LINK_SHARED_LLVM "Link with the LLVM shared library" OFF)
+if(MNEME_ENABLE_CUDA)
+  option(MNEME_LINK_SHARED_LLVM "Link with the LLVM shared library" ON)
+else()
+  option(MNEME_LINK_SHARED_LLVM "Link with the LLVM shared library" OFF)
+endif()
 set(MNEME_PYTHON_SITE_PACKAGES "" CACHE PATH "Destination for Python files (non-wheel installs like Spack)")
 
 

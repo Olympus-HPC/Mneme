@@ -20,6 +20,7 @@ message(STATUS "LLVM_INCLUDE_DIRS: ${LLVM_INCLUDE_DIRS}")
 message(STATUS "LLVM_LIBRARY_DIR: ${LLVM_LIBRARY_DIR}")
 message(STATUS "LLVM_VERSION: ${LLVM_VERSION}")
 message(STATUS "LLVM AVAILABLE LIBRARIES: ${LLVM_AVAILABLE_LIBS}")
+message(STATUS "LLVM_LINK_LLVM_DYLIB: ${LLVM_LINK_LLVM_DYLIB}")
 
 if(NOT LLVM_ENABLE_RTTI)
   add_compile_options(-fno-rtti)
@@ -53,27 +54,38 @@ endif()
 message(STATUS "LLVM_LIB_FLAGS: ${LLVM_LIB_FLAGS}")
 message(STATUS "LLVM_SYSTEM_LIB_FLAGS: ${LLVM_SYSTEM_LIB_FLAGS}")
 
-# Compute MNEME_LLVM_LIBS once so every target can just do
+# Validate that the requested linking mode is compatible with the LLVM installation,
+# then compute MNEME_LLVM_LIBS so every target can do:
 #   target_link_libraries(<tgt> PRIVATE ${MNEME_LLVM_LIBS})
-# In the LLVM_LINK_LLVM_DYLIB + MNEME_LINK_SHARED_LLVM case the variable is
-# empty because llvm_config(<tgt> USE_SHARED) handles linking per-target.
+# When MNEME_LINK_SHARED_LLVM=ON the variable is empty because
+# llvm_config(<tgt> USE_SHARED) handles per-target linking.
 if(MNEME_LINK_SHARED_LLVM)
   if(NOT LLVM_LINK_LLVM_DYLIB)
     message(FATAL_ERROR
-      "The LLVM installation at ${LLVM_INSTALL_PREFIX} does not provide libLLVM.so, "
-      "required by MNEME_LINK_SHARED_LLVM=ON.\n"
-      "Set MNEME_LINK_SHARED_LLVM=OFF.")
+      "MNEME_LINK_SHARED_LLVM=ON but the LLVM installation at ${LLVM_LIBRARY_DIR} "
+      "was not built with shared library support "
+      "(LLVM_LINK_LLVM_DYLIB is not set in LLVMConfig.cmake).")
   endif()
+  find_library(_mneme_llvm_shared_lib
+    NAMES LLVM
+    PATHS "${LLVM_LIBRARY_DIR}"
+    NO_DEFAULT_PATH
+  )
+  if(NOT _mneme_llvm_shared_lib)
+    message(FATAL_ERROR
+      "LLVM_LINK_LLVM_DYLIB=ON but libLLVM.so was not found in ${LLVM_LIBRARY_DIR}.")
+  endif()
+  message(STATUS "LLVM linking mode: SHARED (${_mneme_llvm_shared_lib})")
   # llvm_config(<tgt> USE_SHARED) handles linking per-target; no static libs needed.
   set(MNEME_LLVM_LIBS "" CACHE INTERNAL "LLVM libs to link into Mneme targets")
 else()
   if(LLVM_LINK_LLVM_DYLIB)
     message(FATAL_ERROR
-      "The LLVM installation at ${LLVM_INSTALL_PREFIX} requires linking with the LLVM "
-      "shared library, but MNEME_LINK_SHARED_LLVM=OFF.\n"
-      "Set MNEME_LINK_SHARED_LLVM=ON.")
+      "MNEME_LINK_SHARED_LLVM=OFF but the LLVM installation at ${LLVM_LIBRARY_DIR} "
+      "was built for shared linking (LLVM_LINK_LLVM_DYLIB=ON in LLVMConfig.cmake)")
   endif()
-  # Remove the bundled .so from the static list to avoid double-linking.
+  message(STATUS "LLVM linking mode: STATIC")
+  # Remove the bundled .so target from the static list to avoid double-linking.
   set(_mneme_llvm_libs ${LLVM_AVAILABLE_LIBS})
   list(REMOVE_ITEM _mneme_llvm_libs "LLVM")
   set(MNEME_LLVM_LIBS ${_mneme_llvm_libs} CACHE INTERNAL "LLVM libs to link into Mneme targets")
