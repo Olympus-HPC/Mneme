@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.24)
 
 # compiler auto-selection from LLVM_INSTALL_DIR, must happen before project()
+# this will override compiler selection from tools like Spack, which inject compiler wrappers
+# that will make mneme config c/cxx unusable
 if(NOT LLVM_INSTALL_DIR)
   set(LLVM_INSTALL_DIR "$ENV{LLVM_INSTALL_DIR}" CACHE PATH
     "Path to the LLVM installation used to build Mneme")
