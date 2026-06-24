@@ -7,6 +7,15 @@ _PKG_DIR = Path(__file__).resolve().parents[1]
 _NATIVE = _PKG_DIR / "native"
 _CONFIG_FILE = _NATIVE / "config.json"
 
+# in editable installs the python src lives in the source tree but native artifacts are in site-packages so search sys.path
+if not _CONFIG_FILE.exists():
+    for _sp in sys.path:
+        _candidate = Path(_sp) / "mneme" / "native" / "config.json"
+        if _candidate.exists():
+            _CONFIG_FILE = _candidate
+            _NATIVE = _candidate.parent
+            break
+
 # Try to read library directory from config.json otherwise read from pip installed location
 _LIB64 = _NATIVE / "lib64"
 if _CONFIG_FILE.exists():

@@ -99,8 +99,15 @@ include(cmake/SetupLLVM.cmake)
 include(cmake/SetupProteus.cmake)
 include(cmake/MnemeFunctions.cmake)
 
+# needs to go before add_subdirectory
 if(MNEME_PYTHON_WHEEL)
-  set(CMAKE_INSTALL_RPATH "$ORIGIN")
+  if(proteus_SOURCE_DIR)
+    # bundled proteus is installed alongside mneme
+    set(CMAKE_INSTALL_RPATH "$ORIGIN")
+  else()
+    # set real proteus libdir b/c INSTALL_RPATH_USE_LINK_PATH won't pick up external proteus
+    set(CMAKE_INSTALL_RPATH "$ORIGIN;$<TARGET_FILE_DIR:proteus>")
+  endif()
 endif()
 
 add_subdirectory(src)
