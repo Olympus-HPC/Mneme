@@ -211,3 +211,15 @@ tuolumne-test-spack:
     - job: tuolumne-build-and-test
       optional: true
   extends: [.test-spack, .spack-rules]
+
+matrix-test-spack:
+  variables:
+    CI_MACHINE: "matrix"
+    JOB_CMD:
+      value: "tests/spack/cuda/ci-test-spack.sh"
+      expand: false
+  needs:
+    - job: matrix-up-check
+    - job: matrix-build-and-test
+      optional: true
+  extends: [.test-spack, .spack-rules]
