@@ -1,6 +1,6 @@
 #pragma once
 
-#ifdef MNEME_ENABLE_LOGGER
+#if defined(MNEME_ENABLE_LOGGER) && !defined(__CUDACC__)
 
 #include "mneme/MnemeConfig.hpp"
 #include "mneme/MnemeRank.hpp"
