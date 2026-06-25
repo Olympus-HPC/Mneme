@@ -68,6 +68,9 @@ set(MNEME_PYTHON_SITE_PACKAGES "" CACHE PATH "Destination for Python files (non-
 
 if(MNEME_ENABLE_CUDA)
   find_package(CUDAToolkit REQUIRED)
+  if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
+    set(CMAKE_CUDA_ARCHITECTURES "native" CACHE STRING "CUDA architectures to build for")
+  endif()
   enable_language(CUDA)
   find_library(MNEME_NVPTXCOMPILER_LIBRARY
     NAMES nvptxcompiler_static libnvptxcompiler_static nvptxcompiler
