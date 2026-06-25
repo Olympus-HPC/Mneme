@@ -31,8 +31,9 @@ endif()
 
 target_include_directories(record SYSTEM PRIVATE ${LLVM_INCLUDE_DIRS} ${CMAKE_SOURCE_DIR}/include)
 target_link_libraries(record PRIVATE mnemert)
-# Link the record preload shared library with proteus shared library to avoid
-# LLVM static initialization issues.
+# Link record against proteus to avoid LLVM static initialization issues.
+# HIP: proteus is shared (version-script hides LLVM symbols).
+# CUDA: proteus is static but propagates --exclude-libs for the same effect.
 target_link_libraries(record PRIVATE proteus)
 
 if (MNEME_ENABLE_LOGGER)

@@ -20,7 +20,13 @@ if(NOT proteus_FOUND)
   # forward build settings to proteus configure; LLVM_INSTALL_DIR should already be in the cache
   set(PROTEUS_ENABLE_CUDA             ${MNEME_ENABLE_CUDA})
   set(PROTEUS_ENABLE_HIP              ${MNEME_ENABLE_HIP})
-  set(BUILD_SHARED                    ON)
+  # CUDA device code cannot be compiled into a shared library; use static proteus.
+  # HIP does not have this restriction, so prefer shared to avoid LLVM ODR issues.
+  if(MNEME_ENABLE_CUDA)
+    set(BUILD_SHARED OFF)
+  else()
+    set(BUILD_SHARED ON)
+  endif()
   set(PROTEUS_INSTALL_IMPL_HEADERS    ON)
   set(ENABLE_TESTS                    OFF)
   set(CMAKE_POSITION_INDEPENDENT_CODE ON)
