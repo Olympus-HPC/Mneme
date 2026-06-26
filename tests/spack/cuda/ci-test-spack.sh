@@ -27,7 +27,7 @@ spack concretize -f
 
 # Add repo and package.
 PROTEUS_VERSION=$(cat ${CI_PROJECT_DIR}/PROTEUS_VERSION)
-git clone --quiet --depth=1 --branch=cmelone/spack-updates git@github.com:cmelone/proteus.git /tmp/proteus-${CI_JOB_ID}
+git clone --quiet --depth=1 --branch=${PROTEUS_VERSION} git@github.com:Olympus-HPC/proteus.git /tmp/proteus-${CI_JOB_ID}
 spack repo add /tmp/proteus-${CI_JOB_ID}/packaging/spack/spack_repo/proteus
 spack repo add ${CI_PROJECT_DIR}/packaging/spack/spack_repo/mneme
 spack add mneme@git.${CI_COMMIT_SHA} ~python +cuda cuda_arch=${MNEME_CI_CUDA_ARCH} ^cuda@${MNEME_CI_CUDA_VERSION} ^llvm@${MNEME_CI_LLVM_VERSION}
