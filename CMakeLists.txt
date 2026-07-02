@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.24)
+cmake_minimum_required(VERSION 3.28.2)
 
 # compiler auto-selection from LLVM_INSTALL_DIR, must happen before project()
 # this will override compiler selection from tools like Spack, which inject compiler wrappers
@@ -25,9 +25,20 @@ else()
     HINTS "${LLVM_INSTALL_DIR}/bin"
     NO_DEFAULT_PATH
   )
+  # we want clang to be the cuda compiler
+  if(NOT "$ENV{MNEME_ENABLE_CUDA}" STREQUAL "" OR MNEME_ENABLE_CUDA)
+    find_program(CMAKE_CUDA_COMPILER
+      NAMES clang++
+      HINTS "${LLVM_INSTALL_DIR}/bin"
+      NO_DEFAULT_PATH
+    )
+  endif()
   if(CMAKE_CXX_COMPILER)
     message(STATUS "Auto-selected CXX: ${CMAKE_CXX_COMPILER}")
     message(STATUS "Auto-selected C:   ${CMAKE_C_COMPILER}")
+    if(CMAKE_CUDA_COMPILER)
+      message(STATUS "Auto-selected CUDA: ${CMAKE_CUDA_COMPILER}")
+    endif()
   else()
     message(WARNING "Compiler auto-select: no amdclang++/clang++ found in ${LLVM_INSTALL_DIR}/bin")
   endif()
@@ -58,16 +69,14 @@ option(MNEME_ENABLE_TESTS "Enable Testing" OFF)
 option(MNEME_ENABLE_LOGGER "Enable logging on mneme" OFF)
 option(MNEME_ENABLE_PYTHON "Build Python bindings, profiling, and autotuning" OFF)
 option(MNEME_PYTHON_WHEEL "Build using Python wheel layout" OFF)
-if(MNEME_ENABLE_CUDA)
-  option(MNEME_LINK_SHARED_LLVM "Link with the LLVM shared library" ON)
-else()
-  option(MNEME_LINK_SHARED_LLVM "Link with the LLVM shared library" OFF)
-endif()
 set(MNEME_PYTHON_SITE_PACKAGES "" CACHE PATH "Destination for Python files (non-wheel installs like Spack)")
+# AUTO picks up whatever the found LLVM was built with
+set(MNEME_LINK_SHARED_LLVM "AUTO" CACHE STRING "Link with the LLVM shared library")
 
 
 if(MNEME_ENABLE_CUDA)
   find_package(CUDAToolkit REQUIRED)
+  # cmake's native arch detection doesn't work with Clang as the CUDA compiler until 3.28.2
   if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
     set(CMAKE_CUDA_ARCHITECTURES "native" CACHE STRING "CUDA architectures to build for")
   endif()
