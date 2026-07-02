@@ -35,10 +35,9 @@ class Mneme(CMakePackage, CudaPackage, ROCmPackage, PythonExtension):
 
     depends_on("c", type="build")
     depends_on("cxx", type="build")
-    depends_on("cmake@3.24:", type="build")
+    depends_on("cmake@3.28.2:", type="build")
 
-    # CUDA support needs shared LLVM
-    depends_on("llvm@19:20 +clang +link_llvm_dylib", when="+cuda")
+    depends_on("llvm@19:20 +clang targets=all", when="+cuda")
     # ROCm: use the AMDGPU LLVM build
     depends_on("llvm-amdgpu@6.2:", when="+rocm")
     requires("%[virtuals=c,cxx] llvm-amdgpu", when="+rocm")
@@ -46,11 +45,7 @@ class Mneme(CMakePackage, CudaPackage, ROCmPackage, PythonExtension):
 
     depends_on("cuda@12:", when="+cuda")
     depends_on("hip@6.2:", when="+rocm")
-
-    depends_on("proteus@=2026.05.0+impl_headers")
-    depends_on("proteus+rocm+shared", when="+rocm")
-    # can't use proteus shared lib w/ cuda support
-    depends_on("proteus+cuda~shared", when="+cuda")
+    depends_on("proteus@=2026.05.0+impl_headers+shared")
 
     with when("+rocm"):
         for arch in ROCmPackage.amdgpu_targets:
