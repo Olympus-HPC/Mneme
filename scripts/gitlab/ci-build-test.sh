@@ -138,6 +138,7 @@ cmake \
 
 
 elif [[ "$SYS_TYPE" == "toss_4_x86_64_ib_cray" ]]; then
+  ml load cmake/3.29.2
   ml load rocm/${MNEME_CI_ROCM_VERSION}
   export LLVM_INSTALL_DIR=${ROCM_PATH}/llvm
   export CMAKE_HIP_ARCHITECTURES="gfx942;gfx90a"
