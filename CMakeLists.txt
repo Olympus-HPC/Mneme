@@ -128,16 +128,10 @@ if(MNEME_PYTHON_WHEEL)
   endif()
 endif()
 
-add_subdirectory(src)
-
-if(MNEME_ENABLE_TESTS)
-  enable_testing()
-  add_subdirectory(tests)
-endif()
-
 # install destinations: wheel uses mneme/native/* so artifacts are in the Python package
 # standard installs use GNUInstallDirs vars
-message(STATUS "Installing ${PROJECT_NAME} of version ${PROJECT_VERSION}")
+# needs to go before add_subdirectory so src/CMakeLists.txt can use _mneme_incdir
+# for mnemert's exported INSTALL_INTERFACE include directory
 if(MNEME_PYTHON_WHEEL)
   set(_mneme_libdir   "mneme/native/lib64")
   set(_mneme_incdir   "mneme/native/include")
@@ -147,6 +141,15 @@ else()
   set(_mneme_incdir   "${CMAKE_INSTALL_INCLUDEDIR}")
   set(_mneme_cmakedir "${CMAKE_INSTALL_LIBDIR}/cmake/mneme")
 endif()
+
+add_subdirectory(src)
+
+if(MNEME_ENABLE_TESTS)
+  enable_testing()
+  add_subdirectory(tests)
+endif()
+
+message(STATUS "Installing ${PROJECT_NAME} of version ${PROJECT_VERSION}")
 
 configure_package_config_file(
   "${PROJECT_SOURCE_DIR}/cmake/mnemeConfig.cmake.in"
