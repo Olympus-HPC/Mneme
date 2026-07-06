@@ -50,11 +50,13 @@ log "End copying mneme src to ${mneme_src} from ${mneme_orig_src}"
 
 if [[ "$SYS_TYPE" == "toss_4_x86_64_ib" ]]; then
   unset CUDA_VISIBLE_DEVICES
+  ml load cmake/3.30
   ml load cuda/12.2.2
   setup_conda_env "${test_dir}/miniconda3" "${MNEME_CI_LLVM_VERSION}" "${MNEME_CI_PYTHON_VERSION}"
   export LLVM_INSTALL_DIR=$(llvm-config --prefix)
   export MNEME_ENABLE_CUDA=ON
 elif [[ "$SYS_TYPE" == "toss_4_x86_64_ib_cray" ]]; then
+  ml load cmake/3.29.2
   ml load python/${MNEME_CI_PYTHON_VERSION}
   ml load rocm/${MNEME_CI_ROCM_VERSION}
   export LLVM_INSTALL_DIR=${ROCM_PATH}/
