@@ -7,7 +7,7 @@ from multiprocessing import Process
 from multiprocessing import Queue as ProcessQueue
 from queue import Queue as ThreadQueue
 from threading import Event as ThreadEvent
-from typing import Dict
+from typing import Callable, Dict, Optional
 
 from mneme.futures import EvalFuture
 from mneme.mneme_logging import logger
@@ -88,6 +88,10 @@ class TuneWorkerHandle:
         iterations: int,
         results_db_dir: str,
         warmup: int = 2,
+        max_startup_failures: int = 3,
+        on_startup_failure_limit: Optional[
+            Callable[["TuneWorkerHandle", str], None]
+        ] = None,
     ):
         """
         Construct a worker handle and start the worker process + monitor thread.
@@ -111,6 +115,9 @@ class TuneWorkerHandle:
             Directory where the worker writes logs and optional artifacts.
         warmup : int
             Number of warmup iterations executed before measured iterations.
+        max_startup_failures : int
+            Maximum number of consecutive worker exits before readiness before this
+            handle stops respawning the worker.
 
         Notes
         -----
@@ -133,6 +140,9 @@ class TuneWorkerHandle:
         self.iterations = iterations
         self.results_db_dir = results_db_dir
         self.warmup = warmup
+        self.max_startup_failures = max_startup_failures
+        self._startup_failures = 0
+        self._on_startup_failure_limit = on_startup_failure_limit
 
         self._state = None  # ProcessEvent
         self._process = None  # Process
@@ -183,6 +193,19 @@ class TuneWorkerHandle:
         )
         self._process.start()
         self._action = self.StateMachine.SUBMIT
+
+    def _startup_failure_error(self):
+        return (
+            f"Worker failed to start after {self._startup_failures} attempts "
+            f"on device {self.device_id}"
+        )
+
+    def _disable_after_startup_failures(self):
+        error = self._startup_failure_error()
+        logger.error(error)
+        self._process.join()
+        if self._on_startup_failure_limit is not None:
+            self._on_startup_failure_limit(self, error)
 
     # ------------------------------------------------------------
     # Result handling
@@ -296,7 +319,12 @@ class TuneWorkerHandle:
         while not self._shutdown_event.is_set():
             if not self._process.is_alive():
                 # Crash recovery
-                if self.current is not None:
+                if not self._state.is_set():
+                    self._startup_failures += 1
+                    if self._startup_failures >= self.max_startup_failures:
+                        self._disable_after_startup_failures()
+                        return
+                elif self.current is not None:
                     # TODO: At some point we need to have more descrptive messages on the crash, it is not always a seg fault, somethimes it is LLVM related and we should know.
                     self.current.set_error(
                         f"Worker crashed (exit code: {self._process.exitcode}) running on device {self.device_id}"
@@ -313,6 +341,8 @@ class TuneWorkerHandle:
                 # That should simplify the logic.
                 time.sleep(0.5)
                 continue
+
+            self._startup_failures = 0
 
             if self._action == self.StateMachine.SUBMIT:
                 self._submit()
@@ -370,6 +400,7 @@ class AsyncReplayExecutor:
         results_db_dir: str,
         num_workers: int,
         warmup: int = 2,
+        max_startup_failures: int = 3,
     ):
         """
         Construct an asynchronous executor with a fixed-size worker pool.
@@ -388,6 +419,9 @@ class AsyncReplayExecutor:
             Number of worker processes to launch.
         warmup : int
             Number of warmup iterations each worker executes before measured iterations.
+        max_startup_failures : int
+            Maximum number of consecutive pre-readiness startup failures allowed per
+            worker before that worker stops respawning.
         """
         self.global_q = ThreadQueue()
         self._futures: Dict[int, EvalFuture] = {}
@@ -395,20 +429,43 @@ class AsyncReplayExecutor:
         self._lock = threading.Lock()
         self.iterations = iterations
         self.warmup = warmup
+        self.max_startup_failures = max_startup_failures
+        self._num_workers = num_workers
+        self._failed_workers = set()
+        self._broken_error = None
 
-        self.workers = [
-            TuneWorkerHandle(
-                i,
-                self.global_q,
-                record_db,
-                record_id,
-                i,
-                iterations,
-                results_db_dir,
-                warmup=warmup,
+        self.workers = []
+        for i in range(num_workers):
+            self.workers.append(
+                TuneWorkerHandle(
+                    i,
+                    self.global_q,
+                    record_db,
+                    record_id,
+                    i,
+                    iterations,
+                    results_db_dir,
+                    warmup=warmup,
+                    max_startup_failures=max_startup_failures,
+                    on_startup_failure_limit=self._handle_startup_failure_limit,
+                )
             )
-            for i in range(num_workers)
-        ]
+
+    def _handle_startup_failure_limit(self, worker: TuneWorkerHandle, error: str):
+        with self._lock:
+            self._failed_workers.add(worker.idx)
+            if len(self._failed_workers) < self._num_workers:
+                return
+            self._broken_error = error
+
+        self._fail_pending_futures(error)
+
+    def _fail_pending_futures(self, error: str):
+        while True:
+            future = pop(self.global_q, timeout=0)
+            if future is None:
+                return
+            future.set_error(error)
 
     # ------------------------------------------------------------------
     # Submit new job (non-blocking)
@@ -434,11 +491,13 @@ class AsyncReplayExecutor:
         with self._lock:
             job_id = self._next_id
             self._next_id += 1
-
-        logger.debug(f"[{self.__class__.__name__}] Submitting job {job_id}")
-        future = EvalFuture(job_id, config)
-        self._futures[job_id] = future
-        self.global_q.put(future)
+            logger.debug(f"[{self.__class__.__name__}] Submitting job {job_id}")
+            future = EvalFuture(job_id, config)
+            self._futures[job_id] = future
+            if self._broken_error is not None:
+                future.set_error(self._broken_error)
+                return future
+            self.global_q.put(future)
         return future
 
     def shutdown(self):

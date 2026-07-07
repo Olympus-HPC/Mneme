@@ -47,6 +47,12 @@ class DummyProcess:
         self._alive = False
 
 
+class DeadProcess(DummyProcess):
+    def __init__(self):
+        super().__init__()
+        self._alive = False
+
+
 class DummyEvent:
     def __init__(self):
         self._set = False
@@ -194,6 +200,152 @@ def test_worker_crash_marks_future_failed(handle):
     assert out.failed is True
     assert out.executed is False
     assert "Worker crashed" in out.error
+
+
+def test_worker_crash_branch_marks_future_failed_and_respawns(handle):
+    future = EvalFuture(1, ExperimentConfiguration())
+    handle.current = future
+    handle._state.set()
+    handle._process._alive = False
+    handle._process.exitcode = 42
+
+    def stop_after_respawn():
+        handle._shutdown_event.set()
+
+    handle._spawn_process = stop_after_respawn
+
+    handle._shadow_process_loop()
+
+    out = future.result(timeout=0.01)
+    assert out.failed is True
+    assert out.executed is False
+    assert "Worker crashed" in out.error
+    assert handle.current is None
+
+
+def test_ready_worker_resets_startup_failures_and_submits(handle):
+    future = EvalFuture(3, ExperimentConfiguration())
+    handle.global_q.put(future)
+    handle._startup_failures = 2
+    handle._state.set()
+
+    original_submit = handle._submit
+
+    def submit_once():
+        original_submit()
+        handle._process._alive = False
+        handle._shutdown_event.set()
+
+    handle._submit = submit_once
+
+    handle._shadow_process_loop()
+
+    assert handle._startup_failures == 0
+    assert handle.current is future
+    assert handle._action == handle.StateMachine.RECEIVE
+
+
+def test_shadow_loop_shutdown_sends_terminate_and_joins(handle):
+    handle._shutdown_event.set()
+    received = []
+
+    def receive_once():
+        received.append(True)
+        handle._process._alive = False
+
+    handle._try_receive = receive_once
+
+    handle._shadow_process_loop()
+
+    assert handle._ipc_write_q.get_nowait()["payload"] == "terminate"
+    assert received == [True]
+    assert handle._process.is_alive() is False
+
+
+def test_tuneworker_handle_join_signals_thread(handle):
+    handle.join()
+
+    assert handle._shutdown_event.is_set()
+
+
+def test_startup_failures_stop_respawning_after_limit(monkeypatch):
+    import mneme.async_executor as mod
+
+    monkeypatch.setattr(mod.threading, "Thread", NoopThread, raising=True)
+    monkeypatch.setattr(mod, "Process", lambda *a, **k: DeadProcess())
+    monkeypatch.setattr(mod, "ProcessEvent", DummyEvent)
+    monkeypatch.setattr(mod, "ProcessQueue", DummyQueue)
+
+    failures = []
+    h = mod.TuneWorkerHandle(
+        idx=0,
+        global_q=queue.Queue(),
+        record_db="db",
+        record_id="rid",
+        device_id=0,
+        iterations=3,
+        results_db_dir="/tmp",
+        max_startup_failures=3,
+        on_startup_failure_limit=lambda worker, error: failures.append(
+            (worker.idx, error)
+        ),
+    )
+
+    h._shadow_process_loop()
+
+    assert h._startup_failures == 3
+    assert failures
+    assert failures[0][0] == 0
+    assert "failed to start after 3 attempts" in failures[0][1]
+
+
+def test_executor_does_not_fail_pending_work_until_all_workers_fail(monkeypatch):
+    import mneme.async_executor as mod
+
+    monkeypatch.setattr(mod.threading, "Thread", NoopThread, raising=True)
+    monkeypatch.setattr(mod, "Process", lambda *a, **k: DeadProcess())
+    monkeypatch.setattr(mod, "ProcessEvent", DummyEvent)
+    monkeypatch.setattr(mod, "ProcessQueue", DummyQueue)
+
+    exe = mod.AsyncReplayExecutor(
+        record_db="db",
+        record_id="rid",
+        iterations=3,
+        results_db_dir="/tmp",
+        num_workers=2,
+        max_startup_failures=3,
+    )
+    future = exe.submit(ExperimentConfiguration())
+
+    exe.workers[0]._shadow_process_loop()
+    assert future.done() is False
+
+    exe.workers[1]._shadow_process_loop()
+    out = future.result(timeout=0.01)
+
+    assert out.failed is True
+    assert out.executed is False
+    assert "failed to start after 3 attempts" in out.error
+
+
+def test_submit_after_executor_broken_returns_failed_future(monkeypatch):
+    monkeypatch.setattr("mneme.async_executor.TuneWorkerHandle", lambda *a, **k: None)
+
+    exe = AsyncReplayExecutor(
+        record_db="db",
+        record_id="rid",
+        iterations=3,
+        results_db_dir="/tmp",
+        num_workers=0,
+    )
+    exe._broken_error = "all workers failed to start"
+
+    future = exe.submit(ExperimentConfiguration())
+    out = future.result(timeout=0.01)
+
+    assert out.failed is True
+    assert out.executed is False
+    assert out.error == "all workers failed to start"
 
 
 # -----------------------------------------------------------------------------
