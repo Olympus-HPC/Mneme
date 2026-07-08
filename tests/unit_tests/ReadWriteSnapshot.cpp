@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
+#include <fstream>
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/SmallVector.h>
 #include <memory>
@@ -23,6 +24,13 @@ constexpr DeviceVendors Vendor = DeviceVendors::CUDA;
 using MnemeDeviceRT = DeviceTraits<DeviceVendors::CUDA>;
 using MnemeMemoryBlobDevice = MnemeMemoryBlob<DeviceVendors::CUDA>;
 #endif
+
+bool isDiffSnapshotFile(const std::filesystem::path &Path) {
+  std::ifstream In(Path, std::ios::binary);
+  std::string Magic(13, '\0');
+  In.read(Magic.data(), Magic.size());
+  return Magic == "MNEME_DIFF_V1";
+}
 
 template <typename T> void initializeRandomBuffer(T *Buffer, size_t Size) {
   // Random number generation setup
@@ -97,9 +105,9 @@ int main(int argc, char **argv) {
   std::filesystem::path SnapshotFN("./test.mneme");
 
   MnemeSnapshot<Vendor>::GlobalSnapshotData PrologueGlobals;
-  MnemeSnapshot<Vendor>::takeMnemeBytesSnapshot(
-      GVars, DeviceMemMap, SnapshotFN, TestKernel->KernelArgSizes, Args, 0,
-      &PrologueGlobals);
+  MnemeSnapshot<Vendor>::takeMnemeBytesSnapshot(GVars, DeviceMemMap, SnapshotFN,
+                                                TestKernel->KernelArgSizes,
+                                                Args, 0, &PrologueGlobals);
 
   auto ReadSnap =
       MnemeSnapshot<Vendor>::readBytesSnapshot(KernelName, SnapshotFN.string());
@@ -229,15 +237,15 @@ int main(int argc, char **argv) {
   GlobalData.second[3] ^= 0x9;
   GlobalData.second[4] ^= 0x13;
 
-  auto EC = MnemeDeviceRT::DeviceErrorCheck(MnemeDeviceRT::DeviceCopy(
-      BlobData.first, BlobData.second, 128,
-      MnemeDeviceRT::MemcpyHostToDeviceKind()));
+  auto EC = MnemeDeviceRT::DeviceErrorCheck(
+      MnemeDeviceRT::DeviceCopy(BlobData.first, BlobData.second, 128,
+                                MnemeDeviceRT::MemcpyHostToDeviceKind()));
   if (EC)
     LOG_FATAL("Could not update device blob data");
 
-  EC = MnemeDeviceRT::DeviceErrorCheck(MnemeDeviceRT::DeviceCopy(
-      GlobalData.first, GlobalData.second, 128,
-      MnemeDeviceRT::MemcpyHostToDeviceKind()));
+  EC = MnemeDeviceRT::DeviceErrorCheck(
+      MnemeDeviceRT::DeviceCopy(GlobalData.first, GlobalData.second, 128,
+                                MnemeDeviceRT::MemcpyHostToDeviceKind()));
   if (EC)
     LOG_FATAL("Could not update device global data");
 
@@ -319,14 +327,91 @@ int main(int argc, char **argv) {
     return 0;
   }();
 
+  auto ResetBlobBase = [&]() {
+    auto PrologueBlobIt = ReadDeviceMemMap.find((void *)BlobData.first);
+    auto HostData = std::unique_ptr<uint8_t[]>(new uint8_t[128]);
+    std::memcpy(HostData.get(), PrologueBlobIt->second.getHostData().get(),
+                128);
+    DeviceMemMap[(void *)BlobData.first].setHostData(std::move(HostData));
+  };
+
+  llvm::SmallVector<size_t> EmptyArgSizes;
+
+  ResetBlobBase();
+  std::filesystem::path SparseBestSnapshotFN("./test.best.sparse.mneme");
+  MnemeSnapshot<Vendor>::takeBestMnemeSnapshot(
+      GVars, DeviceMemMap, SparseBestSnapshotFN, EmptyArgSizes, nullptr,
+      PrologueGlobals, 0);
+  auto ValidateBestSparse = [&]() {
+    if (!isDiffSnapshotFile(SparseBestSnapshotFN)) {
+      std::cerr << "Best sparse snapshot should choose diff\n";
+      return 64;
+    }
+    auto BestSparseSnap = MnemeSnapshot<Vendor>::readDiffSnapshot(
+        KernelName, SparseBestSnapshotFN.string(), SnapshotFN.string());
+    auto It = BestSparseSnap.DeviceMemory.find((void *)BlobData.first);
+    if (It == BestSparseSnap.DeviceMemory.end() ||
+        std::memcmp(BlobData.second, It->second.getHostData().get(), 128) !=
+            0) {
+      std::cerr << "Best sparse snapshot did not reconstruct epilogue data\n";
+      return 64;
+    }
+    return 0;
+  }();
+
+  auto PrologueBlobIt = ReadDeviceMemMap.find((void *)BlobData.first);
+  auto PrologueGlobalIt = ReadGVars.find("Test");
+  auto *PrologueBlob = PrologueBlobIt->second.getHostData().get();
+  auto *PrologueGlobal =
+      static_cast<uint8_t *>(PrologueGlobalIt->second.HostAddr);
+  for (size_t I = 0; I < 128; ++I) {
+    BlobData.second[I] = PrologueBlob[I] ^ 0xff;
+    GlobalData.second[I] = PrologueGlobal[I] ^ 0xff;
+  }
+
+  EC = MnemeDeviceRT::DeviceErrorCheck(
+      MnemeDeviceRT::DeviceCopy(BlobData.first, BlobData.second, 128,
+                                MnemeDeviceRT::MemcpyHostToDeviceKind()));
+  if (EC)
+    LOG_FATAL("Could not update dense device blob data");
+
+  EC = MnemeDeviceRT::DeviceErrorCheck(
+      MnemeDeviceRT::DeviceCopy(GlobalData.first, GlobalData.second, 128,
+                                MnemeDeviceRT::MemcpyHostToDeviceKind()));
+  if (EC)
+    LOG_FATAL("Could not update dense device global data");
+
+  ResetBlobBase();
+  std::filesystem::path DenseBestSnapshotFN("./test.best.dense.mneme");
+  MnemeSnapshot<Vendor>::takeBestMnemeSnapshot(
+      GVars, DeviceMemMap, DenseBestSnapshotFN, EmptyArgSizes, nullptr,
+      PrologueGlobals, 0);
+  auto ValidateBestDense = [&]() {
+    if (isDiffSnapshotFile(DenseBestSnapshotFN)) {
+      std::cerr << "Best dense snapshot should choose bytes\n";
+      return 128;
+    }
+    auto BestDenseSnap = MnemeSnapshot<Vendor>::readDiffSnapshot(
+        KernelName, DenseBestSnapshotFN.string(), SnapshotFN.string());
+    auto It = BestDenseSnap.DeviceMemory.find((void *)BlobData.first);
+    if (It == BestDenseSnap.DeviceMemory.end() ||
+        std::memcmp(BlobData.second, It->second.getHostData().get(), 128) !=
+            0) {
+      std::cerr << "Best dense snapshot did not reconstruct epilogue data\n";
+      return 128;
+    }
+    return 0;
+  }();
+
   auto Ret = ValidateGlobalMem | ValidateDeviceMem | ValidateKernelArgs |
              ValidateDiffGlobalMem | ValidateDiffDeviceMem |
-             ValidateDiffKernelArgs;
+             ValidateDiffKernelArgs | ValidateBestSparse | ValidateBestDense;
 
   delete[] GlobalData.second;
   delete[] BlobData.second;
 
-  EC = MnemeDeviceRT::DeviceErrorCheck(MnemeDeviceRT::DeviceFree(GlobalData.first));
+  EC = MnemeDeviceRT::DeviceErrorCheck(
+      MnemeDeviceRT::DeviceFree(GlobalData.first));
   if (EC)
     LOG_FATAL("Could not release device memory\n");
 
