@@ -364,40 +364,46 @@ int main(int argc, char **argv) {
   auto *PrologueBlob = PrologueBlobIt->second.getHostData().get();
   auto *PrologueGlobal =
       static_cast<uint8_t *>(PrologueGlobalIt->second.HostAddr);
+  // Alternating changes force many one-byte diff ranges, making the bytes
+  // snapshot smaller than the diff snapshot.
   for (size_t I = 0; I < 128; ++I) {
-    BlobData.second[I] = PrologueBlob[I] ^ 0xff;
-    GlobalData.second[I] = PrologueGlobal[I] ^ 0xff;
+    BlobData.second[I] = (I % 2 == 0) ? (PrologueBlob[I] ^ 0xff)
+                                      : PrologueBlob[I];
+    GlobalData.second[I] = (I % 2 == 0) ? (PrologueGlobal[I] ^ 0xff)
+                                        : PrologueGlobal[I];
   }
 
   EC = MnemeDeviceRT::DeviceErrorCheck(
       MnemeDeviceRT::DeviceCopy(BlobData.first, BlobData.second, 128,
                                 MnemeDeviceRT::MemcpyHostToDeviceKind()));
   if (EC)
-    LOG_FATAL("Could not update dense device blob data");
+    LOG_FATAL("Could not update fragmented device blob data");
 
   EC = MnemeDeviceRT::DeviceErrorCheck(
       MnemeDeviceRT::DeviceCopy(GlobalData.first, GlobalData.second, 128,
                                 MnemeDeviceRT::MemcpyHostToDeviceKind()));
   if (EC)
-    LOG_FATAL("Could not update dense device global data");
+    LOG_FATAL("Could not update fragmented device global data");
 
   ResetBlobBase();
-  std::filesystem::path DenseBestSnapshotFN("./test.best.dense.mneme");
+  std::filesystem::path FragmentedBestSnapshotFN(
+      "./test.best.fragmented.mneme");
   MnemeSnapshot<Vendor>::takeBestMnemeSnapshot(
-      GVars, DeviceMemMap, DenseBestSnapshotFN, EmptyArgSizes, nullptr,
+      GVars, DeviceMemMap, FragmentedBestSnapshotFN, EmptyArgSizes, nullptr,
       PrologueGlobals, 0);
-  auto ValidateBestDense = [&]() {
-    if (isDiffSnapshotFile(DenseBestSnapshotFN)) {
-      std::cerr << "Best dense snapshot should choose bytes\n";
+  auto ValidateBestFragmented = [&]() {
+    if (isDiffSnapshotFile(FragmentedBestSnapshotFN)) {
+      std::cerr << "Best fragmented snapshot should choose bytes\n";
       return 128;
     }
-    auto BestDenseSnap = MnemeSnapshot<Vendor>::readDiffSnapshot(
-        KernelName, DenseBestSnapshotFN.string(), SnapshotFN.string());
-    auto It = BestDenseSnap.DeviceMemory.find((void *)BlobData.first);
-    if (It == BestDenseSnap.DeviceMemory.end() ||
+    auto BestFragmentedSnap = MnemeSnapshot<Vendor>::readDiffSnapshot(
+        KernelName, FragmentedBestSnapshotFN.string(), SnapshotFN.string());
+    auto It = BestFragmentedSnap.DeviceMemory.find((void *)BlobData.first);
+    if (It == BestFragmentedSnap.DeviceMemory.end() ||
         std::memcmp(BlobData.second, It->second.getHostData().get(), 128) !=
             0) {
-      std::cerr << "Best dense snapshot did not reconstruct epilogue data\n";
+      std::cerr
+          << "Best fragmented snapshot did not reconstruct epilogue data\n";
       return 128;
     }
     return 0;
@@ -405,7 +411,8 @@ int main(int argc, char **argv) {
 
   auto Ret = ValidateGlobalMem | ValidateDeviceMem | ValidateKernelArgs |
              ValidateDiffGlobalMem | ValidateDiffDeviceMem |
-             ValidateDiffKernelArgs | ValidateBestSparse | ValidateBestDense;
+             ValidateDiffKernelArgs | ValidateBestSparse |
+             ValidateBestFragmented;
 
   delete[] GlobalData.second;
   delete[] BlobData.second;
