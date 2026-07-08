@@ -23,6 +23,7 @@
 #include <llvm/IR/Module.h>
 #include <string>
 #include <sys/types.h>
+#include <type_traits>
 
 #include "mneme/DeviceTraits.hpp"
 #include "mneme/MnemeConfig.hpp"
@@ -132,6 +133,15 @@ template <DeviceVendors VendorTypes> class MnemeSnapshot {
   static constexpr size_t DiffMagicSize = sizeof(DiffMagic) - 1;
   static constexpr size_t DiffChunkSize = 1 << 20;
 
+  class CountingRawOStream : public llvm::raw_ostream {
+    uint64_t Pos = 0;
+
+    void write_impl(const char *, size_t Size) override { Pos += Size; }
+    uint64_t current_pos() const override { return Pos; }
+
+  public:
+    uint64_t bytesWritten() const { return Pos; }
+  };
 
   static bool isDiffBuffer(llvm::StringRef Buffer) {
     return Buffer.size() >= DiffMagicSize &&
@@ -157,7 +167,7 @@ template <DeviceVendors VendorTypes> class MnemeSnapshot {
       LOG_FATAL("Cannot diff buffers with different sizes");
 
     // Count the number of contiguous ranges that have changed between Base and
-    // Current. We want to write out the number of ranges so that the reader 
+    // Current. We want to write out the number of ranges so that the reader
     // can know how many ranges to read.
     size_t Count = 0;
     bool InRange = false;
@@ -183,7 +193,7 @@ template <DeviceVendors VendorTypes> class MnemeSnapshot {
     if (!UpdateBase.empty() && UpdateBase.size() != Base.size())
       LOG_FATAL("Cannot update diff base with mismatched buffer size");
 
-    // Write out the contiguous ranges that have changed between Base 
+    // Write out the contiguous ranges that have changed between Base
     // and Current.
     size_t Count = 0;
     size_t I = 0;
@@ -209,8 +219,10 @@ template <DeviceVendors VendorTypes> class MnemeSnapshot {
     return Count;
   }
 
-  static void writeCountAndWriteChangedRanges(
-      llvm::raw_ostream &OS, MnemeMemoryBlob<VendorTypes> &Blob) {
+  static void
+  writeCountAndWriteChangedRanges(llvm::raw_ostream &OS,
+                                  MnemeMemoryBlob<VendorTypes> &Blob,
+                                  bool UpdateBaseData = true) {
     auto Size = Blob.getSize();
 
     // early exit
@@ -240,9 +252,14 @@ template <DeviceVendors VendorTypes> class MnemeSnapshot {
 
       llvm::ArrayRef<uint8_t> ChunkBase(Base + Offset, ChunkSize);
       llvm::ArrayRef<uint8_t> ChunkCurrent(Scratch.get(), ChunkSize);
-      llvm::MutableArrayRef<uint8_t> UpdateBase(Base + Offset, ChunkSize);
-      NumRanges += writeChangedRanges(DiffOS, ChunkBase, ChunkCurrent, Offset,
-                                       UpdateBase);
+      if (UpdateBaseData) {
+        llvm::MutableArrayRef<uint8_t> UpdateBase(Base + Offset, ChunkSize);
+        NumRanges += writeChangedRanges(DiffOS, ChunkBase, ChunkCurrent, Offset,
+                                        UpdateBase);
+      } else {
+        NumRanges +=
+            writeChangedRanges(DiffOS, ChunkBase, ChunkCurrent, Offset);
+      }
     }
 
     util::writeScalar(OS, NumRanges);
@@ -354,16 +371,52 @@ template <DeviceVendors VendorTypes> class MnemeSnapshot {
       if (Blob.getActualSize() != ActualSize || Blob.getSize() != Size)
         LOG_FATAL("Mneme diff memory blob size mismatch");
       Blob.setMetadata(MD);
-      applyDiffRanges(
-          CurrentPtr,
-          llvm::MutableArrayRef<uint8_t>(Blob.getHostData().get(),
-                                         Blob.getSize()),
-          NumRanges);
+      applyDiffRanges(CurrentPtr,
+                      llvm::MutableArrayRef<uint8_t>(Blob.getHostData().get(),
+                                                     Blob.getSize()),
+                      NumRanges);
     }
   }
 
+  static size_t getSerializedMetadataSize(const Metadata &MD) {
+    return sizeof(std::underlying_type_t<BuiltinDType>) + sizeof(double) +
+           sizeof(ThresholdKind) + sizeof(Norm) + sizeof(size_t) +
+           (MD.tag ? MD.tag->size() : 0);
+  }
+
+  static size_t computeMnemeBytesSnapshotSize(
+      const proteus::runtime::GlobalMetadataMap &GlobalVars,
+      const llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &DeviceMemory,
+      llvm::ArrayRef<size_t> KernelArgSizes) {
+    size_t Size = sizeof(size_t);
+    for (const auto &[VarName, GV] : GlobalVars) {
+      Size += sizeof(size_t);
+      Size += VarName.size();
+      Size += sizeof(GV.VarSize);
+      Size += sizeof(GV.DevAddr);
+      Size += GV.VarSize;
+    }
+
+    Size += sizeof(size_t);
+    for (const auto &[Ptr, Blob] : DeviceMemory) {
+      Size += sizeof(size_t);
+      Size += sizeof(size_t);
+      Size += sizeof(void *);
+      Size += Blob.getSize();
+      Size += getSerializedMetadataSize(Blob.getMetadata());
+    }
+
+    Size += sizeof(size_t);
+    for (size_t ArgSize : KernelArgSizes) {
+      Size += sizeof(size_t);
+      Size += ArgSize;
+    }
+    return Size;
+  }
+
 public:
-  using GlobalSnapshotData = std::unordered_map<std::string, std::vector<uint8_t>>;
+  using GlobalSnapshotData =
+      std::unordered_map<std::string, std::vector<uint8_t>>;
 
   static std::pair<std::string, ReplayGlobalVar>
   fromBuffer(const char *&Buffer) {
@@ -458,22 +511,11 @@ public:
     return Filename.filename();
   }
 
-  std::filesystem::path static takeMnemeDiffSnapshot(
+  static void writeMnemeDiffSnapshot(
+      llvm::raw_ostream &OutBC,
       const proteus::runtime::GlobalMetadataMap &GlobalVars,
       llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &DeviceMemory,
-      std::filesystem::path &Filename,
-      const GlobalSnapshotData &PrologueGlobals, DeviceStream_t Stream) {
-    LOG_DEBUG("Storing mneme diff snapshot: {}", Filename.string());
-    std::error_code EC;
-    auto DEC = DeviceTraits<VendorTypes>::DeviceErrorCheck(
-        DeviceTraits<VendorTypes>::DeviceStreamSynchronize(Stream));
-    if (DEC)
-      LOG_FATAL("Synchronizing stream failed before diff snapshot");
-
-    llvm::raw_fd_ostream OutBC(Filename.string(), EC);
-    if (EC)
-      LOG_FATAL("Cannot write Mneme diff snapshot: " + EC.message());
-
+      const GlobalSnapshotData &PrologueGlobals, bool UpdateBaseData) {
     util::writeBytes(OutBC, llvm::StringRef(DiffMagic, DiffMagicSize));
 
     size_t TotalGlobals = GlobalVars.size();
@@ -513,10 +555,63 @@ public:
       auto MD = Blob.getMetadata();
       mneme::metadata::serialize(OutBC, MD);
 
-      writeCountAndWriteChangedRanges(OutBC, Blob);
+      writeCountAndWriteChangedRanges(OutBC, Blob, UpdateBaseData);
     }
+  }
 
+  static size_t measureMnemeDiffSnapshotSize(
+      const proteus::runtime::GlobalMetadataMap &GlobalVars,
+      llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &DeviceMemory,
+      const GlobalSnapshotData &PrologueGlobals, DeviceStream_t Stream) {
+    auto DEC = DeviceTraits<VendorTypes>::DeviceErrorCheck(
+        DeviceTraits<VendorTypes>::DeviceStreamSynchronize(Stream));
+    if (DEC)
+      LOG_FATAL("Synchronizing stream failed before diff snapshot");
+
+    CountingRawOStream Counter;
+    writeMnemeDiffSnapshot(Counter, GlobalVars, DeviceMemory, PrologueGlobals,
+                           false);
+    return Counter.bytesWritten();
+  }
+
+  std::filesystem::path static takeMnemeDiffSnapshot(
+      const proteus::runtime::GlobalMetadataMap &GlobalVars,
+      llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &DeviceMemory,
+      std::filesystem::path &Filename,
+      const GlobalSnapshotData &PrologueGlobals, DeviceStream_t Stream) {
+    LOG_DEBUG("Storing mneme diff snapshot: {}", Filename.string());
+    std::error_code EC;
+    auto DEC = DeviceTraits<VendorTypes>::DeviceErrorCheck(
+        DeviceTraits<VendorTypes>::DeviceStreamSynchronize(Stream));
+    if (DEC)
+      LOG_FATAL("Synchronizing stream failed before diff snapshot");
+
+    llvm::raw_fd_ostream OutBC(Filename.string(), EC);
+    if (EC)
+      LOG_FATAL("Cannot write Mneme diff snapshot: " + EC.message());
+
+    writeMnemeDiffSnapshot(OutBC, GlobalVars, DeviceMemory, PrologueGlobals,
+                           true);
     return Filename.filename();
+  }
+
+  std::filesystem::path static takeBestMnemeSnapshot(
+      const proteus::runtime::GlobalMetadataMap &GlobalVars,
+      llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &DeviceMemory,
+      std::filesystem::path &Filename,
+      llvm::SmallVector<size_t> &KernelArgSizes, void **Args,
+      const GlobalSnapshotData &PrologueGlobals, DeviceStream_t Stream) {
+    size_t BytesSize =
+        computeMnemeBytesSnapshotSize(GlobalVars, DeviceMemory, KernelArgSizes);
+    size_t DiffSize = measureMnemeDiffSnapshotSize(GlobalVars, DeviceMemory,
+                                                   PrologueGlobals, Stream);
+
+    if (DiffSize <= BytesSize)
+      return takeMnemeDiffSnapshot(GlobalVars, DeviceMemory, Filename,
+                                   PrologueGlobals, Stream);
+
+    return takeMnemeBytesSnapshot(GlobalVars, DeviceMemory, Filename,
+                                  KernelArgSizes, Args, Stream);
   }
 
   // Opens Filename and returns it as the concrete on-disk format detected from
@@ -547,8 +642,9 @@ public:
 };
 
 template <DeviceVendors VendorTypes>
-Snapshot<VendorTypes> BytesSnapshotFile<VendorTypes>::reconstruct(
-    const std::string &KernelName, const std::string &) const {
+Snapshot<VendorTypes>
+BytesSnapshotFile<VendorTypes>::reconstruct(const std::string &KernelName,
+                                            const std::string &) const {
   Snapshot<VendorTypes> Snap;
   // KernelInfo's constructor takes a non-const std::string &, so name it with a
   // mutable local.
@@ -568,8 +664,8 @@ Snapshot<VendorTypes> DiffSnapshotFile<VendorTypes>::reconstruct(
 
   // A diff stores only changed ranges, so reconstruct the full base prologue
   // first and then overlay the diff onto it.
-  Snapshot<VendorTypes> Snap =
-      MnemeSnapshot<VendorTypes>::readBytesSnapshot(KernelName, BasePrologueFile);
+  Snapshot<VendorTypes> Snap = MnemeSnapshot<VendorTypes>::readBytesSnapshot(
+      KernelName, BasePrologueFile);
   MnemeSnapshot<VendorTypes>::applyDiffMnemeSnapShot(
       this->Filename, Snap.GlobalVars, Snap.DeviceMemory, this->Buffer.get());
   return Snap;
@@ -622,7 +718,7 @@ class KernelInstancesCollection {
 
 private:
   // Parse Proteus's serialized bitcode in a Mneme-owned LLVMContext and
-  // extract per-argument metadata. Operating on a Mneme-owned Module 
+  // extract per-argument metadata. Operating on a Mneme-owned Module
   // keeps Mneme's LLVM runtime from touching any
   // Proteus-owned LLVM C++ object across the DSO boundary.
   void extractArgInfoFromBitcode(llvm::StringRef Bitcode) {
@@ -701,8 +797,8 @@ public:
       LOG_FATAL("Empty bitcode for kernel " + KName);
 
     extractArgInfoFromBitcode(Bitcode);
-    ModuleFiles.emplace_back(StoreModuleBytes(
-        Bitcode, MnemeDirectory, KInfo.getStaticHash()));
+    ModuleFiles.emplace_back(
+        StoreModuleBytes(Bitcode, MnemeDirectory, KInfo.getStaticHash()));
   }
 
   llvm::stable_hash computeHash(dim3 &GridDim, dim3 &BlockDim,
@@ -781,16 +877,23 @@ public:
               switch (EpilogueType) {
               case EpilogueSnapshotType::Bytes:
                 Instances[DynamicHash].EpilogueFn =
-                    SnapshotT::takeMnemeBytesSnapshot(
-                        GlobalVars, DeviceMemory, Filename, KernelArgSizes,
-                        Args, Stream)
+                    SnapshotT::takeMnemeBytesSnapshot(GlobalVars, DeviceMemory,
+                                                      Filename, KernelArgSizes,
+                                                      Args, Stream)
                         .string();
                 break;
               case EpilogueSnapshotType::Diff:
                 Instances[DynamicHash].EpilogueFn =
-                    SnapshotT::takeMnemeDiffSnapshot(
-                        GlobalVars, DeviceMemory, Filename, *PrologueGlobals,
-                        Stream)
+                    SnapshotT::takeMnemeDiffSnapshot(GlobalVars, DeviceMemory,
+                                                     Filename, *PrologueGlobals,
+                                                     Stream)
+                        .string();
+                break;
+              case EpilogueSnapshotType::Best:
+                Instances[DynamicHash].EpilogueFn =
+                    SnapshotT::takeBestMnemeSnapshot(
+                        GlobalVars, DeviceMemory, Filename, KernelArgSizes,
+                        Args, *PrologueGlobals, Stream)
                         .string();
                 break;
               }
@@ -828,10 +931,11 @@ public:
   void writeKernelJSON(uint64_t StaticHash) {
     auto It = KernelRecords.find(StaticHash);
     if (It == KernelRecords.end()) {
-      LOG_WARN("Attempted to write JSON for unrecorded kernel hash {}", StaticHash);
+      LOG_WARN("Attempted to write JSON for unrecorded kernel hash {}",
+               StaticHash);
       return;
     }
-    auto* RecordPtr = &It->second;
+    auto *RecordPtr = &It->second;
 
     auto JsonFilename = MnemeDirectory / (std::to_string(StaticHash) + ".json");
     auto JSONRecord = RecordPtr->toJSON(StaticHash);
@@ -839,7 +943,8 @@ public:
     std::error_code EC;
     llvm::raw_fd_ostream JsonOS(JsonFilename.string(), EC);
     if (EC) {
-      LOG_WARN("Failed to open JSON file for kernel {}: {}", StaticHash, EC.message());
+      LOG_WARN("Failed to open JSON file for kernel {}: {}", StaticHash,
+               EC.message());
       return;
     }
 
