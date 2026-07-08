@@ -140,7 +140,8 @@ template <DeviceVendors VendorTypes> class MnemeSnapshot {
     uint64_t current_pos() const override { return Pos; }
 
   public:
-    uint64_t bytesWritten() const { return Pos; }
+    CountingRawOStream() : llvm::raw_ostream(/*unbuffered=*/true) {}
+    uint64_t bytesWritten() const { return tell(); }
   };
 
   static bool isDiffBuffer(llvm::StringRef Buffer) {
