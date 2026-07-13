@@ -129,10 +129,12 @@ class FakeDeviceModule:
 
 
 class FakeRecordedExecution:
-    def __init__(self, kernel_descr):
+    def __init__(self, kernel_descr=None, kernel_instances=None):
         self.va_addr = 0x1000
         self.va_size = 0x2000
-        self._kernel_descr = kernel_descr
+        self.kernel_instances = (
+            {"rid": kernel_descr} if kernel_instances is None else kernel_instances
+        )
         self.link_calls = []
 
     @classmethod
@@ -140,7 +142,13 @@ class FakeRecordedExecution:
         raise RuntimeError("You must monkeypatch from_json in tests")
 
     def __getitem__(self, record_id):
-        return self._kernel_descr
+        return self.kernel_instances[record_id]
+
+    def __iter__(self):
+        return iter(self.kernel_instances)
+
+    def __len__(self):
+        return len(self.kernel_instances)
 
     def link_llvm_modules(self, prune=True, internalize=True):
         self.link_calls.append((prune, internalize))
@@ -179,6 +187,18 @@ def _reload_with_identity_decorators(monkeypatch):
     mod = importlib.import_module(MODULE_PATH)
     mod = importlib.reload(mod)
     return mod
+
+
+def _patch_executor_init_dependencies(monkeypatch, mod, records):
+    monkeypatch.setattr(
+        mod.RecordedExecution,
+        "from_json",
+        staticmethod(lambda _: records),
+        raising=True,
+    )
+    monkeypatch.setattr(mod, "set_device", lambda _: None, raising=True)
+    monkeypatch.setattr(mod, "get_device_arch", lambda: "sm", raising=True)
+    monkeypatch.setattr(mod, "get_device_count", lambda: 1, raising=True)
 
 
 # --------------------------
@@ -221,12 +241,70 @@ def test_baseexecutor_init_sets_gpu_affinity_and_loads_records(monkeypatch):
     )
 
     assert ex.records is rec
+    assert ex.record_id == "rid"
     assert ex.kernel_descr is kernel
     assert ex.device_arch == "sm_80"
     assert ex.num_devices == 8
     assert calls["set_device"] == [3]
     assert calls["from_json"] == ["db.json"]
     assert ex._iterations == 5
+
+
+def test_baseexecutor_infers_single_record_id(monkeypatch):
+    mod = _reload_with_identity_decorators(monkeypatch)
+
+    kernel = FakeKernelDescr()
+    rec = FakeRecordedExecution(kernel_instances={"only-rid": kernel})
+    _patch_executor_init_dependencies(monkeypatch, mod, rec)
+
+    ex = mod.BaseExecutor(record_db="db.json")
+
+    assert ex.record_id == "only-rid"
+    assert ex.kernel_descr is kernel
+
+
+@pytest.mark.parametrize(
+    ("record_ids", "expected_count"),
+    [([], 0), (["first", "second"], 2)],
+)
+def test_baseexecutor_rejects_ambiguous_record_id(
+    monkeypatch, record_ids, expected_count
+):
+    mod = _reload_with_identity_decorators(monkeypatch)
+
+    kernel_instances = {record_id: FakeKernelDescr() for record_id in record_ids}
+    rec = FakeRecordedExecution(kernel_instances=kernel_instances)
+    monkeypatch.setattr(
+        mod.RecordedExecution,
+        "from_json",
+        staticmethod(lambda _: rec),
+        raising=True,
+    )
+    monkeypatch.setattr(
+        mod,
+        "get_device_arch",
+        lambda: pytest.fail("GPU initialization should not be reached"),
+        raising=True,
+    )
+
+    with pytest.raises(ValueError, match=f"found {expected_count}"):
+        mod.BaseExecutor(record_db="db.json")
+
+
+def test_baseexecutor_uses_explicit_record_id_with_multiple_instances(monkeypatch):
+    mod = _reload_with_identity_decorators(monkeypatch)
+
+    first = FakeKernelDescr(kernel_name="first")
+    selected = FakeKernelDescr(kernel_name="selected")
+    rec = FakeRecordedExecution(
+        kernel_instances={"first-rid": first, "selected-rid": selected}
+    )
+    _patch_executor_init_dependencies(monkeypatch, mod, rec)
+
+    ex = mod.BaseExecutor(record_db="db.json", record_id="selected-rid")
+
+    assert ex.record_id == "selected-rid"
+    assert ex.kernel_descr is selected
 
 
 def test_open_close_context_manager_opens_and_closes_resources(monkeypatch):

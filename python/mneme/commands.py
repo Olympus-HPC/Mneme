@@ -404,8 +404,8 @@ class Replay(BaseExecutor):
             "-record-id",
             "-rid",
             dest="record_id",
-            required=True,
-            help="Kernel ID to operate on",
+            default=None,
+            help="Kernel ID to operate on; inferred when the database contains exactly one instance",
         )
 
         parser.add_argument(

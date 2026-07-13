@@ -103,10 +103,16 @@ After the execution of the example you can check the generated recorded artifact
 ### Phase 3: Replay kernel 
 
 ```bash
-mneme replay -rdb record-example-dir/15941914485064662553.json -rid 16313427880266313990 "default<O3>"
+mneme replay -rdb record-example-dir/15941914485064662553.json "default<O3>"
 ```
 
-This command will execute the kernel and **replay** the exact same execution as the recorded one. If the command completes successfully and produces a JSON file, recording worked. The output will be similar to:
+This recording contains one kernel instance,
+so Mneme selects its record ID automatically.
+The command will execute the kernel and **replay** the exact same execution
+as the recorded one.
+If the command completes successfully and produces a JSON file,
+recording worked.
+The output will be similar to:
 
 ```json
 {
@@ -160,7 +166,10 @@ This command will execute the kernel and **replay** the exact same execution as 
 ```
 
 !!! note
-    The exact names of the `-rdb` and `-rid` parameters will differ and the user should discover them. The former (`-rdb`) points to the json file under the `./record-example-dir/` and the latter (`-rid`) should take the key value of the entries under the `instances` config. The user should discover them.
+    The exact `-rdb` filename will differ.
+    It points to the JSON file under `./record-example-dir/`.
+    If that database contains multiple entries under `instances`,
+    select one explicitly with `-rid <record-id>`.
 
 !!! note
     If verified on the *Result* entry is true and executed is true, **Congratulations** you have replayed successfully a vector addition.
