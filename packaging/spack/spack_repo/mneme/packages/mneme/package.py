@@ -46,6 +46,8 @@ class Mneme(CMakePackage, CudaPackage, ROCmPackage, PythonExtension):
     depends_on("cuda@12:", when="+cuda")
     depends_on("hip@6.2:", when="+rocm")
     depends_on("proteus@=2026.05.0+impl_headers+shared")
+    depends_on("proteus+cuda", when="+cuda")
+    depends_on("proteus+rocm", when="+rocm")
 
     with when("+rocm"):
         for arch in ROCmPackage.amdgpu_targets:
