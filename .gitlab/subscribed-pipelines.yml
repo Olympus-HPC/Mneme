@@ -46,10 +46,27 @@
           - "setup.py"
           - "src/**/*"
           - "tests/**/*"
+          - "packaging/spack/**/*"
     - if: '$CI_COMMIT_BRANCH != $CI_DEFAULT_BRANCH'
       changes:
         compare_to: &compare_to_ref "refs/heads/develop"
         paths: *pipeline_trigger_paths
+
+.spack-rules:
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      changes:
+        paths: &spack_paths
+          - ".gitlab-ci.yml"
+          - ".gitlab/**/*"
+          - "CMakeLists.txt"
+          - "cmake/**/*"
+          - "packaging/spack/**/*"
+          - "tests/**/*"
+    - if: '$CI_COMMIT_BRANCH != $CI_DEFAULT_BRANCH'
+      changes:
+        compare_to: *compare_to_ref
+        paths: *spack_paths
 
 .core-build-rules:
   rules:
@@ -167,3 +184,42 @@ matrix-test-python-cov:
       expand: false
   needs: [matrix-up-check]
   extends: [.test-python-cov, .python-rules]
+
+#################################
+#       Spack Tests             #
+#################################
+tioga-test-spack:
+  variables:
+    CI_MACHINE: "tioga"
+    JOB_CMD:
+      value: "tests/spack/hip/ci-test-spack.sh"
+      expand: false
+  needs:
+    - job: tioga-up-check
+    - job: tioga-build-and-test
+      optional: true
+  extends: [.test-spack, .spack-rules]
+
+tuolumne-test-spack:
+  variables:
+    CI_MACHINE: "tuolumne"
+    JOB_CMD:
+      value: "tests/spack/hip/ci-test-spack.sh"
+      expand: false
+  needs:
+    - job: tuolumne-up-check
+    - job: tuolumne-build-and-test
+      optional: true
+  extends: [.test-spack, .spack-rules]
+
+matrix-test-spack:
+  variables:
+    CI_MACHINE: "matrix"
+    JOB_CMD:
+      value: "tests/spack/cuda/ci-test-spack.sh"
+      expand: false
+  needs:
+    - job: matrix-up-check
+    - job: matrix-build-and-test
+      optional: true
+  extends: [.test-spack, .spack-rules]

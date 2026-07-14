@@ -32,3 +32,5 @@ endif()
 target_include_directories(mneme_profile PRIVATE ${CMAKE_SOURCE_DIR}/include)
 
 add_library(mneme::profile ALIAS mneme_profile)
+
+set_target_properties(mneme_profile PROPERTIES INSTALL_RPATH_USE_LINK_PATH TRUE)

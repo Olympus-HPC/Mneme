@@ -13,7 +13,7 @@ function(BUILD_DEVICE_UNIT_TEST exe)
 	llvm_config(${exe} USE_SHARED)
 	target_link_libraries(${exe} PRIVATE ${CMAKE_DL_LIBS})
    else()
-	target_link_libraries(${exe} PRIVATE ${llvm_libs} ${CMAKE_DL_LIBS})
+	target_link_libraries(${exe} PRIVATE ${MNEME_LLVM_LIBS} ${CMAKE_DL_LIBS})
    endif()
 
 
@@ -38,7 +38,7 @@ function(BUILD_UNIT_TEST exe)
 	llvm_config(${exe} USE_SHARED)
 	target_link_libraries(${exe} PRIVATE ${CMAKE_DL_LIBS})
    else()
-	target_link_libraries(${exe} PRIVATE ${llvm_libs} ${CMAKE_DL_LIBS})
+	target_link_libraries(${exe} PRIVATE ${MNEME_LLVM_LIBS} ${CMAKE_DL_LIBS})
    endif()
 
 if (MNEME_ENABLE_LOGGER)

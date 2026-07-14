@@ -334,6 +334,8 @@ class Config:
             cfg = json.load(fd)
 
         runtime_prefix = str(cfg_file.parent.resolve())
+
+        # Replace @PREFIX@ placeholder with actual mneme installation path
         for k, v in cfg.items():
             if isinstance(v, str):
                 cfg[k] = v.replace("@PREFIX@", runtime_prefix)

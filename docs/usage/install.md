@@ -130,7 +130,7 @@ to record and replay kernels.
 git clone https://github.com/Olympus-HPC/Mneme.git
 cd Mneme
 export LLVM_INSTALL_DIR=${ROCM_PATH}
-pip install -e .
+MNEME_GPU_BACKEND=hip pip install -e .
 ```
 
 ### NVIDIA Systems
@@ -158,7 +158,7 @@ Once you have LLVM installed you can install Mneme as:
 git clone https://github.com/Olympus-HPC/Mneme.git
 cd Mneme
 export LLVM_INSTALL_DIR=$(llvm-config --prefix)
-pip install -e .
+MNEME_GPU_BACKEND=cuda pip install -e .
 ```
 
 This installs the Mneme CLI (mneme) and Python bindings along with all
@@ -218,7 +218,7 @@ The scripts can be configured with environment variables before sourcing:
 
 - `MNEME_ENABLE_TESTS`: configure the C++ test targets (`Off` by default).
 - `MNEME_ENABLE_LOGGER`: enable logging support (`Off` by default).
-- `MNEME_ENABLE_AUTOTUNE`: build autotuning/profile support (`Off` by default).
+- `MNEME_ENABLE_PYTHON`: build Python bindings, profiling, and autotuning (`Off` by default).
 - `MNEME_LINK_SHARED_LLVM`: link against shared LLVM libraries
   (`On` by default for CUDA, `Off` by default for ROCm).
 - `MNEME_CUDA_ARCHITECTURES`: CUDA architecture list for NVIDIA builds
@@ -282,12 +282,12 @@ Mneme uses pytest for its Python test suite.
 First, install the test dependencies:
 
 ```bash
-pip install pytest
+pip install -e ".[test]"
 ```
 
 Then run the tests:
 
-```
+```bash
 pytest python/tests
 ```
 
