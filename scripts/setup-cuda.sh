@@ -10,7 +10,7 @@ then
     return 1
 fi
 
-ml load cmake/3.23.1
+ml load cmake/3.30
 
 # Developer knobs.
 MNEME_ENABLE_TESTS=${MNEME_ENABLE_TESTS:-Off}
