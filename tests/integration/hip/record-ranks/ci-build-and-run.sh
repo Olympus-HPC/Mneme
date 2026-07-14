@@ -25,7 +25,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 INSTALL_PREFIX=${PWD}/install-mneme
 cmake -S ${CI_PROJECT_DIR} -B build-mneme \
     -DCMAKE_INSTALL_PREFIX=${INSTALL_PREFIX} \
-    -DMNEME_ENABLE_HIP=on \
+    -DMNEME_GPU_BACKEND=hip \
     -DENABLE_TESTS=off
 
 pushd build-mneme

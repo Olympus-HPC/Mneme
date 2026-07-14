@@ -8,6 +8,19 @@ if(NOT LLVM_INSTALL_DIR)
     "Path to the LLVM installation used to build Mneme")
 endif()
 
+set(MNEME_GPU_BACKEND "$ENV{MNEME_GPU_BACKEND}" CACHE STRING "GPU backend (cuda or hip)")
+set_property(CACHE MNEME_GPU_BACKEND PROPERTY STRINGS cuda hip)
+string(TOLOWER "${MNEME_GPU_BACKEND}" MNEME_GPU_BACKEND)
+if(MNEME_GPU_BACKEND STREQUAL "cuda")
+  set(MNEME_ENABLE_CUDA ON)
+elseif(MNEME_GPU_BACKEND STREQUAL "hip")
+  set(MNEME_ENABLE_HIP ON)
+else()
+  message(FATAL_ERROR
+    "MNEME_GPU_BACKEND must be \"cuda\" or \"hip\" (got \"${MNEME_GPU_BACKEND}\").\n"
+    "Set it as an environment variable or pass -DMNEME_GPU_BACKEND")
+endif()
+
 if(NOT LLVM_INSTALL_DIR)
   message(FATAL_ERROR
     "LLVM_INSTALL_DIR is required.\n"
@@ -26,7 +39,7 @@ else()
     NO_DEFAULT_PATH
   )
   # we want clang to be the cuda compiler
-  if(NOT "$ENV{MNEME_ENABLE_CUDA}" STREQUAL "" OR MNEME_ENABLE_CUDA)
+  if(MNEME_ENABLE_CUDA)
     find_program(CMAKE_CUDA_COMPILER
       NAMES clang++
       HINTS "${LLVM_INSTALL_DIR}/bin"
@@ -56,15 +69,6 @@ set(CMAKE_CXX_STANDARD_REQUIRED YES)
 set(CMAKE_CXX_EXTENSIONS NO)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-if(NOT MNEME_ENABLE_CUDA AND NOT "$ENV{MNEME_ENABLE_CUDA}" STREQUAL "")
-  set(MNEME_ENABLE_CUDA "$ENV{MNEME_ENABLE_CUDA}" CACHE BOOL "Enable CUDA")
-endif()
-if(NOT MNEME_ENABLE_HIP AND NOT "$ENV{MNEME_ENABLE_HIP}" STREQUAL "")
-  set(MNEME_ENABLE_HIP "$ENV{MNEME_ENABLE_HIP}" CACHE BOOL "Enable HIP")
-endif()
-
-option(MNEME_ENABLE_CUDA "Enable CUDA" OFF)
-option(MNEME_ENABLE_HIP "Enable HIP" OFF)
 option(MNEME_ENABLE_TESTS "Enable Testing" OFF)
 option(MNEME_ENABLE_LOGGER "Enable logging on mneme" OFF)
 option(MNEME_ENABLE_PYTHON "Build Python bindings, profiling, and autotuning" OFF)
@@ -93,8 +97,6 @@ elseif(MNEME_ENABLE_HIP)
   find_package(HIP REQUIRED)
   enable_language(HIP)
   add_compile_definitions(MNEME_ENABLE_HIP)
-else()
-  message(FATAL_ERROR "Mneme supports either CUDA or HIP")
 endif()
 
 if(MNEME_ENABLE_LOGGER)

@@ -93,8 +93,8 @@ class Mneme(CMakePackage, CudaPackage, ROCmPackage, PythonExtension):
         args.append(self.define("LLVM_INSTALL_DIR", llvm_provider.prefix))
 
         args.append(self.define_from_variant("MNEME_ENABLE_TESTS", "tests"))
-        args.append(self.define_from_variant("MNEME_ENABLE_HIP", "rocm"))
-        args.append(self.define_from_variant("MNEME_ENABLE_CUDA", "cuda"))
+        gpu_backend = "hip" if self.spec.satisfies("+rocm") else "cuda"
+        args.append(self.define("MNEME_GPU_BACKEND", gpu_backend))
         args.append(self.define_from_variant("MNEME_ENABLE_PYTHON", "python"))
         args.append(self.define("MNEME_ENABLE_LOGGER", True))
         args.append(self.define("MNEME_PYTHON_WHEEL", False))

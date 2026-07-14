@@ -16,7 +16,6 @@ find_package(CUDAToolkit)
 
 find_package(mneme REQUIRED)
 
-add_definitions("-DMNEME_ENABLE_CUDA")
 add_executable(vecAdd vec_add.cu)
 
 get_cmake_property(_targets TARGETS)

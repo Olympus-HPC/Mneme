@@ -20,7 +20,7 @@ For full installation details, see **[Usage → Install](install.md)**.
 git clone https://github.com/Olympus-HPC/Mneme.git
 cd Mneme
 export LLVM_INSTALL_DIR=${ROCM_PATH}
-pip install -e .
+MNEME_GPU_BACKEND=hip pip install -e .
 ```
 
 ### NVIDIA Systems
@@ -48,7 +48,7 @@ Once you have LLVM installed you can install Mneme as:
 git clone https://github.com/Olympus-HPC/Mneme.git
 cd Mneme
 export LLVM_INSTALL_DIR=$(llvm-config --prefix)
-pip install -e .
+MNEME_GPU_BACKEND=cuda pip install -e .
 ```
 
 

@@ -6,7 +6,6 @@ enable_language(HIP)
 set(CMAKE_BUILD_TYPE RelWithDebInfo)
 find_package(HIP REQUIRED)
 find_package(mneme REQUIRED)
-add_definitions("-DMNEME_ENABLE_HIP")
 add_executable(vecAdd vec_add.cu)
 
 get_cmake_property(_targets TARGETS)
