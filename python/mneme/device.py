@@ -25,6 +25,7 @@ cleanup order:
 
 import weakref
 from ctypes import POINTER, Structure, c_char_p, c_float, c_int, c_uint, c_void_p
+from typing import Optional
 
 from .llvm import ffi
 from .llvm.buffer import MemBufferRef
@@ -62,6 +63,7 @@ ffi.lib.MnemePy_profile.argtypes = [
     MnemeRecordStateRef,
     c_int,
     c_int,
+    c_char_p,
 ]
 
 
@@ -228,6 +230,7 @@ class DeviceFunction(ffi.ObjectRef):
         epilogue_state: MemBufferRef,
         shared_mem_size: int,
         iterations=5,
+        reset_mode: Optional[str] = None,
     ):
         """
         Execute the kernel under Mneme record/replay profiling.
@@ -253,6 +256,11 @@ class DeviceFunction(ffi.ObjectRef):
             Dynamic shared memory size (bytes) for the launch.
         iterations : int, optional
             Number of kernel executions to perform for profiling.
+        reset_mode : str, optional
+            Replay memory reset mode: ``"bytes"`` or ``"diff"``.
+            When omitted, the native runtime uses ``MNEME_REPLAY_RESET_MODE`` or
+            selects ``"diff"`` for diff epilogue snapshots and ``"bytes"``
+            otherwise.
 
         Raises
         ------
@@ -273,6 +281,7 @@ class DeviceFunction(ffi.ObjectRef):
             epilogue_state,
             shared_mem_size,
             iterations,
+            _encode_string(reset_mode or ""),
         )
         return
 

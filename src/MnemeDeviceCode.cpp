@@ -1,6 +1,8 @@
 #include "mneme/DeviceTraits.hpp"
 #include "mneme/MnemeAnnotation.hpp"
 #include "mneme/MnemeComparators.hpp"
+#include "mneme/MnemeDeviceKernels.hpp"
+#include <algorithm>
 #include <cstdint>
 #include <cstring>
 #include <mneme/MnemeLogger.hpp>
@@ -13,11 +15,13 @@ using namespace mneme;
 #ifdef MNEME_ENABLE_HIP
 #include <hip/hip_fp16.h>
 using DeviceVendorTraits = DeviceTraits<DeviceVendors::HIP>;
+constexpr DeviceVendors ActiveDeviceVendor = DeviceVendors::HIP;
 #define MNEME_DEV __device__ __forceinline__
 #elif defined(MNEME_ENABLE_CUDA)
 #include <cstdint>
 #include <cuda_fp16.h> // or hip/hip_fp16.h for HIP
 using DeviceVendorTraits = DeviceTraits<DeviceVendors::CUDA>;
+constexpr DeviceVendors ActiveDeviceVendor = DeviceVendors::CUDA;
 #define MNEME_DEV __device__ __forceinline__
 #endif
 
@@ -209,12 +213,43 @@ compare_builtin_kernel(const T *__restrict__ a, const T *__restrict__ b,
     atomicAddDouble(&out->Agg, LOut.Agg);
   }
 }
+
+__global__ void diff_reset_scatter_kernel(const DiffResetScatterTask *Tasks,
+                                          std::size_t NumTasks) {
+  for (std::size_t TaskIndex = blockIdx.x; TaskIndex < NumTasks;
+       TaskIndex += gridDim.x) {
+    auto Task = Tasks[TaskIndex];
+    for (std::size_t I = threadIdx.x; I < Task.Size; I += blockDim.x)
+      Task.Dst[I] = Task.Src[I];
+  }
+}
 } // namespace dev
 } // namespace mneme
 
 constexpr int NUM_THREADS_PER_BLOCK = 256;
+constexpr int MAX_DIFF_SCATTER_BLOCKS = 131072;
 
 namespace mneme {
+template <>
+DeviceVendorTraits::DeviceError_t
+launchDiffResetScatterKernel<ActiveDeviceVendor>(
+    const DiffResetScatterTask *Tasks, size_t NumTasks,
+    DeviceVendorTraits::DeviceStream_t Stream) {
+  if (NumTasks == 0)
+    return DeviceVendorTraits::DeviceSuccess;
+
+  auto NumBlocks =
+      std::min<size_t>(NumTasks, static_cast<size_t>(MAX_DIFF_SCATTER_BLOCKS));
+  mneme::dev::diff_reset_scatter_kernel<<<NumBlocks, NUM_THREADS_PER_BLOCK, 0,
+                                          Stream>>>(Tasks, NumTasks);
+
+#ifdef MNEME_ENABLE_HIP
+  return hipGetLastError();
+#else
+  return cudaGetLastError();
+#endif
+}
+
 CompareResult compareDeviceBlobs(const char *Blob1, const char *Blob2,
                                  uint64_t NumBytes, Metadata Md) {
   CompareResult Init{};

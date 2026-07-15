@@ -196,9 +196,10 @@ When omitted, all values default to those recorded during execution.
 
 ### Execution Options
 
-| Option                | Description                                                           |
-| --------------------- | --------------------------------------------------------------------- |
+| Option         | Description                                                           |
+| -------------- | --------------------------------------------------------------------- |
 | `--iterations`, `-it` | Number of iterations to execute the kernel for statistical evaluation |
+| `--reset-mode` | Memory reset mode between iterations: `bytes` or `diff` |
 
 
 ### Examples

@@ -2,6 +2,7 @@
 #include "mneme/MnemeAnnotation.hpp"
 #include "mneme/MnemeKernelInfo.hpp"
 #include "mneme/MnemeLogger.hpp"
+#include "mneme/MnemeReplay.hpp"
 #include "mneme/MnemeSnapshot.hpp"
 #include <cstdint>
 #include <cstring>
@@ -97,9 +98,9 @@ int main(int argc, char **argv) {
   std::filesystem::path SnapshotFN("./test.mneme");
 
   MnemeSnapshot<Vendor>::GlobalSnapshotData PrologueGlobals;
-  MnemeSnapshot<Vendor>::takeMnemeBytesSnapshot(
-      GVars, DeviceMemMap, SnapshotFN, TestKernel->KernelArgSizes, Args, 0,
-      &PrologueGlobals);
+  MnemeSnapshot<Vendor>::takeMnemeBytesSnapshot(GVars, DeviceMemMap, SnapshotFN,
+                                                TestKernel->KernelArgSizes,
+                                                Args, 0, &PrologueGlobals);
 
   auto ReadSnap =
       MnemeSnapshot<Vendor>::readBytesSnapshot(KernelName, SnapshotFN.string());
@@ -229,15 +230,15 @@ int main(int argc, char **argv) {
   GlobalData.second[3] ^= 0x9;
   GlobalData.second[4] ^= 0x13;
 
-  auto EC = MnemeDeviceRT::DeviceErrorCheck(MnemeDeviceRT::DeviceCopy(
-      BlobData.first, BlobData.second, 128,
-      MnemeDeviceRT::MemcpyHostToDeviceKind()));
+  auto EC = MnemeDeviceRT::DeviceErrorCheck(
+      MnemeDeviceRT::DeviceCopy(BlobData.first, BlobData.second, 128,
+                                MnemeDeviceRT::MemcpyHostToDeviceKind()));
   if (EC)
     LOG_FATAL("Could not update device blob data");
 
-  EC = MnemeDeviceRT::DeviceErrorCheck(MnemeDeviceRT::DeviceCopy(
-      GlobalData.first, GlobalData.second, 128,
-      MnemeDeviceRT::MemcpyHostToDeviceKind()));
+  EC = MnemeDeviceRT::DeviceErrorCheck(
+      MnemeDeviceRT::DeviceCopy(GlobalData.first, GlobalData.second, 128,
+                                MnemeDeviceRT::MemcpyHostToDeviceKind()));
   if (EC)
     LOG_FATAL("Could not update device global data");
 
@@ -250,6 +251,30 @@ int main(int argc, char **argv) {
   auto &DiffGVars = DiffSnap.GlobalVars;
   auto &DiffDeviceMemMap = DiffSnap.DeviceMemory;
   auto &DiffKernel = DiffSnap.KInfo;
+
+  std::string DiffPlanError;
+  auto DiffPlan = MnemeSnapshot<Vendor>::readDiffPlan(DiffSnapshotFN.string(),
+                                                      &DiffPlanError);
+  auto ValidateDiffPlan = [&]() {
+    if (!DiffPlan) {
+      std::cerr << "Could not parse diff plan: " << DiffPlanError << "\n";
+      return 64;
+    }
+    if (DiffPlan->Globals.size() != 1 || DiffPlan->Blobs.size() != 1) {
+      std::cerr << "Diff plan counts differ\n";
+      return 64;
+    }
+    if (DiffPlan->RawRangeCount == 0 || DiffPlan->ChangedBytes == 0) {
+      std::cerr << "Diff plan did not record changed ranges\n";
+      return 64;
+    }
+    if (DiffPlan->Globals[0].Ranges.empty() ||
+        DiffPlan->Blobs[0].Ranges.empty()) {
+      std::cerr << "Diff plan missing global or blob ranges\n";
+      return 64;
+    }
+    return 0;
+  }();
 
   auto ValidateDiffGlobalMem = [&]() {
     auto it = DiffGVars.find("Test");
@@ -319,14 +344,79 @@ int main(int argc, char **argv) {
     return 0;
   }();
 
+  auto ValidateReplayDiffReset = [&]() {
+    PrologueState<Vendor> PrologueReplay(KernelName, SnapshotFN.string());
+    EpilogueState<Vendor> EpilogueReplay(
+        MnemeSnapshot<Vendor>::readDiffSnapshot(
+            KernelName, DiffSnapshotFN.string(), SnapshotFN.string()),
+        DiffSnapshotFN.string());
+
+    PrologueReplay.load();
+
+    auto CheckMode = [&](ReplayResetMode Mode) {
+      PrologueReplay.prepareResetPlan(EpilogueReplay, Mode);
+
+      auto EC = MnemeDeviceRT::DeviceErrorCheck(
+          MnemeDeviceRT::DeviceCopy(BlobData.first, BlobData.second, 128,
+                                    MnemeDeviceRT::MemcpyHostToDeviceKind()));
+      if (EC)
+        LOG_FATAL("Could not poison reset device blob data");
+
+      EC = MnemeDeviceRT::DeviceErrorCheck(
+          MnemeDeviceRT::DeviceCopy(GlobalData.first, GlobalData.second, 128,
+                                    MnemeDeviceRT::MemcpyHostToDeviceKind()));
+      if (EC)
+        LOG_FATAL("Could not poison reset global data");
+
+      PrologueReplay.reset(Mode);
+
+      std::unique_ptr<uint8_t[]> DeviceCheck(new uint8_t[128]);
+      EC = MnemeDeviceRT::DeviceErrorCheck(
+          MnemeDeviceRT::DeviceCopy(DeviceCheck.get(), BlobData.first, 128,
+                                    MnemeDeviceRT::MemcpyDeviceToHostKind()));
+      if (EC)
+        LOG_FATAL("Could not copy reset device blob data");
+
+      auto BlobIt = ReadDeviceMemMap.find((void *)BlobData.first);
+      if (BlobIt == ReadDeviceMemMap.end() ||
+          std::memcmp(DeviceCheck.get(), BlobIt->second.getHostData().get(),
+                      128) != 0) {
+        std::cerr << "Diff reset did not restore prologue blob data\n";
+        return 128;
+      }
+
+      EC = MnemeDeviceRT::DeviceErrorCheck(
+          MnemeDeviceRT::DeviceCopy(DeviceCheck.get(), GlobalData.first, 128,
+                                    MnemeDeviceRT::MemcpyDeviceToHostKind()));
+      if (EC)
+        LOG_FATAL("Could not copy reset global data");
+
+      auto GlobalIt = ReadGVars.find("Test");
+      if (GlobalIt == ReadGVars.end() ||
+          std::memcmp(DeviceCheck.get(), GlobalIt->second.HostAddr, 128) != 0) {
+        std::cerr << "Diff reset did not restore prologue global data\n";
+        return 128;
+      }
+
+      return 0;
+    };
+
+    auto DiffRet = CheckMode(ReplayResetMode::Diff);
+
+    PrologueReplay.release();
+    return DiffRet;
+  }();
+
   auto Ret = ValidateGlobalMem | ValidateDeviceMem | ValidateKernelArgs |
              ValidateDiffGlobalMem | ValidateDiffDeviceMem |
-             ValidateDiffKernelArgs;
+             ValidateDiffKernelArgs | ValidateDiffPlan |
+             ValidateReplayDiffReset;
 
   delete[] GlobalData.second;
   delete[] BlobData.second;
 
-  EC = MnemeDeviceRT::DeviceErrorCheck(MnemeDeviceRT::DeviceFree(GlobalData.first));
+  EC = MnemeDeviceRT::DeviceErrorCheck(
+      MnemeDeviceRT::DeviceFree(GlobalData.first));
   if (EC)
     LOG_FATAL("Could not release device memory\n");
 
