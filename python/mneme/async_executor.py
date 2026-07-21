@@ -194,6 +194,7 @@ class TuneWorkerHandle:
         )
         self._process.start()
         self._action = self.StateMachine.SUBMIT
+        self._ir_revision = 0
 
     def _startup_failure_error(self):
         return (
@@ -276,6 +277,10 @@ class TuneWorkerHandle:
             return
 
         self.current = future
+        if future.ir_revision != self._ir_revision:
+            self._ipc_write_q.put({"payload": "set_ir", "data": future.ir_data})
+            self._ir_revision = future.ir_revision
+
         msg = {
             "payload": "process",
             "data": future.config.to_dict(),
@@ -428,6 +433,8 @@ class AsyncReplayExecutor:
         self._futures: Dict[int, EvalFuture] = {}
         self._next_id = 0
         self._lock = threading.Lock()
+        self._ir_revision = 0
+        self._ir_data = None
         self.iterations = iterations
         self.warmup = warmup
         self.max_startup_failures = max_startup_failures
@@ -469,9 +476,7 @@ class AsyncReplayExecutor:
             future.set_error(error)
 
     def set_ir(self, ir: Union[str, Path]):
-        """ Sets the LLVM IR for all workers to this IR.
-            Async, returns before the IR is set; But is guaranteed to set the IR
-            before any submit or evaluate calls after set_ir is called.
+        """Use this LLVM IR for evaluations submitted after this call.
 
         Parameters
         ----------
@@ -483,10 +488,9 @@ class AsyncReplayExecutor:
         else:
             ir_data = ir
 
-        msg = {"payload": "set_ir", "data": ir_data}
-        for w in self.workers:
-            w._ipc_write_q.put(msg)
-
+        with self._lock:
+            self._ir_revision += 1
+            self._ir_data = ir_data
 
     # ------------------------------------------------------------------
     # Submit new job (non-blocking)
@@ -513,7 +517,7 @@ class AsyncReplayExecutor:
             job_id = self._next_id
             self._next_id += 1
             logger.debug(f"[{self.__class__.__name__}] Submitting job {job_id}")
-            future = EvalFuture(job_id, config)
+            future = EvalFuture(job_id, config, self._ir_revision, self._ir_data)
             self._futures[job_id] = future
             if self._broken_error is not None:
                 future.set_error(self._broken_error)
