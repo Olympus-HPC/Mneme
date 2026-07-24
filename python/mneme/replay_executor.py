@@ -34,7 +34,7 @@ TuneWorker:
 import os
 from datetime import datetime, timezone
 from multiprocessing import Event, Queue
-from typing import Tuple
+from typing import Optional, Tuple
 
 from mneme.device import (
     DeviceFunction,
@@ -61,7 +61,8 @@ class BaseExecutor:
 
     A BaseExecutor instance is bound to:
       * one recorded database file (record_db),
-      * one kernel instance inside that database (record_id),
+      * one kernel instance inside that database (record_id), inferred when the
+        database contains exactly one instance,
       * one GPU device (device_id),
       * and an iteration count for measured runs.
 
@@ -105,18 +106,27 @@ class BaseExecutor:
     def __init__(
         self,
         record_db: str = "",
-        record_id: str = "",
+        record_id: Optional[str] = None,
         iterations: int = 3,
         device_id: int = 0,
         warmup: int = 2,
     ):
         self.record_db = record_db
-        self.record_id = record_id
         self.device_id = device_id
+        self.records = RecordedExecution.from_json(self.record_db)
+        if record_id is None:
+            num_records = len(self.records)
+            if num_records != 1:
+                raise ValueError(
+                    f"Cannot infer record ID from '{self.record_db}': expected "
+                    f"exactly one recorded instance, found {num_records}. "
+                    "Specify -rid/-record-id."
+                )
+            record_id = next(iter(self.records))
+        self.record_id = record_id
         logger.debug(
             f"BaseExecutor Got {self.record_db} and {self.record_id} and will run on device:{self.device_id}"
         )
-        self.records = RecordedExecution.from_json(self.record_db)
         self.kernel_descr = self.records[self.record_id]
         self.device_arch = get_device_arch()
         self._epilogue = None

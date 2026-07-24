@@ -149,6 +149,10 @@ disable specialization, adjust compiler optimization levels, and
 experiment with alternative code-generation strategies.
 Replay executes the kernel using the recorded device memory state and
 verifies correctness against the original execution.
+When the database contains exactly one recorded instance,
+Mneme selects it automatically.
+Databases with multiple instances require an explicit record ID.
+Empty databases cannot be replayed.
 
 ### Arguments
 
@@ -157,12 +161,16 @@ verifies correctness against the original execution.
 | `passes` | Compilation pipeline used to compile and execute the kernel (e.g., `default<O3>`) |
 
 
-### Required Options
+### Required option
 
 | Option                      | Description                                          |
 | --------------------------- | ---------------------------------------------------- |
 | `-rdb`, `--record-database` | Path to the Mneme JSON recording database file       |
-| `-record-id`, `-rid`        | Identifier of the recorded kernel instance to replay |
+
+### Record selection
+
+Use `-record-id` or `-rid` to select a recorded kernel instance explicitly.
+The option may be omitted when the database contains exactly one instance.
 
 ### Kernel launch configuration
 When omitted, all values default to those recorded during execution.
@@ -208,7 +216,6 @@ When omitted, all values default to those recorded during execution.
 ```bash
 mneme replay \
   -rdb record-dir/15941914485064662553.json \
-  -rid 16313427880266313990 \
   "default<O3>"
 ```
 

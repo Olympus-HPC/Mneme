@@ -43,16 +43,11 @@ def test_tune(recorded_execution, has_amd_gpu, has_nvidia_gpu):
 
 
 def test_replay(recorded_execution, has_amd_gpu, has_nvidia_gpu):
-    recorded_kernel = RecordedExecution.from_json(str(recorded_execution))
-    dynamic_hash = list(recorded_kernel.kernel_instances.keys())[0]
-
     result = mneme_main(
         [
             "replay",
             "-rdb",
             str(recorded_execution),
-            "-rid",
-            str(dynamic_hash),
             "default<O0>",
         ]
     )
