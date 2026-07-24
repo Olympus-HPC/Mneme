@@ -20,7 +20,7 @@
 namespace mneme {
 
 enum class LogLevel { Trace, Debug, Info, Warn, Error, Critical, Off };
-enum class EpilogueSnapshotType { Bytes, Diff };
+enum class EpilogueSnapshotType { Bytes, Diff, Best };
 
 namespace config_detail {
 
@@ -111,9 +111,11 @@ inline EpilogueSnapshotType getEnvOrDefaultEpilogueSnapshotType(
     return EpilogueSnapshotType::Bytes;
   if (*EnvValue == "diff")
     return EpilogueSnapshotType::Diff;
+  if (*EnvValue == "best")
+    return EpilogueSnapshotType::Best;
 
   throw std::runtime_error("Invalid MNEME_EPILOGUE_TYPE value '" + *EnvValue +
-                           "'. Expected 'bytes' or 'diff'.");
+                           "'. Expected 'bytes', 'diff', or 'best'.");
 }
 
 inline bool defaultRecordingPolicy(const std::optional<int> &DistributedRank) {

@@ -87,7 +87,10 @@ def test_record_happy_path(tmp_path, record_parser, monkeypatch):
     assert env["MNEME_LOG_LEVEL"] == "DEBUG"
 
 
-def test_record_epilogue_format_sets_env(tmp_path, record_parser, monkeypatch):
+@pytest.mark.parametrize("epilogue_format", ["bytes", "diff", "best"])
+def test_record_epilogue_format_sets_env(
+    tmp_path, record_parser, monkeypatch, epilogue_format
+):
     """--epilogue-format overrides the MNEME_EPILOGUE_TYPE runtime config."""
     record_dir = tmp_path / "records"
     record_dir.mkdir()
@@ -110,7 +113,7 @@ def test_record_epilogue_format_sets_env(tmp_path, record_parser, monkeypatch):
             "--record-db-dir",
             str(record_dir),
             "--epilogue-format",
-            "bytes",
+            epilogue_format,
             "--",
             "/usr/bin/true",
         ]
@@ -118,7 +121,7 @@ def test_record_epilogue_format_sets_env(tmp_path, record_parser, monkeypatch):
 
     Record.run(args, verbosity=None)
 
-    assert captured["env"]["MNEME_EPILOGUE_TYPE"] == "bytes"
+    assert captured["env"]["MNEME_EPILOGUE_TYPE"] == epilogue_format
 
 
 def test_record_rejects_invalid_epilogue_format(record_parser):

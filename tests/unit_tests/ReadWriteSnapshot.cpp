@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
+#include <fstream>
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/SmallVector.h>
 #include <memory>
@@ -23,6 +24,13 @@ constexpr DeviceVendors Vendor = DeviceVendors::CUDA;
 using MnemeDeviceRT = DeviceTraits<DeviceVendors::CUDA>;
 using MnemeMemoryBlobDevice = MnemeMemoryBlob<DeviceVendors::CUDA>;
 #endif
+
+bool isDiffSnapshotFile(const std::filesystem::path &Path) {
+  std::ifstream In(Path, std::ios::binary);
+  std::string Magic(13, '\0');
+  In.read(Magic.data(), Magic.size());
+  return Magic == "MNEME_DIFF_V1";
+}
 
 template <typename T> void initializeRandomBuffer(T *Buffer, size_t Size) {
   // Random number generation setup
@@ -319,9 +327,92 @@ int main(int argc, char **argv) {
     return 0;
   }();
 
+  auto ResetBlobBase = [&]() {
+    auto PrologueBlobIt = ReadDeviceMemMap.find((void *)BlobData.first);
+    auto HostData = std::unique_ptr<uint8_t[]>(new uint8_t[128]);
+    std::memcpy(HostData.get(), PrologueBlobIt->second.getHostData().get(),
+                128);
+    DeviceMemMap[(void *)BlobData.first].setHostData(std::move(HostData));
+  };
+
+  llvm::SmallVector<size_t> EmptyArgSizes;
+
+  ResetBlobBase();
+  std::filesystem::path SparseBestSnapshotFN("./test.best.sparse.mneme");
+  MnemeSnapshot<Vendor>::takeBestMnemeSnapshot(
+      GVars, DeviceMemMap, SparseBestSnapshotFN, EmptyArgSizes, nullptr,
+      PrologueGlobals, 0);
+  auto ValidateBestSparse = [&]() {
+    if (!isDiffSnapshotFile(SparseBestSnapshotFN)) {
+      std::cerr << "Best sparse snapshot should choose diff\n";
+      return 64;
+    }
+    auto BestSparseSnap = MnemeSnapshot<Vendor>::readDiffSnapshot(
+        KernelName, SparseBestSnapshotFN.string(), SnapshotFN.string());
+    auto It = BestSparseSnap.DeviceMemory.find((void *)BlobData.first);
+    if (It == BestSparseSnap.DeviceMemory.end() ||
+        std::memcmp(BlobData.second, It->second.getHostData().get(), 128) !=
+            0) {
+      std::cerr << "Best sparse snapshot did not reconstruct epilogue data\n";
+      return 64;
+    }
+    return 0;
+  }();
+
+  auto PrologueBlobIt = ReadDeviceMemMap.find((void *)BlobData.first);
+  auto PrologueGlobalIt = ReadGVars.find("Test");
+  auto *PrologueBlob = PrologueBlobIt->second.getHostData().get();
+  auto *PrologueGlobal =
+      static_cast<uint8_t *>(PrologueGlobalIt->second.HostAddr);
+  // Alternating changes force many one-byte diff ranges, making the bytes
+  // snapshot smaller than the diff snapshot.
+  for (size_t I = 0; I < 128; ++I) {
+    BlobData.second[I] = (I % 2 == 0) ? (PrologueBlob[I] ^ 0xff)
+                                      : PrologueBlob[I];
+    GlobalData.second[I] = (I % 2 == 0) ? (PrologueGlobal[I] ^ 0xff)
+                                        : PrologueGlobal[I];
+  }
+
+  EC = MnemeDeviceRT::DeviceErrorCheck(
+      MnemeDeviceRT::DeviceCopy(BlobData.first, BlobData.second, 128,
+                                MnemeDeviceRT::MemcpyHostToDeviceKind()));
+  if (EC)
+    LOG_FATAL("Could not update fragmented device blob data");
+
+  EC = MnemeDeviceRT::DeviceErrorCheck(
+      MnemeDeviceRT::DeviceCopy(GlobalData.first, GlobalData.second, 128,
+                                MnemeDeviceRT::MemcpyHostToDeviceKind()));
+  if (EC)
+    LOG_FATAL("Could not update fragmented device global data");
+
+  ResetBlobBase();
+  std::filesystem::path FragmentedBestSnapshotFN(
+      "./test.best.fragmented.mneme");
+  MnemeSnapshot<Vendor>::takeBestMnemeSnapshot(
+      GVars, DeviceMemMap, FragmentedBestSnapshotFN, EmptyArgSizes, nullptr,
+      PrologueGlobals, 0);
+  auto ValidateBestFragmented = [&]() {
+    if (isDiffSnapshotFile(FragmentedBestSnapshotFN)) {
+      std::cerr << "Best fragmented snapshot should choose bytes\n";
+      return 128;
+    }
+    auto BestFragmentedSnap = MnemeSnapshot<Vendor>::readDiffSnapshot(
+        KernelName, FragmentedBestSnapshotFN.string(), SnapshotFN.string());
+    auto It = BestFragmentedSnap.DeviceMemory.find((void *)BlobData.first);
+    if (It == BestFragmentedSnap.DeviceMemory.end() ||
+        std::memcmp(BlobData.second, It->second.getHostData().get(), 128) !=
+            0) {
+      std::cerr
+          << "Best fragmented snapshot did not reconstruct epilogue data\n";
+      return 128;
+    }
+    return 0;
+  }();
+
   auto Ret = ValidateGlobalMem | ValidateDeviceMem | ValidateKernelArgs |
              ValidateDiffGlobalMem | ValidateDiffDeviceMem |
-             ValidateDiffKernelArgs;
+             ValidateDiffKernelArgs | ValidateBestSparse |
+             ValidateBestFragmented;
 
   delete[] GlobalData.second;
   delete[] BlobData.second;

@@ -141,6 +141,13 @@ int main() {
            "MNEME_EPILOGUE_TYPE should map bytes");
   }
 
+  setenv("MNEME_EPILOGUE_TYPE", "best", 1);
+  {
+    auto Conf = Config::createFromEnvironment();
+    expect(Conf.EpilogueType == EpilogueSnapshotType::Best,
+           "MNEME_EPILOGUE_TYPE should map best");
+  }
+
   setenv("MNEME_EPILOGUE_TYPE", "delta", 1);
   {
     bool Threw = false;

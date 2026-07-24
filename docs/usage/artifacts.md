@@ -122,6 +122,12 @@ recording with:
 mneme record --epilogue-format bytes -- <application> [args...]
 ```
 
+Use `best` to have Mneme store whichever concrete epilogue format is smaller for each recorded kernel instance:
+
+```bash
+mneme record --epilogue-format best -- <application> [args...]
+```
+
 Diff epilogues contain descriptors for the recorded globals and memory
 regions plus the changed byte ranges needed to reconstruct the
 post-kernel state. Using the diff format can save significant amounts
