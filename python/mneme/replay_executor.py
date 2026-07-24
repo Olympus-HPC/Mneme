@@ -120,7 +120,7 @@ class BaseExecutor:
                 raise ValueError(
                     f"Cannot infer record ID from '{self.record_db}': expected "
                     f"exactly one recorded instance, found {num_records}. "
-                    "Specify -rid/--record-id."
+                    "Specify -rid/-record-id."
                 )
             record_id = next(iter(self.records))
         self.record_id = record_id
