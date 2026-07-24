@@ -168,7 +168,7 @@ template <DeviceVendors VendorTypes> class MnemeSnapshot {
       LOG_FATAL("Cannot diff buffers with different sizes");
 
     // Count the number of contiguous ranges that have changed between Base and
-    // Current. We want to write out the number of ranges so that the reader
+    // Current. We want to write out the number of ranges so that the reader 
     // can know how many ranges to read.
     size_t Count = 0;
     bool InRange = false;
@@ -194,7 +194,7 @@ template <DeviceVendors VendorTypes> class MnemeSnapshot {
     if (!UpdateBase.empty() && UpdateBase.size() != Base.size())
       LOG_FATAL("Cannot update diff base with mismatched buffer size");
 
-    // Write out the contiguous ranges that have changed between Base
+    // Write out the contiguous ranges that have changed between Base 
     // and Current.
     size_t Count = 0;
     size_t I = 0;
@@ -220,10 +220,9 @@ template <DeviceVendors VendorTypes> class MnemeSnapshot {
     return Count;
   }
 
-  static void
-  writeCountAndWriteChangedRanges(llvm::raw_ostream &OS,
-                                  MnemeMemoryBlob<VendorTypes> &Blob,
-                                  bool UpdateBaseData = true) {
+  static void writeCountAndWriteChangedRanges(
+      llvm::raw_ostream &OS, MnemeMemoryBlob<VendorTypes> &Blob,
+      bool UpdateBaseData = true) {
     auto Size = Blob.getSize();
 
     // early exit
@@ -372,10 +371,11 @@ template <DeviceVendors VendorTypes> class MnemeSnapshot {
       if (Blob.getActualSize() != ActualSize || Blob.getSize() != Size)
         LOG_FATAL("Mneme diff memory blob size mismatch");
       Blob.setMetadata(MD);
-      applyDiffRanges(CurrentPtr,
-                      llvm::MutableArrayRef<uint8_t>(Blob.getHostData().get(),
-                                                     Blob.getSize()),
-                      NumRanges);
+      applyDiffRanges(
+          CurrentPtr,
+          llvm::MutableArrayRef<uint8_t>(Blob.getHostData().get(),
+                                         Blob.getSize()),
+          NumRanges);
     }
   }
 
@@ -416,8 +416,7 @@ template <DeviceVendors VendorTypes> class MnemeSnapshot {
   }
 
 public:
-  using GlobalSnapshotData =
-      std::unordered_map<std::string, std::vector<uint8_t>>;
+  using GlobalSnapshotData = std::unordered_map<std::string, std::vector<uint8_t>>;
 
   static std::pair<std::string, ReplayGlobalVar>
   fromBuffer(const char *&Buffer) {
@@ -643,9 +642,8 @@ public:
 };
 
 template <DeviceVendors VendorTypes>
-Snapshot<VendorTypes>
-BytesSnapshotFile<VendorTypes>::reconstruct(const std::string &KernelName,
-                                            const std::string &) const {
+Snapshot<VendorTypes> BytesSnapshotFile<VendorTypes>::reconstruct(
+    const std::string &KernelName, const std::string &) const {
   Snapshot<VendorTypes> Snap;
   // KernelInfo's constructor takes a non-const std::string &, so name it with a
   // mutable local.
@@ -665,8 +663,8 @@ Snapshot<VendorTypes> DiffSnapshotFile<VendorTypes>::reconstruct(
 
   // A diff stores only changed ranges, so reconstruct the full base prologue
   // first and then overlay the diff onto it.
-  Snapshot<VendorTypes> Snap = MnemeSnapshot<VendorTypes>::readBytesSnapshot(
-      KernelName, BasePrologueFile);
+  Snapshot<VendorTypes> Snap =
+      MnemeSnapshot<VendorTypes>::readBytesSnapshot(KernelName, BasePrologueFile);
   MnemeSnapshot<VendorTypes>::applyDiffMnemeSnapShot(
       this->Filename, Snap.GlobalVars, Snap.DeviceMemory, this->Buffer.get());
   return Snap;
@@ -719,7 +717,7 @@ class KernelInstancesCollection {
 
 private:
   // Parse Proteus's serialized bitcode in a Mneme-owned LLVMContext and
-  // extract per-argument metadata. Operating on a Mneme-owned Module
+  // extract per-argument metadata. Operating on a Mneme-owned Module 
   // keeps Mneme's LLVM runtime from touching any
   // Proteus-owned LLVM C++ object across the DSO boundary.
   void extractArgInfoFromBitcode(llvm::StringRef Bitcode) {
@@ -798,8 +796,8 @@ public:
       LOG_FATAL("Empty bitcode for kernel " + KName);
 
     extractArgInfoFromBitcode(Bitcode);
-    ModuleFiles.emplace_back(
-        StoreModuleBytes(Bitcode, MnemeDirectory, KInfo.getStaticHash()));
+    ModuleFiles.emplace_back(StoreModuleBytes(
+        Bitcode, MnemeDirectory, KInfo.getStaticHash()));
   }
 
   llvm::stable_hash computeHash(dim3 &GridDim, dim3 &BlockDim,
@@ -878,16 +876,16 @@ public:
               switch (EpilogueType) {
               case EpilogueSnapshotType::Bytes:
                 Instances[DynamicHash].EpilogueFn =
-                    SnapshotT::takeMnemeBytesSnapshot(GlobalVars, DeviceMemory,
-                                                      Filename, KernelArgSizes,
-                                                      Args, Stream)
+                    SnapshotT::takeMnemeBytesSnapshot(
+                        GlobalVars, DeviceMemory, Filename, KernelArgSizes,
+                        Args, Stream)
                         .string();
                 break;
               case EpilogueSnapshotType::Diff:
                 Instances[DynamicHash].EpilogueFn =
-                    SnapshotT::takeMnemeDiffSnapshot(GlobalVars, DeviceMemory,
-                                                     Filename, *PrologueGlobals,
-                                                     Stream)
+                    SnapshotT::takeMnemeDiffSnapshot(
+                        GlobalVars, DeviceMemory, Filename, *PrologueGlobals,
+                        Stream)
                         .string();
                 break;
               case EpilogueSnapshotType::Best:
@@ -932,11 +930,10 @@ public:
   void writeKernelJSON(uint64_t StaticHash) {
     auto It = KernelRecords.find(StaticHash);
     if (It == KernelRecords.end()) {
-      LOG_WARN("Attempted to write JSON for unrecorded kernel hash {}",
-               StaticHash);
+      LOG_WARN("Attempted to write JSON for unrecorded kernel hash {}", StaticHash);
       return;
     }
-    auto *RecordPtr = &It->second;
+    auto* RecordPtr = &It->second;
 
     auto JsonFilename = MnemeDirectory / (std::to_string(StaticHash) + ".json");
     auto JSONRecord = RecordPtr->toJSON(StaticHash);
@@ -944,8 +941,7 @@ public:
     std::error_code EC;
     llvm::raw_fd_ostream JsonOS(JsonFilename.string(), EC);
     if (EC) {
-      LOG_WARN("Failed to open JSON file for kernel {}: {}", StaticHash,
-               EC.message());
+      LOG_WARN("Failed to open JSON file for kernel {}: {}", StaticHash, EC.message());
       return;
     }
 

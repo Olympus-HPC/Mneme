@@ -101,9 +101,8 @@ inline LogLevel getEnvOrDefaultLogLevel(const char *VarName, LogLevel Default) {
   return LogLevel::Info;
 }
 
-inline EpilogueSnapshotType
-getEnvOrDefaultEpilogueSnapshotType(const char *VarName,
-                                    EpilogueSnapshotType Default) {
+inline EpilogueSnapshotType getEnvOrDefaultEpilogueSnapshotType(
+    const char *VarName, EpilogueSnapshotType Default) {
   auto EnvValue = getEnvOrDefaultString(VarName);
   if (!EnvValue)
     return Default;

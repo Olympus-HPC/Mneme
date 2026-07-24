@@ -105,9 +105,9 @@ int main(int argc, char **argv) {
   std::filesystem::path SnapshotFN("./test.mneme");
 
   MnemeSnapshot<Vendor>::GlobalSnapshotData PrologueGlobals;
-  MnemeSnapshot<Vendor>::takeMnemeBytesSnapshot(GVars, DeviceMemMap, SnapshotFN,
-                                                TestKernel->KernelArgSizes,
-                                                Args, 0, &PrologueGlobals);
+  MnemeSnapshot<Vendor>::takeMnemeBytesSnapshot(
+      GVars, DeviceMemMap, SnapshotFN, TestKernel->KernelArgSizes, Args, 0,
+      &PrologueGlobals);
 
   auto ReadSnap =
       MnemeSnapshot<Vendor>::readBytesSnapshot(KernelName, SnapshotFN.string());
@@ -237,15 +237,15 @@ int main(int argc, char **argv) {
   GlobalData.second[3] ^= 0x9;
   GlobalData.second[4] ^= 0x13;
 
-  auto EC = MnemeDeviceRT::DeviceErrorCheck(
-      MnemeDeviceRT::DeviceCopy(BlobData.first, BlobData.second, 128,
-                                MnemeDeviceRT::MemcpyHostToDeviceKind()));
+  auto EC = MnemeDeviceRT::DeviceErrorCheck(MnemeDeviceRT::DeviceCopy(
+      BlobData.first, BlobData.second, 128,
+      MnemeDeviceRT::MemcpyHostToDeviceKind()));
   if (EC)
     LOG_FATAL("Could not update device blob data");
 
-  EC = MnemeDeviceRT::DeviceErrorCheck(
-      MnemeDeviceRT::DeviceCopy(GlobalData.first, GlobalData.second, 128,
-                                MnemeDeviceRT::MemcpyHostToDeviceKind()));
+  EC = MnemeDeviceRT::DeviceErrorCheck(MnemeDeviceRT::DeviceCopy(
+      GlobalData.first, GlobalData.second, 128,
+      MnemeDeviceRT::MemcpyHostToDeviceKind()));
   if (EC)
     LOG_FATAL("Could not update device global data");
 
@@ -417,8 +417,7 @@ int main(int argc, char **argv) {
   delete[] GlobalData.second;
   delete[] BlobData.second;
 
-  EC = MnemeDeviceRT::DeviceErrorCheck(
-      MnemeDeviceRT::DeviceFree(GlobalData.first));
+  EC = MnemeDeviceRT::DeviceErrorCheck(MnemeDeviceRT::DeviceFree(GlobalData.first));
   if (EC)
     LOG_FATAL("Could not release device memory\n");
 
