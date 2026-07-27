@@ -804,7 +804,7 @@ def test_tuneworker_run_logs_failed_set_ir(monkeypatch, tmp_path):
     )
 
     class FakeWorker:
-        def __init__(self, record_db, record_id, device_id, iterations):
+        def __init__(self, record_db, record_id, device_id, iterations, warmup):
             self.device_id = device_id
 
         def link_ir(self):
