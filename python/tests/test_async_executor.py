@@ -144,6 +144,23 @@ def test_submit_moves_state_and_sets_current(handle):
 
     assert handle.current is future
     assert handle._action == handle.StateMachine.RECEIVE
+    assert handle._ipc_write_q.get_nowait()["payload"] == "process"
+
+
+def test_submit_installs_future_ir_revision(handle):
+    future = EvalFuture(
+        3, ExperimentConfiguration(), ir_revision=1, ir_data="replacement ir"
+    )
+    handle.global_q.put(future)
+
+    handle._submit()
+
+    assert handle._ipc_write_q.get_nowait() == {
+        "payload": "set_ir",
+        "data": "replacement ir",
+    }
+    assert handle._ipc_write_q.get_nowait()["payload"] == "process"
+    assert handle._ir_revision == 1
 
 
 def test_try_receive_no_message(handle):
@@ -391,6 +408,45 @@ def test_async_executor_evaluate(monkeypatch):
 
     out = exe.evaluate(ExperimentConfiguration())
     assert out.executed is True
+
+
+def test_async_executor_set_ir_only_affects_subsequent_work(monkeypatch):
+    monkeypatch.setattr("mneme.async_executor.TuneWorkerHandle", lambda *a, **k: None)
+
+    exe = AsyncReplayExecutor(
+        record_db="db",
+        record_id="rid",
+        iterations=3,
+        results_db_dir="/tmp",
+        num_workers=0,
+    )
+
+    old_future = exe.submit(ExperimentConfiguration())
+    exe.set_ir("define void @kernel() { ret void }")
+    new_future = exe.submit(ExperimentConfiguration())
+
+    assert old_future.ir_revision == 0
+    assert old_future.ir_data is None
+    assert new_future.ir_revision == 1
+    assert new_future.ir_data == "define void @kernel() { ret void }"
+
+
+def test_async_executor_set_ir_normalizes_path(monkeypatch, tmp_path):
+    monkeypatch.setattr("mneme.async_executor.TuneWorkerHandle", lambda *a, **k: None)
+
+    exe = AsyncReplayExecutor(
+        record_db="db",
+        record_id="rid",
+        iterations=3,
+        results_db_dir="/tmp",
+        num_workers=0,
+    )
+    ir_path = tmp_path / "kernel.ll"
+
+    exe.set_ir(ir_path)
+    future = exe.submit(ExperimentConfiguration())
+
+    assert future.ir_data == str(ir_path.absolute())
 
 
 def test_async_executor_shutdown(monkeypatch):

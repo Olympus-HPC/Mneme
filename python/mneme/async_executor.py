@@ -5,9 +5,10 @@ from enum import IntEnum
 from multiprocessing import Event as ProcessEvent
 from multiprocessing import Process
 from multiprocessing import Queue as ProcessQueue
+from pathlib import Path
 from queue import Queue as ThreadQueue
 from threading import Event as ThreadEvent
-from typing import Callable, Dict, Optional
+from typing import Callable, Dict, Optional, Union
 
 from mneme.futures import EvalFuture
 from mneme.mneme_logging import logger
@@ -193,6 +194,7 @@ class TuneWorkerHandle:
         )
         self._process.start()
         self._action = self.StateMachine.SUBMIT
+        self._ir_revision = 0
 
     def _startup_failure_error(self):
         return (
@@ -275,6 +277,10 @@ class TuneWorkerHandle:
             return
 
         self.current = future
+        if future.ir_revision != self._ir_revision:
+            self._ipc_write_q.put({"payload": "set_ir", "data": future.ir_data})
+            self._ir_revision = future.ir_revision
+
         msg = {
             "payload": "process",
             "data": future.config.to_dict(),
@@ -427,6 +433,8 @@ class AsyncReplayExecutor:
         self._futures: Dict[int, EvalFuture] = {}
         self._next_id = 0
         self._lock = threading.Lock()
+        self._ir_revision = 0
+        self._ir_data = None
         self.iterations = iterations
         self.warmup = warmup
         self.max_startup_failures = max_startup_failures
@@ -467,6 +475,23 @@ class AsyncReplayExecutor:
                 return
             future.set_error(error)
 
+    def set_ir(self, ir: Union[str, Path]):
+        """Use this LLVM IR for evaluations submitted after this call.
+
+        Parameters
+        ----------
+        ir : str | Path
+            Path to the LLVM IR file (.bc or .ll) or the IR as a string.
+        """
+        if isinstance(ir, Path):
+            ir_data = str(ir.absolute())
+        else:
+            ir_data = ir
+
+        with self._lock:
+            self._ir_revision += 1
+            self._ir_data = ir_data
+
     # ------------------------------------------------------------------
     # Submit new job (non-blocking)
     # ------------------------------------------------------------------
@@ -492,7 +517,7 @@ class AsyncReplayExecutor:
             job_id = self._next_id
             self._next_id += 1
             logger.debug(f"[{self.__class__.__name__}] Submitting job {job_id}")
-            future = EvalFuture(job_id, config)
+            future = EvalFuture(job_id, config, self._ir_revision, self._ir_data)
             self._futures[job_id] = future
             if self._broken_error is not None:
                 future.set_error(self._broken_error)
