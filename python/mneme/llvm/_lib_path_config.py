@@ -33,4 +33,5 @@ def _lib(name_linux: str, name_darwin: str) -> str:
 MNEME_CORE_LIB    = _lib("libmneme.so",         "libmneme.dylib")
 MNEME_PROFILE_LIB = _lib("libmneme_profile.so", "libmneme_profile.dylib")
 MNEME_RECORD_LIB  = _lib("librecord.so",        "librecord.dylib")
+MNEME_PASS_PLUGIN_LIB = _lib("libMnemePassPlugin.so", "libMnemePassPlugin.dylib")
 MNEME_CONFIG_FILE = str(_CONFIG_FILE)

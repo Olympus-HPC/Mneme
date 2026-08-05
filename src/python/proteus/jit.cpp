@@ -11,6 +11,7 @@
 #include <mneme/MnemeLogger.hpp>
 #include <optional>
 #include <proteus/CompilerInterfaceTypes.h>
+#include <proteus/Init.h>
 #include <proteus/impl/CompilerInterfaceRuntimeConstantInfo.h>
 #include <proteus/impl/CoreLLVM.h>
 #include <proteus/impl/CoreLLVMDevice.h>
@@ -217,5 +218,10 @@ ProteusPY_setLaunchBounds(LLVMModuleRef Mod, uint64_t CurrentHash,
 
 API_EXPORT(const char*) ProteusPY_getCodegenMethod(){
   return getRTCMethod();
+}
+
+API_EXPORT(void)
+ProteusPY_registerJITPassPlugin(const char *Path) {
+  proteus::registerJITPassPlugin(Path);
 }
 }
