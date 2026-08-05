@@ -32,6 +32,7 @@ TuneWorker:
 """
 
 import os
+from dataclasses import replace
 from datetime import datetime, timezone
 from multiprocessing import Event, Queue
 from typing import Optional, Tuple
@@ -43,6 +44,7 @@ from mneme.device import (
     get_device_count,
     set_device,
 )
+from mneme.llvm._lib_path_config import MNEME_PASS_PLUGIN_LIB
 from mneme.llvm.buffer import MemBufferRef
 from mneme.llvm.module import ModuleRef
 from mneme.mneme_logging import logger
@@ -51,7 +53,6 @@ from mneme.page_manager import PageManagerRef
 from mneme.profile import init_profiler
 from mneme.proteus import jit
 from mneme.recorded_execution import RecordedExecution, MemStateRef
-from mneme.transforms import transform
 from mneme.utils import cond_gpu_time, cond_time
 
 
@@ -139,6 +140,7 @@ class BaseExecutor:
         logger.debug(
             f"GPU Affinity of process was set to device:{self.device_id} out of {self.num_devices}"
         )
+        jit.register_pass_plugin(MNEME_PASS_PLUGIN_LIB)
 
     def open(self):
         # Note the 'executor' allocates all resources and picks address space.
@@ -568,9 +570,10 @@ class BaseExecutor:
            match, allowing the system to validate kernel determinism and correctness.
 
         2. **IR sanitization**
-           A custom transformation is applied to remove automatically inserted Clang
-           initialization code. Only IR regions explicitly marked by Clang are
-           removed to avoid disturbing user code.
+           The tracked build prepends the ``purge-autoinit`` pass to the optimization
+           pipeline, removing automatically inserted Clang initialization code. Only
+           IR regions explicitly marked by Clang are removed to avoid disturbing user
+           code.
 
         3. **Instrumented execution**
            The cleaned up version of the kernel is built with tracking enabled.
@@ -613,15 +616,12 @@ class BaseExecutor:
         mem_buffer = self._build(result, config, ver_mod, False)
         self._run(result, config, mem_buffer, self.prologue, self.epilogue, True, False, 1)
 
-        # NOTE: 2. We apply a custom pass to delete all clang insered code.
-        # It is hard to identify these cases, So we delete only things
-        # that have been attributed by clang
-        ir_module = transform.remove_auto_initialize(ir_module.clone())
-        # Done with verification. Moving to next stage
-
-        # NOTE: 3. We build and run. We set tracking on and execute warmups plus iterations,
-        # to enalbe later computation of statistical metrics etc.
-        mem_buffer = self._build(result, config, ir_module, True)
+        # NOTE: 2-3. Build and run with tracking on. The tracked build prepends the
+        # purge-autoinit pass (registered via Proteus' JIT pass plugin API) to strip
+        # the Clang-inserted auto-init memsets; verification above ran without it.
+        ir_module = ir_module.clone()
+        tracked_config = replace(config, passes=f"purge-autoinit,{config.passes}")
+        mem_buffer = self._build(result, tracked_config, ir_module, True)
         self._run(result, config, mem_buffer, self.prologue, self.epilogue, False, True, self._iterations + self._warmup)
         result.executed = True
 

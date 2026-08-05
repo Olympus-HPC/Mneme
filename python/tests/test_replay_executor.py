@@ -71,7 +71,6 @@ class FakeModule:
     def __init__(self, name="m", clone_counter=None):
         self.name = name
         self._clone_counter = clone_counter if clone_counter is not None else {"n": 0}
-        self.removed_auto_init = False
 
     def clone(self):
         self._clone_counter["n"] += 1
@@ -186,6 +185,7 @@ def _reload_with_identity_decorators(monkeypatch):
     # Now reload target module so the decorators wrap with the identity versions.
     mod = importlib.import_module(MODULE_PATH)
     mod = importlib.reload(mod)
+    monkeypatch.setattr(mod.jit, "register_pass_plugin", lambda path: None, raising=True)
     return mod
 
 
@@ -534,27 +534,12 @@ def test_execute_orchestrates_verification_and_tracked_run(monkeypatch):
     monkeypatch.setattr(mod, "get_device_count", lambda: 1, raising=True)
     monkeypatch.setattr(mod, "PageManagerRef", FakePageManager, raising=True)
 
-    # transform.remove_auto_initialize should be called on ir.clone()
-    transform_calls = []
-
-    def fake_remove_auto_initialize(ir_mod):
-        transform_calls.append(ir_mod.name)
-        ir_mod.removed_auto_init = True
-        return ir_mod
-
-    monkeypatch.setattr(
-        mod.transform,
-        "remove_auto_initialize",
-        fake_remove_auto_initialize,
-        raising=True,
-    )
-
     # Spy on _build and _run
     build_calls = []
     run_calls = []
 
     def fake_build(result, cfg, ir_mod, track):
-        build_calls.append((ir_mod.name, track))
+        build_calls.append((track, cfg.passes))
         return FakeMemBuffer()
 
     def fake_run(result, cfg, mem_buf, prologue, epilogue, verify, track, iters):
@@ -580,9 +565,12 @@ def test_execute_orchestrates_verification_and_tracked_run(monkeypatch):
     assert res.executed is True
     assert res.verified is True
 
-    # Remove-auto-init called once
-    assert len(transform_calls) == 1
-    assert out_ir.removed_auto_init is True
+    # The verification build uses the caller's pipeline; the tracked build
+    # prepends the purge pass.
+    assert build_calls == [(False, "default<O3>"), (True, "purge-autoinit,default<O3>")]
+
+    # The returned module is a clone; the caller's module is left untouched.
+    assert out_ir is not ir
 
     ex.close()
 
