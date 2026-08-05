@@ -54,6 +54,8 @@ endif()
 
 set_target_properties(record PROPERTIES INSTALL_RPATH_USE_LINK_PATH TRUE)
 
+add_subdirectory(pass)
+
 if (MNEME_ENABLE_PYTHON)
   add_subdirectory(python)
 endif()

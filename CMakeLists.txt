@@ -164,7 +164,7 @@ write_basic_package_version_file(
 
 set(_mneme_targets mnemert record)
 if(MNEME_ENABLE_PYTHON)
-  list(APPEND _mneme_targets mneme_profile mneme)
+  list(APPEND _mneme_targets mneme_profile mneme MnemePassPlugin)
 endif()
 
 install(TARGETS ${_mneme_targets}
