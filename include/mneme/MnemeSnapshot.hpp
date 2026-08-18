@@ -131,6 +131,9 @@ template <DeviceVendors VendorTypes> class MnemeSnapshot {
   using KernelFunction_t = typename MnemeDeviceRT::KernelFunction_t;
   static constexpr const char DiffMagic[] = "MNEME_DIFF_V1";
   static constexpr size_t DiffMagicSize = sizeof(DiffMagic) - 1;
+  static constexpr const char RegionTrailerMagic[] = "MNEME_REGION_V1";
+  static constexpr size_t RegionTrailerMagicSize =
+      sizeof(RegionTrailerMagic) - 1;
   static constexpr size_t DiffChunkSize = 1 << 20;
 
   class CountingRawOStream : public llvm::raw_ostream {
@@ -281,12 +284,98 @@ template <DeviceVendors VendorTypes> class MnemeSnapshot {
     }
   }
 
+  static void writeRegionMetadataTrailer(
+      llvm::raw_ostream &OS,
+      const llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &DeviceMemory) {
+    size_t TotalBlobsWithRegions = 0;
+    for (const auto &[Ptr, Blob] : DeviceMemory) {
+      if (Blob.hasRegionMetadata())
+        ++TotalBlobsWithRegions;
+    }
+    // The "trailer" is an optional block of bytes appended after the normal
+    // snapshot payload (globals, blobs, kernel args). Keep older snapshots
+    // valid by omitting it entirely when no blobs carry subregion metadata.
+    if (TotalBlobsWithRegions == 0)
+      return;
+
+    // Key trailer entries by blob device address so they can be attached after
+    // the main blob records have already been deserialized.
+    util::writeBytes(OS,
+                     llvm::StringRef(RegionTrailerMagic, RegionTrailerMagicSize));
+    util::writeScalar(OS, TotalBlobsWithRegions);
+    for (const auto &[Ptr, Blob] : DeviceMemory) {
+      if (!Blob.hasRegionMetadata())
+        continue;
+      auto *BlobAddr = Blob.getBlobAddr();
+      util::writeScalar(OS, BlobAddr);
+
+      const auto &Regions = Blob.getRegionMetadata();
+      size_t NumRegions = Regions.size();
+      util::writeScalar(OS, NumRegions);
+      for (const auto &Region : Regions) {
+        util::writeScalar(OS, Region.Offset);
+        util::writeScalar(OS, Region.Extent);
+        metadata::serialize(OS, Region.MD);
+      }
+    }
+  }
+
+  static void readRegionMetadataTrailer(
+      const std::string &Filename, const char *&CurrentPtr,
+      const char *BufferEnd,
+      llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &DeviceMemory) {
+    // No trailing bytes means this snapshot predates region metadata support.
+    if (CurrentPtr == BufferEnd)
+      return;
+
+    // If trailing bytes exist, they must be the region trailer. Anything else
+    // indicates a malformed or incompatible snapshot payload.
+    if (static_cast<size_t>(BufferEnd - CurrentPtr) < RegionTrailerMagicSize ||
+        llvm::StringRef(CurrentPtr, RegionTrailerMagicSize) !=
+            llvm::StringRef(RegionTrailerMagic, RegionTrailerMagicSize)) {
+      LOG_FATAL("Unexpected trailing bytes in Mneme snapshot " + Filename);
+    }
+    CurrentPtr += RegionTrailerMagicSize;
+
+    size_t TotalBlobs = util::extractScalar<size_t>(CurrentPtr);
+    for (size_t I = 0; I < TotalBlobs; ++I) {
+      void *DeviceAddr = util::extractScalar<void *>(CurrentPtr);
+      size_t NumRegions = util::extractScalar<size_t>(CurrentPtr);
+
+      auto It = DeviceMemory.find(DeviceAddr);
+      if (It == DeviceMemory.end())
+        LOG_FATAL("Mneme region trailer references device allocation missing "
+                  "from snapshot");
+
+      // Rebuild the full region table for this blob, then install it as one
+      // validated replacement so ordering/overlap checks happen once.
+      std::vector<MemoryRegionMetadata> Regions;
+      Regions.reserve(NumRegions);
+      for (size_t R = 0; R < NumRegions; ++R) {
+        MemoryRegionMetadata Region;
+        Region.Offset = util::extractScalar<uint64_t>(CurrentPtr);
+        Region.Extent = util::extractScalar<uint64_t>(CurrentPtr);
+        Region.MD = metadata::fromBuffer(CurrentPtr);
+        Regions.push_back(std::move(Region));
+      }
+
+      if (!It->second.replaceRegionMetadata(std::move(Regions)))
+        LOG_FATAL("Mneme region trailer contains invalid or overlapping "
+                  "regions for device allocation");
+    }
+
+    if (CurrentPtr != BufferEnd)
+      LOG_FATAL("Unexpected extra bytes after Mneme region trailer in " +
+                Filename);
+  }
+
   static void readFullMnemeSnapShot(
       llvm::MemoryBuffer *Buffer,
       std::unordered_map<std::string, ReplayGlobalVar> &GlobalVars,
       llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &DeviceMemory,
       std::shared_ptr<KernelInfo> KInfo) {
     auto *Start = Buffer->getBufferStart();
+    auto *BufferEnd = Buffer->getBufferEnd();
     auto *CurrentPtr = Start;
     size_t TotalGlobals = util::extractScalar<size_t>(CurrentPtr);
     LOG_DEBUG("Snapshot contains {} Globals at location {}", TotalGlobals,
@@ -315,6 +404,9 @@ template <DeviceVendors VendorTypes> class MnemeSnapshot {
       KInfo->KernelArgSizes[A] = util::extractScalar<size_t>(CurrentPtr);
       KInfo->setArgData(CurrentPtr, A);
     }
+
+    readRegionMetadataTrailer(Buffer->getBufferIdentifier().str(), CurrentPtr,
+                              BufferEnd, DeviceMemory);
   }
 
   // Applies the diff ranges from DiffBuffer onto the already-loaded base
@@ -377,12 +469,38 @@ template <DeviceVendors VendorTypes> class MnemeSnapshot {
                                          Blob.getSize()),
           NumRanges);
     }
+
+    readRegionMetadataTrailer(Filename, CurrentPtr, DiffBuffer->getBufferEnd(),
+                              DeviceMemory);
   }
 
   static size_t getSerializedMetadataSize(const Metadata &MD) {
     return sizeof(std::underlying_type_t<BuiltinDType>) + sizeof(double) +
            sizeof(ThresholdKind) + sizeof(Norm) + sizeof(size_t) +
            (MD.tag ? MD.tag->size() : 0);
+  }
+
+  static size_t
+  getSerializedRegionMetadataSize(const MemoryRegionMetadata &Region) {
+    return sizeof(Region.Offset) + sizeof(Region.Extent) +
+           getSerializedMetadataSize(Region.MD);
+  }
+
+  static size_t computeRegionMetadataTrailerSize(
+      const llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &DeviceMemory) {
+    size_t TotalBlobsWithRegions = 0;
+    size_t Size = 0;
+    for (const auto &[Ptr, Blob] : DeviceMemory) {
+      if (!Blob.hasRegionMetadata())
+        continue;
+      if (TotalBlobsWithRegions++ == 0)
+        Size = RegionTrailerMagicSize + sizeof(size_t);
+      Size += sizeof(void *);
+      Size += sizeof(size_t);
+      for (const auto &Region : Blob.getRegionMetadata())
+        Size += getSerializedRegionMetadataSize(Region);
+    }
+    return Size;
   }
 
   static size_t computeMnemeBytesSnapshotSize(
@@ -412,6 +530,7 @@ template <DeviceVendors VendorTypes> class MnemeSnapshot {
       Size += sizeof(size_t);
       Size += ArgSize;
     }
+    Size += computeRegionMetadataTrailerSize(DeviceMemory);
     return Size;
   }
 
@@ -508,6 +627,8 @@ public:
                                KernelArgSizes[I]);
     }
 
+    writeRegionMetadataTrailer(OutBC, DeviceMemory);
+
     return Filename.filename();
   }
 
@@ -557,6 +678,8 @@ public:
 
       writeCountAndWriteChangedRanges(OutBC, Blob, UpdateBaseData);
     }
+
+    writeRegionMetadataTrailer(OutBC, DeviceMemory);
   }
 
   static size_t measureMnemeDiffSnapshotSize(

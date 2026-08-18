@@ -1,10 +1,12 @@
 #pragma once
 
+#include <algorithm>
 #include <cstdint>
 #include <cstring>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/raw_ostream.h>
 #include <memory>
+#include <vector>
 #include <sys/types.h>
 #include <utility>
 
@@ -16,6 +18,39 @@
 #include "mneme/MnemeUtils.hpp"
 
 namespace mneme {
+// Metadata attached to a byte subrange inside one owning blob.
+struct MemoryRegionMetadata {
+  uint64_t Offset = 0;
+  uint64_t Extent = 0;
+  Metadata MD;
+
+  uint64_t endOffset() const { return Offset + Extent; }
+
+  bool contains(uint64_t ByteOffset) const {
+    return Offset <= ByteOffset && ByteOffset < endOffset();
+  }
+
+  bool hasSameRange(uint64_t OtherOffset, uint64_t OtherExtent) const {
+    return Offset == OtherOffset && Extent == OtherExtent;
+  }
+
+  bool overlaps(uint64_t OtherOffset, uint64_t OtherExtent) const {
+    return Offset < OtherOffset + OtherExtent &&
+           OtherOffset < Offset + Extent;
+  }
+};
+
+inline bool operator==(const MemoryRegionMetadata &LHS,
+                       const MemoryRegionMetadata &RHS) {
+  return LHS.Offset == RHS.Offset && LHS.Extent == RHS.Extent &&
+         LHS.MD == RHS.MD;
+}
+
+inline bool operator!=(const MemoryRegionMetadata &LHS,
+                       const MemoryRegionMetadata &RHS) {
+  return !(LHS == RHS);
+}
+
 template <DeviceVendors VendorTypes> class MnemeMemoryBlob {
 public:
   using MnemeDeviceRT = DeviceTraits<VendorTypes>;
@@ -26,12 +61,40 @@ public:
       typename MnemeDeviceRT::MemoryAllocationHandle_t;
 
 protected:
+  static bool compareRange(const char *Expected, const char *Actual,
+                           uint64_t NumBytes, const Metadata &Md) {
+    if (NumBytes == 0)
+      return true;
+
+    auto Compare = compareDeviceBlobs(Expected, Actual, NumBytes, Md);
+
+    // Comparator semantics:
+    // - Norm::None  => per-element thresholding reports AnyFail/FirstBadIdx
+    // - Norm::L1/L2/Linf => aggregated error is reported in Agg
+    if (Md.norm == Norm::None)
+      return Compare.AnyFail == 0;
+
+    return Compare.Agg <= Md.threshold;
+  }
+
   Metadata PtrMD;
+  std::vector<MemoryRegionMetadata> RegionMD;
   uint64_t ActualSize;
   void *BlobAddr;
   uint64_t Size;
   std::unique_ptr<uint8_t[]> HostData;
   bool IsMapped;
+
+  bool isValidRegionRange(uint64_t Offset, uint64_t Extent) const {
+    return Extent != 0 && Offset <= Size && Extent <= Size - Offset;
+  }
+
+  static bool regionSortLess(const MemoryRegionMetadata &LHS,
+                             const MemoryRegionMetadata &RHS) {
+    if (LHS.Offset != RHS.Offset)
+      return LHS.Offset < RHS.Offset;
+    return LHS.Extent < RHS.Extent;
+  }
 
 public:
   MnemeMemoryBlob(uint64_t ActualSize = 0, void *BlobAddr = nullptr,
@@ -111,6 +174,7 @@ public:
       HostData = std::move(other.HostData);
       IsMapped = other.IsMapped;
       PtrMD = other.PtrMD;
+      RegionMD = std::move(other.RegionMD);
       other.BlobAddr = 0;
       other.HostData = nullptr;
     }
@@ -120,7 +184,8 @@ public:
   MnemeMemoryBlob(MnemeMemoryBlob &&other) noexcept
       : BlobAddr(other.BlobAddr), Size(other.Size),
         ActualSize(other.ActualSize), HostData(std::move(other.HostData)),
-        IsMapped(other.IsMapped), PtrMD(other.PtrMD) {
+        IsMapped(other.IsMapped), PtrMD(other.PtrMD),
+        RegionMD(std::move(other.RegionMD)) {
     other.BlobAddr = 0;
     other.HostData = nullptr;
   }
@@ -138,24 +203,136 @@ public:
 
   Metadata getMetadata() const { return PtrMD; }
 
+  // Distinct overlapping regions are rejected. Re-registering the exact same
+  // [offset, extent) updates the existing metadata in place.
+  bool setRegionMetadata(uint64_t Offset, uint64_t Extent, Metadata Md) {
+    if (!isValidRegionRange(Offset, Extent))
+      return false;
+
+    MemoryRegionMetadata Key{Offset, Extent, {}};
+    auto It = std::lower_bound(RegionMD.begin(), RegionMD.end(), Key,
+                               regionSortLess);
+
+    if (It != RegionMD.end() && It->hasSameRange(Offset, Extent)) {
+      It->MD = std::move(Md);
+      return true;
+    }
+
+    if (It != RegionMD.begin()) {
+      auto Prev = std::prev(It);
+      if (Prev->overlaps(Offset, Extent))
+        return false;
+    }
+    if (It != RegionMD.end() && It->overlaps(Offset, Extent))
+      return false;
+
+    RegionMD.insert(It, {Offset, Extent, std::move(Md)});
+    return true;
+  }
+
+  // Replace the entire region table after validating a bulk-loaded set, such
+  // as snapshot deserialization.
+  bool replaceRegionMetadata(std::vector<MemoryRegionMetadata> Regions) {
+    for (const auto &Region : Regions) {
+      if (!isValidRegionRange(Region.Offset, Region.Extent))
+        return false;
+    }
+
+    std::sort(Regions.begin(), Regions.end(), regionSortLess);
+    for (size_t I = 1; I < Regions.size(); ++I) {
+      if (Regions[I - 1].overlaps(Regions[I].Offset, Regions[I].Extent))
+        return false;
+    }
+
+    RegionMD = std::move(Regions);
+    return true;
+  }
+
+  void clearRegionMetadata() { RegionMD.clear(); }
+
+  bool hasRegionMetadata() const { return !RegionMD.empty(); }
+
+  const std::vector<MemoryRegionMetadata> &getRegionMetadata() const {
+    return RegionMD;
+  }
+
+  // RegionMD is kept sorted by offset, so the owning region for a byte can be
+  // resolved by finding the last region whose start is <= ByteOffset.
+  const MemoryRegionMetadata *findRegionMetadata(uint64_t ByteOffset) const {
+    auto It = std::upper_bound(
+        RegionMD.begin(), RegionMD.end(), ByteOffset,
+        [](uint64_t Offset, const MemoryRegionMetadata &Region) {
+          return Offset < Region.Offset;
+        });
+    if (It == RegionMD.begin())
+      return nullptr;
+
+    --It;
+    return It->contains(ByteOffset) ? &*It : nullptr;
+  }
+
   bool operator==(const MnemeMemoryBlob<VendorTypes> &other) const {
     if (getSize() != other.getSize()) {
       LOG_WARN("Sizes Differ {} vs {}", getSize(), other.getSize());
       return false;
     }
 
-    auto Md = getMetadata();
-    auto Compare = compareDeviceBlobs((const char *)other.getBlobAddr(),
-                                      (const char *)getBlobAddr(), getSize(),
-                                      Md);
+    if (getMetadata() != other.getMetadata()) {
+      LOG_WARN("Whole-blob metadata differs for blob {}", getBlobAddr());
+      return false;
+    }
 
-    // Comparator semantics:
-    // - Norm::None  => per-element thresholding reports AnyFail/FirstBadIdx
-    // - Norm::L1/L2/Linf => aggregated error is reported in Agg
-    if (Md.norm == Norm::None)
-      return Compare.AnyFail == 0;
+    // Compare the region tables first so the subsequent byte comparison can
+    // assume both blobs partition the address range the same way.
+    const auto &Regions = getRegionMetadata();
+    const auto &OtherRegions = other.getRegionMetadata();
 
-    return Compare.Agg <= Md.threshold;
+    if (Regions.size() != OtherRegions.size()) {
+      LOG_WARN("Region metadata count differs for blob {}", getBlobAddr());
+      return false;
+    }
+
+    for (size_t I = 0; I < Regions.size(); ++I) {
+      const auto &ExpectedRegion = Regions[I];
+      const auto &ActualRegion = OtherRegions[I];
+      if (ExpectedRegion != ActualRegion) {
+        LOG_WARN("Region metadata differs for blob {} at region index {}",
+                 getBlobAddr(), I);
+        return false;
+      }
+    }
+
+    if (Regions.empty())
+      return compareRange(static_cast<const char *>(other.getBlobAddr()),
+                          static_cast<const char *>(getBlobAddr()), getSize(),
+                          getMetadata());
+
+    uint64_t CurrentOffset = 0;
+    for (const auto &Region : Regions) {
+      if (!compareRange(static_cast<const char *>(other.getBlobAddr()) +
+                            CurrentOffset,
+                        static_cast<const char *>(getBlobAddr()) +
+                            CurrentOffset,
+                        Region.Offset - CurrentOffset, getMetadata())) {
+        return false;
+      }
+
+      if (!compareRange(static_cast<const char *>(other.getBlobAddr()) +
+                            Region.Offset,
+                        static_cast<const char *>(getBlobAddr()) +
+                            Region.Offset,
+                        Region.Extent, Region.MD)) {
+        return false;
+      }
+
+      CurrentOffset = Region.endOffset();
+    }
+
+    return compareRange(static_cast<const char *>(other.getBlobAddr()) +
+                            CurrentOffset,
+                        static_cast<const char *>(getBlobAddr()) +
+                            CurrentOffset,
+                        getSize() - CurrentOffset, getMetadata());
   }
   bool operator!=(const MnemeMemoryBlob<VendorTypes> &other) const {
     return !(*this == other);
