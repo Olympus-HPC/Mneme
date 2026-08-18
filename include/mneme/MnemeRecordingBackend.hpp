@@ -8,6 +8,8 @@
 #include "mneme/MnemeSnapshot.hpp"
 
 #include <cstddef>
+#include <cstdint>
+#include <map>
 #include <memory>
 #include <utility>
 
@@ -27,6 +29,7 @@ class RecordingBackend final : public RecorderBackend<VendorTypes> {
   RecorderRuntimeFunctions<VendorTypes> Runtime;
   RecordDatabase DB;
   llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> AllocatedBlobs;
+  std::map<std::uintptr_t, void *> AllocationIndex;
   std::unique_ptr<PageManager<VendorTypes>> PM;
 
   // NOTE: We only keep track of the first time we set the device id. Once we
@@ -48,6 +51,49 @@ class RecordingBackend final : public RecorderBackend<VendorTypes> {
         DeviceID, (void *)MnemeDeviceRT::getSuggestedAddr());
   }
 
+  static std::size_t builtinByteWidth(BuiltinDType builtin) {
+    switch (builtin) {
+    case BuiltinDType::U8:
+    case BuiltinDType::I8:
+      return 1;
+    case BuiltinDType::U16:
+    case BuiltinDType::I16:
+    case BuiltinDType::F16:
+      return 2;
+    case BuiltinDType::U32:
+    case BuiltinDType::I32:
+    case BuiltinDType::F32:
+      return 4;
+    case BuiltinDType::U64:
+    case BuiltinDType::I64:
+    case BuiltinDType::F64:
+      return 8;
+    }
+    return 1;
+  }
+
+  typename llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>>::iterator
+  findOwningBlob(const void *ptr) {
+    if (!ptr)
+      return AllocatedBlobs.end();
+
+    auto Addr = reinterpret_cast<std::uintptr_t>(ptr);
+    auto It = AllocationIndex.upper_bound(Addr);
+    if (It == AllocationIndex.begin())
+      return AllocatedBlobs.end();
+
+    --It;
+    auto BlobIt = AllocatedBlobs.find(It->second);
+    if (BlobIt == AllocatedBlobs.end())
+      return AllocatedBlobs.end();
+
+    auto Base = reinterpret_cast<std::uintptr_t>(BlobIt->first);
+    auto Size = BlobIt->second.getSize();
+    if (Addr < Base || (Addr - Base) >= Size)
+      return AllocatedBlobs.end();
+    return BlobIt;
+  }
+
 public:
   bool setMetadataForPointer(const void *ptr, Metadata md) override {
     if (!ptr)
@@ -58,6 +104,34 @@ public:
       return false;
 
     It->second.setMetadata(std::move(md));
+    return true;
+  }
+
+  bool setMetadataForRegion(const void *ptr, size_t bytes, Metadata md) override {
+    if (!ptr)
+      return false;
+
+    if (bytes == 0)
+      return false;
+
+    auto It = findOwningBlob(ptr);
+    if (It == AllocatedBlobs.end())
+      return false;
+
+    auto Base = reinterpret_cast<std::uintptr_t>(It->first);
+    auto Addr = reinterpret_cast<std::uintptr_t>(ptr);
+    auto Offset = static_cast<uint64_t>(Addr - Base);
+    auto BlobSize = It->second.getSize();
+    if (bytes > BlobSize || Offset > BlobSize - bytes)
+      return false;
+
+    auto ElemSize = builtinByteWidth(md.builtin);
+    if ((bytes % ElemSize) != 0)
+      return false;
+
+    if (!It->second.setRegionMetadata(Offset, bytes, md))
+      return false;
+
     return true;
   }
 
@@ -94,6 +168,7 @@ public:
     auto ret = MemBlob.map(reinterpret_cast<void *>(Addr), ReservedSize, size);
     *ptr = MemBlob.ptr();
     AllocatedBlobs.insert({*ptr, std::move(MemBlob)});
+    AllocationIndex[reinterpret_cast<std::uintptr_t>(*ptr)] = *ptr;
     LOG_DEBUG("Intercepted Device Malloc PTR:{} SIZE:{} ACTUALSIZE:{}", *ptr,
               size, ReservedSize);
     return ret;
@@ -126,6 +201,7 @@ public:
     }
     PM->releaseAddr(AllocatedBlobs[ptr].getActualSize(), ptr);
     auto ret = AllocatedBlobs[ptr].release();
+    AllocationIndex.erase(reinterpret_cast<std::uintptr_t>(ptr));
     LOG_DEBUG("Intercepted device Free PTR:{} SIZE:{} ACTUALSIZE:{}", ptr,
               AllocatedBlobs[ptr].getSize(),
               AllocatedBlobs[ptr].getActualSize());
