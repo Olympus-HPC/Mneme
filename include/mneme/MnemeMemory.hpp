@@ -302,13 +302,30 @@ public:
       }
     }
 
-    if (Regions.empty())
+    if (Regions.empty()) {
+      LOG_DEBUG(
+          "Comparing blob {} full range [0, {}) with whole-blob metadata builtin={} threshold={} threshold_kind={} norm={} tag={}",
+          getBlobAddr(), getSize(),
+          static_cast<unsigned>(getMetadata().builtin), getMetadata().threshold,
+          static_cast<unsigned>(getMetadata().threshold_kind),
+          static_cast<unsigned>(getMetadata().norm),
+          getMetadata().tag.value_or("no_tag"));
       return compareRange(static_cast<const char *>(other.getBlobAddr()),
                           static_cast<const char *>(getBlobAddr()), getSize(),
                           getMetadata());
+    }
 
     uint64_t CurrentOffset = 0;
     for (const auto &Region : Regions) {
+      if (Region.Offset > CurrentOffset) {
+        LOG_DEBUG(
+            "Comparing blob {} gap [{}, {}) with whole-blob metadata builtin={} threshold={} threshold_kind={} norm={} tag={}",
+            getBlobAddr(), CurrentOffset, Region.Offset,
+            static_cast<unsigned>(getMetadata().builtin), getMetadata().threshold,
+            static_cast<unsigned>(getMetadata().threshold_kind),
+            static_cast<unsigned>(getMetadata().norm),
+            getMetadata().tag.value_or("no_tag"));
+      }
       if (!compareRange(static_cast<const char *>(other.getBlobAddr()) +
                             CurrentOffset,
                         static_cast<const char *>(getBlobAddr()) +
@@ -317,6 +334,13 @@ public:
         return false;
       }
 
+      LOG_DEBUG(
+          "Comparing blob {} region [{}, {}) with region metadata builtin={} threshold={} threshold_kind={} norm={} tag={}",
+          getBlobAddr(), Region.Offset, Region.endOffset(),
+          static_cast<unsigned>(Region.MD.builtin), Region.MD.threshold,
+          static_cast<unsigned>(Region.MD.threshold_kind),
+          static_cast<unsigned>(Region.MD.norm),
+          Region.MD.tag.value_or("no_tag"));
       if (!compareRange(static_cast<const char *>(other.getBlobAddr()) +
                             Region.Offset,
                         static_cast<const char *>(getBlobAddr()) +
@@ -328,6 +352,15 @@ public:
       CurrentOffset = Region.endOffset();
     }
 
+    if (CurrentOffset < getSize()) {
+      LOG_DEBUG(
+          "Comparing blob {} tail [{}, {}) with whole-blob metadata builtin={} threshold={} threshold_kind={} norm={} tag={}",
+          getBlobAddr(), CurrentOffset, getSize(),
+          static_cast<unsigned>(getMetadata().builtin), getMetadata().threshold,
+          static_cast<unsigned>(getMetadata().threshold_kind),
+          static_cast<unsigned>(getMetadata().norm),
+          getMetadata().tag.value_or("no_tag"));
+    }
     return compareRange(static_cast<const char *>(other.getBlobAddr()) +
                             CurrentOffset,
                         static_cast<const char *>(getBlobAddr()) +

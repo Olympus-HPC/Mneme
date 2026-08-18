@@ -96,65 +96,124 @@ class RecordingBackend final : public RecorderBackend<VendorTypes> {
 
 public:
   bool setMetadataForPointer(const void *ptr, Metadata md) override {
-    if (!ptr)
+    if (!ptr) {
+      LOG_WARN("setMetadataForPointer called with null pointer");
       return false;
+    }
 
     auto It = AllocatedBlobs.find(const_cast<void *>(ptr));
-    if (It == AllocatedBlobs.end())
+    if (It == AllocatedBlobs.end()) {
+      LOG_DEBUG("exact-match miss ptr={} tag={} allocated_blobs={}", ptr,
+                md.tag.value_or("no_tag"), AllocatedBlobs.size());
+      LOG_WARN(
+          "annotation dropped after exact-match miss ptr={} tag={} allocated_blobs={}",
+          ptr, md.tag.value_or("no_tag"), AllocatedBlobs.size());
       return false;
+    }
 
+    LOG_INFO(
+        "exact-match hit ptr={} size={} actual_size={} builtin={} threshold={} threshold_kind={} norm={} tag={}",
+        ptr, It->second.getSize(), It->second.getActualSize(),
+        static_cast<unsigned>(md.builtin), md.threshold,
+        static_cast<unsigned>(md.threshold_kind), static_cast<unsigned>(md.norm),
+        md.tag.value_or("no_tag"));
     It->second.setMetadata(std::move(md));
     return true;
   }
 
   bool setMetadataForRegion(const void *ptr, size_t bytes, Metadata md) override {
-    if (!ptr)
+    if (!ptr) {
+      LOG_WARN("setMetadataForRegion called with null pointer");
       return false;
+    }
 
-    if (bytes == 0)
+    if (bytes == 0) {
+      LOG_WARN("setMetadataForRegion called with zero bytes ptr={} tag={}",
+               ptr, md.tag.value_or("no_tag"));
       return false;
+    }
 
     auto It = findOwningBlob(ptr);
-    if (It == AllocatedBlobs.end())
+    if (It == AllocatedBlobs.end()) {
+      LOG_WARN(
+          "region annotation could not resolve owning allocation ptr={} bytes={} tag={} allocated_blobs={}",
+          ptr, bytes, md.tag.value_or("no_tag"), AllocatedBlobs.size());
       return false;
+    }
 
     auto Base = reinterpret_cast<std::uintptr_t>(It->first);
     auto Addr = reinterpret_cast<std::uintptr_t>(ptr);
     auto Offset = static_cast<uint64_t>(Addr - Base);
     auto BlobSize = It->second.getSize();
-    if (bytes > BlobSize || Offset > BlobSize - bytes)
+    if (bytes > BlobSize || Offset > BlobSize - bytes) {
+      LOG_WARN(
+          "region annotation exceeds owning allocation ptr={} base_ptr={} offset={} bytes={} blob_size={} tag={}",
+          ptr, It->first, Offset, bytes, BlobSize, md.tag.value_or("no_tag"));
       return false;
+    }
 
     auto ElemSize = builtinByteWidth(md.builtin);
-    if ((bytes % ElemSize) != 0)
+    if ((bytes % ElemSize) != 0) {
+      LOG_WARN(
+          "region annotation byte extent is not aligned to builtin type ptr={} bytes={} builtin={} elem_size={} tag={}",
+          ptr, bytes, static_cast<unsigned>(md.builtin), ElemSize,
+          md.tag.value_or("no_tag"));
       return false;
+    }
 
-    if (!It->second.setRegionMetadata(Offset, bytes, md))
+    if (!It->second.setRegionMetadata(Offset, bytes, md)) {
+      LOG_WARN(
+          "region annotation rejected due to overlap ptr={} base_ptr={} offset={} bytes={} tag={}",
+          ptr, It->first, Offset, bytes, md.tag.value_or("no_tag"));
       return false;
+    }
 
+    LOG_INFO(
+        "region annotation registered ptr={} base_ptr={} offset={} bytes={} builtin={} threshold={} threshold_kind={} norm={} tag={}",
+        ptr, It->first, Offset, bytes, static_cast<unsigned>(md.builtin),
+        md.threshold, static_cast<unsigned>(md.threshold_kind),
+        static_cast<unsigned>(md.norm), md.tag.value_or("no_tag"));
     return true;
   }
 
   bool getMetadataForPointer(const void *ptr, Metadata &md) const override {
-    if (!ptr)
+    if (!ptr) {
+      LOG_WARN("getMetadataForPointer called with null pointer");
       return false;
+    }
 
     auto It = AllocatedBlobs.find(const_cast<void *>(ptr));
-    if (It == AllocatedBlobs.end())
+    if (It == AllocatedBlobs.end()) {
+      LOG_DEBUG("getMetadataForPointer exact-match miss ptr={}", ptr);
+      LOG_DEBUG(
+          "getMetadataForPointer returning false after exact-match miss ptr={}",
+          ptr);
       return false;
+    }
 
     md = It->second.getMetadata();
+    LOG_DEBUG("getMetadataForPointer hit ptr={} tag={}", ptr,
+              md.tag.value_or("no_tag"));
     return true;
   }
 
   bool eraseMetadataForPointer(const void *ptr) override {
-    if (!ptr)
+    if (!ptr) {
+      LOG_WARN("eraseMetadataForPointer called with null pointer");
       return false;
+    }
 
     auto It = AllocatedBlobs.find(const_cast<void *>(ptr));
-    if (It == AllocatedBlobs.end())
+    if (It == AllocatedBlobs.end()) {
+      LOG_DEBUG("eraseMetadataForPointer exact-match miss ptr={}", ptr);
+      LOG_DEBUG(
+          "eraseMetadataForPointer returning false after exact-match miss ptr={}",
+          ptr);
       return false;
+    }
 
+    LOG_INFO("eraseMetadataForPointer hit ptr={} tag={}", ptr,
+             It->second.getMetadata().tag.value_or("no_tag"));
     It->second.setMetadata(Metadata{});
     return true;
   }
