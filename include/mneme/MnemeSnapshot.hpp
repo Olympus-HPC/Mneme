@@ -75,7 +75,7 @@ struct ReplayGlobalVar {
 template <DeviceVendors VendorTypes> struct Snapshot {
   std::shared_ptr<KernelInfo> KInfo;
   std::unordered_map<std::string, ReplayGlobalVar> GlobalVars;
-  llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> DeviceMemory;
+  llvm::DenseMap<uint64_t, MnemeMemoryBlob<VendorTypes>> DeviceMemory;
 };
 
 template <DeviceVendors VendorTypes> class MnemeSnapshot;
@@ -129,7 +129,9 @@ template <DeviceVendors VendorTypes> class MnemeSnapshot {
   using DeviceError_t = typename MnemeDeviceRT::DeviceError_t;
   using DeviceStream_t = typename MnemeDeviceRT::DeviceStream_t;
   using KernelFunction_t = typename MnemeDeviceRT::KernelFunction_t;
-  static constexpr const char DiffMagic[] = "MNEME_DIFF_V1";
+  static constexpr const char BytesMagic[] = "MNEME_BYTES_V2";
+  static constexpr size_t BytesMagicSize = sizeof(BytesMagic) - 1;
+  static constexpr const char DiffMagic[] = "MNEME_DIFF_V2";
   static constexpr size_t DiffMagicSize = sizeof(DiffMagic) - 1;
   static constexpr size_t DiffChunkSize = 1 << 20;
 
@@ -144,9 +146,115 @@ template <DeviceVendors VendorTypes> class MnemeSnapshot {
     uint64_t bytesWritten() const { return tell(); }
   };
 
+  static bool isBytesBuffer(llvm::StringRef Buffer) {
+    return Buffer.size() >= BytesMagicSize &&
+           Buffer.take_front(BytesMagicSize) == llvm::StringRef(BytesMagic);
+  }
+
   static bool isDiffBuffer(llvm::StringRef Buffer) {
     return Buffer.size() >= DiffMagicSize &&
            Buffer.take_front(DiffMagicSize) == llvm::StringRef(DiffMagic);
+  }
+
+  static MnemeMemoryBlob<VendorTypes> *
+  findBlobById(llvm::DenseMap<uint64_t, MnemeMemoryBlob<VendorTypes>> &DeviceMemory,
+               uint64_t BlobId) {
+    auto It = DeviceMemory.find(BlobId);
+    if (It == DeviceMemory.end())
+      return nullptr;
+    return &It->second;
+  }
+
+  static const MnemeMemoryBlob<VendorTypes> *
+  findBlobForRecordedPointer(
+      const llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &DeviceMemory,
+      uintptr_t PointerValue, uint64_t &Offset) {
+    for (const auto &[BasePtr, Blob] : DeviceMemory) {
+      auto Base = reinterpret_cast<uintptr_t>(BasePtr);
+      if (PointerValue < Base)
+        continue;
+
+      auto BlobExtent = Blob.getSize();
+      auto Delta = PointerValue - Base;
+      if (Delta >= BlobExtent)
+        continue;
+
+      Offset = Delta;
+      return &Blob;
+    }
+    return nullptr;
+  }
+
+  static size_t computeSerializedKernelArgSize(
+      size_t ArgSize, const void *ArgData,
+      const llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &DeviceMemory) {
+    size_t Size = sizeof(size_t) +
+                  sizeof(std::underlying_type_t<KernelArgEncodingKind>);
+    if (ArgSize != sizeof(uintptr_t) || !ArgData)
+      return Size + ArgSize;
+
+    uintptr_t PointerValue = 0;
+    std::memcpy(&PointerValue, ArgData, sizeof(PointerValue));
+    uint64_t Offset = 0;
+    if (!findBlobForRecordedPointer(DeviceMemory, PointerValue, Offset))
+      return Size + ArgSize;
+
+    return Size + sizeof(uint64_t) + sizeof(uint64_t);
+  }
+
+  static void writeKernelArgRecord(
+      llvm::raw_ostream &OS, size_t ArgSize, const void *ArgData,
+      const llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &DeviceMemory) {
+    util::writeScalar(OS, ArgSize);
+    // Pointer-sized args may be Mneme-managed device pointers. If the recorded
+    // value falls inside one of our blobs, store it structurally as
+    // (blob_id, offset) instead of as an absolute address.
+    if (ArgSize == sizeof(uintptr_t) && ArgData) {
+      uintptr_t PointerValue = 0;
+      std::memcpy(&PointerValue, ArgData, sizeof(PointerValue));
+      uint64_t Offset = 0;
+      if (const auto *Blob =
+              findBlobForRecordedPointer(DeviceMemory, PointerValue, Offset)) {
+        util::writeScalar(
+            OS, static_cast<std::underlying_type_t<KernelArgEncodingKind>>(
+                    KernelArgEncodingKind::ManagedPointer));
+        util::writeScalar(OS, Blob->getBlobId());
+        util::writeScalar(OS, Offset);
+        return;
+      }
+    }
+
+    // Everything else is serialized literally so replay sees the exact same
+    // by-value kernel argument payload.
+    util::writeScalar(
+        OS, static_cast<std::underlying_type_t<KernelArgEncodingKind>>(
+                KernelArgEncodingKind::RawBytes));
+    if (ArgSize == 0)
+      return;
+    if (!ArgData)
+      LOG_FATAL("Cannot serialize null kernel arg with non-zero size");
+    util::writeBytes(
+        OS, llvm::StringRef(reinterpret_cast<const char *>(ArgData), ArgSize));
+  }
+
+  static void readKernelArgRecord(const char *&CurrentPtr, KernelInfo &KInfo,
+                                  int ArgIndex) {
+    KInfo.KernelArgSizes[ArgIndex] = util::extractScalar<size_t>(CurrentPtr);
+    auto EncodedKind = util::extractScalar<
+        std::underlying_type_t<KernelArgEncodingKind>>(CurrentPtr);
+    auto Kind = static_cast<KernelArgEncodingKind>(EncodedKind);
+    switch (Kind) {
+    case KernelArgEncodingKind::RawBytes:
+      KInfo.setRawArgData(CurrentPtr, ArgIndex);
+      return;
+    case KernelArgEncodingKind::ManagedPointer: {
+      uint64_t BlobId = util::extractScalar<uint64_t>(CurrentPtr);
+      uint64_t Offset = util::extractScalar<uint64_t>(CurrentPtr);
+      KInfo.setManagedPointerArg(ArgIndex, BlobId, Offset);
+      return;
+    }
+    }
+    LOG_FATAL("Unsupported Mneme kernel arg encoding kind");
   }
 
   static std::unique_ptr<llvm::MemoryBuffer>
@@ -284,10 +392,17 @@ template <DeviceVendors VendorTypes> class MnemeSnapshot {
   static void readFullMnemeSnapShot(
       llvm::MemoryBuffer *Buffer,
       std::unordered_map<std::string, ReplayGlobalVar> &GlobalVars,
-      llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &DeviceMemory,
+      llvm::DenseMap<uint64_t, MnemeMemoryBlob<VendorTypes>> &DeviceMemory,
       std::shared_ptr<KernelInfo> KInfo) {
     auto *Start = Buffer->getBufferStart();
-    auto *CurrentPtr = Start;
+    auto *BufferEnd = Buffer->getBufferEnd();
+    if (static_cast<size_t>(BufferEnd - Start) < BytesMagicSize ||
+        llvm::StringRef(Start, BytesMagicSize) !=
+            llvm::StringRef(BytesMagic, BytesMagicSize)) {
+      LOG_FATAL("Unsupported Mneme bytes snapshot format in " +
+                Buffer->getBufferIdentifier().str());
+    }
+    auto *CurrentPtr = Start + BytesMagicSize;
     size_t TotalGlobals = util::extractScalar<size_t>(CurrentPtr);
     LOG_DEBUG("Snapshot contains {} Globals at location {}", TotalGlobals,
               (uintptr_t)CurrentPtr - (uintptr_t)Start);
@@ -302,7 +417,11 @@ template <DeviceVendors VendorTypes> class MnemeSnapshot {
               TotalMemBlobs, (uintptr_t)CurrentPtr - (uintptr_t)Start);
 
     for (auto M = 0; M < TotalMemBlobs; M++) {
-      DeviceMemory.insert(MnemeMemoryBlob<VendorTypes>::fromBuffer(CurrentPtr));
+      auto [BlobId, Blob] = MnemeMemoryBlob<VendorTypes>::fromBuffer(CurrentPtr);
+      auto [It, Inserted] = DeviceMemory.try_emplace(BlobId, std::move(Blob));
+      if (!Inserted)
+        LOG_FATAL("Duplicate blob id " + std::to_string(BlobId) +
+                  " found while reading Mneme snapshot");
     }
 
     // Get kernel arguments.
@@ -310,11 +429,13 @@ template <DeviceVendors VendorTypes> class MnemeSnapshot {
     LOG_DEBUG("Snapshot contains {} total arguments starting at location {}",
               TotalArguments, (uintptr_t)CurrentPtr - (uintptr_t)Start);
     KInfo->KernelArgSizes.resize(TotalArguments);
-    KInfo->ArgData.resize(TotalArguments);
+    KInfo->initializeArgStorage(TotalArguments);
     for (auto A = 0; A < TotalArguments; A++) {
-      KInfo->KernelArgSizes[A] = util::extractScalar<size_t>(CurrentPtr);
-      KInfo->setArgData(CurrentPtr, A);
+      readKernelArgRecord(CurrentPtr, *KInfo, A);
     }
+    if (CurrentPtr != BufferEnd)
+      LOG_FATAL("Unexpected trailing bytes in Mneme snapshot " +
+                Buffer->getBufferIdentifier().str());
   }
 
   // Applies the diff ranges from DiffBuffer onto the already-loaded base
@@ -322,7 +443,7 @@ template <DeviceVendors VendorTypes> class MnemeSnapshot {
   static void applyDiffMnemeSnapShot(
       const std::string &Filename,
       std::unordered_map<std::string, ReplayGlobalVar> &GlobalVars,
-      llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &DeviceMemory,
+      llvm::DenseMap<uint64_t, MnemeMemoryBlob<VendorTypes>> &DeviceMemory,
       llvm::MemoryBuffer *DiffBuffer) {
     auto *Start = DiffBuffer->getBufferStart();
     auto *CurrentPtr = Start + DiffMagicSize;
@@ -359,24 +480,27 @@ template <DeviceVendors VendorTypes> class MnemeSnapshot {
     for (size_t I = 0; I < TotalMemBlobs; ++I) {
       size_t ActualSize = util::extractScalar<size_t>(CurrentPtr);
       size_t Size = util::extractScalar<size_t>(CurrentPtr);
-      void *DeviceAddr = util::extractScalar<void *>(CurrentPtr);
-      auto MD = metadata::fromBuffer(CurrentPtr);
+      uint64_t BlobId = util::extractScalar<uint64_t>(CurrentPtr);
+      uint64_t BlobOffset = util::extractScalar<uint64_t>(CurrentPtr);
       size_t NumRanges = util::extractScalar<size_t>(CurrentPtr);
 
-      auto It = DeviceMemory.find(DeviceAddr);
-      if (It == DeviceMemory.end())
+      auto *Blob = findBlobById(DeviceMemory, BlobId);
+      if (!Blob)
         LOG_FATAL("Mneme diff references device allocation missing from "
                   "prologue");
-      auto &Blob = It->second;
-      if (Blob.getActualSize() != ActualSize || Blob.getSize() != Size)
+      if (Blob->getActualSize() != ActualSize || Blob->getSize() != Size)
         LOG_FATAL("Mneme diff memory blob size mismatch");
-      Blob.setMetadata(MD);
+      if (Blob->getBlobOffset() != BlobOffset)
+        LOG_FATAL("Mneme diff blob offset mismatch for blob id " +
+                  std::to_string(BlobId));
       applyDiffRanges(
           CurrentPtr,
-          llvm::MutableArrayRef<uint8_t>(Blob.getHostData().get(),
-                                         Blob.getSize()),
+          llvm::MutableArrayRef<uint8_t>(Blob->getHostData().get(),
+                                         Blob->getSize()),
           NumRanges);
     }
+    if (CurrentPtr != DiffBuffer->getBufferEnd())
+      LOG_FATAL("Unexpected trailing bytes in Mneme diff " + Filename);
   }
 
   static size_t getSerializedMetadataSize(const Metadata &MD) {
@@ -388,8 +512,8 @@ template <DeviceVendors VendorTypes> class MnemeSnapshot {
   static size_t computeMnemeBytesSnapshotSize(
       const proteus::runtime::GlobalMetadataMap &GlobalVars,
       const llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &DeviceMemory,
-      llvm::ArrayRef<size_t> KernelArgSizes) {
-    size_t Size = sizeof(size_t);
+      llvm::ArrayRef<size_t> KernelArgSizes, void **Args) {
+    size_t Size = BytesMagicSize + sizeof(size_t);
     for (const auto &[VarName, GV] : GlobalVars) {
       Size += sizeof(size_t);
       Size += VarName.size();
@@ -402,15 +526,16 @@ template <DeviceVendors VendorTypes> class MnemeSnapshot {
     for (const auto &[Ptr, Blob] : DeviceMemory) {
       Size += sizeof(size_t);
       Size += sizeof(size_t);
-      Size += sizeof(void *);
+      Size += sizeof(uint64_t);
+      Size += sizeof(uint64_t);
       Size += Blob.getSize();
       Size += getSerializedMetadataSize(Blob.getMetadata());
     }
 
     Size += sizeof(size_t);
-    for (size_t ArgSize : KernelArgSizes) {
-      Size += sizeof(size_t);
-      Size += ArgSize;
+    for (size_t I = 0; I < KernelArgSizes.size(); ++I) {
+      Size += computeSerializedKernelArgSize(KernelArgSizes[I], Args[I],
+                                             DeviceMemory);
     }
     return Size;
   }
@@ -447,6 +572,7 @@ public:
     if (DEC)
       LOG_FATAL("Synnchronizing stream  failed");
     llvm::raw_fd_ostream OutBC(Filename.string(), EC);
+    util::writeBytes(OutBC, llvm::StringRef(BytesMagic, BytesMagicSize));
     // First write Global Variables.
     size_t TotalGlobals = GlobalVars.size();
     OutBC << llvm::StringRef(reinterpret_cast<const char *>(&TotalGlobals),
@@ -502,10 +628,7 @@ public:
                              sizeof(NumArgs));
 
     for (int I = 0; I < NumArgs; I++) {
-      OutBC << llvm::StringRef(
-          reinterpret_cast<const char *>(&KernelArgSizes[I]), sizeof(size_t));
-      OutBC << llvm::StringRef(reinterpret_cast<const char *>(Args[I]),
-                               KernelArgSizes[I]);
+      writeKernelArgRecord(OutBC, KernelArgSizes[I], Args[I], DeviceMemory);
     }
 
     return Filename.filename();
@@ -550,8 +673,8 @@ public:
     for (auto &[Ptr, Blob] : DeviceMemory) {
       util::writeScalar(OutBC, Blob.getActualSize());
       util::writeScalar(OutBC, Blob.getSize());
-      auto *BlobAddr = Blob.getBlobAddr();
-      util::writeScalar(OutBC, BlobAddr);
+      util::writeScalar(OutBC, Blob.getBlobId());
+      util::writeScalar(OutBC, Blob.getBlobOffset());
       auto MD = Blob.getMetadata();
       mneme::metadata::serialize(OutBC, MD);
 
@@ -602,7 +725,8 @@ public:
       llvm::SmallVector<size_t> &KernelArgSizes, void **Args,
       const GlobalSnapshotData &PrologueGlobals, DeviceStream_t Stream) {
     size_t BytesSize =
-        computeMnemeBytesSnapshotSize(GlobalVars, DeviceMemory, KernelArgSizes);
+        computeMnemeBytesSnapshotSize(GlobalVars, DeviceMemory, KernelArgSizes,
+                                      Args);
     size_t DiffSize = measureMnemeDiffSnapshotSize(GlobalVars, DeviceMemory,
                                                    PrologueGlobals, Stream);
 
@@ -623,8 +747,10 @@ public:
     if (isDiffBuffer(Buffer->getBuffer()))
       return std::make_unique<DiffSnapshotFile<VendorTypes>>(Filename,
                                                              std::move(Buffer));
-    return std::make_unique<BytesSnapshotFile<VendorTypes>>(Filename,
-                                                            std::move(Buffer));
+    if (isBytesBuffer(Buffer->getBuffer()))
+      return std::make_unique<BytesSnapshotFile<VendorTypes>>(Filename,
+                                                              std::move(Buffer));
+    LOG_FATAL("Unsupported Mneme snapshot format in " + Filename);
   }
 
   static Snapshot<VendorTypes> readBytesSnapshot(std::string KernelName,
