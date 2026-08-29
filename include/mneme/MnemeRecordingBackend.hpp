@@ -8,6 +8,7 @@
 #include "mneme/MnemeSnapshot.hpp"
 
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <utility>
 
@@ -28,6 +29,7 @@ class RecordingBackend final : public RecorderBackend<VendorTypes> {
   RecordDatabase DB;
   llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> AllocatedBlobs;
   std::unique_ptr<PageManager<VendorTypes>> PM;
+  uint64_t NextBlobId = 1;
 
   // NOTE: We only keep track of the first time we set the device id. Once we
   // create the allocator we assume that the allocations go to the same device.
@@ -89,8 +91,12 @@ public:
     initializePageManagerIfNeeded();
 
     auto [Addr, ReservedSize] = PM->allocateAddr(size, nullptr);
+    auto RecordedAddr = reinterpret_cast<std::uintptr_t>(Addr);
     MnemeMemoryBlob<VendorTypes> MemBlob(ReservedSize,
                                          reinterpret_cast<void *>(Addr), size);
+    MemBlob.setBlobId(NextBlobId++);
+    MemBlob.setBlobOffset(RecordedAddr -
+                          reinterpret_cast<std::uintptr_t>(PM->getVAStart()));
     auto ret = MemBlob.map(reinterpret_cast<void *>(Addr), ReservedSize, size);
     *ptr = MemBlob.ptr();
     AllocatedBlobs.insert({*ptr, std::move(MemBlob)});

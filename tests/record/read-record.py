@@ -10,16 +10,19 @@ from pathlib import Path
 # Binary .mneme prologue parser
 #
 # On-disk format (all integers little-endian, pointer-sized = 8 bytes):
+#   char[14] "MNEME_BYTES_V2"
 #   uint64  TotalGlobals
 #   for each global:
 #     uint64 StrLen; char[StrLen] name; uint64 VarSize; void* DevAddr; char[VarSize] data
 #   uint64  TotalBlobs
 #   for each blob:
-#     uint64 ActualSize; uint64 Size; void* DevAddr; char[Size] data
+#     uint64 ActualSize; uint64 Size; uint64 BlobId; uint64 BlobOffset; char[Size] data
 #     Metadata: uint8 builtin; double threshold; uint8 threshold_kind;
 #               uint8 norm; uint64 tag_len; char[tag_len] tag
 #   uint64  NumArgs
-#   for each arg: uint64 ArgSize; char[ArgSize] data
+#   for each arg:
+#     uint64 ArgSize; uint8 EncodingKind;
+#     either char[ArgSize] data or uint64 BlobId; uint64 Offset
 # ---------------------------------------------------------------------------
 
 def _parse_prologue_metadata(filename):
@@ -27,6 +30,11 @@ def _parse_prologue_metadata(filename):
     with open(filename, "rb") as f:
         data = f.read()
     off = 0
+    bytes_magic = b"MNEME_BYTES_V2"
+
+    if not data.startswith(bytes_magic):
+        raise ValueError("unsupported prologue format")
+    off += len(bytes_magic)
 
     def u64():
         nonlocal off
@@ -63,7 +71,8 @@ def _parse_prologue_metadata(filename):
     for _ in range(u64()):
         u64()                   # actual_size
         size = u64()
-        skip(8)                 # dev_addr
+        u64()                   # blob_id
+        u64()                   # blob_offset
         skip(size)              # blob data
         builtin       = u8()
         threshold     = dbl()

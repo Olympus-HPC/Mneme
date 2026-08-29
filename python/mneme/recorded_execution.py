@@ -23,6 +23,7 @@ Notes
 """
 
 import json
+import ctypes
 from ctypes import POINTER, c_bool, c_char_p, c_int, c_void_p
 from enum import Enum
 from pathlib import Path
@@ -32,8 +33,26 @@ from .llvm import ffi
 from .mneme_types import dim3
 from .proteus import jit
 
+if hasattr(ctypes, "c_uintptr_t"):
+    c_uintptr_t = ctypes.c_uintptr_t
+else:
+    if ctypes.sizeof(ctypes.c_void_p) == ctypes.sizeof(ctypes.c_ulonglong):
+        c_uintptr_t = ctypes.c_ulonglong
+    elif ctypes.sizeof(ctypes.c_void_p) == ctypes.sizeof(ctypes.c_ulong):
+        c_uintptr_t = ctypes.c_ulong
+    elif ctypes.sizeof(ctypes.c_void_p) == ctypes.sizeof(ctypes.c_uint):
+        c_uintptr_t = ctypes.c_uint
+    else:
+        raise RuntimeError("Could not determine appropriate type for c_uintptr_t")
+
 MnemeRecordStateRef = ffi._make_opaque_ref("MnemeRecordState")
-ffi.lib.MnemePy_initializeMemState.argtypes = [c_char_p, c_char_p, c_char_p, c_bool]
+ffi.lib.MnemePy_initializeMemState.argtypes = [
+    c_char_p,
+    c_char_p,
+    c_char_p,
+    c_bool,
+    c_uintptr_t,
+]
 ffi.lib.MnemePy_initializeMemState.restype = MnemeRecordStateRef
 
 ffi.lib.MnemePy_DisposeMemState.argtypes = [MnemeRecordStateRef]
@@ -171,6 +190,7 @@ class MemStateRef:
         self.kernel_name = kernel_name
         self.s_type = snap_type
         self.base_prologue_fn = base_prologue_fn
+        self._replay_va_addr = None
         self._state = None
         self._load = False
         self._num_args = None
@@ -186,7 +206,10 @@ class MemStateRef:
                 self._args = None
                 self._num_args = None
 
-    def open(self):
+    def open(
+        self,
+        replay_va_addr: Optional[int] = None,
+    ):
         """
         Initialize and load the snapshot into the native handle.
 
@@ -195,13 +218,21 @@ class MemStateRef:
         MemStateRef
             Returns self for convenient chaining / context-manager usage.
         """
+        if replay_va_addr is not None:
+            self._replay_va_addr = replay_va_addr
+
         if self._state is None:
+            if self._replay_va_addr is None:
+                raise RuntimeError(
+                    "MemStateRef.open now requires the replay VA base on first use"
+                )
             base_fn = self.base_prologue_fn or ""
             self._state = ffi.lib.MnemePy_initializeMemState(
                 c_char_p(self.kernel_name.encode("utf-8")),
                 c_char_p(self.fn.encode("utf-8")),
                 c_char_p(base_fn.encode("utf-8")),
                 c_bool(self.s_type == SnapshotType.PROLOGUE),
+                self._replay_va_addr,
             )
 
         ffi.lib.MnemePy_LoadMemState(self._state)
@@ -258,7 +289,9 @@ class MemStateRef:
         self._dispose()
 
     def __enter__(self):
-        self.open()
+        if self._load:
+            return self
+        self.open(self._replay_va_addr)
         return self
 
     def __exit__(self, exc_type, exc_value, traceback):
