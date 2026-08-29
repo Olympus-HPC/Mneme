@@ -29,7 +29,7 @@ bool isDiffSnapshotFile(const std::filesystem::path &Path) {
   std::ifstream In(Path, std::ios::binary);
   std::string Magic(13, '\0');
   In.read(Magic.data(), Magic.size());
-  return Magic == "MNEME_DIFF_V1";
+  return Magic == "MNEME_DIFF_V2";
 }
 
 template <typename T> void initializeRandomBuffer(T *Buffer, size_t Size) {
@@ -45,6 +45,8 @@ template <typename T> void initializeRandomBuffer(T *Buffer, size_t Size) {
 }
 
 int main(int argc, char **argv) {
+  constexpr uint64_t BlobId = 1;
+
   // We allocate some "fake" globals
   auto initializeDeviceData = [&] {
     uint8_t *HData = new uint8_t[128];
@@ -77,6 +79,7 @@ int main(int argc, char **argv) {
   Md.threshold = 0.5;
   Md.threshold_kind = ThresholdKind::Relative;
   Md.tag = std::string("Test");
+  Blob.setBlobId(BlobId);
   Blob.setMetadata(Md);
 
   Blob.setHostData(std::unique_ptr<uint8_t[]>(new uint8_t[128]));
@@ -136,60 +139,63 @@ int main(int argc, char **argv) {
   }();
 
   auto ValidateDeviceMem = [&]() {
-    for (auto &RKV : ReadDeviceMemMap) {
-      auto &RBlob = RKV.second;
-      if (!DeviceMemMap.contains(RKV.first)) {
-        std::cerr << "Address does not exist in Device Map " << std::hex
-                  << RKV.first << std::dec << "\n";
-        return 1;
-      }
+    auto It = ReadDeviceMemMap.find(BlobId);
+    if (It == ReadDeviceMemMap.end()) {
+      std::cerr << "Blob id missing from reconstructed snapshot\n";
+      return 1;
+    }
 
-      auto &WBlob = DeviceMemMap[RKV.first];
+    auto &RBlob = It->second;
+    auto &WBlob = DeviceMemMap[reinterpret_cast<void *>(BlobData.first)];
 
-      if (RBlob.getActualSize() != WBlob.getActualSize()) {
-        std::cerr << "Actual Sizes differ " << RBlob.getActualSize() << " "
-                  << WBlob.getActualSize() << "\n";
-        return 1;
-      }
+    if (RBlob.getActualSize() != WBlob.getActualSize()) {
+      std::cerr << "Actual Sizes differ " << RBlob.getActualSize() << " "
+                << WBlob.getActualSize() << "\n";
+      return 1;
+    }
 
-      if (RBlob.getSize() != WBlob.getSize()) {
-        std::cerr << "Sizes differ" << WBlob.getSize() << " " << RBlob.getSize()
-                  << "\n";
-        return 1;
-      }
+    if (RBlob.getSize() != WBlob.getSize()) {
+      std::cerr << "Sizes differ" << WBlob.getSize() << " " << RBlob.getSize()
+                << "\n";
+      return 1;
+    }
 
-      if (RBlob.getMetadata().builtin != BuiltinDType::F64) {
-        std::cerr << "Metadata builtin differs\n";
-        return 1;
-      }
+    if (RBlob.getBlobId() != BlobId) {
+      std::cerr << "Blob id differs\n";
+      return 1;
+    }
 
-      if (RBlob.getMetadata().norm != Norm::L2) {
-        std::cerr << "Metadata norm differs\n";
-        return 1;
-      }
+    if (RBlob.getMetadata().builtin != BuiltinDType::F64) {
+      std::cerr << "Metadata builtin differs\n";
+      return 1;
+    }
 
-      if (RBlob.getMetadata().threshold != 0.5) {
-        std::cerr << "Metadata threshold differs\n";
-        return 1;
-      }
+    if (RBlob.getMetadata().norm != Norm::L2) {
+      std::cerr << "Metadata norm differs\n";
+      return 1;
+    }
 
-      if (RBlob.getMetadata().threshold_kind != ThresholdKind::Relative) {
-        std::cerr << "Metadata threshold_kind differs\n";
-        return 1;
-      }
+    if (RBlob.getMetadata().threshold != 0.5) {
+      std::cerr << "Metadata threshold differs\n";
+      return 1;
+    }
 
-      if (RBlob.getMetadata().tag.value() != "Test") {
-        std::cerr << "Metadata tag differs\n";
-        return 1;
-      }
+    if (RBlob.getMetadata().threshold_kind != ThresholdKind::Relative) {
+      std::cerr << "Metadata threshold_kind differs\n";
+      return 1;
+    }
 
-      uint8_t *WData = WBlob.getHostData().get();
-      uint8_t *RData = RBlob.getHostData().get();
-      if (std::memcmp(reinterpret_cast<void *>(WData),
-                      reinterpret_cast<void *>(RData), 128) != 0) {
-        std::cerr << "Memory differs between GV and GVR\n";
-        return 1;
-      }
+    if (RBlob.getMetadata().tag.value() != "Test") {
+      std::cerr << "Metadata tag differs\n";
+      return 1;
+    }
+
+    uint8_t *WData = WBlob.getHostData().get();
+    uint8_t *RData = RBlob.getHostData().get();
+    if (std::memcmp(reinterpret_cast<void *>(WData),
+                    reinterpret_cast<void *>(RData), 128) != 0) {
+      std::cerr << "Memory differs between GV and GVR\n";
+      return 1;
     }
     return 0;
   }();
@@ -279,9 +285,9 @@ int main(int argc, char **argv) {
   }();
 
   auto ValidateDiffDeviceMem = [&]() {
-    auto it = DiffDeviceMemMap.find((void *)BlobData.first);
+    auto it = DiffDeviceMemMap.find(BlobId);
     if (it == DiffDeviceMemMap.end()) {
-      std::cerr << "Diff device map is missing blob address\n";
+      std::cerr << "Diff device map is missing blob id\n";
       return 16;
     }
 
@@ -328,7 +334,7 @@ int main(int argc, char **argv) {
   }();
 
   auto ResetBlobBase = [&]() {
-    auto PrologueBlobIt = ReadDeviceMemMap.find((void *)BlobData.first);
+    auto PrologueBlobIt = ReadDeviceMemMap.find(BlobId);
     auto HostData = std::unique_ptr<uint8_t[]>(new uint8_t[128]);
     std::memcpy(HostData.get(), PrologueBlobIt->second.getHostData().get(),
                 128);
@@ -349,7 +355,7 @@ int main(int argc, char **argv) {
     }
     auto BestSparseSnap = MnemeSnapshot<Vendor>::readDiffSnapshot(
         KernelName, SparseBestSnapshotFN.string(), SnapshotFN.string());
-    auto It = BestSparseSnap.DeviceMemory.find((void *)BlobData.first);
+    auto It = BestSparseSnap.DeviceMemory.find(BlobId);
     if (It == BestSparseSnap.DeviceMemory.end() ||
         std::memcmp(BlobData.second, It->second.getHostData().get(), 128) !=
             0) {
@@ -359,7 +365,7 @@ int main(int argc, char **argv) {
     return 0;
   }();
 
-  auto PrologueBlobIt = ReadDeviceMemMap.find((void *)BlobData.first);
+  auto PrologueBlobIt = ReadDeviceMemMap.find(BlobId);
   auto PrologueGlobalIt = ReadGVars.find("Test");
   auto *PrologueBlob = PrologueBlobIt->second.getHostData().get();
   auto *PrologueGlobal =
@@ -396,9 +402,9 @@ int main(int argc, char **argv) {
       std::cerr << "Best fragmented snapshot should choose bytes\n";
       return 128;
     }
-    auto BestFragmentedSnap = MnemeSnapshot<Vendor>::readDiffSnapshot(
-        KernelName, FragmentedBestSnapshotFN.string(), SnapshotFN.string());
-    auto It = BestFragmentedSnap.DeviceMemory.find((void *)BlobData.first);
+    auto BestFragmentedSnap = MnemeSnapshot<Vendor>::readBytesSnapshot(
+        KernelName, FragmentedBestSnapshotFN.string());
+    auto It = BestFragmentedSnap.DeviceMemory.find(BlobId);
     if (It == BestFragmentedSnap.DeviceMemory.end() ||
         std::memcmp(BlobData.second, It->second.getHostData().get(), 128) !=
             0) {
