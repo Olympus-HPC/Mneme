@@ -117,7 +117,7 @@ int main() {
   setenv("MNEME_SKIP_RECORDINGS", "6abc", 1);
   setenv("MNEME_PAGE_SIZE", "5abc", 1);
   setenv("MNEME_LOG_LEVEL", "verbose", 1);
-  setenv("MNEME_COPY_SOURCE", "off", 1);
+  setenv("MNEME_COPY_SOURCE", "0", 1);
   {
     auto Conf = Config::createFromEnvironment();
     expect(Conf.MaxRecordings == 12,
@@ -128,7 +128,7 @@ int main() {
            "MNEME_PAGE_SIZE should keep atol-style parsing");
     expect(Conf.MnemeLogLevel == LogLevel::Info,
            "invalid MNEME_LOG_LEVEL should fall back to info");
-    expect(!Conf.CopySource, "MNEME_COPY_SOURCE should map off to false");
+    expect(!Conf.CopySource, "MNEME_COPY_SOURCE should map 0 to false");
   }
 
   setenv("MNEME_MAX_RECORDINGS", "abc", 1);
