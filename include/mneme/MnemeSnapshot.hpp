@@ -7,6 +7,7 @@
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/JSON.h>
+#include <llvm/Support/MD5.h>
 #include <llvm/Support/MemoryBuffer.h>
 #include <llvm/Support/raw_ostream.h>
 #include <memory>
@@ -714,6 +715,9 @@ class KernelInstancesCollection {
   llvm::SmallVector<std::function<double(void *)>> ConvertArgToDouble;
   llvm::SmallVector<std::string> ModuleFiles;
   const std::string KName;
+  std::string SourceFile;
+  std::string SourceCopy;
+  std::string SourceMD5;
 
 private:
   // Parse Proteus's serialized bitcode in a Mneme-owned LLVMContext and
@@ -737,6 +741,52 @@ private:
     KernelArgNames = mneme::getArgNames(*F);
     KernelSpecializations = mneme::canSpecialize(*F);
     ConvertArgToDouble = mneme::convertToDouble(*F);
+
+    // Only an absolute path identifies the translation unit. LTO-linked
+    // modules carry a placeholder name and are reported as unknown.
+    std::string ModuleSource = Mod->getSourceFileName();
+    if (std::filesystem::path(ModuleSource).is_absolute())
+      SourceFile = ModuleSource;
+    else
+      LOG_DEBUG("No translation unit source for kernel {} (module source '{}')",
+                KName, ModuleSource);
+  }
+
+  // Copy the translation unit source next to the recorded IR, named by content
+  // hash so kernels from the same file share one copy.
+  void copySourceFile(const std::string &RecordReplayDir) {
+    auto BufOrErr = llvm::MemoryBuffer::getFile(SourceFile);
+    if (!BufOrErr) {
+      LOG_WARN("Cannot read source file {} for kernel {}: {}", SourceFile,
+               KName, BufOrErr.getError().message());
+      return;
+    }
+    llvm::StringRef Contents = (*BufOrErr)->getBuffer();
+
+    llvm::MD5 Hash;
+    Hash.update(Contents);
+    llvm::MD5::MD5Result Result;
+    Hash.final(Result);
+    std::string Digest = Result.digest().str().str();
+
+    std::string Basename =
+        std::filesystem::path(SourceFile).filename().string();
+    std::string Filename = "RecordedSource_" + Digest + "_" + Basename;
+    std::filesystem::path Dest =
+        std::filesystem::path(RecordReplayDir) / Filename;
+    if (!std::filesystem::exists(Dest)) {
+      std::error_code EC;
+      llvm::raw_fd_ostream Out(Dest.string(), EC);
+      if (EC) {
+        LOG_WARN("Cannot write source copy {}: {}", Dest.string(),
+                 EC.message());
+        return;
+      }
+      Out << Contents;
+    }
+
+    SourceCopy = Filename;
+    SourceMD5 = Digest;
   }
 
   std::string StoreModuleBytes(llvm::StringRef Bytes,
@@ -776,6 +826,12 @@ public:
     Collection["BinaryBlobs"] = llvm::json::Array();
     Collection["ArgNames"] = llvm::json::Array(KernelArgNames);
     Collection["Specializations"] = llvm::json::Array(KernelSpecializations);
+    if (!SourceFile.empty())
+      Collection["SourceFile"] = SourceFile;
+    if (!SourceCopy.empty()) {
+      Collection["SourceCopy"] = SourceCopy;
+      Collection["SourceMD5"] = SourceMD5;
+    }
     llvm::json::Object JSONInstances;
     for (auto &[hash, KI] : Instances) {
       JSONInstances[std::to_string(hash)] = KI.toJSON();
@@ -787,7 +843,7 @@ public:
   KernelInstancesCollection(const std::string &MnemeDirectory, void *VAddr,
                             uint64_t VASize,
                             const proteus::runtime::KernelMetadata &KInfo,
-                            int MaxRecordings)
+                            int MaxRecordings, bool CopySource)
       : VAddr(VAddr), VASize(VASize), MaxRecordings(MaxRecordings),
         NumRecords(0), KName(KInfo.getName()) {
     const auto &BitcodeBytes = KInfo.getBitcode();
@@ -796,6 +852,8 @@ public:
       LOG_FATAL("Empty bitcode for kernel " + KName);
 
     extractArgInfoFromBitcode(Bitcode);
+    if (CopySource && !SourceFile.empty())
+      copySourceFile(MnemeDirectory);
     ModuleFiles.emplace_back(StoreModuleBytes(
         Bitcode, MnemeDirectory, KInfo.getStaticHash()));
   }
@@ -911,6 +969,7 @@ class RecordDatabase {
   uint64_t MaxRecordings;
   uint64_t SkipRecordings;
   EpilogueSnapshotType EpilogueType;
+  bool CopySource;
 
 public:
   RecordDatabase() : KernelWhiteList(""), HasRegex(false) {
@@ -925,6 +984,7 @@ public:
     MaxRecordings = Conf.MaxRecordings;
     SkipRecordings = Conf.SkipRecordings;
     EpilogueType = Conf.EpilogueType;
+    CopySource = Conf.CopySource;
   }
 
   void writeKernelJSON(uint64_t StaticHash) {
@@ -993,7 +1053,7 @@ public:
 
     auto IT = KernelRecords.try_emplace(
         StaticHash, KernelInstancesCollection(getDir(), VAddr, VASize, KInfo,
-                                              MaxRecordings));
+                                              MaxRecordings, CopySource));
     LOG_INFO("Created instance");
     return IT.first->second.takeSnapshot<VendorTypes>(
         MnemeDirectory, KInfo.getGlobals(), DeviceMemory, GridDim, BlockDim,

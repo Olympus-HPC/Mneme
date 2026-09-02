@@ -1,4 +1,5 @@
 import glob
+import hashlib
 import json
 import os
 import struct
@@ -90,6 +91,16 @@ for fn in sorted(glob.glob(os.path.join(data_dir, "*.json"))):
     print("DemangledName:", rr_data["DemangledName"])
     print("NumModules:", len(rr_data["Modules"]))
     print("NumInstances:", len(rr_data["instances"]))
+    if "SourceFile" in rr_data:
+        print("SourceFile:", rr_data["SourceFile"])
+    if "SourceCopy" in rr_data:
+        copy_path = base_dir / rr_data["SourceCopy"]
+        if not copy_path.exists():
+            print("Expected source copy to exist")
+            sys.exit(-1)
+        digest = hashlib.md5(copy_path.read_bytes()).hexdigest()
+        print("SourceCopy:", rr_data["SourceCopy"])
+        print("SourceMD5:", "ok" if digest == rr_data.get("SourceMD5") else "mismatch")
     for k, instance in rr_data["instances"].items():
         print(
             "BlockDims:({0}, {1}, {2})".format(
