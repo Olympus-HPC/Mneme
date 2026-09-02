@@ -107,8 +107,8 @@ private:
 
 inline std::pair<SnapshotHeader, size_t>
 SnapshotHeader::parse(llvm::StringRef Buffer) {
-  if (Buffer.size() >= Size && Buffer.take_front(sizeof(Magic)) ==
-                                   llvm::StringRef(Magic, sizeof(Magic))) {
+  if (Buffer.size() >= Size &&
+      Buffer.starts_with(llvm::StringRef(Magic, sizeof(Magic)))) {
     SnapshotKind Kind;
     uint32_t Version;
     std::memcpy(&Kind, Buffer.data() + sizeof(Magic), sizeof(Kind));
@@ -117,9 +117,7 @@ SnapshotHeader::parse(llvm::StringRef Buffer) {
     return {SnapshotHeader{Kind, Version}, Size};
   }
 
-  if (Buffer.size() >= LegacyDiffMagicSize &&
-      Buffer.take_front(LegacyDiffMagicSize) ==
-          llvm::StringRef(LegacyDiffMagic, LegacyDiffMagicSize))
+  if (Buffer.starts_with(llvm::StringRef(LegacyDiffMagic, LegacyDiffMagicSize)))
     return {SnapshotHeader{SnapshotKind::Diff, 1}, LegacyDiffMagicSize};
 
   return {SnapshotHeader{SnapshotKind::Bytes, 0}, 0};
@@ -250,9 +248,7 @@ public:
 
     auto *CurrentPtr = this->payload();
     size_t TotalGlobals = util::extractScalar<size_t>(CurrentPtr);
-    if (TotalGlobals != GlobalVars.size())
-      LOG_FATAL("Mneme diff " + Filename +
-                " does not match prologue global count");
+    expectCount(TotalGlobals, GlobalVars.size(), Filename, "global");
 
     for (size_t I = 0; I < TotalGlobals; ++I) {
       GlobalVarHeader GVH = GlobalVarHeader::read(CurrentPtr);
@@ -273,9 +269,7 @@ public:
     }
 
     size_t TotalMemBlobs = util::extractScalar<size_t>(CurrentPtr);
-    if (TotalMemBlobs != DeviceMemory.size())
-      LOG_FATAL("Mneme diff " + Filename +
-                " does not match prologue memory blob count");
+    expectCount(TotalMemBlobs, DeviceMemory.size(), Filename, "memory blob");
 
     for (size_t I = 0; I < TotalMemBlobs; ++I) {
       BlobHeader BH = BlobHeader::read(CurrentPtr);
@@ -300,6 +294,13 @@ public:
   }
 
 private:
+  static void expectCount(size_t Actual, size_t Expected,
+                          const std::string &Filename, const char *What) {
+    if (Actual != Expected)
+      LOG_FATAL("Mneme diff " + Filename + " does not match prologue " + What +
+                " count");
+  }
+
   static void applyDiffRanges(const char *&Buffer,
                               llvm::MutableArrayRef<uint8_t> Target,
                               size_t NumRanges) {
@@ -399,6 +400,28 @@ template <DeviceVendors VendorTypes> struct SnapshotInput {
   typename DeviceTraits<VendorTypes>::DeviceStream_t Stream;
 };
 
+// The on-disk record prefix describing a captured global variable.
+inline GlobalVarHeader
+globalVarHeader(const std::string &Name,
+                const proteus::runtime::GlobalMetadata &GV) {
+  return GlobalVarHeader{Name, GV.VarSize, const_cast<void *>(GV.DevAddr)};
+}
+
+// The global's current contents, copied off the device.
+template <DeviceVendors VendorTypes>
+std::vector<uint8_t>
+readGlobalFromDevice(const proteus::runtime::GlobalMetadata &GV) {
+  std::vector<uint8_t> HostData(GV.VarSize);
+  auto DEC = DeviceTraits<VendorTypes>::DeviceErrorCheck(
+      DeviceTraits<VendorTypes>::DeviceCopy(
+          HostData.data(), const_cast<void *>(GV.DevAddr), GV.VarSize,
+          DeviceTraits<VendorTypes>::MemcpyDeviceToHostKind()));
+  if (DEC)
+    LOG_FATAL("Copying from device to host for global variable failed");
+
+  return HostData;
+}
+
 // Which writer is used is a config choice, not a property of any file.
 template <DeviceVendors VendorTypes> class SnapshotWriter {
 public:
@@ -489,9 +512,7 @@ public:
 
     Size += sizeof(size_t);
     for (const auto &[VarName, GV] : In.GlobalVars) {
-      Size +=
-          GlobalVarHeader{VarName, GV.VarSize, const_cast<void *>(GV.DevAddr)}
-              .serializedSize();
+      Size += globalVarHeader(VarName, GV).serializedSize();
       Size += GV.VarSize;
     }
 
@@ -531,25 +552,12 @@ protected:
               TotalGlobals, OutBC.tell());
 
     for (const auto &[VarName, GV] : GlobalVars) {
-      std::cout << "Reading " << VarName << " " << GV.HostAddr << " "
-                << GV.DevAddr << " " << GV.VarSize << "\n";
-      std::unique_ptr<uint8_t[]> HostData(new uint8_t[GV.VarSize]);
-      auto DEC = DeviceTraits<VendorTypes>::DeviceErrorCheck(
-          DeviceTraits<VendorTypes>::DeviceCopy(
-              HostData.get(), const_cast<void *>(GV.DevAddr), GV.VarSize,
-              DeviceTraits<VendorTypes>::MemcpyDeviceToHostKind()));
-      if (DEC) {
-        std::cout << DEC.value() << "\n";
-        LOG_FATAL("Copying from device to host for global variables failed\n");
-      }
+      std::vector<uint8_t> HostData = readGlobalFromDevice<VendorTypes>(GV);
 
-      GlobalVarHeader{VarName, GV.VarSize, const_cast<void *>(GV.DevAddr)}
-          .write(OutBC);
-      OutBC << llvm::StringRef(reinterpret_cast<const char *>(HostData.get()),
-                               GV.VarSize);
+      globalVarHeader(VarName, GV).write(OutBC);
+      util::writeBytes(OutBC, llvm::ArrayRef<uint8_t>(HostData));
       if (CaptureGlobals)
-        (*CaptureGlobals)[VarName] =
-            std::vector<uint8_t>(HostData.get(), HostData.get() + GV.VarSize);
+        (*CaptureGlobals)[VarName] = std::move(HostData);
     }
 
     size_t TotalBlobs = DeviceMemory.size();
@@ -612,19 +620,14 @@ protected:
       if (BaseIt->second.size() != GV.VarSize)
         LOG_FATAL("Cannot diff global with size mismatch: " + VarName);
 
-      std::vector<uint8_t> Current(GV.VarSize);
-      auto DEC = DeviceTraits<VendorTypes>::DeviceErrorCheck(
-          DeviceTraits<VendorTypes>::DeviceCopy(
-              Current.data(), const_cast<void *>(GV.DevAddr), GV.VarSize,
-              DeviceTraits<VendorTypes>::MemcpyDeviceToHostKind()));
-      if (DEC)
-        LOG_FATAL("Copying from device to host for global diff failed\n");
+      std::vector<uint8_t> Current = readGlobalFromDevice<VendorTypes>(GV);
 
-      GlobalVarHeader{VarName, GV.VarSize, const_cast<void *>(GV.DevAddr)}
-          .write(OutBC);
-      size_t NumRanges = countChangedRanges(BaseIt->second, Current);
-      util::writeScalar(OutBC, NumRanges);
-      writeChangedRanges(OutBC, BaseIt->second, Current, 0);
+      globalVarHeader(VarName, GV).write(OutBC);
+
+      llvm::SmallVector<char, 0> DiffBytes;
+      llvm::raw_svector_ostream DiffOS(DiffBytes);
+      size_t NumRanges = writeChangedRanges(DiffOS, BaseIt->second, Current, 0);
+      emitRanges(OutBC, NumRanges, DiffBytes);
     }
 
     size_t TotalBlobs = DeviceMemory.size();
@@ -642,27 +645,12 @@ protected:
 private:
   static constexpr size_t DiffChunkSize = 1 << 20;
 
-  static size_t countChangedRanges(llvm::ArrayRef<uint8_t> Base,
-                                   llvm::ArrayRef<uint8_t> Current) {
-    if (Base.size() != Current.size())
-      LOG_FATAL("Cannot diff buffers with different sizes");
-
-    // Count the number of contiguous ranges that have changed between Base and
-    // Current. We want to write out the number of ranges so that the reader
-    // can know how many ranges to read.
-    size_t Count = 0;
-    bool InRange = false;
-    for (size_t I = 0; I < Base.size(); ++I) {
-      if (Base[I] != Current[I]) {
-        if (!InRange) {
-          Count++;
-          InRange = true;
-        }
-      } else {
-        InRange = false;
-      }
-    }
-    return Count;
+  // The reader needs the range count before the ranges themselves, so the
+  // ranges are scanned into a scratch buffer first.
+  static void emitRanges(llvm::raw_ostream &OS, size_t NumRanges,
+                         const llvm::SmallVectorImpl<char> &DiffBytes) {
+    util::writeScalar(OS, NumRanges);
+    util::writeBytes(OS, llvm::StringRef(DiffBytes.data(), DiffBytes.size()));
   }
 
   static size_t
@@ -743,8 +731,7 @@ private:
       }
     }
 
-    util::writeScalar(OS, NumRanges);
-    util::writeBytes(OS, llvm::StringRef(DiffBytes.data(), DiffBytes.size()));
+    emitRanges(OS, NumRanges, DiffBytes);
   }
 
   std::shared_ptr<const GlobalSnapshotData> PrologueGlobals;
