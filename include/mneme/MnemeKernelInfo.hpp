@@ -21,7 +21,7 @@ struct KernelInfo {
   llvm::SmallVector<std::unique_ptr<uint8_t[]>> ArgData;
   KernelInfo(const void *HostFun, char *Name)
       : HostFun(HostFun), Name(Name), StaticHash(std::nullopt) {};
-  KernelInfo(std::string &Name) : Name(Name), StaticHash(std::nullopt) {};
+  KernelInfo(const std::string &Name) : Name(Name), StaticHash(std::nullopt) {};
 
 public:
   void setArgSizes(llvm::ArrayRef<size_t> ArgSizes) {

@@ -187,10 +187,7 @@ public:
   read(const std::string &KernelName,
        const BaseSnapshotSource<VendorTypes> &) const override {
     Snapshot<VendorTypes> Snap;
-    // KernelInfo's constructor takes a non-const std::string &, so name it with
-    // a mutable local.
-    std::string Name = KernelName;
-    Snap.KInfo = std::make_shared<KernelInfo>(Name);
+    Snap.KInfo = std::make_shared<KernelInfo>(KernelName);
 
     auto &GlobalVars = Snap.GlobalVars;
     auto &DeviceMemory = Snap.DeviceMemory;
