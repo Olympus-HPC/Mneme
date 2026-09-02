@@ -31,121 +31,18 @@
 #include "mneme/MnemeLLVMUtils.hpp"
 #include "mneme/MnemeLogger.hpp"
 #include "mneme/MnemeMemory.hpp"
+#include "mneme/MnemeSnapshotFormat.hpp"
 #include "mneme/MnemeSnapshotRecords.hpp"
 #include "mneme/MnemeUtils.hpp"
 #include <proteus/KernelMetadata.h>
 
 namespace mneme {
 
-struct ReplayGlobalVar {
-  void *HostAddr;
-  void *DevAddr;
-  uint64_t VarSize;
-  ReplayGlobalVar(void *DevAddr, uint64_t VarSize)
-      : HostAddr(new uint8_t[VarSize]), DevAddr(DevAddr), VarSize(VarSize) {}
-  ReplayGlobalVar(void *HostAddr, void *DevAddr, uint64_t VarSize)
-      : HostAddr(HostAddr), DevAddr(DevAddr), VarSize(VarSize) {}
-  ReplayGlobalVar() = delete;
-  ~ReplayGlobalVar() {
-    if (HostAddr)
-      delete[] static_cast<uint8_t *>(HostAddr);
-  }
-
-  ReplayGlobalVar(const ReplayGlobalVar &) = delete;
-  ReplayGlobalVar &operator=(const ReplayGlobalVar &) = delete;
-
-  ReplayGlobalVar(ReplayGlobalVar &&Other)
-      : HostAddr(Other.HostAddr), DevAddr(Other.DevAddr),
-        VarSize(Other.VarSize) {
-    Other.HostAddr = nullptr;
-  }
-
-  ReplayGlobalVar &operator=(ReplayGlobalVar &&Other) {
-    if (this != &Other) {
-      this->HostAddr = Other.HostAddr;
-      this->DevAddr = Other.DevAddr;
-      this->VarSize = Other.VarSize;
-      Other.HostAddr = nullptr;
-    }
-    return *this;
-  }
-};
-
-// The in-memory contents of a snapshot, as produced by the snapshot readers
-// and consumed by the replay memory state constructors.
-template <DeviceVendors VendorTypes> struct Snapshot {
-  std::shared_ptr<KernelInfo> KInfo;
-  std::unordered_map<std::string, ReplayGlobalVar> GlobalVars;
-  llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> DeviceMemory;
-};
-
-// Reads one global-variable record: its header followed by the recorded bytes
-// of the variable.
-inline std::pair<std::string, ReplayGlobalVar>
-readGlobalVarRecord(const char *&Buffer) {
-  GlobalVarHeader Header = GlobalVarHeader::read(Buffer);
-  ReplayGlobalVar RGV(Header.DevAddr, Header.Size);
-  std::memcpy(const_cast<void *>(RGV.HostAddr), Buffer, Header.Size);
-  Buffer += Header.Size;
-  LOG_DEBUG("Loaded from buffer Global, Name:{}, VarSize:{}, RecoredAddr:{}",
-            Header.Name, Header.Size, Header.DevAddr);
-  return std::pair<std::string, ReplayGlobalVar>(std::move(Header.Name),
-                                                 std::move(RGV));
-}
-
-template <DeviceVendors VendorTypes> class MnemeSnapshot;
-
-// An opened snapshot file. The concrete subclass encodes the on-disk format
-// (full "bytes" vs diff), detected from the file's magic header. reconstruct()
-// turns the held buffer into the format-independent Snapshot that the replay
-// memory states consume.
-template <DeviceVendors VendorTypes> class SnapshotFile {
-public:
-  SnapshotFile(std::string Filename, std::unique_ptr<llvm::MemoryBuffer> Buffer)
-      : Filename(std::move(Filename)), Buffer(std::move(Buffer)) {}
-  virtual ~SnapshotFile() = default;
-
-  // Reconstructs the full snapshot contents. BasePrologueFile names the base
-  // prologue snapshot a diff is applied onto; self-contained formats ignore it.
-  virtual Snapshot<VendorTypes>
-  reconstruct(const std::string &KernelName,
-              const std::string &BasePrologueFile) const = 0;
-
-protected:
-  std::string Filename;
-  std::unique_ptr<llvm::MemoryBuffer> Buffer;
-};
-
-template <DeviceVendors VendorTypes>
-class BytesSnapshotFile : public SnapshotFile<VendorTypes> {
-public:
-  using SnapshotFile<VendorTypes>::SnapshotFile;
-
-  Snapshot<VendorTypes>
-  reconstruct(const std::string &KernelName,
-              const std::string &BasePrologueFile) const override;
-};
-
-template <DeviceVendors VendorTypes>
-class DiffSnapshotFile : public SnapshotFile<VendorTypes> {
-public:
-  using SnapshotFile<VendorTypes>::SnapshotFile;
-
-  Snapshot<VendorTypes>
-  reconstruct(const std::string &KernelName,
-              const std::string &BasePrologueFile) const override;
-};
-
 template <DeviceVendors VendorTypes> class MnemeSnapshot {
-  friend class BytesSnapshotFile<VendorTypes>;
-  friend class DiffSnapshotFile<VendorTypes>;
-
   using MnemeDeviceRT = DeviceTraits<VendorTypes>;
   using DeviceError_t = typename MnemeDeviceRT::DeviceError_t;
   using DeviceStream_t = typename MnemeDeviceRT::DeviceStream_t;
   using KernelFunction_t = typename MnemeDeviceRT::KernelFunction_t;
-  static constexpr const char DiffMagic[] = "MNEME_DIFF_V1";
-  static constexpr size_t DiffMagicSize = sizeof(DiffMagic) - 1;
   static constexpr size_t DiffChunkSize = 1 << 20;
 
   class CountingRawOStream : public llvm::raw_ostream {
@@ -158,24 +55,6 @@ template <DeviceVendors VendorTypes> class MnemeSnapshot {
     CountingRawOStream() : llvm::raw_ostream(/*unbuffered=*/true) {}
     uint64_t bytesWritten() const { return tell(); }
   };
-
-  static bool isDiffBuffer(llvm::StringRef Buffer) {
-    return Buffer.size() >= DiffMagicSize &&
-           Buffer.take_front(DiffMagicSize) == llvm::StringRef(DiffMagic);
-  }
-
-  static std::unique_ptr<llvm::MemoryBuffer>
-  openSnapshotFile(const std::string &Filename) {
-    if (!std::filesystem::exists(Filename))
-      LOG_FATAL("Mneme Snapshot file does not exist");
-
-    llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> BufferOrErr =
-        llvm::MemoryBuffer::getFile(Filename);
-    if (std::error_code EC = BufferOrErr.getError())
-      LOG_FATAL("Error when opening file " + EC.message());
-
-    return std::move(BufferOrErr.get());
-  }
 
   static size_t countChangedRanges(llvm::ArrayRef<uint8_t> Base,
                                    llvm::ArrayRef<uint8_t> Current) {
@@ -281,115 +160,6 @@ template <DeviceVendors VendorTypes> class MnemeSnapshot {
     util::writeBytes(OS, llvm::StringRef(DiffBytes.data(), DiffBytes.size()));
   }
 
-  static void applyDiffRanges(const char *&Buffer,
-                              llvm::MutableArrayRef<uint8_t> Target,
-                              size_t NumRanges) {
-    for (size_t R = 0; R < NumRanges; ++R) {
-      size_t Offset = util::extractScalar<size_t>(Buffer);
-      size_t Size = util::extractScalar<size_t>(Buffer);
-      if (Offset > Target.size() || Size > Target.size() - Offset)
-        LOG_FATAL("Malformed Mneme diff range: offset " +
-                  std::to_string(Offset) + " size " + std::to_string(Size) +
-                  " exceeds target size " + std::to_string(Target.size()));
-      std::memcpy(Target.data() + Offset, Buffer, Size);
-      Buffer += Size;
-    }
-  }
-
-  static void readFullMnemeSnapShot(
-      llvm::MemoryBuffer *Buffer,
-      std::unordered_map<std::string, ReplayGlobalVar> &GlobalVars,
-      llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &DeviceMemory,
-      std::shared_ptr<KernelInfo> KInfo) {
-    auto *Start = Buffer->getBufferStart();
-    auto *CurrentPtr = Start;
-    size_t TotalGlobals = util::extractScalar<size_t>(CurrentPtr);
-    LOG_DEBUG("Snapshot contains {} Globals at location {}", TotalGlobals,
-              (uintptr_t)CurrentPtr - (uintptr_t)Start);
-    for (auto I = 0; I < TotalGlobals; I++) {
-      auto [Name, RGV] = readGlobalVarRecord(CurrentPtr);
-      GlobalVars.try_emplace(Name, std::move(RGV));
-    }
-
-    auto TotalMemBlobs = util::extractScalar<size_t>(CurrentPtr);
-
-    LOG_DEBUG("Snapshot contains {} Memory Blobs starting at location {}",
-              TotalMemBlobs, (uintptr_t)CurrentPtr - (uintptr_t)Start);
-
-    for (auto M = 0; M < TotalMemBlobs; M++) {
-      DeviceMemory.insert(MnemeMemoryBlob<VendorTypes>::fromBuffer(CurrentPtr));
-    }
-
-    // Get kernel arguments.
-    auto TotalArguments = util::extractScalar<size_t>(CurrentPtr);
-    LOG_DEBUG("Snapshot contains {} total arguments starting at location {}",
-              TotalArguments, (uintptr_t)CurrentPtr - (uintptr_t)Start);
-    KInfo->KernelArgSizes.resize(TotalArguments);
-    KInfo->ArgData.resize(TotalArguments);
-    for (auto A = 0; A < TotalArguments; A++) {
-      KInfo->KernelArgSizes[A] = util::extractScalar<size_t>(CurrentPtr);
-      KInfo->setArgData(CurrentPtr, A);
-    }
-  }
-
-  // Applies the diff ranges from DiffBuffer onto the already-loaded base
-  // prologue state held in GlobalVars and DeviceMemory.
-  static void applyDiffMnemeSnapShot(
-      const std::string &Filename,
-      std::unordered_map<std::string, ReplayGlobalVar> &GlobalVars,
-      llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &DeviceMemory,
-      llvm::MemoryBuffer *DiffBuffer) {
-    auto *Start = DiffBuffer->getBufferStart();
-    auto *CurrentPtr = Start + DiffMagicSize;
-    size_t TotalGlobals = util::extractScalar<size_t>(CurrentPtr);
-    if (TotalGlobals != GlobalVars.size())
-      LOG_FATAL("Mneme diff " + Filename +
-                " does not match prologue global count");
-
-    for (size_t I = 0; I < TotalGlobals; ++I) {
-      GlobalVarHeader GVH = GlobalVarHeader::read(CurrentPtr);
-      size_t NumRanges = util::extractScalar<size_t>(CurrentPtr);
-
-      auto It = GlobalVars.find(GVH.Name);
-      if (It == GlobalVars.end())
-        LOG_FATAL("Mneme diff references global missing from prologue: " +
-                  GVH.Name);
-      if (It->second.VarSize != GVH.Size)
-        LOG_FATAL("Mneme diff global size mismatch for: " + GVH.Name);
-      It->second.DevAddr = GVH.DevAddr;
-      applyDiffRanges(
-          CurrentPtr,
-          llvm::MutableArrayRef<uint8_t>(
-              static_cast<uint8_t *>(It->second.HostAddr), It->second.VarSize),
-          NumRanges);
-    }
-
-    size_t TotalMemBlobs = util::extractScalar<size_t>(CurrentPtr);
-    if (TotalMemBlobs != DeviceMemory.size())
-      LOG_FATAL("Mneme diff " + Filename +
-                " does not match prologue memory blob count");
-
-    for (size_t I = 0; I < TotalMemBlobs; ++I) {
-      BlobHeader BH = BlobHeader::read(CurrentPtr);
-      auto MD = metadata::fromBuffer(CurrentPtr);
-      size_t NumRanges = util::extractScalar<size_t>(CurrentPtr);
-
-      auto It = DeviceMemory.find(BH.DevAddr);
-      if (It == DeviceMemory.end())
-        LOG_FATAL("Mneme diff references device allocation missing from "
-                  "prologue");
-      auto &Blob = It->second;
-      if (Blob.getActualSize() != BH.ActualSize || Blob.getSize() != BH.Size)
-        LOG_FATAL("Mneme diff memory blob size mismatch");
-      Blob.setMetadata(MD);
-      applyDiffRanges(
-          CurrentPtr,
-          llvm::MutableArrayRef<uint8_t>(Blob.getHostData().get(),
-                                         Blob.getSize()),
-          NumRanges);
-    }
-  }
-
   static size_t computeMnemeBytesSnapshotSize(
       const proteus::runtime::GlobalMetadataMap &GlobalVars,
       const llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &DeviceMemory,
@@ -418,7 +188,7 @@ template <DeviceVendors VendorTypes> class MnemeSnapshot {
   }
 
 public:
-  using GlobalSnapshotData = std::unordered_map<std::string, std::vector<uint8_t>>;
+  using GlobalSnapshotData = mneme::GlobalSnapshotData;
 
   std::filesystem::path static takeMnemeBytesSnapshot(
       const proteus::runtime::GlobalMetadataMap &GlobalVars,
@@ -498,7 +268,7 @@ public:
       const proteus::runtime::GlobalMetadataMap &GlobalVars,
       llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &DeviceMemory,
       const GlobalSnapshotData &PrologueGlobals, bool UpdateBaseData) {
-    util::writeBytes(OutBC, llvm::StringRef(DiffMagic, DiffMagicSize));
+    SnapshotHeader{SnapshotKind::Diff, 1}.write(OutBC);
 
     size_t TotalGlobals = GlobalVars.size();
     util::writeScalar(OutBC, TotalGlobals);
@@ -590,62 +360,7 @@ public:
     return takeMnemeBytesSnapshot(GlobalVars, DeviceMemory, Filename,
                                   KernelArgSizes, Args, Stream);
   }
-
-  // Opens Filename and returns it as the concrete on-disk format detected from
-  // its magic header.
-  static std::unique_ptr<SnapshotFile<VendorTypes>>
-  openSnapshot(const std::string &Filename) {
-    LOG_DEBUG("Opening snapshot file {}", Filename);
-    auto Buffer = openSnapshotFile(Filename);
-    if (isDiffBuffer(Buffer->getBuffer()))
-      return std::make_unique<DiffSnapshotFile<VendorTypes>>(Filename,
-                                                             std::move(Buffer));
-    return std::make_unique<BytesSnapshotFile<VendorTypes>>(Filename,
-                                                            std::move(Buffer));
-  }
-
-  static Snapshot<VendorTypes> readBytesSnapshot(std::string KernelName,
-                                                 const std::string &Filename) {
-    return openSnapshot(Filename)->reconstruct(KernelName, "");
-  }
-
-  // Opens Filename and reconstructs it as a diff snapshot applied onto the base
-  // prologue snapshot at BasePrologueFile.
-  static Snapshot<VendorTypes>
-  readDiffSnapshot(std::string KernelName, const std::string &Filename,
-                   const std::string &BasePrologueFile) {
-    return openSnapshot(Filename)->reconstruct(KernelName, BasePrologueFile);
-  }
 };
-
-template <DeviceVendors VendorTypes>
-Snapshot<VendorTypes> BytesSnapshotFile<VendorTypes>::reconstruct(
-    const std::string &KernelName, const std::string &) const {
-  Snapshot<VendorTypes> Snap;
-  // KernelInfo's constructor takes a non-const std::string &, so name it with a
-  // mutable local.
-  std::string Name = KernelName;
-  Snap.KInfo = std::make_shared<KernelInfo>(Name);
-  MnemeSnapshot<VendorTypes>::readFullMnemeSnapShot(
-      this->Buffer.get(), Snap.GlobalVars, Snap.DeviceMemory, Snap.KInfo);
-  return Snap;
-}
-
-template <DeviceVendors VendorTypes>
-Snapshot<VendorTypes> DiffSnapshotFile<VendorTypes>::reconstruct(
-    const std::string &KernelName, const std::string &BasePrologueFile) const {
-  if (BasePrologueFile.empty())
-    LOG_FATAL("Mneme diff epilogue requires an explicit base prologue "
-              "snapshot path");
-
-  // A diff stores only changed ranges, so reconstruct the full base prologue
-  // first and then overlay the diff onto it.
-  Snapshot<VendorTypes> Snap =
-      MnemeSnapshot<VendorTypes>::readBytesSnapshot(KernelName, BasePrologueFile);
-  MnemeSnapshot<VendorTypes>::applyDiffMnemeSnapShot(
-      this->Filename, Snap.GlobalVars, Snap.DeviceMemory, this->Buffer.get());
-  return Snap;
-}
 
 struct KernelInstance {
   std::string PrologueFn;

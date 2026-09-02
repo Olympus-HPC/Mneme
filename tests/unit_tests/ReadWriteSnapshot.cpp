@@ -25,13 +25,6 @@ using MnemeDeviceRT = DeviceTraits<DeviceVendors::CUDA>;
 using MnemeMemoryBlobDevice = MnemeMemoryBlob<DeviceVendors::CUDA>;
 #endif
 
-bool isDiffSnapshotFile(const std::filesystem::path &Path) {
-  std::ifstream In(Path, std::ios::binary);
-  std::string Magic(13, '\0');
-  In.read(Magic.data(), Magic.size());
-  return Magic == "MNEME_DIFF_V1";
-}
-
 template <typename T> void initializeRandomBuffer(T *Buffer, size_t Size) {
   // Random number generation setup
   std::mt19937 gen(4); // Mersenne Twister random number generator
@@ -109,8 +102,8 @@ int main(int argc, char **argv) {
       GVars, DeviceMemMap, SnapshotFN, TestKernel->KernelArgSizes, Args, 0,
       &PrologueGlobals);
 
-  auto ReadSnap =
-      MnemeSnapshot<Vendor>::readBytesSnapshot(KernelName, SnapshotFN.string());
+  auto ReadSnap = SnapshotFormatRegistry<Vendor>::open(SnapshotFN.string())
+                      ->read(KernelName, BaseSnapshotSource<Vendor>());
   auto &ReadGVars = ReadSnap.GlobalVars;
   auto &ReadDeviceMemMap = ReadSnap.DeviceMemory;
   auto &RTestKernel = ReadSnap.KInfo;
@@ -253,8 +246,9 @@ int main(int argc, char **argv) {
   MnemeSnapshot<Vendor>::takeMnemeDiffSnapshot(
       GVars, DeviceMemMap, DiffSnapshotFN, PrologueGlobals, 0);
 
-  auto DiffSnap = MnemeSnapshot<Vendor>::readDiffSnapshot(
-      KernelName, DiffSnapshotFN.string(), SnapshotFN.string());
+  auto DiffSnap =
+      SnapshotFormatRegistry<Vendor>::open(DiffSnapshotFN.string())
+          ->read(KernelName, BaseSnapshotSource<Vendor>(SnapshotFN.string()));
   auto &DiffGVars = DiffSnap.GlobalVars;
   auto &DiffDeviceMemMap = DiffSnap.DeviceMemory;
   auto &DiffKernel = DiffSnap.KInfo;
@@ -343,12 +337,14 @@ int main(int argc, char **argv) {
       GVars, DeviceMemMap, SparseBestSnapshotFN, EmptyArgSizes, nullptr,
       PrologueGlobals, 0);
   auto ValidateBestSparse = [&]() {
-    if (!isDiffSnapshotFile(SparseBestSnapshotFN)) {
+    if (SnapshotFormatRegistry<Vendor>::open(SparseBestSnapshotFN.string())
+            ->isSelfContained()) {
       std::cerr << "Best sparse snapshot should choose diff\n";
       return 64;
     }
-    auto BestSparseSnap = MnemeSnapshot<Vendor>::readDiffSnapshot(
-        KernelName, SparseBestSnapshotFN.string(), SnapshotFN.string());
+    auto BestSparseSnap =
+        SnapshotFormatRegistry<Vendor>::open(SparseBestSnapshotFN.string())
+            ->read(KernelName, BaseSnapshotSource<Vendor>(SnapshotFN.string()));
     auto It = BestSparseSnap.DeviceMemory.find((void *)BlobData.first);
     if (It == BestSparseSnap.DeviceMemory.end() ||
         std::memcmp(BlobData.second, It->second.getHostData().get(), 128) !=
@@ -392,12 +388,14 @@ int main(int argc, char **argv) {
       GVars, DeviceMemMap, FragmentedBestSnapshotFN, EmptyArgSizes, nullptr,
       PrologueGlobals, 0);
   auto ValidateBestFragmented = [&]() {
-    if (isDiffSnapshotFile(FragmentedBestSnapshotFN)) {
+    if (!SnapshotFormatRegistry<Vendor>::open(FragmentedBestSnapshotFN.string())
+             ->isSelfContained()) {
       std::cerr << "Best fragmented snapshot should choose bytes\n";
       return 128;
     }
-    auto BestFragmentedSnap = MnemeSnapshot<Vendor>::readDiffSnapshot(
-        KernelName, FragmentedBestSnapshotFN.string(), SnapshotFN.string());
+    auto BestFragmentedSnap =
+        SnapshotFormatRegistry<Vendor>::open(FragmentedBestSnapshotFN.string())
+            ->read(KernelName, BaseSnapshotSource<Vendor>(SnapshotFN.string()));
     auto It = BestFragmentedSnap.DeviceMemory.find((void *)BlobData.first);
     if (It == BestFragmentedSnap.DeviceMemory.end() ||
         std::memcmp(BlobData.second, It->second.getHostData().get(), 128) !=
@@ -409,10 +407,47 @@ int main(int argc, char **argv) {
     return 0;
   }();
 
+  // SnapshotHeader::parse is the only code that identifies a file, so pin all
+  // three prefixes it recognises.
+  auto ValidateHeaderParse = [&]() {
+    char Container[SnapshotHeader::Size];
+    std::memcpy(Container, SnapshotHeader::Magic,
+                sizeof(SnapshotHeader::Magic));
+    uint32_t Kind = 2;
+    uint32_t Version = 7;
+    std::memcpy(Container + 8, &Kind, sizeof(Kind));
+    std::memcpy(Container + 12, &Version, sizeof(Version));
+    auto [ContainerHeader, ContainerOffset] =
+        SnapshotHeader::parse(llvm::StringRef(Container, sizeof(Container)));
+    if (ContainerHeader.Kind != SnapshotKind::Diff ||
+        ContainerHeader.Version != 7 || ContainerOffset != 16) {
+      std::cerr << "Container prefix did not parse as {Diff, 7, 16}\n";
+      return 256;
+    }
+
+    std::string Legacy("MNEME_DIFF_V1");
+    Legacy += "arbitrary diff payload";
+    auto [LegacyHeader, LegacyOffset] = SnapshotHeader::parse(Legacy);
+    if (LegacyHeader.Kind != SnapshotKind::Diff || LegacyHeader.Version != 1 ||
+        LegacyOffset != 13) {
+      std::cerr << "Legacy diff magic did not parse as {Diff, 1, 13}\n";
+      return 256;
+    }
+
+    std::string Headerless("arbitrary bytes snapshot payload");
+    auto [BytesHeader, BytesOffset] = SnapshotHeader::parse(Headerless);
+    if (BytesHeader.Kind != SnapshotKind::Bytes || BytesHeader.Version != 0 ||
+        BytesOffset != 0) {
+      std::cerr << "Unprefixed buffer did not parse as {Bytes, 0, 0}\n";
+      return 256;
+    }
+    return 0;
+  }();
+
   auto Ret = ValidateGlobalMem | ValidateDeviceMem | ValidateKernelArgs |
              ValidateDiffGlobalMem | ValidateDiffDeviceMem |
              ValidateDiffKernelArgs | ValidateBestSparse |
-             ValidateBestFragmented;
+             ValidateBestFragmented | ValidateHeaderParse;
 
   delete[] GlobalData.second;
   delete[] BlobData.second;

@@ -34,10 +34,17 @@ def test_memstate_open_initializes_and_loads():
             fake.MnemePy_LoadMemState.assert_called_once_with("STATE")
 
 
-def test_epilogue_memstate_requires_base_prologue():
+def test_epilogue_memstate_without_base_passes_empty_path_to_ffi():
     with patch("mneme.recorded_execution.Path.exists", return_value=True):
-        with pytest.raises(RuntimeError):
-            MemStateRef("snap.epi", "kernelA", SnapshotType.EPILOGUE)
+        with patch("mneme.recorded_execution.ffi.lib") as fake:
+            fake.MnemePy_initializeMemState.return_value = "STATE"
+
+            m = MemStateRef("snap.epi", "kernelA", SnapshotType.EPILOGUE)
+            m.open()
+
+            args, _ = fake.MnemePy_initializeMemState.call_args
+            assert args[2].value == b""
+            assert args[3].value is False
 
 
 def test_epilogue_memstate_passes_base_prologue_to_ffi():
