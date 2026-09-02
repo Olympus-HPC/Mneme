@@ -144,8 +144,8 @@ public:
         PayloadOffset(PayloadOffset) {}
   virtual ~SnapshotReader() = default;
 
-  // True if read() never consults Base.
-  virtual bool isSelfContained() const = 0;
+  // True if read() needs a base snapshot to reconstruct the state.
+  virtual bool requiresBaseSnapshot() const = 0;
 
   virtual Snapshot<VendorTypes>
   read(const std::string &KernelName,
@@ -181,7 +181,7 @@ class BytesReaderV0 : public SnapshotReader<VendorTypes> {
 public:
   using SnapshotReader<VendorTypes>::SnapshotReader;
 
-  bool isSelfContained() const override { return true; }
+  bool requiresBaseSnapshot() const override { return false; }
 
   Snapshot<VendorTypes>
   read(const std::string &KernelName,
@@ -235,7 +235,7 @@ class DiffReaderV1 : public SnapshotReader<VendorTypes> {
 public:
   using SnapshotReader<VendorTypes>::SnapshotReader;
 
-  bool isSelfContained() const override { return false; }
+  bool requiresBaseSnapshot() const override { return true; }
 
   Snapshot<VendorTypes>
   read(const std::string &KernelName,
@@ -387,9 +387,9 @@ BaseSnapshotSource<VendorTypes>::load(const std::string &KernelName) const {
     LOG_FATAL("No base snapshot was provided");
 
   auto Reader = SnapshotFormatRegistry<VendorTypes>::open(Filename);
-  if (!Reader->isSelfContained())
+  if (Reader->requiresBaseSnapshot())
     LOG_FATAL("Snapshot " + Filename +
-              " cannot be used as a base because it is not self-contained");
+              " cannot be used as a base because it itself requires a base");
 
   return Reader->read(KernelName, BaseSnapshotSource<VendorTypes>());
 }
