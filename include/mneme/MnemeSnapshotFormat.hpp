@@ -125,11 +125,11 @@ SnapshotHeader::parse(llvm::StringRef Buffer) {
   return {SnapshotHeader{SnapshotKind::Bytes, 0}, 0};
 }
 
-// Still emits the legacy prefixes so files written here stay readable by older
-// Mneme builds; the container header replaces this in a later change.
+// Bytes files carry the prefix too so that they can be versioned.
 inline void SnapshotHeader::write(llvm::raw_ostream &OS) const {
-  if (Kind == SnapshotKind::Diff)
-    util::writeBytes(OS, llvm::StringRef(LegacyDiffMagic, LegacyDiffMagicSize));
+  util::writeBytes(OS, llvm::StringRef(Magic, sizeof(Magic)));
+  util::writeScalar(OS, Kind);
+  util::writeScalar(OS, Version);
 }
 
 template <DeviceVendors VendorTypes> class BaseSnapshotSource;
