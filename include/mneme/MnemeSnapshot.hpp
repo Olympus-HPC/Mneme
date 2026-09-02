@@ -31,6 +31,7 @@
 #include "mneme/MnemeLLVMUtils.hpp"
 #include "mneme/MnemeLogger.hpp"
 #include "mneme/MnemeMemory.hpp"
+#include "mneme/MnemeSnapshotRecords.hpp"
 #include "mneme/MnemeUtils.hpp"
 #include <proteus/KernelMetadata.h>
 
@@ -77,6 +78,20 @@ template <DeviceVendors VendorTypes> struct Snapshot {
   std::unordered_map<std::string, ReplayGlobalVar> GlobalVars;
   llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> DeviceMemory;
 };
+
+// Reads one global-variable record: its header followed by the recorded bytes
+// of the variable.
+inline std::pair<std::string, ReplayGlobalVar>
+readGlobalVarRecord(const char *&Buffer) {
+  GlobalVarHeader Header = GlobalVarHeader::read(Buffer);
+  ReplayGlobalVar RGV(Header.DevAddr, Header.Size);
+  std::memcpy(const_cast<void *>(RGV.HostAddr), Buffer, Header.Size);
+  Buffer += Header.Size;
+  LOG_DEBUG("Loaded from buffer Global, Name:{}, VarSize:{}, RecoredAddr:{}",
+            Header.Name, Header.Size, Header.DevAddr);
+  return std::pair<std::string, ReplayGlobalVar>(std::move(Header.Name),
+                                                 std::move(RGV));
+}
 
 template <DeviceVendors VendorTypes> class MnemeSnapshot;
 
@@ -292,7 +307,7 @@ template <DeviceVendors VendorTypes> class MnemeSnapshot {
     LOG_DEBUG("Snapshot contains {} Globals at location {}", TotalGlobals,
               (uintptr_t)CurrentPtr - (uintptr_t)Start);
     for (auto I = 0; I < TotalGlobals; I++) {
-      auto [Name, RGV] = fromBuffer(CurrentPtr);
+      auto [Name, RGV] = readGlobalVarRecord(CurrentPtr);
       GlobalVars.try_emplace(Name, std::move(RGV));
     }
 
@@ -332,18 +347,16 @@ template <DeviceVendors VendorTypes> class MnemeSnapshot {
                 " does not match prologue global count");
 
     for (size_t I = 0; I < TotalGlobals; ++I) {
-      std::string Name = util::readSizedString(CurrentPtr);
-      size_t VarSize = util::extractScalar<size_t>(CurrentPtr);
-      void *DevAddr = util::extractScalar<void *>(CurrentPtr);
+      GlobalVarHeader GVH = GlobalVarHeader::read(CurrentPtr);
       size_t NumRanges = util::extractScalar<size_t>(CurrentPtr);
 
-      auto It = GlobalVars.find(Name);
+      auto It = GlobalVars.find(GVH.Name);
       if (It == GlobalVars.end())
         LOG_FATAL("Mneme diff references global missing from prologue: " +
-                  Name);
-      if (It->second.VarSize != VarSize)
-        LOG_FATAL("Mneme diff global size mismatch for: " + Name);
-      It->second.DevAddr = DevAddr;
+                  GVH.Name);
+      if (It->second.VarSize != GVH.Size)
+        LOG_FATAL("Mneme diff global size mismatch for: " + GVH.Name);
+      It->second.DevAddr = GVH.DevAddr;
       applyDiffRanges(
           CurrentPtr,
           llvm::MutableArrayRef<uint8_t>(
@@ -357,18 +370,16 @@ template <DeviceVendors VendorTypes> class MnemeSnapshot {
                 " does not match prologue memory blob count");
 
     for (size_t I = 0; I < TotalMemBlobs; ++I) {
-      size_t ActualSize = util::extractScalar<size_t>(CurrentPtr);
-      size_t Size = util::extractScalar<size_t>(CurrentPtr);
-      void *DeviceAddr = util::extractScalar<void *>(CurrentPtr);
+      BlobHeader BH = BlobHeader::read(CurrentPtr);
       auto MD = metadata::fromBuffer(CurrentPtr);
       size_t NumRanges = util::extractScalar<size_t>(CurrentPtr);
 
-      auto It = DeviceMemory.find(DeviceAddr);
+      auto It = DeviceMemory.find(BH.DevAddr);
       if (It == DeviceMemory.end())
         LOG_FATAL("Mneme diff references device allocation missing from "
                   "prologue");
       auto &Blob = It->second;
-      if (Blob.getActualSize() != ActualSize || Blob.getSize() != Size)
+      if (Blob.getActualSize() != BH.ActualSize || Blob.getSize() != BH.Size)
         LOG_FATAL("Mneme diff memory blob size mismatch");
       Blob.setMetadata(MD);
       applyDiffRanges(
@@ -379,32 +390,23 @@ template <DeviceVendors VendorTypes> class MnemeSnapshot {
     }
   }
 
-  static size_t getSerializedMetadataSize(const Metadata &MD) {
-    return sizeof(std::underlying_type_t<BuiltinDType>) + sizeof(double) +
-           sizeof(ThresholdKind) + sizeof(Norm) + sizeof(size_t) +
-           (MD.tag ? MD.tag->size() : 0);
-  }
-
   static size_t computeMnemeBytesSnapshotSize(
       const proteus::runtime::GlobalMetadataMap &GlobalVars,
       const llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &DeviceMemory,
       llvm::ArrayRef<size_t> KernelArgSizes) {
     size_t Size = sizeof(size_t);
     for (const auto &[VarName, GV] : GlobalVars) {
-      Size += sizeof(size_t);
-      Size += VarName.size();
-      Size += sizeof(GV.VarSize);
-      Size += sizeof(GV.DevAddr);
+      Size +=
+          GlobalVarHeader{VarName, GV.VarSize, const_cast<void *>(GV.DevAddr)}
+              .serializedSize();
       Size += GV.VarSize;
     }
 
     Size += sizeof(size_t);
     for (const auto &[Ptr, Blob] : DeviceMemory) {
-      Size += sizeof(size_t);
-      Size += sizeof(size_t);
-      Size += sizeof(void *);
+      Size += BlobHeader::serializedSize();
       Size += Blob.getSize();
-      Size += getSerializedMetadataSize(Blob.getMetadata());
+      Size += metadata::serializedSize(Blob.getMetadata());
     }
 
     Size += sizeof(size_t);
@@ -417,20 +419,6 @@ template <DeviceVendors VendorTypes> class MnemeSnapshot {
 
 public:
   using GlobalSnapshotData = std::unordered_map<std::string, std::vector<uint8_t>>;
-
-  static std::pair<std::string, ReplayGlobalVar>
-  fromBuffer(const char *&Buffer) {
-    std::string Name = util::readSizedString(Buffer);
-    size_t VarSize = util::extractScalar<size_t>(Buffer);
-    void *DevAddr = util::extractScalar<void *>(Buffer);
-    ReplayGlobalVar RGV(DevAddr, VarSize);
-    std::memcpy(const_cast<void *>(RGV.HostAddr), Buffer, VarSize);
-    Buffer += VarSize;
-    LOG_DEBUG("Loaded from buffer Global, Name:{}, VarSize:{}, RecoredAddr:{}",
-              Name, VarSize, DevAddr);
-    return std::pair<std::string, ReplayGlobalVar>(std::move(Name),
-                                                   std::move(RGV));
-  }
 
   std::filesystem::path static takeMnemeBytesSnapshot(
       const proteus::runtime::GlobalMetadataMap &GlobalVars,
@@ -468,14 +456,8 @@ public:
         LOG_FATAL("Copying from device to host for global variables failed\n");
       }
 
-      size_t StrLen = VarName.size();
-      OutBC << llvm::StringRef(reinterpret_cast<const char *>(&StrLen),
-                               sizeof(StrLen));
-      OutBC << VarName;
-      OutBC << llvm::StringRef(reinterpret_cast<const char *>(&GV.VarSize),
-                               sizeof(GV.VarSize));
-      OutBC << llvm::StringRef(reinterpret_cast<const char *>(&GV.DevAddr),
-                               sizeof(GV.DevAddr));
+      GlobalVarHeader{VarName, GV.VarSize, const_cast<void *>(GV.DevAddr)}
+          .write(OutBC);
       OutBC << llvm::StringRef(reinterpret_cast<const char *>(HostData.get()),
                                GV.VarSize);
       if (CapturedGlobals)
@@ -535,11 +517,8 @@ public:
       if (DEC)
         LOG_FATAL("Copying from device to host for global diff failed\n");
 
-      size_t StrLen = VarName.size();
-      util::writeScalar(OutBC, StrLen);
-      util::writeBytes(OutBC, llvm::StringRef(VarName.data(), StrLen));
-      util::writeScalar(OutBC, GV.VarSize);
-      util::writeScalar(OutBC, GV.DevAddr);
+      GlobalVarHeader{VarName, GV.VarSize, const_cast<void *>(GV.DevAddr)}
+          .write(OutBC);
       size_t NumRanges = countChangedRanges(BaseIt->second, Current);
       util::writeScalar(OutBC, NumRanges);
       writeChangedRanges(OutBC, BaseIt->second, Current, 0);
@@ -548,10 +527,8 @@ public:
     size_t TotalBlobs = DeviceMemory.size();
     util::writeScalar(OutBC, TotalBlobs);
     for (auto &[Ptr, Blob] : DeviceMemory) {
-      util::writeScalar(OutBC, Blob.getActualSize());
-      util::writeScalar(OutBC, Blob.getSize());
-      auto *BlobAddr = Blob.getBlobAddr();
-      util::writeScalar(OutBC, BlobAddr);
+      BlobHeader{Blob.getActualSize(), Blob.getSize(), Blob.getBlobAddr()}
+          .write(OutBC);
       auto MD = Blob.getMetadata();
       mneme::metadata::serialize(OutBC, MD);
 
