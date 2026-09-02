@@ -703,6 +703,73 @@ struct KernelInstance {
   KernelInstance() = default;
 };
 
+// The translation unit that defined a recorded kernel and, optionally, a copy
+// of it stored alongside the record.
+class SourceFileInfo {
+  std::string Path;
+  std::string CopyName;
+  std::string MD5;
+
+public:
+  SourceFileInfo() = default;
+
+  // Only an absolute path identifies the translation unit. LTO-linked modules
+  // carry a placeholder name and yield an unknown source.
+  explicit SourceFileInfo(const llvm::Module &Mod) {
+    std::string ModuleSource = Mod.getSourceFileName();
+    if (std::filesystem::path(ModuleSource).is_absolute())
+      Path = ModuleSource;
+    else
+      LOG_DEBUG("No translation unit source in module '{}'", ModuleSource);
+  }
+
+  bool isKnown() const { return !Path.empty(); }
+
+  // Copy the source into Dir, named by content hash so kernels from the same
+  // file share one copy.
+  void copyTo(const std::string &Dir) {
+    auto BufOrErr = llvm::MemoryBuffer::getFile(Path);
+    if (!BufOrErr) {
+      LOG_WARN("Cannot read source file {}: {}", Path,
+               BufOrErr.getError().message());
+      return;
+    }
+    llvm::StringRef Contents = (*BufOrErr)->getBuffer();
+
+    llvm::MD5 Hash;
+    Hash.update(Contents);
+    llvm::MD5::MD5Result Result;
+    Hash.final(Result);
+    std::string Digest = Result.digest().str().str();
+
+    std::string Basename = std::filesystem::path(Path).filename().string();
+    std::string Filename = "RecordedSource_" + Digest + "_" + Basename;
+    std::filesystem::path Dest = std::filesystem::path(Dir) / Filename;
+    if (!std::filesystem::exists(Dest)) {
+      std::error_code EC;
+      llvm::raw_fd_ostream Out(Dest.string(), EC);
+      if (EC) {
+        LOG_WARN("Cannot write source copy {}: {}", Dest.string(),
+                 EC.message());
+        return;
+      }
+      Out << Contents;
+    }
+
+    CopyName = Filename;
+    MD5 = Digest;
+  }
+
+  void addToJSON(llvm::json::Object &Obj) const {
+    if (!Path.empty())
+      Obj["SourceFile"] = Path;
+    if (!CopyName.empty()) {
+      Obj["SourceCopy"] = CopyName;
+      Obj["SourceMD5"] = MD5;
+    }
+  }
+};
+
 class KernelInstancesCollection {
   void *VAddr;
   uint64_t VASize;
@@ -715,9 +782,7 @@ class KernelInstancesCollection {
   llvm::SmallVector<std::function<double(void *)>> ConvertArgToDouble;
   llvm::SmallVector<std::string> ModuleFiles;
   const std::string KName;
-  std::string SourceFile;
-  std::string SourceCopy;
-  std::string SourceMD5;
+  SourceFileInfo Source;
 
 private:
   // Parse Proteus's serialized bitcode in a Mneme-owned LLVMContext and
@@ -741,52 +806,7 @@ private:
     KernelArgNames = mneme::getArgNames(*F);
     KernelSpecializations = mneme::canSpecialize(*F);
     ConvertArgToDouble = mneme::convertToDouble(*F);
-
-    // Only an absolute path identifies the translation unit. LTO-linked
-    // modules carry a placeholder name and are reported as unknown.
-    std::string ModuleSource = Mod->getSourceFileName();
-    if (std::filesystem::path(ModuleSource).is_absolute())
-      SourceFile = ModuleSource;
-    else
-      LOG_DEBUG("No translation unit source for kernel {} (module source '{}')",
-                KName, ModuleSource);
-  }
-
-  // Copy the translation unit source next to the recorded IR, named by content
-  // hash so kernels from the same file share one copy.
-  void copySourceFile(const std::string &RecordReplayDir) {
-    auto BufOrErr = llvm::MemoryBuffer::getFile(SourceFile);
-    if (!BufOrErr) {
-      LOG_WARN("Cannot read source file {} for kernel {}: {}", SourceFile,
-               KName, BufOrErr.getError().message());
-      return;
-    }
-    llvm::StringRef Contents = (*BufOrErr)->getBuffer();
-
-    llvm::MD5 Hash;
-    Hash.update(Contents);
-    llvm::MD5::MD5Result Result;
-    Hash.final(Result);
-    std::string Digest = Result.digest().str().str();
-
-    std::string Basename =
-        std::filesystem::path(SourceFile).filename().string();
-    std::string Filename = "RecordedSource_" + Digest + "_" + Basename;
-    std::filesystem::path Dest =
-        std::filesystem::path(RecordReplayDir) / Filename;
-    if (!std::filesystem::exists(Dest)) {
-      std::error_code EC;
-      llvm::raw_fd_ostream Out(Dest.string(), EC);
-      if (EC) {
-        LOG_WARN("Cannot write source copy {}: {}", Dest.string(),
-                 EC.message());
-        return;
-      }
-      Out << Contents;
-    }
-
-    SourceCopy = Filename;
-    SourceMD5 = Digest;
+    Source = SourceFileInfo(*Mod);
   }
 
   std::string StoreModuleBytes(llvm::StringRef Bytes,
@@ -826,12 +846,7 @@ public:
     Collection["BinaryBlobs"] = llvm::json::Array();
     Collection["ArgNames"] = llvm::json::Array(KernelArgNames);
     Collection["Specializations"] = llvm::json::Array(KernelSpecializations);
-    if (!SourceFile.empty())
-      Collection["SourceFile"] = SourceFile;
-    if (!SourceCopy.empty()) {
-      Collection["SourceCopy"] = SourceCopy;
-      Collection["SourceMD5"] = SourceMD5;
-    }
+    Source.addToJSON(Collection);
     llvm::json::Object JSONInstances;
     for (auto &[hash, KI] : Instances) {
       JSONInstances[std::to_string(hash)] = KI.toJSON();
@@ -852,8 +867,8 @@ public:
       LOG_FATAL("Empty bitcode for kernel " + KName);
 
     extractArgInfoFromBitcode(Bitcode);
-    if (CopySource && !SourceFile.empty())
-      copySourceFile(MnemeDirectory);
+    if (CopySource && Source.isKnown())
+      Source.copyTo(MnemeDirectory);
     ModuleFiles.emplace_back(StoreModuleBytes(
         Bitcode, MnemeDirectory, KInfo.getStaticHash()));
   }
