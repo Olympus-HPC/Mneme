@@ -1,4 +1,5 @@
 #pragma once
+#include <algorithm>
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
@@ -10,16 +11,19 @@
 
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/DenseMap.h>
+#include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/MemoryBuffer.h>
 #include <llvm/Support/raw_ostream.h>
 
 #include "mneme/DeviceTraits.hpp"
+#include "mneme/MnemeConfig.hpp"
 #include "mneme/MnemeKernelInfo.hpp"
 #include "mneme/MnemeLogger.hpp"
 #include "mneme/MnemeMemory.hpp"
 #include "mneme/MnemeSnapshotRecords.hpp"
 #include "mneme/MnemeUtils.hpp"
+#include <proteus/KernelMetadata.h>
 
 namespace mneme {
 
@@ -77,8 +81,7 @@ readGlobalVarRecord(const char *&Buffer) {
                                                  std::move(RGV));
 }
 
-// A host copy of every global a prologue captured, keyed by variable name. The
-// diff writer uses it as the base its ranges are computed against.
+// Host copies of the globals a prologue captured; the diff writer's base.
 using GlobalSnapshotData =
     std::unordered_map<std::string, std::vector<uint8_t>>;
 
@@ -389,6 +392,412 @@ BaseSnapshotSource<VendorTypes>::load(const std::string &KernelName) const {
               " cannot be used as a base because it is not self-contained");
 
   return Reader->read(KernelName, BaseSnapshotSource<VendorTypes>());
+}
+
+template <DeviceVendors VendorTypes> struct SnapshotInput {
+  const proteus::runtime::GlobalMetadataMap &GlobalVars;
+  llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &DeviceMemory;
+  llvm::ArrayRef<size_t> KernelArgSizes;
+  void **Args;
+  typename DeviceTraits<VendorTypes>::DeviceStream_t Stream;
+};
+
+// Which writer is used is a config choice, not a property of any file.
+template <DeviceVendors VendorTypes> class SnapshotWriter {
+public:
+  virtual ~SnapshotWriter() = default;
+
+  // Returns the basename of the written file.
+  virtual std::filesystem::path
+  write(const std::filesystem::path &Filename,
+        const SnapshotInput<VendorTypes> &In) const = 0;
+
+  // The exact size write() would produce. Must not mutate any diff base.
+  virtual size_t measure(const SnapshotInput<VendorTypes> &In) const = 0;
+};
+
+// One on-disk format: a SnapshotHeader followed by a payload.
+template <DeviceVendors VendorTypes>
+class FormatWriter : public SnapshotWriter<VendorTypes> {
+public:
+  std::filesystem::path
+  write(const std::filesystem::path &Filename,
+        const SnapshotInput<VendorTypes> &In) const final {
+    LOG_DEBUG("Storing mneme snapshot: {}", Filename.string());
+    synchronize(In.Stream);
+
+    std::error_code EC;
+    llvm::raw_fd_ostream OS(Filename.string(), EC);
+    if (EC)
+      LOG_FATAL("Cannot write Mneme snapshot: " + EC.message());
+
+    header().write(OS);
+    writePayload(OS, In, /*UpdateBase=*/true);
+    return Filename.filename();
+  }
+
+  size_t measure(const SnapshotInput<VendorTypes> &In) const override {
+    synchronize(In.Stream);
+
+    CountingRawOStream Counter;
+    header().write(Counter);
+    writePayload(Counter, In, /*UpdateBase=*/false);
+    return Counter.bytesWritten();
+  }
+
+protected:
+  virtual SnapshotHeader header() const = 0;
+
+  // measure() passes UpdateBase=false so measuring never advances a diff base.
+  virtual void writePayload(llvm::raw_ostream &OS,
+                            const SnapshotInput<VendorTypes> &In,
+                            bool UpdateBase) const = 0;
+
+  static void
+  synchronize(typename DeviceTraits<VendorTypes>::DeviceStream_t Stream) {
+    // Synchronize because we need a consistent GPU state. We may want to do a
+    // DeviceSynchronize().
+    auto DEC = DeviceTraits<VendorTypes>::DeviceErrorCheck(
+        DeviceTraits<VendorTypes>::DeviceStreamSynchronize(Stream));
+    if (DEC)
+      LOG_FATAL("Synchronizing stream failed before snapshot");
+  }
+
+  class CountingRawOStream : public llvm::raw_ostream {
+    uint64_t Pos = 0;
+
+    void write_impl(const char *, size_t Size) override { Pos += Size; }
+    uint64_t current_pos() const override { return Pos; }
+
+  public:
+    CountingRawOStream() : llvm::raw_ostream(/*unbuffered=*/true) {}
+    uint64_t bytesWritten() const { return tell(); }
+  };
+};
+
+template <DeviceVendors VendorTypes>
+class BytesWriter : public FormatWriter<VendorTypes> {
+public:
+  // CaptureGlobals, when set, receives the written globals as a diff base.
+  explicit BytesWriter(
+      std::shared_ptr<GlobalSnapshotData> CaptureGlobals = nullptr)
+      : CaptureGlobals(std::move(CaptureGlobals)) {}
+
+  // Computed from the layout because a counting pass would copy every blob to
+  // the host just to measure it.
+  size_t measure(const SnapshotInput<VendorTypes> &In) const override {
+    typename FormatWriter<VendorTypes>::CountingRawOStream Counter;
+    this->header().write(Counter);
+    size_t Size = Counter.bytesWritten();
+
+    Size += sizeof(size_t);
+    for (const auto &[VarName, GV] : In.GlobalVars) {
+      Size +=
+          GlobalVarHeader{VarName, GV.VarSize, const_cast<void *>(GV.DevAddr)}
+              .serializedSize();
+      Size += GV.VarSize;
+    }
+
+    Size += sizeof(size_t);
+    for (const auto &[Ptr, Blob] : In.DeviceMemory) {
+      Size += BlobHeader::serializedSize();
+      Size += Blob.getSize();
+      Size += metadata::serializedSize(Blob.getMetadata());
+    }
+
+    Size += sizeof(size_t);
+    for (size_t ArgSize : In.KernelArgSizes) {
+      Size += sizeof(size_t);
+      Size += ArgSize;
+    }
+    return Size;
+  }
+
+protected:
+  SnapshotHeader header() const override {
+    return SnapshotHeader{SnapshotKind::Bytes, 0};
+  }
+
+  void writePayload(llvm::raw_ostream &OutBC,
+                    const SnapshotInput<VendorTypes> &In, bool) const override {
+    const auto &GlobalVars = In.GlobalVars;
+    auto &DeviceMemory = In.DeviceMemory;
+    auto KernelArgSizes = In.KernelArgSizes;
+    void **Args = In.Args;
+
+    // First write Global Variables.
+    size_t TotalGlobals = GlobalVars.size();
+    OutBC << llvm::StringRef(reinterpret_cast<const char *>(&TotalGlobals),
+                             sizeof(size_t));
+
+    LOG_DEBUG("Number of Globals in snapshot:{} stored at position:{}",
+              TotalGlobals, OutBC.tell());
+
+    for (const auto &[VarName, GV] : GlobalVars) {
+      std::cout << "Reading " << VarName << " " << GV.HostAddr << " "
+                << GV.DevAddr << " " << GV.VarSize << "\n";
+      std::unique_ptr<uint8_t[]> HostData(new uint8_t[GV.VarSize]);
+      auto DEC = DeviceTraits<VendorTypes>::DeviceErrorCheck(
+          DeviceTraits<VendorTypes>::DeviceCopy(
+              HostData.get(), const_cast<void *>(GV.DevAddr), GV.VarSize,
+              DeviceTraits<VendorTypes>::MemcpyDeviceToHostKind()));
+      if (DEC) {
+        std::cout << DEC.value() << "\n";
+        LOG_FATAL("Copying from device to host for global variables failed\n");
+      }
+
+      GlobalVarHeader{VarName, GV.VarSize, const_cast<void *>(GV.DevAddr)}
+          .write(OutBC);
+      OutBC << llvm::StringRef(reinterpret_cast<const char *>(HostData.get()),
+                               GV.VarSize);
+      if (CaptureGlobals)
+        (*CaptureGlobals)[VarName] =
+            std::vector<uint8_t>(HostData.get(), HostData.get() + GV.VarSize);
+    }
+
+    size_t TotalBlobs = DeviceMemory.size();
+    LOG_DEBUG("Number of Memory Blobs in snapshot:{} stored at position:{}",
+              TotalBlobs, OutBC.tell());
+
+    OutBC << llvm::StringRef(reinterpret_cast<const char *>(&TotalBlobs),
+                             sizeof(size_t));
+
+    // Write the Device Memory
+    for (auto &[Ptr, Blob] : DeviceMemory)
+      OutBC << Blob;
+    // Lastly write the arguments
+    size_t NumArgs = KernelArgSizes.size();
+    LOG_DEBUG("Number of Kernel Arguments in snapshot:{} stored at position:{}",
+              NumArgs, OutBC.tell());
+
+    OutBC << llvm::StringRef(reinterpret_cast<const char *>(&NumArgs),
+                             sizeof(NumArgs));
+
+    for (int I = 0; I < NumArgs; I++) {
+      OutBC << llvm::StringRef(
+          reinterpret_cast<const char *>(&KernelArgSizes[I]), sizeof(size_t));
+      OutBC << llvm::StringRef(reinterpret_cast<const char *>(Args[I]),
+                               KernelArgSizes[I]);
+    }
+  }
+
+private:
+  std::shared_ptr<GlobalSnapshotData> CaptureGlobals;
+};
+
+template <DeviceVendors VendorTypes>
+class DiffWriter : public FormatWriter<VendorTypes> {
+public:
+  explicit DiffWriter(std::shared_ptr<const GlobalSnapshotData> PrologueGlobals)
+      : PrologueGlobals(std::move(PrologueGlobals)) {
+    if (!this->PrologueGlobals)
+      LOG_FATAL("A Mneme diff snapshot needs the prologue globals to diff "
+                "against");
+  }
+
+protected:
+  SnapshotHeader header() const override {
+    return SnapshotHeader{SnapshotKind::Diff, 1};
+  }
+
+  void writePayload(llvm::raw_ostream &OutBC,
+                    const SnapshotInput<VendorTypes> &In,
+                    bool UpdateBaseData) const override {
+    const auto &GlobalVars = In.GlobalVars;
+    auto &DeviceMemory = In.DeviceMemory;
+
+    size_t TotalGlobals = GlobalVars.size();
+    util::writeScalar(OutBC, TotalGlobals);
+    for (const auto &[VarName, GV] : GlobalVars) {
+      auto BaseIt = PrologueGlobals->find(VarName);
+      if (BaseIt == PrologueGlobals->end())
+        LOG_FATAL("Cannot diff global missing from prologue: " + VarName);
+      if (BaseIt->second.size() != GV.VarSize)
+        LOG_FATAL("Cannot diff global with size mismatch: " + VarName);
+
+      std::vector<uint8_t> Current(GV.VarSize);
+      auto DEC = DeviceTraits<VendorTypes>::DeviceErrorCheck(
+          DeviceTraits<VendorTypes>::DeviceCopy(
+              Current.data(), const_cast<void *>(GV.DevAddr), GV.VarSize,
+              DeviceTraits<VendorTypes>::MemcpyDeviceToHostKind()));
+      if (DEC)
+        LOG_FATAL("Copying from device to host for global diff failed\n");
+
+      GlobalVarHeader{VarName, GV.VarSize, const_cast<void *>(GV.DevAddr)}
+          .write(OutBC);
+      size_t NumRanges = countChangedRanges(BaseIt->second, Current);
+      util::writeScalar(OutBC, NumRanges);
+      writeChangedRanges(OutBC, BaseIt->second, Current, 0);
+    }
+
+    size_t TotalBlobs = DeviceMemory.size();
+    util::writeScalar(OutBC, TotalBlobs);
+    for (auto &[Ptr, Blob] : DeviceMemory) {
+      BlobHeader{Blob.getActualSize(), Blob.getSize(), Blob.getBlobAddr()}
+          .write(OutBC);
+      auto MD = Blob.getMetadata();
+      mneme::metadata::serialize(OutBC, MD);
+
+      writeCountAndWriteChangedRanges(OutBC, Blob, UpdateBaseData);
+    }
+  }
+
+private:
+  static constexpr size_t DiffChunkSize = 1 << 20;
+
+  static size_t countChangedRanges(llvm::ArrayRef<uint8_t> Base,
+                                   llvm::ArrayRef<uint8_t> Current) {
+    if (Base.size() != Current.size())
+      LOG_FATAL("Cannot diff buffers with different sizes");
+
+    // Count the number of contiguous ranges that have changed between Base and
+    // Current. We want to write out the number of ranges so that the reader
+    // can know how many ranges to read.
+    size_t Count = 0;
+    bool InRange = false;
+    for (size_t I = 0; I < Base.size(); ++I) {
+      if (Base[I] != Current[I]) {
+        if (!InRange) {
+          Count++;
+          InRange = true;
+        }
+      } else {
+        InRange = false;
+      }
+    }
+    return Count;
+  }
+
+  static size_t
+  writeChangedRanges(llvm::raw_ostream &OS, llvm::ArrayRef<uint8_t> Base,
+                     llvm::ArrayRef<uint8_t> Current, size_t BaseOffset,
+                     llvm::MutableArrayRef<uint8_t> UpdateBase = {}) {
+    if (Base.size() != Current.size())
+      LOG_FATAL("Cannot diff buffers with different sizes");
+    if (!UpdateBase.empty() && UpdateBase.size() != Base.size())
+      LOG_FATAL("Cannot update diff base with mismatched buffer size");
+
+    // Write out the contiguous ranges that have changed between Base
+    // and Current.
+    size_t Count = 0;
+    size_t I = 0;
+    while (I < Base.size()) {
+      while (I < Base.size() && Base[I] == Current[I])
+        ++I;
+      if (I == Base.size())
+        break;
+
+      size_t Start = I;
+      while (I < Base.size() && Base[I] != Current[I])
+        ++I;
+
+      size_t Offset = BaseOffset + Start;
+      size_t Len = I - Start;
+      util::writeScalar(OS, Offset);
+      util::writeScalar(OS, Len);
+      util::writeBytes(OS, Current.slice(Start, Len));
+      if (!UpdateBase.empty())
+        std::memcpy(UpdateBase.data() + Start, Current.data() + Start, Len);
+      ++Count;
+    }
+    return Count;
+  }
+
+  static void
+  writeCountAndWriteChangedRanges(llvm::raw_ostream &OS,
+                                  MnemeMemoryBlob<VendorTypes> &Blob,
+                                  bool UpdateBaseData = true) {
+    auto Size = Blob.getSize();
+
+    // early exit
+    if (Size == 0) {
+      size_t NumRanges = 0;
+      util::writeScalar(OS, NumRanges);
+      return;
+    }
+
+    std::unique_ptr<uint8_t[]> Scratch(new uint8_t[DiffChunkSize]);
+    llvm::SmallVector<char, 0> DiffBytes;
+    llvm::raw_svector_ostream DiffOS(DiffBytes);
+    auto *Base = Blob.getHostData().get();
+    auto *DevAddr = static_cast<uint8_t *>(Blob.getBlobAddr());
+    size_t NumRanges = 0;
+
+    for (size_t Offset = 0; Offset < Size; Offset += DiffChunkSize) {
+      size_t ChunkSize = std::min(DiffChunkSize, Size - Offset);
+      auto EC = DeviceTraits<VendorTypes>::DeviceErrorCheck(
+          DeviceTraits<VendorTypes>::DeviceCopy(
+              Scratch.get(), DevAddr + Offset, ChunkSize,
+              DeviceTraits<VendorTypes>::MemcpyDeviceToHostKind()));
+      if (EC)
+        LOG_FATAL("Error in copying data from device when writing diff\n"
+                  "Device Error Msg: " +
+                  EC.value() + "\n");
+
+      llvm::ArrayRef<uint8_t> ChunkBase(Base + Offset, ChunkSize);
+      llvm::ArrayRef<uint8_t> ChunkCurrent(Scratch.get(), ChunkSize);
+      if (UpdateBaseData) {
+        llvm::MutableArrayRef<uint8_t> UpdateBase(Base + Offset, ChunkSize);
+        NumRanges += writeChangedRanges(DiffOS, ChunkBase, ChunkCurrent, Offset,
+                                        UpdateBase);
+      } else {
+        NumRanges +=
+            writeChangedRanges(DiffOS, ChunkBase, ChunkCurrent, Offset);
+      }
+    }
+
+    util::writeScalar(OS, NumRanges);
+    util::writeBytes(OS, llvm::StringRef(DiffBytes.data(), DiffBytes.size()));
+  }
+
+  std::shared_ptr<const GlobalSnapshotData> PrologueGlobals;
+};
+
+// Writes whichever of bytes or diff is smaller for this input.
+template <DeviceVendors VendorTypes>
+class BestWriter : public SnapshotWriter<VendorTypes> {
+public:
+  explicit BestWriter(std::shared_ptr<const GlobalSnapshotData> PrologueGlobals)
+      : Diff(std::move(PrologueGlobals)) {}
+
+  std::filesystem::path
+  write(const std::filesystem::path &Filename,
+        const SnapshotInput<VendorTypes> &In) const override {
+    size_t DiffSize = Diff.measure(In);
+    size_t BytesSize = Bytes.measure(In);
+
+    if (DiffSize <= BytesSize)
+      return Diff.write(Filename, In);
+
+    return Bytes.write(Filename, In);
+  }
+
+  size_t measure(const SnapshotInput<VendorTypes> &In) const override {
+    return std::min(Diff.measure(In), Bytes.measure(In));
+  }
+
+private:
+  BytesWriter<VendorTypes> Bytes;
+  DiffWriter<VendorTypes> Diff;
+};
+
+// The only place EpilogueSnapshotType is consumed.
+template <DeviceVendors VendorTypes>
+std::unique_ptr<SnapshotWriter<VendorTypes>>
+makeEpilogueWriter(EpilogueSnapshotType Type,
+                   std::shared_ptr<const GlobalSnapshotData> PrologueGlobals) {
+  switch (Type) {
+  case EpilogueSnapshotType::Bytes:
+    return std::make_unique<BytesWriter<VendorTypes>>();
+  case EpilogueSnapshotType::Diff:
+    return std::make_unique<DiffWriter<VendorTypes>>(
+        std::move(PrologueGlobals));
+  case EpilogueSnapshotType::Best:
+    return std::make_unique<BestWriter<VendorTypes>>(
+        std::move(PrologueGlobals));
+  }
+
+  LOG_FATAL("Unknown Mneme epilogue snapshot type");
 }
 
 } // namespace mneme

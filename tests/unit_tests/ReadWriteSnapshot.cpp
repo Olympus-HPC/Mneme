@@ -97,10 +97,12 @@ int main(int argc, char **argv) {
   DeviceMemMap.try_emplace((void *)BlobData.first, std::move(Blob));
   std::filesystem::path SnapshotFN("./test.mneme");
 
-  MnemeSnapshot<Vendor>::GlobalSnapshotData PrologueGlobals;
-  MnemeSnapshot<Vendor>::takeMnemeBytesSnapshot(
-      GVars, DeviceMemMap, SnapshotFN, TestKernel->KernelArgSizes, Args, 0,
-      &PrologueGlobals);
+  auto PrologueGlobals = std::make_shared<GlobalSnapshotData>();
+  SnapshotInput<Vendor> In{GVars, DeviceMemMap, TestKernel->KernelArgSizes,
+                           Args, nullptr};
+  BytesWriter<Vendor> PrologueWriter(PrologueGlobals);
+  size_t MeasuredBytes = PrologueWriter.measure(In);
+  PrologueWriter.write(SnapshotFN, In);
 
   auto ReadSnap = SnapshotFormatRegistry<Vendor>::open(SnapshotFN.string())
                       ->read(KernelName, BaseSnapshotSource<Vendor>());
@@ -243,8 +245,9 @@ int main(int argc, char **argv) {
     LOG_FATAL("Could not update device global data");
 
   std::filesystem::path DiffSnapshotFN("./test.epilogue.mneme");
-  MnemeSnapshot<Vendor>::takeMnemeDiffSnapshot(
-      GVars, DeviceMemMap, DiffSnapshotFN, PrologueGlobals, 0);
+  DiffWriter<Vendor> DiffSnapshotWriter(PrologueGlobals);
+  size_t MeasuredDiff = DiffSnapshotWriter.measure(In);
+  DiffSnapshotWriter.write(DiffSnapshotFN, In);
 
   auto DiffSnap =
       SnapshotFormatRegistry<Vendor>::open(DiffSnapshotFN.string())
@@ -330,12 +333,12 @@ int main(int argc, char **argv) {
   };
 
   llvm::SmallVector<size_t> EmptyArgSizes;
+  SnapshotInput<Vendor> InNoArgs{GVars, DeviceMemMap, EmptyArgSizes, nullptr,
+                                 nullptr};
 
   ResetBlobBase();
   std::filesystem::path SparseBestSnapshotFN("./test.best.sparse.mneme");
-  MnemeSnapshot<Vendor>::takeBestMnemeSnapshot(
-      GVars, DeviceMemMap, SparseBestSnapshotFN, EmptyArgSizes, nullptr,
-      PrologueGlobals, 0);
+  BestWriter<Vendor>(PrologueGlobals).write(SparseBestSnapshotFN, InNoArgs);
   auto ValidateBestSparse = [&]() {
     if (SnapshotFormatRegistry<Vendor>::open(SparseBestSnapshotFN.string())
             ->isSelfContained()) {
@@ -384,9 +387,7 @@ int main(int argc, char **argv) {
   ResetBlobBase();
   std::filesystem::path FragmentedBestSnapshotFN(
       "./test.best.fragmented.mneme");
-  MnemeSnapshot<Vendor>::takeBestMnemeSnapshot(
-      GVars, DeviceMemMap, FragmentedBestSnapshotFN, EmptyArgSizes, nullptr,
-      PrologueGlobals, 0);
+  BestWriter<Vendor>(PrologueGlobals).write(FragmentedBestSnapshotFN, InNoArgs);
   auto ValidateBestFragmented = [&]() {
     if (!SnapshotFormatRegistry<Vendor>::open(FragmentedBestSnapshotFN.string())
              ->isSelfContained()) {
@@ -403,6 +404,24 @@ int main(int argc, char **argv) {
       std::cerr
           << "Best fragmented snapshot did not reconstruct epilogue data\n";
       return 128;
+    }
+    return 0;
+  }();
+
+  // "Best" mode decides on measure(), so it must match the written size.
+  auto ValidateMeasure = [&]() {
+    auto ActualBytes = std::filesystem::file_size(SnapshotFN);
+    if (MeasuredBytes != ActualBytes) {
+      std::cerr << "Bytes snapshot measured " << MeasuredBytes << " but wrote "
+                << ActualBytes << "\n";
+      return 512;
+    }
+
+    auto ActualDiff = std::filesystem::file_size(DiffSnapshotFN);
+    if (MeasuredDiff != ActualDiff) {
+      std::cerr << "Diff snapshot measured " << MeasuredDiff << " but wrote "
+                << ActualDiff << "\n";
+      return 512;
     }
     return 0;
   }();
@@ -447,7 +466,7 @@ int main(int argc, char **argv) {
   auto Ret = ValidateGlobalMem | ValidateDeviceMem | ValidateKernelArgs |
              ValidateDiffGlobalMem | ValidateDiffDeviceMem |
              ValidateDiffKernelArgs | ValidateBestSparse |
-             ValidateBestFragmented | ValidateHeaderParse;
+             ValidateBestFragmented | ValidateMeasure | ValidateHeaderParse;
 
   delete[] GlobalData.second;
   delete[] BlobData.second;
