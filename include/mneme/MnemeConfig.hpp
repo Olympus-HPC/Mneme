@@ -106,16 +106,13 @@ inline bool getEnvOrDefaultBool(const char *VarName, bool Default) {
   if (!EnvValue)
     return Default;
 
-  std::string Lower = *EnvValue;
-  std::transform(Lower.begin(), Lower.end(), Lower.begin(),
-                 [](unsigned char C) { return std::tolower(C); });
-  if (Lower == "1" || Lower == "true" || Lower == "on" || Lower == "yes")
+  if (*EnvValue == "1")
     return true;
-  if (Lower == "0" || Lower == "false" || Lower == "off" || Lower == "no")
+  if (*EnvValue == "0")
     return false;
 
   warnMalformedEnvironmentValue("environment variable", VarName, *EnvValue,
-                                "; expected a boolean value");
+                                "; expected 0 or 1");
   return Default;
 }
 
