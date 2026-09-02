@@ -161,8 +161,6 @@ class MemStateRef:
     ):
         if not Path(fn).exists():
             raise RuntimeError(f"Expected snapshot file: {fn} to exist")
-        if snap_type == SnapshotType.EPILOGUE and base_prologue_fn is None:
-            raise RuntimeError("Epilogue snapshots require a base prologue path")
         if base_prologue_fn is not None and not Path(base_prologue_fn).exists():
             raise RuntimeError(
                 f"Expected base prologue file: {base_prologue_fn} to exist"
