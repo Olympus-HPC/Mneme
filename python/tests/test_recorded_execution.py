@@ -159,6 +159,8 @@ def test_recorded_execution_to_dict(with_source):
             source_file="/src/k.cu",
             source_copy="RecordedSource_ab_k.cu",
             source_md5="ab",
+            source_line=11,
+            source_end_line=25,
         )
 
     r = RecordedExecution(
@@ -183,8 +185,16 @@ def test_recorded_execution_to_dict(with_source):
         assert d["SourceFile"] == "/src/k.cu"
         assert d["SourceCopy"] == "RecordedSource_ab_k.cu"
         assert d["SourceMD5"] == "ab"
+        assert d["SourceLine"] == 11
+        assert d["SourceEndLine"] == 25
     else:
-        assert not {"SourceFile", "SourceCopy", "SourceMD5"} & d.keys()
+        assert not {
+            "SourceFile",
+            "SourceCopy",
+            "SourceMD5",
+            "SourceLine",
+            "SourceEndLine",
+        } & d.keys()
 
 
 def test_recorded_execution_link_llvm_modules_calls_jit():
@@ -270,6 +280,8 @@ def test_recorded_execution_from_json_reconstructs(tmp_path, path_style, with_so
         data["SourceFile"] = "/src/K.cu"
         data["SourceCopy"] = source_copy
         data["SourceMD5"] = "ab"
+        data["SourceLine"] = 11
+        data["SourceEndLine"] = 25
 
     json_path = tmp_path / "db.json"
     json_path.write_text(json.dumps(data))
@@ -281,10 +293,14 @@ def test_recorded_execution_from_json_reconstructs(tmp_path, path_style, with_so
         assert r.source_file == "/src/K.cu"
         assert r.source_copy == str(copy_path)
         assert r.source_md5 == "ab"
+        assert r.source_line == 11
+        assert r.source_end_line == 25
     else:
         assert r.source_file is None
         assert r.source_copy is None
         assert r.source_md5 is None
+        assert r.source_line is None
+        assert r.source_end_line is None
     assert "H" in r.kernel_instances
     inst = r.kernel_instances["H"]
     assert inst.block_dim.x == 1
@@ -296,6 +312,25 @@ def test_recorded_execution_from_json_reconstructs(tmp_path, path_style, with_so
     assert inst.epilogue.fn == str(epi_path)
     assert inst.epilogue.base_prologue_fn == str(pro_path)
     assert inst.epilogue.s_type == SnapshotType.EPILOGUE
+
+
+def test_recorded_execution_kernel_source_slices_recorded_copy(tmp_path):
+    """
+    kernel_source returns the inclusive, 1-based line range of the kernel and
+    None when the record carries no line information.
+    """
+    copy_path = tmp_path / "RecordedSource_ab_K.cu"
+    copy_path.write_text("line1\nline2\nline3\nline4\n")
+
+    def make(**source_kwargs):
+        return RecordedExecution(
+            "S", "K", "DK", ["a.ll"], ["x"], [True], "0x100", 32, {},
+            source_copy=str(copy_path),
+            **source_kwargs,
+        )
+
+    assert make(source_line=2, source_end_line=3).kernel_source() == "line2\nline3\n"
+    assert make().kernel_source() is None
 
 
 @pytest.mark.parametrize("layout", ["in_dir", "out_of_dir"])

@@ -23,8 +23,11 @@ using MnemeDeviceRT = DeviceTraits<DeviceVendors::CUDA>;
 
 // CHECK-RR:DemangledName: source_file_kernel()
 // CHECK-RR:SourceFile: {{.*}}/test_source_file.cpp
+// CHECK-RR:SourceLine: {{[0-9]+}}
+// CHECK-RR:SourceEndLine: {{[0-9]+}}
 // CHECK-RR:SourceCopy: RecordedSource_{{[0-9a-f]+}}_test_source_file.cpp
 // CHECK-RR:SourceMD5: ok
+// CHECK-RR:SourceText: __global__ void source_file_kernel()
 __global__ void source_file_kernel() { printf("Kernel\n"); }
 
 int main() {
