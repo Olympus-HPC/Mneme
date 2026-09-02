@@ -340,8 +340,8 @@ int main(int argc, char **argv) {
   std::filesystem::path SparseBestSnapshotFN("./test.best.sparse.mneme");
   BestWriter<Vendor>(PrologueGlobals).write(SparseBestSnapshotFN, InNoArgs);
   auto ValidateBestSparse = [&]() {
-    if (SnapshotFormatRegistry<Vendor>::open(SparseBestSnapshotFN.string())
-            ->isSelfContained()) {
+    if (!SnapshotFormatRegistry<Vendor>::open(SparseBestSnapshotFN.string())
+             ->requiresBaseSnapshot()) {
       std::cerr << "Best sparse snapshot should choose diff\n";
       return 64;
     }
@@ -389,8 +389,8 @@ int main(int argc, char **argv) {
       "./test.best.fragmented.mneme");
   BestWriter<Vendor>(PrologueGlobals).write(FragmentedBestSnapshotFN, InNoArgs);
   auto ValidateBestFragmented = [&]() {
-    if (!SnapshotFormatRegistry<Vendor>::open(FragmentedBestSnapshotFN.string())
-             ->isSelfContained()) {
+    if (SnapshotFormatRegistry<Vendor>::open(FragmentedBestSnapshotFN.string())
+            ->requiresBaseSnapshot()) {
       std::cerr << "Best fragmented snapshot should choose bytes\n";
       return 128;
     }
