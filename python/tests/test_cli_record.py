@@ -299,6 +299,19 @@ def test_record_record_ranks_explicit(
     assert env["MNEME_RECORD_RANKS"] == record_ranks
 
 
+@pytest.mark.parametrize("copy_source", [False, True])
+def test_record_copy_source_env(record_parser, tmp_path, monkeypatch, copy_source):
+    """--copy-source sets MNEME_COPY_SOURCE; omitting it leaves the env unset."""
+    monkeypatch.delenv("MNEME_COPY_SOURCE", raising=False)
+    env = _capture_env_with_args(
+        record_parser, tmp_path, monkeypatch, ["--copy-source"] if copy_source else []
+    )
+    if copy_source:
+        assert env["MNEME_COPY_SOURCE"] == "1"
+    else:
+        assert "MNEME_COPY_SOURCE" not in env
+
+
 def test_record_record_ranks_default_unset(record_parser, tmp_path, monkeypatch):
     """Omitting --record-ranks must not set MNEME_RECORD_RANKS in env, so the
     C++ default-policy logic sees env-absence and applies its rank-0-only rule."""

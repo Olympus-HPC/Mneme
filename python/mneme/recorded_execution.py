@@ -445,6 +445,9 @@ class RecordedExecution:
         va_addr: str,
         va_size: int,
         kernel_instances: Dict[str, KernelInstance],
+        source_file: Optional[str] = None,
+        source_copy: Optional[str] = None,
+        source_md5: Optional[str] = None,
     ):
         self.static_hash = static_hash
         self.kernel_name = kernel_name
@@ -455,6 +458,9 @@ class RecordedExecution:
         self.va_addr = va_addr
         self.va_size = va_size
         self.kernel_instances = kernel_instances
+        self.source_file = source_file
+        self.source_copy = source_copy
+        self.source_md5 = source_md5
         self._link_mod = None
 
     def __str__(self):
@@ -524,6 +530,12 @@ class RecordedExecution:
         res["Modules"] = [_make_path_relative(m, base_dir) for m in self.llvm_files]
         res["Specializations"] = self.specializations
         res["StaticHash"] = self.static_hash
+        if self.source_file is not None:
+            res["SourceFile"] = self.source_file
+        if self.source_copy is not None:
+            res["SourceCopy"] = _make_path_relative(self.source_copy, base_dir)
+        if self.source_md5 is not None:
+            res["SourceMD5"] = self.source_md5
         res["VASize"] = self.va_size
         res["VAddr"] = self.va_addr
         res["instances"] = {}
@@ -615,6 +627,11 @@ class RecordedExecution:
             if not Path(llvm_fn).exists():
                 raise RuntimeError(f"File {llvm_fn} does not exist")
 
+        # The source copy is auxiliary to replay, so its absence is not an error.
+        source_copy = record_db.get("SourceCopy")
+        if source_copy is not None:
+            source_copy = _resolve(source_copy)
+
         return cls(
             record_db["StaticHash"],
             record_db["KernelName"],
@@ -625,4 +642,7 @@ class RecordedExecution:
             record_db["VAddr"],
             record_db["VASize"],
             instances,
+            source_file=record_db.get("SourceFile"),
+            source_copy=source_copy,
+            source_md5=record_db.get("SourceMD5"),
         )

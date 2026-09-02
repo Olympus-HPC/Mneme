@@ -148,9 +148,18 @@ def test_memstate_equality_uses_ffi_compare():
 #                      RecordedExecution Tests
 # ======================================================================
 
-def test_recorded_execution_to_dict():
+@pytest.mark.parametrize("with_source", [False, True])
+def test_recorded_execution_to_dict(with_source):
     fake_instance = MagicMock()
     fake_instance.to_dict.return_value = {"X": 1}
+
+    source_kwargs = {}
+    if with_source:
+        source_kwargs = dict(
+            source_file="/src/k.cu",
+            source_copy="RecordedSource_ab_k.cu",
+            source_md5="ab",
+        )
 
     r = RecordedExecution(
         static_hash="S",
@@ -162,6 +171,7 @@ def test_recorded_execution_to_dict():
         va_addr="0x100",
         va_size=32,
         kernel_instances={"hashX": fake_instance},
+        **source_kwargs,
     )
 
     d = r.to_dict()
@@ -169,6 +179,12 @@ def test_recorded_execution_to_dict():
     assert d["KernelName"] == "K"
     assert d["Modules"] == ["a.ll"]
     assert d["instances"]["hashX"] == {"X": 1}
+    if with_source:
+        assert d["SourceFile"] == "/src/k.cu"
+        assert d["SourceCopy"] == "RecordedSource_ab_k.cu"
+        assert d["SourceMD5"] == "ab"
+    else:
+        assert not {"SourceFile", "SourceCopy", "SourceMD5"} & d.keys()
 
 
 def test_recorded_execution_link_llvm_modules_calls_jit():
@@ -202,8 +218,9 @@ def test_make_path_relative_accepts_basename_but_rejects_nested_relative(tmp_pat
         _make_path_relative("record-db/file.epi", tmp_path)
 
 
+@pytest.mark.parametrize("with_source", [False, True])
 @pytest.mark.parametrize("path_style", ["basename", "absolute"])
-def test_recorded_execution_from_json_reconstructs(tmp_path, path_style):
+def test_recorded_execution_from_json_reconstructs(tmp_path, path_style, with_source):
     """
     from_json must resolve relative path entries against the JSON file's
     parent directory and pass absolute path entries through unchanged. In
@@ -212,6 +229,7 @@ def test_recorded_execution_from_json_reconstructs(tmp_path, path_style):
     mod_path = tmp_path / "modA.ll"
     pro_path = tmp_path / "file.pro"
     epi_path = tmp_path / "file.epi"
+    copy_path = tmp_path / "RecordedSource_ab_K.cu"
     for p in (mod_path, pro_path, epi_path):
         p.touch()
 
@@ -219,10 +237,12 @@ def test_recorded_execution_from_json_reconstructs(tmp_path, path_style):
         modules = [mod_path.name]
         prologue = pro_path.name
         epilogue = epi_path.name
+        source_copy = copy_path.name
     else:
         modules = [str(mod_path)]
         prologue = str(pro_path)
         epilogue = str(epi_path)
+        source_copy = str(copy_path)
 
     data = {
         "StaticHash": "S",
@@ -246,12 +266,25 @@ def test_recorded_execution_from_json_reconstructs(tmp_path, path_style):
         },
     }
 
+    if with_source:
+        data["SourceFile"] = "/src/K.cu"
+        data["SourceCopy"] = source_copy
+        data["SourceMD5"] = "ab"
+
     json_path = tmp_path / "db.json"
     json_path.write_text(json.dumps(data))
 
     r = RecordedExecution.from_json(str(json_path))
 
     assert r.kernel_name == "K"
+    if with_source:
+        assert r.source_file == "/src/K.cu"
+        assert r.source_copy == str(copy_path)
+        assert r.source_md5 == "ab"
+    else:
+        assert r.source_file is None
+        assert r.source_copy is None
+        assert r.source_md5 is None
     assert "H" in r.kernel_instances
     inst = r.kernel_instances["H"]
     assert inst.block_dim.x == 1
