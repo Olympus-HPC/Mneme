@@ -138,3 +138,6 @@ CREATE_GPU_TEST(test_annotation test_annotation.cpp)
 CREATE_RDC_GPU_TEST(test_annotation test_annotation.cpp)
 
 CREATE_GPU_TEST(test_crash_handling test_crash_handling.cpp)
+
+# No RDC variant: LTO-linked kernel modules have no translation unit source.
+CREATE_GPU_TEST(test_source_file test_source_file.cpp)

@@ -50,6 +50,7 @@ artifact.
 | `-mr`, `--per-kernel-max-recordings`    | Maximum number of times the same GPU kernel may be recorded with different dynamic hashes                                 |
 | `--epilogue-format`                     | Store epilogue snapshots as `diff`, `bytes`, or `best`; defaults to `diff`                                                        |
 | `-rr`, `--record-ranks`                 | Restrict recording to a comma-separated set of MPI ranks (e.g. `0`, `0,1,3`) or `all` for every rank. See *Multi-rank recording* below. |
+| `--copy-source`                         | Copy the translation unit source file of each recorded kernel into the record directory and record its MD5 checksum         |
 | `-h`, `--help`                          | Show help message and exit                                                                                                |
 
 ### Recording database
