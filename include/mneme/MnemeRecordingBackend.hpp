@@ -117,8 +117,7 @@ public:
         static_cast<unsigned>(md.builtin), md.threshold,
         static_cast<unsigned>(md.threshold_kind), static_cast<unsigned>(md.norm),
         md.tag.value_or("no_tag"));
-    It->second.setMetadata(std::move(md));
-    return true;
+    return It->second.registerAnnotation({0, It->second.getSize()}, std::move(md));
   }
 
   bool setMetadataForRegion(const void *ptr, size_t bytes, Metadata md) override {
@@ -161,7 +160,7 @@ public:
       return false;
     }
 
-    if (!It->second.setRegionMetadata(Offset, bytes, md)) {
+    if (!It->second.registerAnnotation({Offset, bytes}, md)) {
       LOG_WARN(
           "region annotation rejected due to overlap ptr={} base_ptr={} offset={} bytes={} tag={}",
           ptr, It->first, Offset, bytes, md.tag.value_or("no_tag"));
@@ -191,7 +190,11 @@ public:
       return false;
     }
 
-    md = It->second.getMetadata();
+    auto *WholeBlob = It->second.getWholeBlobAnnotation();
+    if (!WholeBlob)
+      return false;
+
+    md = WholeBlob->MD;
     LOG_DEBUG("getMetadataForPointer hit ptr={} tag={}", ptr,
               md.tag.value_or("no_tag"));
     return true;
@@ -212,10 +215,13 @@ public:
       return false;
     }
 
+    Metadata ExistingMd;
+    if (!getMetadataForPointer(ptr, ExistingMd))
+      return false;
+
     LOG_INFO("eraseMetadataForPointer hit ptr={} tag={}", ptr,
-             It->second.getMetadata().tag.value_or("no_tag"));
-    It->second.setMetadata(Metadata{});
-    return true;
+             ExistingMd.tag.value_or("no_tag"));
+    return It->second.registerAnnotation({0, It->second.getSize()}, Metadata{});
   }
 
   DeviceError_t rtMalloc(void **ptr, size_t size) override {

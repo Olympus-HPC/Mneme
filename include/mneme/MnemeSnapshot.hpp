@@ -129,11 +129,10 @@ template <DeviceVendors VendorTypes> class MnemeSnapshot {
   using DeviceError_t = typename MnemeDeviceRT::DeviceError_t;
   using DeviceStream_t = typename MnemeDeviceRT::DeviceStream_t;
   using KernelFunction_t = typename MnemeDeviceRT::KernelFunction_t;
-  static constexpr const char DiffMagic[] = "MNEME_DIFF_V1";
+  static constexpr const char BytesMagic[] = "MNEME_BYTES_V2";
+  static constexpr size_t BytesMagicSize = sizeof(BytesMagic) - 1;
+  static constexpr const char DiffMagic[] = "MNEME_DIFF_V2";
   static constexpr size_t DiffMagicSize = sizeof(DiffMagic) - 1;
-  static constexpr const char RegionTrailerMagic[] = "MNEME_REGION_V1";
-  static constexpr size_t RegionTrailerMagicSize =
-      sizeof(RegionTrailerMagic) - 1;
   static constexpr size_t DiffChunkSize = 1 << 20;
 
   class CountingRawOStream : public llvm::raw_ostream {
@@ -146,6 +145,11 @@ template <DeviceVendors VendorTypes> class MnemeSnapshot {
     CountingRawOStream() : llvm::raw_ostream(/*unbuffered=*/true) {}
     uint64_t bytesWritten() const { return tell(); }
   };
+
+  static bool isBytesBuffer(llvm::StringRef Buffer) {
+    return Buffer.size() >= BytesMagicSize &&
+           Buffer.take_front(BytesMagicSize) == llvm::StringRef(BytesMagic);
+  }
 
   static bool isDiffBuffer(llvm::StringRef Buffer) {
     return Buffer.size() >= DiffMagicSize &&
@@ -284,91 +288,6 @@ template <DeviceVendors VendorTypes> class MnemeSnapshot {
     }
   }
 
-  static void writeRegionMetadataTrailer(
-      llvm::raw_ostream &OS,
-      const llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &DeviceMemory) {
-    size_t TotalBlobsWithRegions = 0;
-    for (const auto &[Ptr, Blob] : DeviceMemory) {
-      if (Blob.hasRegionMetadata())
-        ++TotalBlobsWithRegions;
-    }
-    // The "trailer" is an optional block of bytes appended after the normal
-    // snapshot payload (globals, blobs, kernel args). Keep older snapshots
-    // valid by omitting it entirely when no blobs carry subregion metadata.
-    if (TotalBlobsWithRegions == 0)
-      return;
-
-    // Key trailer entries by blob device address so they can be attached after
-    // the main blob records have already been deserialized.
-    util::writeBytes(OS,
-                     llvm::StringRef(RegionTrailerMagic, RegionTrailerMagicSize));
-    util::writeScalar(OS, TotalBlobsWithRegions);
-    for (const auto &[Ptr, Blob] : DeviceMemory) {
-      if (!Blob.hasRegionMetadata())
-        continue;
-      auto *BlobAddr = Blob.getBlobAddr();
-      util::writeScalar(OS, BlobAddr);
-
-      const auto &Regions = Blob.getRegionMetadata();
-      size_t NumRegions = Regions.size();
-      util::writeScalar(OS, NumRegions);
-      for (const auto &Region : Regions) {
-        util::writeScalar(OS, Region.Offset);
-        util::writeScalar(OS, Region.Extent);
-        metadata::serialize(OS, Region.MD);
-      }
-    }
-  }
-
-  static void readRegionMetadataTrailer(
-      const std::string &Filename, const char *&CurrentPtr,
-      const char *BufferEnd,
-      llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &DeviceMemory) {
-    // No trailing bytes means this snapshot predates region metadata support.
-    if (CurrentPtr == BufferEnd)
-      return;
-
-    // If trailing bytes exist, they must be the region trailer. Anything else
-    // indicates a malformed or incompatible snapshot payload.
-    if (static_cast<size_t>(BufferEnd - CurrentPtr) < RegionTrailerMagicSize ||
-        llvm::StringRef(CurrentPtr, RegionTrailerMagicSize) !=
-            llvm::StringRef(RegionTrailerMagic, RegionTrailerMagicSize)) {
-      LOG_FATAL("Unexpected trailing bytes in Mneme snapshot " + Filename);
-    }
-    CurrentPtr += RegionTrailerMagicSize;
-
-    size_t TotalBlobs = util::extractScalar<size_t>(CurrentPtr);
-    for (size_t I = 0; I < TotalBlobs; ++I) {
-      void *DeviceAddr = util::extractScalar<void *>(CurrentPtr);
-      size_t NumRegions = util::extractScalar<size_t>(CurrentPtr);
-
-      auto It = DeviceMemory.find(DeviceAddr);
-      if (It == DeviceMemory.end())
-        LOG_FATAL("Mneme region trailer references device allocation missing "
-                  "from snapshot");
-
-      // Rebuild the full region table for this blob, then install it as one
-      // validated replacement so ordering/overlap checks happen once.
-      std::vector<MemoryRegionMetadata> Regions;
-      Regions.reserve(NumRegions);
-      for (size_t R = 0; R < NumRegions; ++R) {
-        MemoryRegionMetadata Region;
-        Region.Offset = util::extractScalar<uint64_t>(CurrentPtr);
-        Region.Extent = util::extractScalar<uint64_t>(CurrentPtr);
-        Region.MD = metadata::fromBuffer(CurrentPtr);
-        Regions.push_back(std::move(Region));
-      }
-
-      if (!It->second.replaceRegionMetadata(std::move(Regions)))
-        LOG_FATAL("Mneme region trailer contains invalid or overlapping "
-                  "regions for device allocation");
-    }
-
-    if (CurrentPtr != BufferEnd)
-      LOG_FATAL("Unexpected extra bytes after Mneme region trailer in " +
-                Filename);
-  }
-
   static void readFullMnemeSnapShot(
       llvm::MemoryBuffer *Buffer,
       std::unordered_map<std::string, ReplayGlobalVar> &GlobalVars,
@@ -376,7 +295,13 @@ template <DeviceVendors VendorTypes> class MnemeSnapshot {
       std::shared_ptr<KernelInfo> KInfo) {
     auto *Start = Buffer->getBufferStart();
     auto *BufferEnd = Buffer->getBufferEnd();
-    auto *CurrentPtr = Start;
+    if (static_cast<size_t>(BufferEnd - Start) < BytesMagicSize ||
+        llvm::StringRef(Start, BytesMagicSize) !=
+            llvm::StringRef(BytesMagic, BytesMagicSize)) {
+      LOG_FATAL("Unsupported Mneme bytes snapshot format in " +
+                Buffer->getBufferIdentifier().str());
+    }
+    auto *CurrentPtr = Start + BytesMagicSize;
     size_t TotalGlobals = util::extractScalar<size_t>(CurrentPtr);
     LOG_DEBUG("Snapshot contains {} Globals at location {}", TotalGlobals,
               (uintptr_t)CurrentPtr - (uintptr_t)Start);
@@ -404,9 +329,9 @@ template <DeviceVendors VendorTypes> class MnemeSnapshot {
       KInfo->KernelArgSizes[A] = util::extractScalar<size_t>(CurrentPtr);
       KInfo->setArgData(CurrentPtr, A);
     }
-
-    readRegionMetadataTrailer(Buffer->getBufferIdentifier().str(), CurrentPtr,
-                              BufferEnd, DeviceMemory);
+    if (CurrentPtr != BufferEnd)
+      LOG_FATAL("Unexpected trailing bytes in Mneme snapshot " +
+                Buffer->getBufferIdentifier().str());
   }
 
   // Applies the diff ranges from DiffBuffer onto the already-loaded base
@@ -452,8 +377,7 @@ template <DeviceVendors VendorTypes> class MnemeSnapshot {
       size_t ActualSize = util::extractScalar<size_t>(CurrentPtr);
       size_t Size = util::extractScalar<size_t>(CurrentPtr);
       void *DeviceAddr = util::extractScalar<void *>(CurrentPtr);
-      auto MD = metadata::fromBuffer(CurrentPtr);
-      size_t NumRanges = util::extractScalar<size_t>(CurrentPtr);
+      size_t NumAnnotations = util::extractScalar<size_t>(CurrentPtr);
 
       auto It = DeviceMemory.find(DeviceAddr);
       if (It == DeviceMemory.end())
@@ -462,16 +386,18 @@ template <DeviceVendors VendorTypes> class MnemeSnapshot {
       auto &Blob = It->second;
       if (Blob.getActualSize() != ActualSize || Blob.getSize() != Size)
         LOG_FATAL("Mneme diff memory blob size mismatch");
-      Blob.setMetadata(MD);
+      auto Annotations = readAnnotationsFromBuffer(CurrentPtr, NumAnnotations);
+      if (!Blob.replaceAnnotations(std::move(Annotations)))
+        LOG_FATAL("Mneme diff blob annotation set is invalid");
+      size_t NumRanges = util::extractScalar<size_t>(CurrentPtr);
       applyDiffRanges(
           CurrentPtr,
           llvm::MutableArrayRef<uint8_t>(Blob.getHostData().get(),
                                          Blob.getSize()),
           NumRanges);
     }
-
-    readRegionMetadataTrailer(Filename, CurrentPtr, DiffBuffer->getBufferEnd(),
-                              DeviceMemory);
+    if (CurrentPtr != DiffBuffer->getBufferEnd())
+      LOG_FATAL("Unexpected trailing bytes in Mneme diff " + Filename);
   }
 
   static size_t getSerializedMetadataSize(const Metadata &MD) {
@@ -480,34 +406,16 @@ template <DeviceVendors VendorTypes> class MnemeSnapshot {
            (MD.tag ? MD.tag->size() : 0);
   }
 
-  static size_t
-  getSerializedRegionMetadataSize(const MemoryRegionMetadata &Region) {
-    return sizeof(Region.Offset) + sizeof(Region.Extent) +
+  static size_t getSerializedAnnotationSize(const MemoryAnnotation &Region) {
+    return sizeof(Region.Range.Offset) + sizeof(Region.Range.Extent) +
            getSerializedMetadataSize(Region.MD);
-  }
-
-  static size_t computeRegionMetadataTrailerSize(
-      const llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &DeviceMemory) {
-    size_t TotalBlobsWithRegions = 0;
-    size_t Size = 0;
-    for (const auto &[Ptr, Blob] : DeviceMemory) {
-      if (!Blob.hasRegionMetadata())
-        continue;
-      if (TotalBlobsWithRegions++ == 0)
-        Size = RegionTrailerMagicSize + sizeof(size_t);
-      Size += sizeof(void *);
-      Size += sizeof(size_t);
-      for (const auto &Region : Blob.getRegionMetadata())
-        Size += getSerializedRegionMetadataSize(Region);
-    }
-    return Size;
   }
 
   static size_t computeMnemeBytesSnapshotSize(
       const proteus::runtime::GlobalMetadataMap &GlobalVars,
       const llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &DeviceMemory,
       llvm::ArrayRef<size_t> KernelArgSizes) {
-    size_t Size = sizeof(size_t);
+    size_t Size = BytesMagicSize + sizeof(size_t);
     for (const auto &[VarName, GV] : GlobalVars) {
       Size += sizeof(size_t);
       Size += VarName.size();
@@ -522,7 +430,9 @@ template <DeviceVendors VendorTypes> class MnemeSnapshot {
       Size += sizeof(size_t);
       Size += sizeof(void *);
       Size += Blob.getSize();
-      Size += getSerializedMetadataSize(Blob.getMetadata());
+      Size += sizeof(size_t);
+      for (const auto &Annotation : Blob.getAnnotations())
+        Size += getSerializedAnnotationSize(Annotation);
     }
 
     Size += sizeof(size_t);
@@ -530,7 +440,6 @@ template <DeviceVendors VendorTypes> class MnemeSnapshot {
       Size += sizeof(size_t);
       Size += ArgSize;
     }
-    Size += computeRegionMetadataTrailerSize(DeviceMemory);
     return Size;
   }
 
@@ -566,6 +475,7 @@ public:
     if (DEC)
       LOG_FATAL("Synnchronizing stream  failed");
     llvm::raw_fd_ostream OutBC(Filename.string(), EC);
+    util::writeBytes(OutBC, llvm::StringRef(BytesMagic, BytesMagicSize));
     // First write Global Variables.
     size_t TotalGlobals = GlobalVars.size();
     OutBC << llvm::StringRef(reinterpret_cast<const char *>(&TotalGlobals),
@@ -627,8 +537,6 @@ public:
                                KernelArgSizes[I]);
     }
 
-    writeRegionMetadataTrailer(OutBC, DeviceMemory);
-
     return Filename.filename();
   }
 
@@ -673,13 +581,10 @@ public:
       util::writeScalar(OutBC, Blob.getSize());
       auto *BlobAddr = Blob.getBlobAddr();
       util::writeScalar(OutBC, BlobAddr);
-      auto MD = Blob.getMetadata();
-      mneme::metadata::serialize(OutBC, MD);
+      writeAnnotationsToStream(OutBC, Blob.getAnnotations());
 
       writeCountAndWriteChangedRanges(OutBC, Blob, UpdateBaseData);
     }
-
-    writeRegionMetadataTrailer(OutBC, DeviceMemory);
   }
 
   static size_t measureMnemeDiffSnapshotSize(
@@ -746,8 +651,10 @@ public:
     if (isDiffBuffer(Buffer->getBuffer()))
       return std::make_unique<DiffSnapshotFile<VendorTypes>>(Filename,
                                                              std::move(Buffer));
-    return std::make_unique<BytesSnapshotFile<VendorTypes>>(Filename,
-                                                            std::move(Buffer));
+    if (isBytesBuffer(Buffer->getBuffer()))
+      return std::make_unique<BytesSnapshotFile<VendorTypes>>(Filename,
+                                                              std::move(Buffer));
+    LOG_FATAL("Unsupported Mneme snapshot format in " + Filename);
   }
 
   static Snapshot<VendorTypes> readBytesSnapshot(std::string KernelName,
