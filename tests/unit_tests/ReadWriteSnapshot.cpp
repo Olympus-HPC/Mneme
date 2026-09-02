@@ -426,8 +426,7 @@ int main(int argc, char **argv) {
     return 0;
   }();
 
-  // SnapshotHeader::parse is the only code that identifies a file, so pin all
-  // three prefixes it recognises.
+  // Pin all three prefixes SnapshotHeader::parse recognises.
   auto ValidateHeaderParse = [&]() {
     char Container[SnapshotHeader::Size];
     std::memcpy(Container, SnapshotHeader::Magic,
@@ -458,6 +457,27 @@ int main(int argc, char **argv) {
     if (BytesHeader.Kind != SnapshotKind::Bytes || BytesHeader.Version != 0 ||
         BytesOffset != 0) {
       std::cerr << "Unprefixed buffer did not parse as {Bytes, 0, 0}\n";
+      return 256;
+    }
+
+    auto parseFilePrefix = [](const std::filesystem::path &Path) {
+      std::ifstream FileIn(Path, std::ios::binary);
+      std::string Prefix(SnapshotHeader::Size, '\0');
+      FileIn.read(Prefix.data(), Prefix.size());
+      return SnapshotHeader::parse(Prefix);
+    };
+
+    auto [PrologueHeader, PrologueOffset] = parseFilePrefix(SnapshotFN);
+    if (PrologueHeader.Kind != SnapshotKind::Bytes ||
+        PrologueHeader.Version != 0 || PrologueOffset != 16) {
+      std::cerr << "Prologue file did not parse as {Bytes, 0, 16}\n";
+      return 256;
+    }
+
+    auto [DiffFileHeader, DiffFileOffset] = parseFilePrefix(DiffSnapshotFN);
+    if (DiffFileHeader.Kind != SnapshotKind::Diff ||
+        DiffFileHeader.Version != 1 || DiffFileOffset != 16) {
+      std::cerr << "Diff file did not parse as {Diff, 1, 16}\n";
       return 256;
     }
     return 0;
