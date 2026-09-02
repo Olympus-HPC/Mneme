@@ -23,7 +23,8 @@ perform tolerance-aware comparison.
 The `add_mneme(target)` CMake function (provided by
 `MnemeFunctions.cmake`) links the annotation runtime library
 (`mnemert`) automatically — no extra `target_link_libraries` call is
-needed.
+needed. It also compiles the target with `-gline-tables-only` so that
+records carry the source file and line range of each kernel.
 
 ### Quick example
 

@@ -448,6 +448,8 @@ class RecordedExecution:
         source_file: Optional[str] = None,
         source_copy: Optional[str] = None,
         source_md5: Optional[str] = None,
+        source_line: Optional[int] = None,
+        source_end_line: Optional[int] = None,
     ):
         self.static_hash = static_hash
         self.kernel_name = kernel_name
@@ -461,6 +463,8 @@ class RecordedExecution:
         self.source_file = source_file
         self.source_copy = source_copy
         self.source_md5 = source_md5
+        self.source_line = source_line
+        self.source_end_line = source_end_line
         self._link_mod = None
 
     def __str__(self):
@@ -521,6 +525,36 @@ class RecordedExecution:
 
         return self._link_mod
 
+    def kernel_source(self) -> Optional[str]:
+        """
+        Return the recorded source text of the kernel definition.
+
+        The range spans ``source_line`` through ``source_end_line`` inclusive
+        and 1-based, where the end line is the last line of the kernel that
+        generated code. The recorded copy is preferred over the original file
+        because it is guaranteed to match what was compiled.
+
+        Returns
+        -------
+        Optional[str]
+            The kernel's source text, or ``None`` when the record has no line
+            information or neither the copy nor the original file is readable.
+        """
+        if self.source_line is None or self.source_end_line is None:
+            return None
+
+        for candidate in (self.source_copy, self.source_file):
+            if candidate is None or not Path(candidate).exists():
+                continue
+            try:
+                with open(candidate, "r") as fd:
+                    lines = fd.readlines()
+            except OSError:
+                continue
+            return "".join(lines[self.source_line - 1 : self.source_end_line])
+
+        return None
+
     def to_dict(self, base_dir: "Path | None" = None):
         res = {}
         res["ArgNames"] = self.arg_names
@@ -536,6 +570,10 @@ class RecordedExecution:
             res["SourceCopy"] = _make_path_relative(self.source_copy, base_dir)
         if self.source_md5 is not None:
             res["SourceMD5"] = self.source_md5
+        if self.source_line is not None:
+            res["SourceLine"] = self.source_line
+        if self.source_end_line is not None:
+            res["SourceEndLine"] = self.source_end_line
         res["VASize"] = self.va_size
         res["VAddr"] = self.va_addr
         res["instances"] = {}
@@ -645,4 +683,6 @@ class RecordedExecution:
             source_file=record_db.get("SourceFile"),
             source_copy=source_copy,
             source_md5=record_db.get("SourceMD5"),
+            source_line=record_db.get("SourceLine"),
+            source_end_line=record_db.get("SourceEndLine"),
         )

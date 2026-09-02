@@ -20,8 +20,12 @@
 #include <llvm/ADT/StableHashing.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Bitcode/BitcodeReader.h>
+#include <llvm/IR/DebugInfo.h>
+#include <llvm/IR/DebugInfoMetadata.h>
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/Module.h>
+#include <llvm/Support/FileSystem.h>
+#include <llvm/Support/Path.h>
 #include <string>
 #include <sys/types.h>
 #include <type_traits>
@@ -703,19 +707,32 @@ struct KernelInstance {
   KernelInstance() = default;
 };
 
-// The translation unit that defined a recorded kernel and, optionally, a copy
-// of it stored alongside the record.
+// The source that defined a recorded kernel and, optionally, a copy of it
+// stored alongside the record. The kernel's line-table debug info gives the
+// defining file, the line range that generated code, and the MD5 checksum the
+// file had at compile time; without debug info this falls back to the
+// translation unit named by the module.
 class SourceFileInfo {
   std::string Path;
   std::string CopyName;
   std::string MD5;
+  unsigned Line = 0;
+  unsigned EndLine = 0;
+  std::string CompileMD5;
 
 public:
   SourceFileInfo() = default;
 
-  // Only an absolute path identifies the translation unit. LTO-linked modules
-  // carry a placeholder name and yield an unknown source.
-  explicit SourceFileInfo(const llvm::Module &Mod) {
+  explicit SourceFileInfo(const llvm::Module &Mod, llvm::StringRef KernelName) {
+    const llvm::Function *F = Mod.getFunction(KernelName);
+    const llvm::DISubprogram *SP = F ? F->getSubprogram() : nullptr;
+    if (SP) {
+      initFromSubprogram(*F, *SP);
+      return;
+    }
+
+    // Only an absolute path identifies the translation unit. LTO-linked
+    // modules carry a placeholder name and yield an unknown source.
     std::string ModuleSource = Mod.getSourceFileName();
     if (std::filesystem::path(ModuleSource).is_absolute())
       Path = ModuleSource;
@@ -742,6 +759,15 @@ public:
     Hash.final(Result);
     std::string Digest = Result.digest().str().str();
 
+    // A copy that no longer matches what was compiled would misattribute the
+    // recorded line range, so keep the compile-time checksum instead.
+    if (!CompileMD5.empty() && CompileMD5 != Digest) {
+      LOG_WARN("Source file {} changed since it was compiled (compiled MD5 {}, "
+               "current MD5 {}); not copying it",
+               Path, CompileMD5, Digest);
+      return;
+    }
+
     std::string Basename = std::filesystem::path(Path).filename().string();
     std::string Filename = "RecordedSource_" + Digest + "_" + Basename;
     std::filesystem::path Dest = std::filesystem::path(Dir) / Filename;
@@ -763,10 +789,57 @@ public:
   void addToJSON(llvm::json::Object &Obj) const {
     if (!Path.empty())
       Obj["SourceFile"] = Path;
-    if (!CopyName.empty()) {
-      Obj["SourceCopy"] = CopyName;
-      Obj["SourceMD5"] = MD5;
+    if (Line != 0) {
+      Obj["SourceLine"] = Line;
+      Obj["SourceEndLine"] = EndLine;
     }
+    if (!CopyName.empty())
+      Obj["SourceCopy"] = CopyName;
+    const std::string &Checksum = CompileMD5.empty() ? MD5 : CompileMD5;
+    if (!Checksum.empty())
+      Obj["SourceMD5"] = Checksum;
+  }
+
+private:
+  void initFromSubprogram(const llvm::Function &F,
+                          const llvm::DISubprogram &SP) {
+    const llvm::DIFile *File = SP.getFile();
+    llvm::SmallString<256> Joined{File->getFilename()};
+    if (!llvm::sys::path::is_absolute(Joined)) {
+      Joined = File->getDirectory();
+      llvm::sys::path::append(Joined, File->getFilename());
+    }
+
+    llvm::SmallString<256> Real;
+    if (llvm::sys::fs::real_path(Joined, Real))
+      Path = Joined.str().str();
+    else
+      Path = Real.str().str();
+
+    Line = SP.getLine();
+    EndLine = findLastCodeLine(F, SP);
+
+    if (auto Checksum = File->getChecksum())
+      if (Checksum->Kind == llvm::DIFile::CSK_MD5)
+        CompileMD5 = Checksum->Value.str();
+  }
+
+  // The last line of the kernel itself that generated code, which for Clang is
+  // normally its closing brace. Locations from inlined callees or from other
+  // subprograms do not belong to the kernel's own line range.
+  static unsigned findLastCodeLine(const llvm::Function &F,
+                                   const llvm::DISubprogram &SP) {
+    unsigned Last = SP.getScopeLine();
+    for (const llvm::BasicBlock &BB : F)
+      for (const llvm::Instruction &I : BB) {
+        const llvm::DILocation *DL = I.getDebugLoc().get();
+        if (!DL || DL->getInlinedAt())
+          continue;
+        if (DL->getScope()->getSubprogram() != &SP)
+          continue;
+        Last = std::max(Last, DL->getLine());
+      }
+    return Last;
   }
 };
 
@@ -806,7 +879,7 @@ private:
     KernelArgNames = mneme::getArgNames(*F);
     KernelSpecializations = mneme::canSpecialize(*F);
     ConvertArgToDouble = mneme::convertToDouble(*F);
-    Source = SourceFileInfo(*Mod);
+    Source = SourceFileInfo(*Mod, KName);
   }
 
   std::string StoreModuleBytes(llvm::StringRef Bytes,
