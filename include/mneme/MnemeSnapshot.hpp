@@ -129,7 +129,9 @@ template <DeviceVendors VendorTypes> class MnemeSnapshot {
   using DeviceError_t = typename MnemeDeviceRT::DeviceError_t;
   using DeviceStream_t = typename MnemeDeviceRT::DeviceStream_t;
   using KernelFunction_t = typename MnemeDeviceRT::KernelFunction_t;
-  static constexpr const char DiffMagic[] = "MNEME_DIFF_V1";
+  static constexpr const char BytesMagic[] = "MNEME_BYTES_V2";
+  static constexpr size_t BytesMagicSize = sizeof(BytesMagic) - 1;
+  static constexpr const char DiffMagic[] = "MNEME_DIFF_V2";
   static constexpr size_t DiffMagicSize = sizeof(DiffMagic) - 1;
   static constexpr size_t DiffChunkSize = 1 << 20;
 
@@ -143,6 +145,11 @@ template <DeviceVendors VendorTypes> class MnemeSnapshot {
     CountingRawOStream() : llvm::raw_ostream(/*unbuffered=*/true) {}
     uint64_t bytesWritten() const { return tell(); }
   };
+
+  static bool isBytesBuffer(llvm::StringRef Buffer) {
+    return Buffer.size() >= BytesMagicSize &&
+           Buffer.take_front(BytesMagicSize) == llvm::StringRef(BytesMagic);
+  }
 
   static bool isDiffBuffer(llvm::StringRef Buffer) {
     return Buffer.size() >= DiffMagicSize &&
@@ -287,7 +294,14 @@ template <DeviceVendors VendorTypes> class MnemeSnapshot {
       llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &DeviceMemory,
       std::shared_ptr<KernelInfo> KInfo) {
     auto *Start = Buffer->getBufferStart();
-    auto *CurrentPtr = Start;
+    auto *BufferEnd = Buffer->getBufferEnd();
+    if (static_cast<size_t>(BufferEnd - Start) < BytesMagicSize ||
+        llvm::StringRef(Start, BytesMagicSize) !=
+            llvm::StringRef(BytesMagic, BytesMagicSize)) {
+      LOG_FATAL("Unsupported Mneme bytes snapshot format in " +
+                Buffer->getBufferIdentifier().str());
+    }
+    auto *CurrentPtr = Start + BytesMagicSize;
     size_t TotalGlobals = util::extractScalar<size_t>(CurrentPtr);
     LOG_DEBUG("Snapshot contains {} Globals at location {}", TotalGlobals,
               (uintptr_t)CurrentPtr - (uintptr_t)Start);
@@ -315,6 +329,9 @@ template <DeviceVendors VendorTypes> class MnemeSnapshot {
       KInfo->KernelArgSizes[A] = util::extractScalar<size_t>(CurrentPtr);
       KInfo->setArgData(CurrentPtr, A);
     }
+    if (CurrentPtr != BufferEnd)
+      LOG_FATAL("Unexpected trailing bytes in Mneme snapshot " +
+                Buffer->getBufferIdentifier().str());
   }
 
   // Applies the diff ranges from DiffBuffer onto the already-loaded base
@@ -360,8 +377,7 @@ template <DeviceVendors VendorTypes> class MnemeSnapshot {
       size_t ActualSize = util::extractScalar<size_t>(CurrentPtr);
       size_t Size = util::extractScalar<size_t>(CurrentPtr);
       void *DeviceAddr = util::extractScalar<void *>(CurrentPtr);
-      auto MD = metadata::fromBuffer(CurrentPtr);
-      size_t NumRanges = util::extractScalar<size_t>(CurrentPtr);
+      size_t NumAnnotations = util::extractScalar<size_t>(CurrentPtr);
 
       auto It = DeviceMemory.find(DeviceAddr);
       if (It == DeviceMemory.end())
@@ -370,13 +386,18 @@ template <DeviceVendors VendorTypes> class MnemeSnapshot {
       auto &Blob = It->second;
       if (Blob.getActualSize() != ActualSize || Blob.getSize() != Size)
         LOG_FATAL("Mneme diff memory blob size mismatch");
-      Blob.setMetadata(MD);
+      auto Annotations = readAnnotationsFromBuffer(CurrentPtr, NumAnnotations);
+      if (!Blob.replaceAnnotations(std::move(Annotations)))
+        LOG_FATAL("Mneme diff blob annotation set is invalid");
+      size_t NumRanges = util::extractScalar<size_t>(CurrentPtr);
       applyDiffRanges(
           CurrentPtr,
           llvm::MutableArrayRef<uint8_t>(Blob.getHostData().get(),
                                          Blob.getSize()),
           NumRanges);
     }
+    if (CurrentPtr != DiffBuffer->getBufferEnd())
+      LOG_FATAL("Unexpected trailing bytes in Mneme diff " + Filename);
   }
 
   static size_t getSerializedMetadataSize(const Metadata &MD) {
@@ -385,11 +406,16 @@ template <DeviceVendors VendorTypes> class MnemeSnapshot {
            (MD.tag ? MD.tag->size() : 0);
   }
 
+  static size_t getSerializedAnnotationSize(const MemoryAnnotation &Region) {
+    return sizeof(Region.Range.Offset) + sizeof(Region.Range.Extent) +
+           getSerializedMetadataSize(Region.MD);
+  }
+
   static size_t computeMnemeBytesSnapshotSize(
       const proteus::runtime::GlobalMetadataMap &GlobalVars,
       const llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &DeviceMemory,
       llvm::ArrayRef<size_t> KernelArgSizes) {
-    size_t Size = sizeof(size_t);
+    size_t Size = BytesMagicSize + sizeof(size_t);
     for (const auto &[VarName, GV] : GlobalVars) {
       Size += sizeof(size_t);
       Size += VarName.size();
@@ -404,7 +430,9 @@ template <DeviceVendors VendorTypes> class MnemeSnapshot {
       Size += sizeof(size_t);
       Size += sizeof(void *);
       Size += Blob.getSize();
-      Size += getSerializedMetadataSize(Blob.getMetadata());
+      Size += sizeof(size_t);
+      for (const auto &Annotation : Blob.getAnnotations())
+        Size += getSerializedAnnotationSize(Annotation);
     }
 
     Size += sizeof(size_t);
@@ -447,6 +475,7 @@ public:
     if (DEC)
       LOG_FATAL("Synnchronizing stream  failed");
     llvm::raw_fd_ostream OutBC(Filename.string(), EC);
+    util::writeBytes(OutBC, llvm::StringRef(BytesMagic, BytesMagicSize));
     // First write Global Variables.
     size_t TotalGlobals = GlobalVars.size();
     OutBC << llvm::StringRef(reinterpret_cast<const char *>(&TotalGlobals),
@@ -552,8 +581,7 @@ public:
       util::writeScalar(OutBC, Blob.getSize());
       auto *BlobAddr = Blob.getBlobAddr();
       util::writeScalar(OutBC, BlobAddr);
-      auto MD = Blob.getMetadata();
-      mneme::metadata::serialize(OutBC, MD);
+      writeAnnotationsToStream(OutBC, Blob.getAnnotations());
 
       writeCountAndWriteChangedRanges(OutBC, Blob, UpdateBaseData);
     }
@@ -623,8 +651,10 @@ public:
     if (isDiffBuffer(Buffer->getBuffer()))
       return std::make_unique<DiffSnapshotFile<VendorTypes>>(Filename,
                                                              std::move(Buffer));
-    return std::make_unique<BytesSnapshotFile<VendorTypes>>(Filename,
-                                                            std::move(Buffer));
+    if (isBytesBuffer(Buffer->getBuffer()))
+      return std::make_unique<BytesSnapshotFile<VendorTypes>>(Filename,
+                                                              std::move(Buffer));
+    LOG_FATAL("Unsupported Mneme snapshot format in " + Filename);
   }
 
   static Snapshot<VendorTypes> readBytesSnapshot(std::string KernelName,
