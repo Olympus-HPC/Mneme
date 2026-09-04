@@ -265,7 +265,7 @@ class Record:
             "--copy-source",
             dest="copy_source",
             action="store_true",
-            help="Copy the translation unit source file of each recorded kernel into the record directory",
+            help="Copy the source file that defines each recorded kernel into the record directory",
         )
         parser.add_argument("cmd", nargs=argparse.REMAINDER)
         parser.set_defaults(func=Record.run, parser=parser)
