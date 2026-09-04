@@ -48,8 +48,9 @@ field reference and end-to-end examples.
 
 ## Snapshot file format (`mneme/MnemeSnapshotFormat.hpp`)
 
-Prologue and epilogue snapshots share one container: a 16-byte header
-followed by a payload whose layout depends on the header.
+Prologue and epilogue snapshots use the same container. The container has
+a 16-byte header and a payload. The header identifies the layout of the
+payload.
 
 | Offset | Size | Field                                         |
 |--------|------|-----------------------------------------------|
@@ -57,15 +58,15 @@ followed by a payload whose layout depends on the header.
 | 8      | 4    | `SnapshotKind` (`Bytes = 1`, `Diff = 2`)      |
 | 12     | 4    | Layout version of the payload for that kind   |
 
-`SnapshotHeader::parse` also recognizes two legacy prefixes from before the
-container existed: files starting with `MNEME_DIFF_V1` are treated as
-`Diff` version 1, and files with no magic at all are treated as `Bytes`
-version 0. Those mappings are frozen history; do not change them.
+`SnapshotHeader::parse` also accepts two legacy prefixes from before the
+container existed. A file that starts with `MNEME_DIFF_V1` is `Diff`
+version 1. A file with no magic is `Bytes` version 0. These two mappings
+are fixed. Do not change them.
 
 ### How versions are owned
 
-Each on-disk layout is decoded by exactly one reader class, and that class
-owns its `(kind, version)` pair through a `Layout` member:
+One reader class decodes one on-disk layout. The reader class holds its
+`(kind, version)` pair in a `Layout` member:
 
 ```cpp
 template <DeviceVendors VendorTypes>
@@ -76,42 +77,42 @@ public:
 };
 ```
 
-Everything else refers to that member rather than repeating the number:
+All other code refers to this member. The version number is written once.
 
-- `SnapshotFormatRegistry` maps the parsed header to a reader by walking a
-  table built from `entry<ReaderT>()` rows, one per reader class.
-- The writer that produces a layout returns the matching reader's `Layout`
-  from `header()`. `FormatWriter::write` emits that header before calling
-  `writePayload`, so the stamp on disk can only ever name a layout that has
-  a decoder.
+- `SnapshotFormatRegistry` holds a table with one `entry<ReaderT>()` row
+  for each reader class. It finds the row that matches the parsed header
+  and makes that reader.
+- A writer returns the `Layout` of the reader that decodes its output from
+  `header()`. `FormatWriter::write` writes this header before it calls
+  `writePayload`. A writer can only stamp a layout that has a reader.
 
 ### When to bump the version
 
-Bump the version whenever an existing reader would misinterpret the new
-bytes: reordering or resizing fields, changing an encoding, or adding a
-field that is not self-delimiting. Do not bump for changes that leave the
-byte stream identical.
+Bump the version when an existing reader would decode the new bytes
+incorrectly. Examples are a change to the order, size, or encoding of a
+field, or a new field that a reader cannot skip. Do not bump the version
+when the byte stream stays the same.
 
-Never edit an existing reader to accept a changed layout. Old recordings
-must keep opening, and `ctest -R Serialize` exercises that.
+Do not change an existing reader to accept a new layout. Old recordings
+must continue to open. `ctest -R Serialize` checks this.
 
 ### How to bump the version
 
-Using a diff layout change as the example:
+This procedure uses a change to the diff layout as the example.
 
-1. Add `DiffReaderV2` next to `DiffReaderV1` with
+1. Add `DiffReaderV2` after `DiffReaderV1`. Give it
    `static constexpr SnapshotHeader Layout{SnapshotKind::Diff, 2};` and a
-   `read()` that decodes the new payload. Leave `DiffReaderV1` in place.
+   `read()` that decodes the new payload. Keep `DiffReaderV1`.
 2. Add `entry<DiffReaderV2<VendorTypes>>()` to the table in
    `SnapshotFormatRegistry::table`.
 3. Change `DiffWriter::header()` to return
-   `DiffReaderV2<VendorTypes>::Layout`, and update `DiffWriter::writePayload`
-   to emit the new layout.
-4. Extend `tests/unit_tests/ReadWriteSnapshot.cpp` so the round trip covers
-   the new layout, and keep a fixture or hand-built buffer in the previous
-   layout so the old reader stays covered.
+   `DiffReaderV2<VendorTypes>::Layout`. Change `DiffWriter::writePayload` to
+   write the new layout.
+4. Extend `tests/unit_tests/ReadWriteSnapshot.cpp` so that the round trip
+   covers the new layout. Keep a fixture or a hand-built buffer in the old
+   layout so that the old reader stays covered.
 
-The version literal appears in exactly one place, the new reader's
-`Layout`. Skipping step 2 is the one mistake the compiler cannot catch: the
-writer stamps version 2, the registry has no row for it, and opening the
-snapshot fails with `Unsupported Mneme snapshot format`.
+The version number appears only in the new reader's `Layout`. The compiler
+cannot detect a missing step 2. In that case the writer stamps version 2,
+the registry has no row for it, and the snapshot fails to open with
+`Unsupported Mneme snapshot format`.
