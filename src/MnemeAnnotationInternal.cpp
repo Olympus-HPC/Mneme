@@ -20,6 +20,12 @@ void serialize(llvm::raw_ostream &OS, const Metadata &Md) {
     OS.write(reinterpret_cast<const char *>(Md.tag->c_str()), Size);
 }
 
+size_t serializedSize(const Metadata &Md) {
+  return sizeof(std::underlying_type_t<BuiltinDType>) + sizeof(double) +
+         sizeof(ThresholdKind) + sizeof(Norm) + sizeof(size_t) +
+         (Md.tag ? Md.tag->size() : 0);
+}
+
 Metadata fromBuffer(const char *&Buffer) {
   Metadata Md;
   Md.builtin = util::extractScalar<BuiltinDType>(Buffer);

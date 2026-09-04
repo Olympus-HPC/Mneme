@@ -10,6 +10,8 @@ from pathlib import Path
 # Binary .mneme prologue parser
 #
 # On-disk format (all integers little-endian, pointer-sized = 8 bytes):
+#   SnapshotHeader: char[8] "MNEMESNP"; uint32 Kind; uint32 Version (absent in
+#     older recordings)
 #   uint64  TotalGlobals
 #   for each global:
 #     uint64 StrLen; char[StrLen] name; uint64 VarSize; void* DevAddr; char[VarSize] data
@@ -22,11 +24,22 @@ from pathlib import Path
 #   for each arg: uint64 ArgSize; char[ArgSize] data
 # ---------------------------------------------------------------------------
 
+_CONTAINER_MAGIC = b"MNEMESNP"
+_CONTAINER_SIZE = 16
+
+
+def _payload_offset(data):
+    """Byte offset of the payload of a bytes snapshot."""
+    if len(data) >= _CONTAINER_SIZE and data[:8] == _CONTAINER_MAGIC:
+        return _CONTAINER_SIZE
+    return 0
+
+
 def _parse_prologue_metadata(filename):
     """Return a list of Metadata dicts for every blob in a prologue file."""
     with open(filename, "rb") as f:
         data = f.read()
-    off = 0
+    off = _payload_offset(data)
 
     def u64():
         nonlocal off

@@ -162,8 +162,7 @@ class PrologueState : public ReplayMemState<VendorTypes> {
 public:
   PrologueState(const std::string &KernelName, const std::string &SnapshotFile)
       : ReplayMemState<VendorTypes>(
-            MnemeSnapshot<VendorTypes>::readBytesSnapshot(KernelName,
-                                                          SnapshotFile)) {}
+            BaseSnapshotSource<VendorTypes>(SnapshotFile).load(KernelName)) {}
 
   void load() override {
     for (auto &[DevAddr, MemBlob] : this->DeviceMemoryState) {
@@ -280,8 +279,8 @@ makeReplayEpilogueState(const std::string &KernelName,
                         const std::string &SnapshotFile,
                         const std::string &BasePrologueFile) {
   Snapshot<VendorTypes> Snap =
-      MnemeSnapshot<VendorTypes>::openSnapshot(SnapshotFile)
-          ->reconstruct(KernelName, BasePrologueFile);
+      SnapshotFormatRegistry<VendorTypes>::open(SnapshotFile)
+          ->read(KernelName, BaseSnapshotSource<VendorTypes>(BasePrologueFile));
   return std::make_unique<EpilogueState<VendorTypes>>(std::move(Snap));
 }
 
