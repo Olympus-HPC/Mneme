@@ -4,6 +4,7 @@
 #include <cstring>
 #include <filesystem>
 #include <functional>
+#include <iostream>
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/JSON.h>
@@ -707,11 +708,8 @@ struct KernelInstance {
   KernelInstance() = default;
 };
 
-// The source that defined a recorded kernel and, optionally, a copy of it
-// stored alongside the record. The kernel's line-table debug info gives the
-// defining file, the line range that generated code, and the MD5 checksum the
-// file had at compile time; without debug info this falls back to the
-// translation unit named by the module.
+// Locates a recorded kernel's source from its line-table debug info, which
+// gives the file, the line range that generated code, and the file's MD5 checksum
 class SourceFileInfo {
   std::string Path;
   std::string CopyName;
@@ -726,24 +724,20 @@ public:
   explicit SourceFileInfo(const llvm::Module &Mod, llvm::StringRef KernelName) {
     const llvm::Function *F = Mod.getFunction(KernelName);
     const llvm::DISubprogram *SP = F ? F->getSubprogram() : nullptr;
-    if (SP) {
-      initFromSubprogram(*F, *SP);
+    if (!SP) {
+      // Printed without the logger so that default builds still tell the user
+      // why the record has no source fields.
+      std::cerr << "[mneme] Kernel " << KernelName.str()
+                << " has no line-table debug info; compile with "
+                   "-gline-tables-only to record its source location\n";
       return;
     }
 
-    // Only an absolute path identifies the translation unit. LTO-linked
-    // modules carry a placeholder name and yield an unknown source.
-    std::string ModuleSource = Mod.getSourceFileName();
-    if (std::filesystem::path(ModuleSource).is_absolute())
-      Path = ModuleSource;
-    else
-      LOG_DEBUG("No translation unit source in module '{}'", ModuleSource);
+    initFromSubprogram(*F, *SP);
   }
 
   bool isKnown() const { return !Path.empty(); }
 
-  // Copy the source into Dir, named by content hash so kernels from the same
-  // file share one copy.
   void copyTo(const std::string &Dir) {
     auto BufOrErr = llvm::MemoryBuffer::getFile(Path);
     if (!BufOrErr) {
@@ -787,12 +781,12 @@ public:
   }
 
   void addToJSON(llvm::json::Object &Obj) const {
-    if (!Path.empty())
-      Obj["SourceFile"] = Path;
-    if (Line != 0) {
-      Obj["SourceLine"] = Line;
-      Obj["SourceEndLine"] = EndLine;
-    }
+    if (!isKnown())
+      return;
+
+    Obj["SourceFile"] = Path;
+    Obj["SourceLine"] = Line;
+    Obj["SourceEndLine"] = EndLine;
     if (!CopyName.empty())
       Obj["SourceCopy"] = CopyName;
     const std::string &Checksum = CompileMD5.empty() ? MD5 : CompileMD5;
