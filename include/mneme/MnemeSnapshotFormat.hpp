@@ -179,6 +179,8 @@ class BytesReaderV0 : public SnapshotReader<VendorTypes> {
 public:
   using SnapshotReader<VendorTypes>::SnapshotReader;
 
+  static constexpr SnapshotHeader Layout{SnapshotKind::Bytes, 0};
+
   bool requiresBaseSnapshot() const override { return false; }
 
   Snapshot<VendorTypes>
@@ -229,6 +231,8 @@ template <DeviceVendors VendorTypes>
 class DiffReaderV1 : public SnapshotReader<VendorTypes> {
 public:
   using SnapshotReader<VendorTypes>::SnapshotReader;
+
+  static constexpr SnapshotHeader Layout{SnapshotKind::Diff, 1};
 
   bool requiresBaseSnapshot() const override { return true; }
 
@@ -317,7 +321,9 @@ private:
   }
 };
 
-// Every layout Mneme has ever written needs a row here.
+// Every layout Mneme has ever written needs a row here. A reader owns its
+// (kind, version) pair through its Layout member; the writer that produces
+// the current layout returns the same member from header().
 template <DeviceVendors VendorTypes> class SnapshotFormatRegistry {
 public:
   static std::unique_ptr<SnapshotReader<VendorTypes>>
@@ -355,10 +361,14 @@ private:
                                      PayloadOffset);
   }
 
+  template <typename ReaderT> static constexpr Entry entry() {
+    return {ReaderT::Layout.Kind, ReaderT::Layout.Version, &make<ReaderT>};
+  }
+
   static const Entry *table(size_t &Count) {
     static const Entry Table[] = {
-        {SnapshotKind::Bytes, 0, &make<BytesReaderV0<VendorTypes>>},
-        {SnapshotKind::Diff, 1, &make<DiffReaderV1<VendorTypes>>},
+        entry<BytesReaderV0<VendorTypes>>(),
+        entry<DiffReaderV1<VendorTypes>>(),
     };
     Count = sizeof(Table) / sizeof(Table[0]);
     return Table;
@@ -533,7 +543,7 @@ public:
 
 protected:
   SnapshotHeader header() const override {
-    return SnapshotHeader{SnapshotKind::Bytes, 0};
+    return BytesReaderV0<VendorTypes>::Layout;
   }
 
   void writePayload(llvm::raw_ostream &OutBC,
@@ -602,7 +612,7 @@ public:
 
 protected:
   SnapshotHeader header() const override {
-    return SnapshotHeader{SnapshotKind::Diff, 1};
+    return DiffReaderV1<VendorTypes>::Layout;
   }
 
   void writePayload(llvm::raw_ostream &OutBC,
