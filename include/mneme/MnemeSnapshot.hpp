@@ -4,9 +4,11 @@
 #include <cstring>
 #include <filesystem>
 #include <functional>
+#include <iostream>
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/JSON.h>
+#include <llvm/Support/MD5.h>
 #include <llvm/Support/MemoryBuffer.h>
 #include <llvm/Support/raw_ostream.h>
 #include <memory>
@@ -19,8 +21,12 @@
 #include <llvm/ADT/StableHashing.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Bitcode/BitcodeReader.h>
+#include <llvm/IR/DebugInfo.h>
+#include <llvm/IR/DebugInfoMetadata.h>
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/Module.h>
+#include <llvm/Support/FileSystem.h>
+#include <llvm/Support/Path.h>
 #include <string>
 #include <sys/types.h>
 #include <type_traits>
@@ -702,6 +708,135 @@ struct KernelInstance {
   KernelInstance() = default;
 };
 
+// Locates a recorded kernel's source from its line-table debug info, which
+// gives the file, the line range that generated code, and the file's MD5 checksum
+class SourceFileInfo {
+  std::string Path;
+  std::string CopyName;
+  std::string MD5;
+  unsigned Line = 0;
+  unsigned EndLine = 0;
+  std::string CompileMD5;
+
+public:
+  SourceFileInfo() = default;
+
+  explicit SourceFileInfo(const llvm::Module &Mod, llvm::StringRef KernelName) {
+    const llvm::Function *F = Mod.getFunction(KernelName);
+    const llvm::DISubprogram *SP = F ? F->getSubprogram() : nullptr;
+    if (!SP) {
+      // Printed without the logger so that default builds still tell the user
+      // why the record has no source fields.
+      std::cerr << "[mneme] Kernel " << KernelName.str()
+                << " has no line-table debug info; compile with "
+                   "-gline-tables-only to record its source location\n";
+      return;
+    }
+
+    initFromSubprogram(*F, *SP);
+  }
+
+  bool isKnown() const { return !Path.empty(); }
+
+  void copyTo(const std::string &Dir) {
+    auto BufOrErr = llvm::MemoryBuffer::getFile(Path);
+    if (!BufOrErr) {
+      LOG_WARN("Cannot read source file {}: {}", Path,
+               BufOrErr.getError().message());
+      return;
+    }
+    llvm::StringRef Contents = (*BufOrErr)->getBuffer();
+
+    llvm::MD5 Hash;
+    Hash.update(Contents);
+    llvm::MD5::MD5Result Result;
+    Hash.final(Result);
+    std::string Digest = Result.digest().str().str();
+
+    // A copy that no longer matches what was compiled would misattribute the
+    // recorded line range, so keep the compile-time checksum instead.
+    if (!CompileMD5.empty() && CompileMD5 != Digest) {
+      LOG_WARN("Source file {} changed since it was compiled (compiled MD5 {}, "
+               "current MD5 {}); not copying it",
+               Path, CompileMD5, Digest);
+      return;
+    }
+
+    std::string Basename = std::filesystem::path(Path).filename().string();
+    std::string Filename = "RecordedSource_" + Digest + "_" + Basename;
+    std::filesystem::path Dest = std::filesystem::path(Dir) / Filename;
+    if (!std::filesystem::exists(Dest)) {
+      std::error_code EC;
+      llvm::raw_fd_ostream Out(Dest.string(), EC);
+      if (EC) {
+        LOG_WARN("Cannot write source copy {}: {}", Dest.string(),
+                 EC.message());
+        return;
+      }
+      Out << Contents;
+    }
+
+    CopyName = Filename;
+    MD5 = Digest;
+  }
+
+  void addToJSON(llvm::json::Object &Obj) const {
+    if (!isKnown())
+      return;
+
+    Obj["SourceFile"] = Path;
+    Obj["SourceLine"] = Line;
+    Obj["SourceEndLine"] = EndLine;
+    if (!CopyName.empty())
+      Obj["SourceCopy"] = CopyName;
+    const std::string &Checksum = CompileMD5.empty() ? MD5 : CompileMD5;
+    if (!Checksum.empty())
+      Obj["SourceMD5"] = Checksum;
+  }
+
+private:
+  void initFromSubprogram(const llvm::Function &F,
+                          const llvm::DISubprogram &SP) {
+    const llvm::DIFile *File = SP.getFile();
+    llvm::SmallString<256> Joined{File->getFilename()};
+    if (!llvm::sys::path::is_absolute(Joined)) {
+      Joined = File->getDirectory();
+      llvm::sys::path::append(Joined, File->getFilename());
+    }
+
+    llvm::SmallString<256> Real;
+    if (llvm::sys::fs::real_path(Joined, Real))
+      Path = Joined.str().str();
+    else
+      Path = Real.str().str();
+
+    Line = SP.getLine();
+    EndLine = findLastCodeLine(F, SP);
+
+    if (auto Checksum = File->getChecksum())
+      if (Checksum->Kind == llvm::DIFile::CSK_MD5)
+        CompileMD5 = Checksum->Value.str();
+  }
+
+  // The last line of the kernel itself that generated code, which for Clang is
+  // normally its closing brace. Locations from inlined callees or from other
+  // subprograms do not belong to the kernel's own line range.
+  static unsigned findLastCodeLine(const llvm::Function &F,
+                                   const llvm::DISubprogram &SP) {
+    unsigned Last = SP.getScopeLine();
+    for (const llvm::BasicBlock &BB : F)
+      for (const llvm::Instruction &I : BB) {
+        const llvm::DILocation *DL = I.getDebugLoc().get();
+        if (!DL || DL->getInlinedAt())
+          continue;
+        if (DL->getScope()->getSubprogram() != &SP)
+          continue;
+        Last = std::max(Last, DL->getLine());
+      }
+    return Last;
+  }
+};
+
 class KernelInstancesCollection {
   void *VAddr;
   uint64_t VASize;
@@ -714,6 +849,7 @@ class KernelInstancesCollection {
   llvm::SmallVector<std::function<double(void *)>> ConvertArgToDouble;
   llvm::SmallVector<std::string> ModuleFiles;
   const std::string KName;
+  SourceFileInfo Source;
 
 private:
   // Parse Proteus's serialized bitcode in a Mneme-owned LLVMContext and
@@ -737,6 +873,7 @@ private:
     KernelArgNames = mneme::getArgNames(*F);
     KernelSpecializations = mneme::canSpecialize(*F);
     ConvertArgToDouble = mneme::convertToDouble(*F);
+    Source = SourceFileInfo(*Mod, KName);
   }
 
   std::string StoreModuleBytes(llvm::StringRef Bytes,
@@ -776,6 +913,7 @@ public:
     Collection["BinaryBlobs"] = llvm::json::Array();
     Collection["ArgNames"] = llvm::json::Array(KernelArgNames);
     Collection["Specializations"] = llvm::json::Array(KernelSpecializations);
+    Source.addToJSON(Collection);
     llvm::json::Object JSONInstances;
     for (auto &[hash, KI] : Instances) {
       JSONInstances[std::to_string(hash)] = KI.toJSON();
@@ -787,7 +925,7 @@ public:
   KernelInstancesCollection(const std::string &MnemeDirectory, void *VAddr,
                             uint64_t VASize,
                             const proteus::runtime::KernelMetadata &KInfo,
-                            int MaxRecordings)
+                            int MaxRecordings, bool CopySource)
       : VAddr(VAddr), VASize(VASize), MaxRecordings(MaxRecordings),
         NumRecords(0), KName(KInfo.getName()) {
     const auto &BitcodeBytes = KInfo.getBitcode();
@@ -796,6 +934,8 @@ public:
       LOG_FATAL("Empty bitcode for kernel " + KName);
 
     extractArgInfoFromBitcode(Bitcode);
+    if (CopySource && Source.isKnown())
+      Source.copyTo(MnemeDirectory);
     ModuleFiles.emplace_back(StoreModuleBytes(
         Bitcode, MnemeDirectory, KInfo.getStaticHash()));
   }
@@ -911,6 +1051,7 @@ class RecordDatabase {
   uint64_t MaxRecordings;
   uint64_t SkipRecordings;
   EpilogueSnapshotType EpilogueType;
+  bool CopySource;
 
 public:
   RecordDatabase() : KernelWhiteList(""), HasRegex(false) {
@@ -925,6 +1066,7 @@ public:
     MaxRecordings = Conf.MaxRecordings;
     SkipRecordings = Conf.SkipRecordings;
     EpilogueType = Conf.EpilogueType;
+    CopySource = Conf.CopySource;
   }
 
   void writeKernelJSON(uint64_t StaticHash) {
@@ -993,7 +1135,7 @@ public:
 
     auto IT = KernelRecords.try_emplace(
         StaticHash, KernelInstancesCollection(getDir(), VAddr, VASize, KInfo,
-                                              MaxRecordings));
+                                              MaxRecordings, CopySource));
     LOG_INFO("Created instance");
     return IT.first->second.takeSnapshot<VendorTypes>(
         MnemeDirectory, KInfo.getGlobals(), DeviceMemory, GridDim, BlockDim,

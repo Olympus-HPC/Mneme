@@ -13,6 +13,7 @@ function(add_mneme target)
         PRIVATE
           -fno-discard-value-names
           -ftrivial-auto-var-init=zero
+          -gline-tables-only
       )
     endif()
 
