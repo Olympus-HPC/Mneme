@@ -31,6 +31,9 @@ else:
 ffi.lib.MnemePY_initializePageManager.argtypes = [c_int, c_uintptr_t, c_uint64]
 ffi.lib.MnemePY_initializePageManager.restype = c_void_p
 
+ffi.lib.MnemePY_getPageManagerVAStart.argtypes = [c_void_p]
+ffi.lib.MnemePY_getPageManagerVAStart.restype = c_uintptr_t
+
 ffi.lib.MnemePY_DisposePageManager.argtypes = [c_void_p]
 
 
@@ -54,3 +57,7 @@ class PageManagerRef(ffi.ObjectRef):
 
     def _dispose(self):
         ffi.lib.MnemePY_DisposePageManager(self)
+
+    @property
+    def va_start(self) -> int:
+        return int(ffi.lib.MnemePY_getPageManagerVAStart(self))

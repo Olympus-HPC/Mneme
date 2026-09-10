@@ -12,13 +12,15 @@ using namespace llvm;
 extern "C" {
 API_EXPORT(MnemeDeviceMemStateRef)
 MnemePy_initializeMemState(const char *KernelName, const char *fn,
-                           const char *BasePrologueFn, bool isPrologue) {
+                           const char *BasePrologueFn, bool isPrologue,
+                           uintptr_t ReplayVABase) {
   std::string BaseSnapshotName =
       BasePrologueFn == nullptr ? "" : std::string(BasePrologueFn);
   std::unique_ptr<DeviceMemState> state =
       isPrologue
-          ? makeReplayPrologueState<Vendor>(KernelName, fn)
-          : makeReplayEpilogueState<Vendor>(KernelName, fn, BaseSnapshotName);
+          ? makeReplayPrologueState<Vendor>(KernelName, fn, ReplayVABase)
+          : makeReplayEpilogueState<Vendor>(KernelName, fn, BaseSnapshotName,
+                                            ReplayVABase);
   return wrap(state.release());
 }
 
