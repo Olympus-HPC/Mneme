@@ -820,21 +820,16 @@ private:
         CompileMD5 = Checksum->Value.str();
   }
 
-  // The last line of the kernel itself that generated code, which for Clang is
-  // normally its closing brace. Locations from inlined callees or from other
-  // subprograms do not belong to the kernel's own line range.
+  // The last line of the kernel that generated code, which for Clang is
+  // normally its closing brace. Proteus captures the bitcode before inlining,
+  // so every location in the function belongs to the kernel itself.
   static unsigned findLastCodeLine(const llvm::Function &F,
                                    const llvm::DISubprogram &SP) {
     unsigned Last = SP.getScopeLine();
     for (const llvm::BasicBlock &BB : F)
-      for (const llvm::Instruction &I : BB) {
-        const llvm::DILocation *DL = I.getDebugLoc().get();
-        if (!DL || DL->getInlinedAt())
-          continue;
-        if (DL->getScope()->getSubprogram() != &SP)
-          continue;
-        Last = std::max(Last, DL->getLine());
-      }
+      for (const llvm::Instruction &I : BB)
+        if (const llvm::DILocation *DL = I.getDebugLoc().get())
+          Last = std::max(Last, DL->getLine());
     return Last;
   }
 };
