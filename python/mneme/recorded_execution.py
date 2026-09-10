@@ -22,6 +22,7 @@ Notes
   and replay tools.
 """
 
+import hashlib
 import json
 from ctypes import POINTER, c_bool, c_char_p, c_int, c_void_p
 from enum import Enum
@@ -534,11 +535,16 @@ class RecordedExecution:
         generated code. The recorded copy is preferred over the original file
         because it is guaranteed to match what was compiled.
 
+        A candidate whose contents no longer hash to ``source_md5`` is skipped:
+        the recorded line numbers describe the revision that was compiled, so
+        applying them to an edited file would return unrelated text.
+
         Returns
         -------
         Optional[str]
             The kernel's source text, or ``None`` when the record has no line
-            information or neither the copy nor the original file is readable.
+            information, or when no candidate is both readable and unchanged
+            since it was compiled.
         """
         if self.source_line is None or self.source_end_line is None:
             return None
@@ -547,6 +553,10 @@ class RecordedExecution:
             if candidate is None or not Path(candidate).exists():
                 continue
             try:
+                if self.source_md5 is not None:
+                    digest = hashlib.md5(Path(candidate).read_bytes()).hexdigest()
+                    if digest != self.source_md5:
+                        continue
                 with open(candidate, "r") as fd:
                     lines = fd.readlines()
             except OSError:

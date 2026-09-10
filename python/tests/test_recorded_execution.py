@@ -1,3 +1,4 @@
+import hashlib
 import json
 import tempfile
 from unittest.mock import patch, MagicMock
@@ -316,21 +317,47 @@ def test_recorded_execution_from_json_reconstructs(tmp_path, path_style, with_so
 
 def test_recorded_execution_kernel_source_slices_recorded_copy(tmp_path):
     """
-    kernel_source returns the inclusive, 1-based line range of the kernel and
-    None when the record carries no line information.
+    kernel_source returns the inclusive, 1-based line range of the kernel, None
+    when the record carries no line information, and skips a candidate whose
+    contents no longer match the recorded checksum.
     """
+    text = "line1\nline2\nline3\nline4\n"
+    digest = hashlib.md5(text.encode()).hexdigest()
     copy_path = tmp_path / "RecordedSource_ab_K.cu"
-    copy_path.write_text("line1\nline2\nline3\nline4\n")
+    copy_path.write_text(text)
 
     def make(**source_kwargs):
+        source_kwargs.setdefault("source_copy", str(copy_path))
         return RecordedExecution(
             "S", "K", "DK", ["a.ll"], ["x"], [True], "0x100", 32, {},
-            source_copy=str(copy_path),
             **source_kwargs,
         )
 
     assert make(source_line=2, source_end_line=3).kernel_source() == "line2\nline3\n"
     assert make().kernel_source() is None
+    assert (
+        make(source_line=2, source_end_line=3, source_md5=digest).kernel_source()
+        == "line2\nline3\n"
+    )
+    assert (
+        make(source_line=2, source_end_line=3, source_md5="0" * 32).kernel_source()
+        is None
+    )
+
+    edited = tmp_path / "edited.cu"
+    edited.write_text("inserted\n" + text)
+    unchanged = tmp_path / "K.cu"
+    unchanged.write_text(text)
+    assert (
+        make(
+            source_copy=str(edited),
+            source_file=str(unchanged),
+            source_md5=digest,
+            source_line=2,
+            source_end_line=3,
+        ).kernel_source()
+        == "line2\nline3\n"
+    )
 
 
 @pytest.mark.parametrize("layout", ["in_dir", "out_of_dir"])
