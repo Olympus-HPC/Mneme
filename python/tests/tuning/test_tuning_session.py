@@ -7,6 +7,7 @@ from types import SimpleNamespace
 import pytest
 
 from mneme.mneme_types import ExperimentConfiguration, ExperimentResult, dim3
+from mneme.recorded_execution import KernelSource
 from mneme.tuning import session as tune_session
 from mneme.tuning.search_space import (
     BaseParam,
@@ -68,10 +69,16 @@ class FakeKernel:
 
 
 class FakeRecorded:
+    def __init__(self, source=None):
+        self.source = source
+
     def __getitem__(self, record_id):
         if record_id != "rid":
             raise KeyError(record_id)
         return FakeKernel()
+
+    def kernel_source(self):
+        return self.source
 
 
 class DoneFuture:
@@ -552,14 +559,15 @@ def test_run_reports_baseline_failure(monkeypatch, tmp_path, capsys):
     assert executor.submitted == []
 
 
-def test_run_baseline_only_writes_baseline_as_best(monkeypatch, tmp_path):
+def test_run_baseline_only_writes_baseline_as_best(monkeypatch, tmp_path, capsys):
     executor = RecordingExecutor(
         baseline_result=ExperimentResult(verified=True, executed=True, exec_time=[100])
     )
+    source = KernelSource("/src/k.cu", 11, 14, "")
     monkeypatch.setattr(
         tune_session.RecordedExecution,
         "from_json",
-        staticmethod(lambda _: FakeRecorded()),
+        staticmethod(lambda _: FakeRecorded(source)),
     )
     monkeypatch.setattr(
         TuningSession,
@@ -568,9 +576,12 @@ def test_run_baseline_only_writes_baseline_as_best(monkeypatch, tmp_path):
     )
     monkeypatch.setattr(tune_session, "AsyncReplayExecutor", lambda **kwargs: executor)
 
-    session = TuningSession(make_options(tmp_path, baseline_only=True, proteus_enabled=False))
+    session = TuningSession(
+        make_options(tmp_path, baseline_only=True, proteus_enabled=False, quiet=False)
+    )
 
     assert session.run() == 0
+    assert "  source:          /src/k.cu:11-14" in capsys.readouterr().out
     assert executor.submitted == []
     best = json.loads((tmp_path / "best.json").read_text())
     assert best["params"] == {"baseline": True}
