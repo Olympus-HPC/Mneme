@@ -59,7 +59,7 @@ int main(int argc, char **argv) {
                             GV.VarSize);
 
   auto Buff = const_cast<const char *>(Buffer.data());
-  auto tmp = mneme::MnemeSnapshot<Vendor>::fromBuffer(Buff);
+  auto tmp = mneme::readGlobalVarRecord(Buff);
   auto &GName = tmp.first;
   auto &GVR   = tmp.second;
 
