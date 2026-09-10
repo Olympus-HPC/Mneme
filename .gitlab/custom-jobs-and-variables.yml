@@ -15,8 +15,6 @@ variables:
   SLURM_JOB_NAME: ${CI_PROJECT_NAME}_ci_${CI_JOB_ID}
 # Standalone Flux batch jobs need a job-scoped unique name for cleanup.
   FLUX_JOB_NAME: ${CI_PROJECT_NAME}_ci_${CI_JOB_ID}
-# Flux accounting bank for every submission to a system instance. The default
-# bank caps us at 7 active jobs, which the build matrix exceeds on its own.
   FLUX_BANK: "asccasc"
 
 # Ruby
