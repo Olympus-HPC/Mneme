@@ -41,9 +41,19 @@ class EvalFuture:
         Stable identifier assigned by the submitting executor.
     config : ExperimentConfiguration
         Configuration associated with this evaluation request.
+    ir_revision : int
+        IR revision captured when this evaluation was submitted.
+    ir_data : str | None
+        Replacement IR associated with ``ir_revision``.
     """
 
-    def __init__(self, job_id: int, config: ExperimentConfiguration):
+    def __init__(
+        self,
+        job_id: int,
+        config: ExperimentConfiguration,
+        ir_revision: int = 0,
+        ir_data: Optional[str] = None,
+    ):
         """
         Parameters
         ----------
@@ -51,9 +61,15 @@ class EvalFuture:
             Unique identifier for this evaluation.
         config : ExperimentConfiguration
             Configuration to be evaluated.
+        ir_revision : int, optional
+            IR revision captured for this evaluation.
+        ir_data : str | None, optional
+            Replacement IR associated with the captured revision.
         """
         self.job_id = job_id
         self.config = config  # small dict of input params
+        self.ir_revision = ir_revision
+        self.ir_data = ir_data
 
         self._cond = threading.Condition()
         self._done = False
