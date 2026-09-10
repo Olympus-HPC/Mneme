@@ -15,6 +15,7 @@ variables:
   SLURM_JOB_NAME: ${CI_PROJECT_NAME}_ci_${CI_JOB_ID}
 # Standalone Flux batch jobs need a job-scoped unique name for cleanup.
   FLUX_JOB_NAME: ${CI_PROJECT_NAME}_ci_${CI_JOB_ID}
+  FLUX_BANK: "asccasc"
 
 # Ruby
 # Arguments for top level allocation
@@ -44,9 +45,9 @@ variables:
 # Tioga
 # Arguments for top level allocation
 # OPTIONAL: "-o per-resource.count=2" allows to get 2 jobs running on each node.
-  TIOGA_SHARED_ALLOC: "--queue=pci --exclusive --time-limit=1h --nodes=1 -o per-resource.count=4"
+  TIOGA_SHARED_ALLOC: "--bank=${FLUX_BANK} --queue=pci --exclusive --time-limit=1h --nodes=1 -o per-resource.count=4"
 # Arguments for job level allocation
-  TIOGA_JOB_ALLOC: "--nodes=1 --begin-time=+5s"
+  TIOGA_JOB_ALLOC: "--bank=${FLUX_BANK} --nodes=1 --begin-time=+5s"
 # Add variables that should apply to all the jobs on a machine:
 #  TIOGA_MY_VAR: "..."
 
@@ -61,9 +62,9 @@ variables:
 # Tuo
 # Arguments for top level allocation
 # OPTIONAL: "-o per-resource.count=2" allows to get 2 jobs running on each node.
-  TUOLUMNE_SHARED_ALLOC: "--queue=pci --exclusive --time-limit=1h --nodes=1 -o per-resource.count=4"
+  TUOLUMNE_SHARED_ALLOC: "--bank=${FLUX_BANK} --queue=pci --exclusive --time-limit=1h --nodes=1 -o per-resource.count=4"
 # Arguments for job level allocation
-  TUOLUMNE_JOB_ALLOC: "--nodes=1 --begin-time=+5s"
+  TUOLUMNE_JOB_ALLOC: "--bank=${FLUX_BANK} --nodes=1 --begin-time=+5s"
 # Add variables that should apply to all the jobs on a machine:
 #  TUOLUMNE_MY_VAR: "..."
 
