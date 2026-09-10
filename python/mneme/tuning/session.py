@@ -779,6 +779,9 @@ class TuningSession:
         self._print(f"  record database: {self.options.record_database}")
         self._print(f"  record id:       {self.options.record_id}")
         self._print(f"  kernel:          {kernel.kernel_name}")
+        source = recorded.kernel_source()
+        if source is not None:
+            self._print(f"  source:          {source.location}")
         self._print(f"  space preset:    {self.options.space_preset if not self.options.space_module else 'custom'}")
         self._print(f"  sampler:         {self.options.sampler}")
         self._print(f"  trials:          {self.options.trials}")

@@ -1,3 +1,4 @@
+import hashlib
 import json
 import tempfile
 from unittest.mock import patch, MagicMock
@@ -148,9 +149,20 @@ def test_memstate_equality_uses_ffi_compare():
 #                      RecordedExecution Tests
 # ======================================================================
 
-def test_recorded_execution_to_dict():
+@pytest.mark.parametrize("with_source", [False, True])
+def test_recorded_execution_to_dict(with_source):
     fake_instance = MagicMock()
     fake_instance.to_dict.return_value = {"X": 1}
+
+    source_kwargs = {}
+    if with_source:
+        source_kwargs = dict(
+            source_file="/src/k.cu",
+            source_copy="RecordedSource_ab_k.cu",
+            source_md5="ab",
+            source_line=11,
+            source_end_line=25,
+        )
 
     r = RecordedExecution(
         static_hash="S",
@@ -162,6 +174,7 @@ def test_recorded_execution_to_dict():
         va_addr="0x100",
         va_size=32,
         kernel_instances={"hashX": fake_instance},
+        **source_kwargs,
     )
 
     d = r.to_dict()
@@ -169,6 +182,20 @@ def test_recorded_execution_to_dict():
     assert d["KernelName"] == "K"
     assert d["Modules"] == ["a.ll"]
     assert d["instances"]["hashX"] == {"X": 1}
+    if with_source:
+        assert d["SourceFile"] == "/src/k.cu"
+        assert d["SourceCopy"] == "RecordedSource_ab_k.cu"
+        assert d["SourceMD5"] == "ab"
+        assert d["SourceLine"] == 11
+        assert d["SourceEndLine"] == 25
+    else:
+        assert not {
+            "SourceFile",
+            "SourceCopy",
+            "SourceMD5",
+            "SourceLine",
+            "SourceEndLine",
+        } & d.keys()
 
 
 def test_recorded_execution_link_llvm_modules_calls_jit():
@@ -202,8 +229,9 @@ def test_make_path_relative_accepts_basename_but_rejects_nested_relative(tmp_pat
         _make_path_relative("record-db/file.epi", tmp_path)
 
 
+@pytest.mark.parametrize("with_source", [False, True])
 @pytest.mark.parametrize("path_style", ["basename", "absolute"])
-def test_recorded_execution_from_json_reconstructs(tmp_path, path_style):
+def test_recorded_execution_from_json_reconstructs(tmp_path, path_style, with_source):
     """
     from_json must resolve relative path entries against the JSON file's
     parent directory and pass absolute path entries through unchanged. In
@@ -212,6 +240,7 @@ def test_recorded_execution_from_json_reconstructs(tmp_path, path_style):
     mod_path = tmp_path / "modA.ll"
     pro_path = tmp_path / "file.pro"
     epi_path = tmp_path / "file.epi"
+    copy_path = tmp_path / "RecordedSource_ab_K.cu"
     for p in (mod_path, pro_path, epi_path):
         p.touch()
 
@@ -219,10 +248,12 @@ def test_recorded_execution_from_json_reconstructs(tmp_path, path_style):
         modules = [mod_path.name]
         prologue = pro_path.name
         epilogue = epi_path.name
+        source_copy = copy_path.name
     else:
         modules = [str(mod_path)]
         prologue = str(pro_path)
         epilogue = str(epi_path)
+        source_copy = str(copy_path)
 
     data = {
         "StaticHash": "S",
@@ -246,14 +277,34 @@ def test_recorded_execution_from_json_reconstructs(tmp_path, path_style):
         },
     }
 
+    if with_source:
+        data["SourceFile"] = "/src/K.cu"
+        data["SourceCopy"] = source_copy
+        data["SourceMD5"] = "ab"
+        data["SourceLine"] = 11
+        data["SourceEndLine"] = 25
+
     json_path = tmp_path / "db.json"
     json_path.write_text(json.dumps(data))
 
     r = RecordedExecution.from_json(str(json_path))
 
     assert r.kernel_name == "K"
+    if with_source:
+        assert r.source_file == "/src/K.cu"
+        assert r.source_copy == str(copy_path)
+        assert r.source_md5 == "ab"
+        assert r.source_line == 11
+        assert r.source_end_line == 25
+    else:
+        assert r.source_file is None
+        assert r.source_copy is None
+        assert r.source_md5 is None
+        assert r.source_line is None
+        assert r.source_end_line is None
     assert "H" in r.kernel_instances
     inst = r.kernel_instances["H"]
+    assert inst.execution is r
     assert inst.block_dim.x == 1
     assert inst.grid_dim.z == 6
     assert inst.occ == 3
@@ -263,6 +314,54 @@ def test_recorded_execution_from_json_reconstructs(tmp_path, path_style):
     assert inst.epilogue.fn == str(epi_path)
     assert inst.epilogue.base_prologue_fn == str(pro_path)
     assert inst.epilogue.s_type == SnapshotType.EPILOGUE
+
+
+def test_recorded_execution_kernel_source_slices_recorded_copy(tmp_path):
+    """
+    kernel_source returns the inclusive, 1-based line range of the kernel, None
+    when the record carries no line information, and skips a candidate whose
+    contents no longer match the recorded checksum.
+    """
+    text = "line1\nline2\nline3\nline4\n"
+    digest = hashlib.md5(text.encode()).hexdigest()
+    copy_path = tmp_path / "RecordedSource_ab_K.cu"
+    copy_path.write_text(text)
+
+    def make(**source_kwargs):
+        source_kwargs.setdefault("source_copy", str(copy_path))
+        return RecordedExecution(
+            "S", "K", "DK", ["a.ll"], ["x"], [True], "0x100", 32, {},
+            **source_kwargs,
+        )
+
+    source = make(source_line=2, source_end_line=3).kernel_source()
+    assert source.text == "line2\nline3\n"
+    assert source.file == str(copy_path)
+    assert (source.line, source.end_line) == (2, 3)
+    assert source.location == f"{copy_path}:2-3"
+    assert make().kernel_source() is None
+    assert (
+        make(source_line=2, source_end_line=3, source_md5=digest).kernel_source().text
+        == "line2\nline3\n"
+    )
+    assert (
+        make(source_line=2, source_end_line=3, source_md5="0" * 32).kernel_source()
+        is None
+    )
+
+    edited = tmp_path / "edited.cu"
+    edited.write_text("inserted\n" + text)
+    unchanged = tmp_path / "K.cu"
+    unchanged.write_text(text)
+    source = make(
+        source_copy=str(edited),
+        source_file=str(unchanged),
+        source_md5=digest,
+        source_line=2,
+        source_end_line=3,
+    ).kernel_source()
+    assert source.text == "line2\nline3\n"
+    assert source.file == str(unchanged)
 
 
 @pytest.mark.parametrize("layout", ["in_dir", "out_of_dir"])

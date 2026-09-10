@@ -22,8 +22,10 @@ Notes
   and replay tools.
 """
 
+import hashlib
 import json
 from ctypes import POINTER, c_bool, c_char_p, c_int, c_void_p
+from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -312,6 +314,25 @@ class MemStateRef:
             pass
 
 
+@dataclass(frozen=True)
+class KernelSource:
+    """
+    Source text of a recorded kernel and where it was read from.
+
+    ``line`` and ``end_line`` are inclusive and 1-based. ``file`` is the path
+    the text was read from, which is the recorded copy when one is available.
+    """
+
+    file: str
+    line: int
+    end_line: int
+    text: str
+
+    @property
+    def location(self) -> str:
+        return f"{self.file}:{self.line}-{self.end_line}"
+
+
 class RecordedExecution:
     """
     Description of a recorded kernel execution and its dynamic instances.
@@ -395,6 +416,9 @@ class RecordedExecution:
                 if v:
                     self.available_specializations.append(i)
             self.occ = occ
+            # Set by the owning RecordedExecution so consumers handed only an
+            # instance, such as custom search spaces, can reach kernel_source().
+            self.execution: Optional["RecordedExecution"] = None
             self.prologue = MemStateRef(prologue_fn, kernel_name, SnapshotType.PROLOGUE)
             self.epilogue = MemStateRef(
                 epilogue_fn,
@@ -445,6 +469,11 @@ class RecordedExecution:
         va_addr: str,
         va_size: int,
         kernel_instances: Dict[str, KernelInstance],
+        source_file: Optional[str] = None,
+        source_copy: Optional[str] = None,
+        source_md5: Optional[str] = None,
+        source_line: Optional[int] = None,
+        source_end_line: Optional[int] = None,
     ):
         self.static_hash = static_hash
         self.kernel_name = kernel_name
@@ -455,6 +484,13 @@ class RecordedExecution:
         self.va_addr = va_addr
         self.va_size = va_size
         self.kernel_instances = kernel_instances
+        for instance in kernel_instances.values():
+            instance.execution = self
+        self.source_file = source_file
+        self.source_copy = source_copy
+        self.source_md5 = source_md5
+        self.source_line = source_line
+        self.source_end_line = source_end_line
         self._link_mod = None
 
     def __str__(self):
@@ -464,6 +500,7 @@ class RecordedExecution:
         return self.kernel_instances[key]
 
     def __setitem__(self, key, value):
+        value.execution = self
         self.kernel_instances[key] = value
 
     def __delitem__(self, key):
@@ -515,6 +552,50 @@ class RecordedExecution:
 
         return self._link_mod
 
+    def kernel_source(self) -> Optional[KernelSource]:
+        """
+        Return the recorded source text of the kernel definition.
+
+        The range spans ``source_line`` through ``source_end_line`` inclusive
+        and 1-based, where the end line is the last line of the kernel that
+        generated code. The recorded copy is preferred over the original file
+        because it is guaranteed to match what was compiled.
+
+        A candidate whose contents no longer hash to ``source_md5`` is skipped:
+        the recorded line numbers describe the revision that was compiled, so
+        applying them to an edited file would return unrelated text.
+
+        Returns
+        -------
+        Optional[KernelSource]
+            The kernel's source text and location, or ``None`` when the record
+            has no line information, or when no candidate is both readable and
+            unchanged since it was compiled.
+        """
+        if self.source_line is None or self.source_end_line is None:
+            return None
+
+        for candidate in (self.source_copy, self.source_file):
+            if candidate is None or not Path(candidate).exists():
+                continue
+            try:
+                if self.source_md5 is not None:
+                    digest = hashlib.md5(Path(candidate).read_bytes()).hexdigest()
+                    if digest != self.source_md5:
+                        continue
+                with open(candidate, "r") as fd:
+                    lines = fd.readlines()
+            except OSError:
+                continue
+            return KernelSource(
+                candidate,
+                self.source_line,
+                self.source_end_line,
+                "".join(lines[self.source_line - 1 : self.source_end_line]),
+            )
+
+        return None
+
     def to_dict(self, base_dir: "Path | None" = None):
         res = {}
         res["ArgNames"] = self.arg_names
@@ -524,6 +605,16 @@ class RecordedExecution:
         res["Modules"] = [_make_path_relative(m, base_dir) for m in self.llvm_files]
         res["Specializations"] = self.specializations
         res["StaticHash"] = self.static_hash
+        if self.source_file is not None:
+            res["SourceFile"] = self.source_file
+        if self.source_copy is not None:
+            res["SourceCopy"] = _make_path_relative(self.source_copy, base_dir)
+        if self.source_md5 is not None:
+            res["SourceMD5"] = self.source_md5
+        if self.source_line is not None:
+            res["SourceLine"] = self.source_line
+        if self.source_end_line is not None:
+            res["SourceEndLine"] = self.source_end_line
         res["VASize"] = self.va_size
         res["VAddr"] = self.va_addr
         res["instances"] = {}
@@ -615,6 +706,11 @@ class RecordedExecution:
             if not Path(llvm_fn).exists():
                 raise RuntimeError(f"File {llvm_fn} does not exist")
 
+        # The source copy is auxiliary to replay, so its absence is not an error.
+        source_copy = record_db.get("SourceCopy")
+        if source_copy is not None:
+            source_copy = _resolve(source_copy)
+
         return cls(
             record_db["StaticHash"],
             record_db["KernelName"],
@@ -625,4 +721,9 @@ class RecordedExecution:
             record_db["VAddr"],
             record_db["VASize"],
             instances,
+            source_file=record_db.get("SourceFile"),
+            source_copy=source_copy,
+            source_md5=record_db.get("SourceMD5"),
+            source_line=record_db.get("SourceLine"),
+            source_end_line=record_db.get("SourceEndLine"),
         )
