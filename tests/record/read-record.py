@@ -105,9 +105,11 @@ for fn in sorted(glob.glob(os.path.join(data_dir, "*.json"))):
         digest = hashlib.md5(copy_path.read_bytes()).hexdigest()
         print("SourceCopy:", rr_data["SourceCopy"])
         print("SourceMD5:", "ok" if digest == rr_data.get("SourceMD5") else "mismatch")
+        source_lines = copy_path.read_text().splitlines()
         if "SourceLine" in rr_data:
-            source_lines = copy_path.read_text().splitlines()
             print("SourceText:", source_lines[rr_data["SourceLine"] - 1].strip())
+        if "SourceEndLine" in rr_data:
+            print("SourceEndText:", source_lines[rr_data["SourceEndLine"] - 1].strip())
     for k, instance in rr_data["instances"].items():
         print(
             "BlockDims:({0}, {1}, {2})".format(
