@@ -17,6 +17,9 @@ class FakeRecorded:
     llvm_files = []
     demangled_name = "fake::kernel"
 
+    def kernel_source(self):
+        return None
+
     def __getitem__(self, record_id):
         if record_id != "rid":
             raise KeyError(record_id)

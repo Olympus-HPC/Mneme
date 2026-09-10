@@ -333,10 +333,14 @@ def test_recorded_execution_kernel_source_slices_recorded_copy(tmp_path):
             **source_kwargs,
         )
 
-    assert make(source_line=2, source_end_line=3).kernel_source() == "line2\nline3\n"
+    source = make(source_line=2, source_end_line=3).kernel_source()
+    assert source.text == "line2\nline3\n"
+    assert source.file == str(copy_path)
+    assert (source.line, source.end_line) == (2, 3)
+    assert source.location == f"{copy_path}:2-3"
     assert make().kernel_source() is None
     assert (
-        make(source_line=2, source_end_line=3, source_md5=digest).kernel_source()
+        make(source_line=2, source_end_line=3, source_md5=digest).kernel_source().text
         == "line2\nline3\n"
     )
     assert (
@@ -348,16 +352,15 @@ def test_recorded_execution_kernel_source_slices_recorded_copy(tmp_path):
     edited.write_text("inserted\n" + text)
     unchanged = tmp_path / "K.cu"
     unchanged.write_text(text)
-    assert (
-        make(
-            source_copy=str(edited),
-            source_file=str(unchanged),
-            source_md5=digest,
-            source_line=2,
-            source_end_line=3,
-        ).kernel_source()
-        == "line2\nline3\n"
-    )
+    source = make(
+        source_copy=str(edited),
+        source_file=str(unchanged),
+        source_md5=digest,
+        source_line=2,
+        source_end_line=3,
+    ).kernel_source()
+    assert source.text == "line2\nline3\n"
+    assert source.file == str(unchanged)
 
 
 @pytest.mark.parametrize("layout", ["in_dir", "out_of_dir"])

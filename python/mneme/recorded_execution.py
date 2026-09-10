@@ -25,6 +25,7 @@ Notes
 import hashlib
 import json
 from ctypes import POINTER, c_bool, c_char_p, c_int, c_void_p
+from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -313,6 +314,25 @@ class MemStateRef:
             pass
 
 
+@dataclass(frozen=True)
+class KernelSource:
+    """
+    Source text of a recorded kernel and where it was read from.
+
+    ``line`` and ``end_line`` are inclusive and 1-based. ``file`` is the path
+    the text was read from, which is the recorded copy when one is available.
+    """
+
+    file: str
+    line: int
+    end_line: int
+    text: str
+
+    @property
+    def location(self) -> str:
+        return f"{self.file}:{self.line}-{self.end_line}"
+
+
 class RecordedExecution:
     """
     Description of a recorded kernel execution and its dynamic instances.
@@ -526,7 +546,7 @@ class RecordedExecution:
 
         return self._link_mod
 
-    def kernel_source(self) -> Optional[str]:
+    def kernel_source(self) -> Optional[KernelSource]:
         """
         Return the recorded source text of the kernel definition.
 
@@ -541,10 +561,10 @@ class RecordedExecution:
 
         Returns
         -------
-        Optional[str]
-            The kernel's source text, or ``None`` when the record has no line
-            information, or when no candidate is both readable and unchanged
-            since it was compiled.
+        Optional[KernelSource]
+            The kernel's source text and location, or ``None`` when the record
+            has no line information, or when no candidate is both readable and
+            unchanged since it was compiled.
         """
         if self.source_line is None or self.source_end_line is None:
             return None
@@ -561,7 +581,12 @@ class RecordedExecution:
                     lines = fd.readlines()
             except OSError:
                 continue
-            return "".join(lines[self.source_line - 1 : self.source_end_line])
+            return KernelSource(
+                candidate,
+                self.source_line,
+                self.source_end_line,
+                "".join(lines[self.source_line - 1 : self.source_end_line]),
+            )
 
         return None
 
