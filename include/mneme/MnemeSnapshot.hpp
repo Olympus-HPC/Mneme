@@ -482,6 +482,7 @@ template <DeviceVendors VendorTypes> class MnemeSnapshot {
       size_t Size = util::extractScalar<size_t>(CurrentPtr);
       uint64_t BlobId = util::extractScalar<uint64_t>(CurrentPtr);
       uint64_t BlobOffset = util::extractScalar<uint64_t>(CurrentPtr);
+      auto MD = metadata::fromBuffer(CurrentPtr);
       size_t NumRanges = util::extractScalar<size_t>(CurrentPtr);
 
       auto *Blob = findBlobById(DeviceMemory, BlobId);
@@ -493,6 +494,7 @@ template <DeviceVendors VendorTypes> class MnemeSnapshot {
       if (Blob->getBlobOffset() != BlobOffset)
         LOG_FATAL("Mneme diff blob offset mismatch for blob id " +
                   std::to_string(BlobId));
+      Blob->setMetadata(MD);
       applyDiffRanges(
           CurrentPtr,
           llvm::MutableArrayRef<uint8_t>(Blob->getHostData().get(),
