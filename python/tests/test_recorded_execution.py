@@ -304,6 +304,7 @@ def test_recorded_execution_from_json_reconstructs(tmp_path, path_style, with_so
         assert r.source_end_line is None
     assert "H" in r.kernel_instances
     inst = r.kernel_instances["H"]
+    assert inst.execution is r
     assert inst.block_dim.x == 1
     assert inst.grid_dim.z == 6
     assert inst.occ == 3

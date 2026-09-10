@@ -416,6 +416,9 @@ class RecordedExecution:
                 if v:
                     self.available_specializations.append(i)
             self.occ = occ
+            # Set by the owning RecordedExecution so consumers handed only an
+            # instance, such as custom search spaces, can reach kernel_source().
+            self.execution: Optional["RecordedExecution"] = None
             self.prologue = MemStateRef(prologue_fn, kernel_name, SnapshotType.PROLOGUE)
             self.epilogue = MemStateRef(
                 epilogue_fn,
@@ -481,6 +484,8 @@ class RecordedExecution:
         self.va_addr = va_addr
         self.va_size = va_size
         self.kernel_instances = kernel_instances
+        for instance in kernel_instances.values():
+            instance.execution = self
         self.source_file = source_file
         self.source_copy = source_copy
         self.source_md5 = source_md5
@@ -495,6 +500,7 @@ class RecordedExecution:
         return self.kernel_instances[key]
 
     def __setitem__(self, key, value):
+        value.execution = self
         self.kernel_instances[key] = value
 
     def __delitem__(self, key):
