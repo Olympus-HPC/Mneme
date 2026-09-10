@@ -55,9 +55,9 @@ variables:
 # Time in minutes.
 # Arguments for top level allocation
 # Note: can be set to "OFF" to prevent allocation sharing.
-  MATRIX_SHARED_ALLOC: "--gpus=1 --nodes=1 --time=60 --partition=pdebug"
+  MATRIX_SHARED_ALLOC: "--account=${FLUX_BANK} --gpus=1 --nodes=1 --time=60 --partition=pdebug"
 # Arguments for job level allocation
-  MATRIX_JOB_ALLOC: "--gpus=1 --nodes=1"
+  MATRIX_JOB_ALLOC: "--account=${FLUX_BANK} --gpus=1 --nodes=1"
 
 # Tuo
 # Arguments for top level allocation
