@@ -13,9 +13,20 @@ NORM_L2 = 2
 NORM_LINF = 3
 
 
+# The container prefix SnapshotHeader writes. Older recordings have none.
+CONTAINER_MAGIC = b"MNEMESNP"
+CONTAINER_SIZE = 16
+
+
+def _payload_offset(data: bytes) -> int:
+    if len(data) >= CONTAINER_SIZE and data[:8] == CONTAINER_MAGIC:
+        return CONTAINER_SIZE
+    return 0
+
+
 def _parse_prologue_blob_metadata(prologue_path: Path):
     data = prologue_path.read_bytes()
-    off = 0
+    off = _payload_offset(data)
 
     def read_u64():
         nonlocal off

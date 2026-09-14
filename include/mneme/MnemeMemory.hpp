@@ -13,6 +13,7 @@
 #include "mneme/MnemeAnnotationInternal.hpp"
 #include "mneme/MnemeComparators.hpp"
 #include "mneme/MnemeLogger.hpp"
+#include "mneme/MnemeSnapshotRecords.hpp"
 #include "mneme/MnemeUtils.hpp"
 
 namespace mneme {
@@ -86,16 +87,14 @@ public:
 
   static std::pair<void *, MnemeMemoryBlob<VendorTypes>>
   fromBuffer(const char *&Buffer) {
-    size_t ActualSize = util::extractScalar<size_t>(Buffer);
-    size_t Size = util::extractScalar<size_t>(Buffer);
-    void *DeviceAddr = util::extractScalar<void *>(Buffer);
-    auto Blob = MnemeMemoryBlob<VendorTypes>(ActualSize, 0, Size);
-    std::memcpy(Blob.getHostData().get(), Buffer, Size);
-    Buffer += Size;
+    BlobHeader Header = BlobHeader::read(Buffer);
+    auto Blob = MnemeMemoryBlob<VendorTypes>(Header.ActualSize, 0, Header.Size);
+    std::memcpy(Blob.getHostData().get(), Buffer, Header.Size);
+    Buffer += Header.Size;
     LOG_DEBUG("Read memory blob at address {} SIZE: {} ActualSize:{}",
-              DeviceAddr, Size, ActualSize);
+              Header.DevAddr, Header.Size, Header.ActualSize);
     Blob.PtrMD = metadata::fromBuffer(Buffer);
-    return std::make_pair(DeviceAddr, std::move(Blob));
+    return std::make_pair(Header.DevAddr, std::move(Blob));
   }
 
   void *ptr() { return reinterpret_cast<void *>(BlobAddr); }
@@ -167,12 +166,7 @@ llvm::raw_ostream &operator<<(llvm::raw_ostream &OS,
                               const MnemeMemoryBlob<VendorTypes> &Blob) {
   // The format in the binary is the following:
   // | Var Actual Size | Var-Size | Device Address | Var Data | Metadata
-  OS << llvm::StringRef(reinterpret_cast<const char *>(&Blob.ActualSize),
-                        sizeof(Blob.ActualSize));
-  OS << llvm::StringRef(reinterpret_cast<const char *>(&Blob.Size),
-                        sizeof(Blob.Size));
-  OS << llvm::StringRef(reinterpret_cast<const char *>(&Blob.BlobAddr),
-                        sizeof(Blob.BlobAddr));
+  BlobHeader{Blob.ActualSize, Blob.Size, Blob.BlobAddr}.write(OS);
 
   LOG_DEBUG("Serializing MemoryBlob, DevAddr:{} MirroredHostAddr:{} Size:{} "
             "ActualSize:{}",
