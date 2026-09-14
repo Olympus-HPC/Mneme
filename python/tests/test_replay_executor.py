@@ -20,6 +20,8 @@ class FakePageManager:
         self.device_id = device_id
         self.va_addr = va_addr
         self.va_size = va_size
+        # Replay reserved a different base than the recording used.
+        self.va_start = va_addr + 0x4000
         self.closed = False
 
     def close(self):
@@ -45,16 +47,20 @@ class FakeSnapshot:
 class FakePrologueDescr:
     def __init__(self, snapshot):
         self._snapshot = snapshot
+        self.open_calls = []
 
-    def open(self):
+    def open(self, recorded_va_addr, replay_va_addr):
+        self.open_calls.append((recorded_va_addr, replay_va_addr))
         return self._snapshot
 
 
 class FakeEpilogueDescr:
     def __init__(self, snapshot):
         self._snapshot = snapshot
+        self.open_calls = []
 
-    def open(self):
+    def open(self, recorded_va_addr, replay_va_addr):
+        self.open_calls.append((recorded_va_addr, replay_va_addr))
         return self._snapshot
 
 
@@ -333,6 +339,9 @@ def test_open_close_context_manager_opens_and_closes_resources(monkeypatch):
         assert opened._page_manager.device_id == 0
         assert opened._page_manager.va_addr == rec.va_addr
         assert opened._page_manager.va_size == rec.va_size
+        pm = opened._page_manager
+        assert kernel.prologue.open_calls == [(pm.va_addr, pm.va_start)]
+        assert kernel.epilogue.open_calls == [(pm.va_addr, pm.va_start)]
 
     # After context exit
     assert ex._page_manager is None

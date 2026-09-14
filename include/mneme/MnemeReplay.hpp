@@ -33,23 +33,31 @@ public:
 
 protected:
   std::shared_ptr<KernelInfo> KInfo;
-  llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> DeviceMemoryState;
+  llvm::DenseMap<uint64_t, MnemeMemoryBlob<VendorTypes>> DeviceMemoryState;
   std::unordered_map<std::string, ReplayGlobalVar> GlobalVars;
   std::unique_ptr<void *[]> Args;
+  bool RelocatableBlobs;
+  // Start of the VA reservation at record time and at replay time.
+  uintptr_t RecordedVABase;
+  uintptr_t ReplayVABase;
 
-  explicit ReplayMemState(Snapshot<VendorTypes> SnapshotState)
+  explicit ReplayMemState(Snapshot<VendorTypes> SnapshotState,
+                          uintptr_t RecordedVABase, uintptr_t ReplayVABase)
       : KInfo(std::move(SnapshotState.KInfo)),
         DeviceMemoryState(std::move(SnapshotState.DeviceMemory)),
-        GlobalVars(std::move(SnapshotState.GlobalVars)) {
+        GlobalVars(std::move(SnapshotState.GlobalVars)),
+        RelocatableBlobs(SnapshotState.RelocatableBlobs),
+        RecordedVABase(RecordedVABase), ReplayVABase(ReplayVABase) {
     LOG_DEBUG("Initialized replay memory state for kernel {}",
               KInfo->getName());
     Args = copyOutArgs();
   }
 
   void copyToDevice() {
-    for (auto &[DevAddr, MemBlob] : DeviceMemoryState) {
-      LOG_DEBUG("Copying {} from Address {} to device address {} {}",
-                isPrologue() ? "Prologue" : "Epilogue",
+    for (auto &[BlobId, MemBlob] : DeviceMemoryState) {
+      LOG_DEBUG("Copying {} blob id {} from host address {} to device "
+                "address {} size {}",
+                isPrologue() ? "Prologue" : "Epilogue", BlobId,
                 (void *)MemBlob.getHostData().get(), MemBlob.getBlobAddr(),
                 MemBlob.getSize());
       auto CEC = MnemeDeviceRT::DeviceErrorCheck(MnemeDeviceRT::DeviceCopy(
@@ -77,6 +85,31 @@ protected:
   // Distinguishes the two concrete roles for diagnostic logging.
   virtual bool isPrologue() const = 0;
 
+  // Fills in pointer arguments once every blob has a replay address.
+  void materializeManagedPointerArgs() {
+    auto Kinds = KInfo->getArgEncodingKinds();
+    for (size_t I = 0; I < Kinds.size(); ++I) {
+      if (Kinds[I] != KernelArgEncodingKind::ManagedPointer)
+        continue;
+
+      auto BlobId = KInfo->getManagedArgBlobId(I);
+      auto It = DeviceMemoryState.find(BlobId);
+      if (It == DeviceMemoryState.end())
+        LOG_FATAL("Kernel arg " + std::to_string(I) +
+                  " references unknown blob id " + std::to_string(BlobId));
+
+      auto &Blob = It->second;
+      auto Offset = KInfo->getManagedArgOffset(I);
+      if (Offset >= Blob.getSize())
+        LOG_FATAL("Kernel arg " + std::to_string(I) + " offset " +
+                  std::to_string(Offset) + " exceeds blob id " +
+                  std::to_string(BlobId) + " size");
+
+      KInfo->materializeManagedPointerArg(
+          I, static_cast<uint8_t *>(Blob.getBlobAddr()) + Offset);
+    }
+  }
+
 private:
   std::unique_ptr<void *[]> copyOutArgs() const {
     void **Args = new void *[KInfo->getNumArgs()];
@@ -100,15 +133,16 @@ public:
   }
 
   void release() {
-    for (auto &[DevAddr, MemBlob] : DeviceMemoryState) {
+    for (auto &[BlobId, MemBlob] : DeviceMemoryState) {
       auto EC = DeviceTraits<VendorTypes>::DeviceErrorCheck(MemBlob.release());
       if (EC)
-        LOG_WARN("Could not release replay memory blob: {}", EC.value());
+        LOG_WARN("Could not release replay memory blob id {}: {}", BlobId,
+                 EC.value());
     }
     DeviceMemoryState.clear();
   }
 
-  const llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &
+  const llvm::DenseMap<uint64_t, MnemeMemoryBlob<VendorTypes>> &
   getDeviceMemory() const {
     return DeviceMemoryState;
   }
@@ -160,26 +194,38 @@ public:
 template <DeviceVendors VendorTypes>
 class PrologueState : public ReplayMemState<VendorTypes> {
 public:
-  PrologueState(const std::string &KernelName, const std::string &SnapshotFile)
+  PrologueState(const std::string &KernelName, const std::string &SnapshotFile,
+                uintptr_t RecordedVABase, uintptr_t ReplayVABase)
       : ReplayMemState<VendorTypes>(
-            BaseSnapshotSource<VendorTypes>(SnapshotFile).load(KernelName)) {}
+            BaseSnapshotSource<VendorTypes>(SnapshotFile).load(KernelName),
+            RecordedVABase, ReplayVABase) {}
 
   void load() override {
-    for (auto &[DevAddr, MemBlob] : this->DeviceMemoryState) {
+    // A legacy snapshot holds raw device pointers in its kernel arguments, so
+    // it can only replay inside the recorded reservation.
+    if (!this->RelocatableBlobs && this->RecordedVABase != this->ReplayVABase)
+      LOG_FATAL("Snapshot predates relocatable blobs and needs the recorded "
+                "address space at " +
+                util::pointerToHexString(
+                    reinterpret_cast<uint8_t *>(this->RecordedVABase)) +
+                ", but replay reserved " +
+                util::pointerToHexString(
+                    reinterpret_cast<uint8_t *>(this->ReplayVABase)));
+
+    for (auto &[BlobId, MemBlob] : this->DeviceMemoryState) {
+      auto *ReplayAddr = this->RelocatableBlobs
+                             ? reinterpret_cast<void *>(this->ReplayVABase +
+                                                        MemBlob.getBlobOffset())
+                             : reinterpret_cast<void *>(BlobId);
+      LOG_DEBUG("Mapping prologue blob id {} at replay address {}", BlobId,
+                ReplayAddr);
       auto EC = DeviceTraits<VendorTypes>::DeviceErrorCheck(
-          MemBlob.map(DevAddr, MemBlob.getActualSize(), MemBlob.getSize()));
+          MemBlob.map(ReplayAddr, MemBlob.getActualSize(), MemBlob.getSize()));
       if (EC)
         LOG_FATAL("Error raised during mapping prologue memeory:" + EC.value());
-
-      if (DevAddr != reinterpret_cast<void *>(MemBlob.getBlobAddr()))
-        LOG_FATAL("Could not map Record Address " +
-                  util::pointerToHexString(DevAddr) +
-                  " instead ReplayInstance got " +
-                  util::pointerToHexString(
-                      static_cast<uint8_t *>(MemBlob.getBlobAddr())) +
-                  "\n");
     }
 
+    this->materializeManagedPointerArgs();
     this->copyToDevice();
   }
 
@@ -194,11 +240,13 @@ protected:
 template <DeviceVendors VendorTypes>
 class EpilogueState : public ReplayMemState<VendorTypes> {
 public:
-  explicit EpilogueState(Snapshot<VendorTypes> SnapshotState)
-      : ReplayMemState<VendorTypes>(std::move(SnapshotState)) {}
+  EpilogueState(Snapshot<VendorTypes> SnapshotState, uintptr_t RecordedVABase,
+                uintptr_t ReplayVABase)
+      : ReplayMemState<VendorTypes>(std::move(SnapshotState), RecordedVABase,
+                                    ReplayVABase) {}
 
   void load() override {
-    for (auto &[DevAddr, MemBlob] : this->DeviceMemoryState) {
+    for (auto &[BlobId, MemBlob] : this->DeviceMemoryState) {
       auto EC = DeviceTraits<VendorTypes>::DeviceErrorCheck(
           MemBlob.allocate(MemBlob.getSize()));
       if (EC)
@@ -217,10 +265,10 @@ public:
 
     // Device memory blobs: both states are device-resident, so the blob
     // comparator reads both device addresses directly.
-    for (auto &[DevAddr, ProBlob] : Prologue.getDeviceMemory()) {
-      auto It = this->DeviceMemoryState.find(DevAddr);
+    for (auto &[BlobId, ProBlob] : Prologue.getDeviceMemory()) {
+      auto It = this->DeviceMemoryState.find(BlobId);
       if (It == this->DeviceMemoryState.end()) {
-        LOG_WARN("Cannot find {} in comparators", DevAddr);
+        LOG_WARN("Cannot find blob id {} in comparators", BlobId);
         return false;
       }
       auto &EpiBlob = It->second;
@@ -269,19 +317,23 @@ protected:
 template <DeviceVendors VendorTypes>
 std::unique_ptr<ReplayMemState<VendorTypes>>
 makeReplayPrologueState(const std::string &KernelName,
-                        const std::string &SnapshotFile) {
-  return std::make_unique<PrologueState<VendorTypes>>(KernelName, SnapshotFile);
+                        const std::string &SnapshotFile,
+                        uintptr_t RecordedVABase, uintptr_t ReplayVABase) {
+  return std::make_unique<PrologueState<VendorTypes>>(
+      KernelName, SnapshotFile, RecordedVABase, ReplayVABase);
 }
 
 template <DeviceVendors VendorTypes>
 std::unique_ptr<ReplayMemState<VendorTypes>>
 makeReplayEpilogueState(const std::string &KernelName,
                         const std::string &SnapshotFile,
-                        const std::string &BasePrologueFile) {
+                        const std::string &BasePrologueFile,
+                        uintptr_t RecordedVABase, uintptr_t ReplayVABase) {
   Snapshot<VendorTypes> Snap =
       SnapshotFormatRegistry<VendorTypes>::open(SnapshotFile)
           ->read(KernelName, BaseSnapshotSource<VendorTypes>(BasePrologueFile));
-  return std::make_unique<EpilogueState<VendorTypes>>(std::move(Snap));
+  return std::make_unique<EpilogueState<VendorTypes>>(
+      std::move(Snap), RecordedVABase, ReplayVABase);
 }
 
 } // namespace mneme

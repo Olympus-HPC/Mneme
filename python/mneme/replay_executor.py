@@ -146,8 +146,10 @@ class BaseExecutor:
         self._page_manager = PageManagerRef(
             self.device_id, self.records.va_addr, self.records.va_size
         )
-        self._prologue = self.kernel_descr.prologue.open()
-        self._epilogue = self.kernel_descr.epilogue.open()
+        va_addr = self._page_manager.va_addr
+        va_start = self._page_manager.va_start
+        self._prologue = self.kernel_descr.prologue.open(va_addr, va_start)
+        self._epilogue = self.kernel_descr.epilogue.open(va_addr, va_start)
         return self
 
     @property

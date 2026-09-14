@@ -24,13 +24,21 @@ MnemePY_initializePageManager(int DeviceID, uintptr_t Addr, uint64_t VASize) {
   LOG_DEBUG("Initializing page manager for Device {}", DeviceID);
   void *VAddr = reinterpret_cast<void *>(Addr);
   auto PM = initializePageManager<Vendor>(DeviceID, VAddr, VASize);
+  // Snapshots with relocatable blobs replay at any base. Legacy snapshots
+  // reject the mismatch when they load.
   if (PM->getVAStart() != VAddr) {
-    LOG_FATAL("Could not allocate Device Pages\n Record got : " +
-              util::pointerToHexString(VAddr) + " and replay got : " +
-              util::pointerToHexString(PM->getVAStart()));
+    LOG_WARN("Could not reserve the recorded VA base {}; replay will use {}",
+             VAddr, PM->getVAStart());
   }
   void *PMPtr = PM.release();
   return PMPtr;
+}
+
+API_EXPORT(uintptr_t) MnemePY_getPageManagerVAStart(void *PMPtr) {
+  auto *PM = reinterpret_cast<PageManager<Vendor> *>(PMPtr);
+  if (!PM)
+    LOG_FATAL("Calling getVAStart of page manager with a null pointer");
+  return reinterpret_cast<uintptr_t>(PM->getVAStart());
 }
 
 API_EXPORT(void) MnemePY_DisposePageManager(void *PMPtr) {

@@ -63,6 +63,32 @@ container existed. A file that starts with `MNEME_DIFF_V1` is `Diff`
 version 1. A file with no magic is `Bytes` version 0. These two mappings
 are fixed. Do not change them.
 
+### Layout versions
+
+| Kind    | Version | Blob record                              | Kernel arguments                    |
+|---------|---------|------------------------------------------|-------------------------------------|
+| `Bytes` | 0       | `ActualSize`, `Size`, recorded `DevAddr` | raw bytes                           |
+| `Bytes` | 1       | `BlobHeader`: `BlobId` and `BlobOffset`  | `KernelArgEncodingKind` plus payload |
+| `Diff`  | 1       | `ActualSize`, `Size`, recorded `DevAddr` | inherited from the base prologue    |
+| `Diff`  | 2       | `BlobHeader`: `BlobId` and `BlobOffset`  | inherited from the base prologue    |
+
+`BlobHeader` lives in `mneme/MnemeSnapshotRecords.hpp`. The version 0 and
+version 1 readers decode their blob record fields inline.
+
+`BlobId` is assigned by the recorder per allocation and `BlobOffset` is the
+blob's offset from the start of the recorded VA reservation. A kernel
+argument whose value points into a recorded blob is stored as
+`ManagedPointer` with the blob id and the offset into that blob; the
+prologue state resolves it after the blobs are mapped. Because nothing in
+these layouts depends on the recorded device addresses, replay can place
+the blobs at whatever VA base it manages to reserve.
+
+The version 0 and version 1 layouts store recorded device addresses and
+raw pointer arguments. Their readers key `Snapshot::DeviceMemory` by the
+recorded address and clear `Snapshot::RelocatableBlobs`, and the prologue
+state then maps each blob at exactly that address. Replay of such a
+recording fails if the recorded VA base could not be reserved.
+
 ### How versions are owned
 
 One reader class decodes one on-disk layout. The reader class holds its
