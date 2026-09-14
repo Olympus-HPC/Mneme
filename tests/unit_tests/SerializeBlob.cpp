@@ -41,7 +41,8 @@ int main(int argc, char **argv) {
   if (EC)
     LOG_FATAL("Could not allocate device data");
 
-  MnemeMemoryBlobDevice Blob(128L, DData, 128L);
+  MnemeMemoryBlobDevice Blob(128L, DData, 128L, /*BlobId=*/7,
+                             /*BlobOffset=*/4096);
   Blob.setHostData(std::unique_ptr<uint8_t[]>(new uint8_t[128]));
 
   llvm::SmallVector<char, 128> Buffer;
@@ -52,13 +53,19 @@ int main(int argc, char **argv) {
 
   auto Buff = const_cast<const char *>(Buffer.data());
   auto entry = MnemeMemoryBlobDevice::fromBuffer(Buff);
-  auto Addr = entry.first;
+  auto BlobId = entry.first;
   auto SBlob = std::move(entry.second);
 
   auto Ret = [&]() {
-    if (reinterpret_cast<void *>(Blob.getBlobAddr()) != Addr) {
-      std::cerr << "Blob differerent Addresses " << Addr << " "
-                << Blob.getBlobAddr() << "\n";
+    if (Blob.getBlobId() != BlobId || SBlob.getBlobId() != BlobId) {
+      std::cerr << "Blob different ids " << BlobId << " " << Blob.getBlobId()
+                << "\n";
+      return -1;
+    }
+
+    if (Blob.getBlobOffset() != SBlob.getBlobOffset()) {
+      std::cerr << "Blob different offsets " << Blob.getBlobOffset() << " "
+                << SBlob.getBlobOffset() << "\n";
       return -1;
     }
 
