@@ -32,29 +32,23 @@ public:
   using DeviceModule_t = typename DeviceTraits<VendorTypes>::DeviceModule_t;
 
 protected:
-  std::shared_ptr<KernelInfo> KInfo;
-  llvm::DenseMap<uint64_t, MnemeMemoryBlob<VendorTypes>> DeviceMemoryState;
-  std::unordered_map<std::string, ReplayGlobalVar> GlobalVars;
+  std::unique_ptr<Snapshot<VendorTypes>> Snap;
   std::unique_ptr<void *[]> Args;
-  bool RelocatableBlobs;
   // Start of the VA reservation at record time and at replay time.
   uintptr_t RecordedVABase;
   uintptr_t ReplayVABase;
 
-  explicit ReplayMemState(Snapshot<VendorTypes> SnapshotState,
+  explicit ReplayMemState(std::unique_ptr<Snapshot<VendorTypes>> Snap,
                           uintptr_t RecordedVABase, uintptr_t ReplayVABase)
-      : KInfo(std::move(SnapshotState.KInfo)),
-        DeviceMemoryState(std::move(SnapshotState.DeviceMemory)),
-        GlobalVars(std::move(SnapshotState.GlobalVars)),
-        RelocatableBlobs(SnapshotState.RelocatableBlobs),
-        RecordedVABase(RecordedVABase), ReplayVABase(ReplayVABase) {
+      : Snap(std::move(Snap)), RecordedVABase(RecordedVABase),
+        ReplayVABase(ReplayVABase) {
     LOG_DEBUG("Initialized replay memory state for kernel {}",
-              KInfo->getName());
+              this->Snap->KInfo->getName());
     Args = copyOutArgs();
   }
 
   void copyToDevice() {
-    for (auto &[BlobId, MemBlob] : DeviceMemoryState) {
+    for (auto &[BlobId, MemBlob] : Snap->DeviceMemory) {
       LOG_DEBUG("Copying {} blob id {} from host address {} to device "
                 "address {} size {}",
                 isPrologue() ? "Prologue" : "Epilogue", BlobId,
@@ -70,7 +64,7 @@ protected:
   }
 
   void copyGlobals() {
-    for (auto &[GVName, GVI] : GlobalVars) {
+    for (auto &[GVName, GVI] : Snap->GlobalVars) {
       LOG_DEBUG("Copying data of variable {} to device addr {} and of size {}",
                 GVName, GVI.DevAddr, GVI.VarSize);
       auto CEC = MnemeDeviceRT::DeviceErrorCheck(
@@ -87,33 +81,34 @@ protected:
 
   // Fills in pointer arguments once every blob has a replay address.
   void materializeManagedPointerArgs() {
-    auto Kinds = KInfo->getArgEncodingKinds();
+    auto &KInfo = *Snap->KInfo;
+    auto Kinds = KInfo.getArgEncodingKinds();
     for (size_t I = 0; I < Kinds.size(); ++I) {
       if (Kinds[I] != KernelArgEncodingKind::ManagedPointer)
         continue;
 
-      auto BlobId = KInfo->getManagedArgBlobId(I);
-      auto It = DeviceMemoryState.find(BlobId);
-      if (It == DeviceMemoryState.end())
+      auto BlobId = KInfo.getManagedArgBlobId(I);
+      auto It = Snap->DeviceMemory.find(BlobId);
+      if (It == Snap->DeviceMemory.end())
         LOG_FATAL("Kernel arg " + std::to_string(I) +
                   " references unknown blob id " + std::to_string(BlobId));
 
       auto &Blob = It->second;
-      auto Offset = KInfo->getManagedArgOffset(I);
+      auto Offset = KInfo.getManagedArgOffset(I);
       if (Offset >= Blob.getSize())
         LOG_FATAL("Kernel arg " + std::to_string(I) + " offset " +
                   std::to_string(Offset) + " exceeds blob id " +
                   std::to_string(BlobId) + " size");
 
-      KInfo->materializeManagedPointerArg(
+      KInfo.materializeManagedPointerArg(
           I, static_cast<uint8_t *>(Blob.getBlobAddr()) + Offset);
     }
   }
 
 private:
   std::unique_ptr<void *[]> copyOutArgs() const {
-    void **Args = new void *[KInfo->getNumArgs()];
-    auto ArgData = KInfo->getArgData();
+    void **Args = new void *[Snap->KInfo->getNumArgs()];
+    auto ArgData = Snap->KInfo->getArgData();
     for (int I = 0; I < getNumArgs(); I++) {
       Args[I] = ArgData[I].get();
     }
@@ -133,22 +128,22 @@ public:
   }
 
   void release() {
-    for (auto &[BlobId, MemBlob] : DeviceMemoryState) {
+    for (auto &[BlobId, MemBlob] : Snap->DeviceMemory) {
       auto EC = DeviceTraits<VendorTypes>::DeviceErrorCheck(MemBlob.release());
       if (EC)
         LOG_WARN("Could not release replay memory blob id {}: {}", BlobId,
                  EC.value());
     }
-    DeviceMemoryState.clear();
+    Snap->DeviceMemory.clear();
   }
 
   const llvm::DenseMap<uint64_t, MnemeMemoryBlob<VendorTypes>> &
   getDeviceMemory() const {
-    return DeviceMemoryState;
+    return Snap->DeviceMemory;
   }
 
   const std::unordered_map<std::string, ReplayGlobalVar> &getGlobalVars() const {
-    return GlobalVars;
+    return Snap->GlobalVars;
   }
 
   // RTTI-free downcasts to a concrete role.
@@ -157,11 +152,11 @@ public:
 
   void **getArgs() const { return reinterpret_cast<void **>(Args.get()); }
 
-  uint64_t getNumArgs() const { return KInfo->getNumArgs(); }
+  uint64_t getNumArgs() const { return Snap->KInfo->getNumArgs(); }
 
   void initializeGlobals(DeviceModule_t VendorMod) {
-    LOG_INFO("Initializing {} Globals", GlobalVars.size());
-    for (auto &KV : GlobalVars) {
+    LOG_INFO("Initializing {} Globals", Snap->GlobalVars.size());
+    for (auto &KV : Snap->GlobalVars) {
       auto [LoadedAddr, LoadedSize] =
           DeviceTraits<VendorTypes>::getGlobalAddrFromModule(VendorMod,
                                                              KV.first);
@@ -201,22 +196,11 @@ public:
             RecordedVABase, ReplayVABase) {}
 
   void load() override {
-    // A legacy snapshot holds raw device pointers in its kernel arguments, so
-    // it can only replay inside the recorded reservation.
-    if (!this->RelocatableBlobs && this->RecordedVABase != this->ReplayVABase)
-      LOG_FATAL("Snapshot predates relocatable blobs and needs the recorded "
-                "address space at " +
-                util::pointerToHexString(
-                    reinterpret_cast<uint8_t *>(this->RecordedVABase)) +
-                ", but replay reserved " +
-                util::pointerToHexString(
-                    reinterpret_cast<uint8_t *>(this->ReplayVABase)));
+    auto &Snap = *this->Snap;
+    Snap.checkReplayVABase(this->RecordedVABase, this->ReplayVABase);
 
-    for (auto &[BlobId, MemBlob] : this->DeviceMemoryState) {
-      auto *ReplayAddr = this->RelocatableBlobs
-                             ? reinterpret_cast<void *>(this->ReplayVABase +
-                                                        MemBlob.getBlobOffset())
-                             : reinterpret_cast<void *>(BlobId);
+    for (auto &[BlobId, MemBlob] : Snap.DeviceMemory) {
+      auto *ReplayAddr = Snap.replayBlobAddress(MemBlob, this->ReplayVABase);
       LOG_DEBUG("Mapping prologue blob id {} at replay address {}", BlobId,
                 ReplayAddr);
       auto EC = DeviceTraits<VendorTypes>::DeviceErrorCheck(
@@ -240,13 +224,13 @@ protected:
 template <DeviceVendors VendorTypes>
 class EpilogueState : public ReplayMemState<VendorTypes> {
 public:
-  EpilogueState(Snapshot<VendorTypes> SnapshotState, uintptr_t RecordedVABase,
-                uintptr_t ReplayVABase)
-      : ReplayMemState<VendorTypes>(std::move(SnapshotState), RecordedVABase,
+  EpilogueState(std::unique_ptr<Snapshot<VendorTypes>> Snap,
+                uintptr_t RecordedVABase, uintptr_t ReplayVABase)
+      : ReplayMemState<VendorTypes>(std::move(Snap), RecordedVABase,
                                     ReplayVABase) {}
 
   void load() override {
-    for (auto &[BlobId, MemBlob] : this->DeviceMemoryState) {
+    for (auto &[BlobId, MemBlob] : this->Snap->DeviceMemory) {
       auto EC = DeviceTraits<VendorTypes>::DeviceErrorCheck(
           MemBlob.allocate(MemBlob.getSize()));
       if (EC)
@@ -266,8 +250,8 @@ public:
     // Device memory blobs: both states are device-resident, so the blob
     // comparator reads both device addresses directly.
     for (auto &[BlobId, ProBlob] : Prologue.getDeviceMemory()) {
-      auto It = this->DeviceMemoryState.find(BlobId);
-      if (It == this->DeviceMemoryState.end()) {
+      auto It = this->Snap->DeviceMemory.find(BlobId);
+      if (It == this->Snap->DeviceMemory.end()) {
         LOG_WARN("Cannot find blob id {} in comparators", BlobId);
         return false;
       }
@@ -283,8 +267,8 @@ public:
     // Global variables: only the prologue's globals are device-resident; the
     // epilogue never loads globals.
     for (auto &[GVName, ProGV] : Prologue.getGlobalVars()) {
-      auto It = this->GlobalVars.find(GVName);
-      if (It == this->GlobalVars.end()) {
+      auto It = this->Snap->GlobalVars.find(GVName);
+      if (It == this->Snap->GlobalVars.end()) {
         LOG_WARN("comparing with global var {} that exists only on one of the "
                  "comparators",
                  GVName);
@@ -329,7 +313,7 @@ makeReplayEpilogueState(const std::string &KernelName,
                         const std::string &SnapshotFile,
                         const std::string &BasePrologueFile,
                         uintptr_t RecordedVABase, uintptr_t ReplayVABase) {
-  Snapshot<VendorTypes> Snap =
+  auto Snap =
       SnapshotFormatRegistry<VendorTypes>::open(SnapshotFile)
           ->read(KernelName, BaseSnapshotSource<VendorTypes>(BasePrologueFile));
   return std::make_unique<EpilogueState<VendorTypes>>(

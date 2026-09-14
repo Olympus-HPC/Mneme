@@ -85,9 +85,23 @@ the blobs at whatever VA base it manages to reserve.
 
 The version 0 and version 1 layouts store recorded device addresses and
 raw pointer arguments. Their readers key `Snapshot::DeviceMemory` by the
-recorded address and clear `Snapshot::RelocatableBlobs`, and the prologue
-state then maps each blob at exactly that address. Replay of such a
-recording fails if the recorded VA base could not be reserved.
+recorded address.
+
+Replay never tests a layout version. Each reader returns a subclass of
+`Snapshot` that knows how its blob ids relate to device addresses:
+
+- `RelocatableSnapshot` for the current layouts. Its
+  `replayBlobAddress()` adds the blob offset to the replay VA base, and
+  its `checkReplayVABase()` accepts any base.
+- `RecordedAddressSnapshot` for the version 0 and version 1 layouts. Its
+  `replayBlobAddress()` returns the recorded address, and its
+  `checkReplayVABase()` fails if the replay VA base differs from the
+  recorded one, because the raw pointer arguments cannot be rebased.
+
+The prologue state calls these two functions and has one code path for
+every layout. A diff reader returns whichever snapshot class its base
+prologue produced. A new on-disk layout only needs a new snapshot class if
+it changes what the blob ids or offsets mean.
 
 ### How versions are owned
 

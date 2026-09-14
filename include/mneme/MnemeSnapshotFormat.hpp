@@ -63,16 +63,60 @@ struct ReplayGlobalVar {
 };
 
 // The in-memory contents of a snapshot, as produced by the snapshot readers
-// and consumed by the replay memory state constructors. DeviceMemory is keyed
-// by blob id.
-template <DeviceVendors VendorTypes> struct Snapshot {
+// and consumed by the replay memory states. DeviceMemory is keyed by blob id.
+template <DeviceVendors VendorTypes> class Snapshot {
+public:
   std::shared_ptr<KernelInfo> KInfo;
   std::unordered_map<std::string, ReplayGlobalVar> GlobalVars;
   llvm::DenseMap<uint64_t, MnemeMemoryBlob<VendorTypes>> DeviceMemory;
-  // False for layouts that recorded absolute device addresses and raw pointer
-  // arguments. Their blob ids are the recorded addresses, and replay must map
-  // each blob at exactly that address.
-  bool RelocatableBlobs = true;
+
+  virtual ~Snapshot() = default;
+
+  // Stops replay if this snapshot, recorded in a VA reservation at
+  // RecordedVABase, cannot be loaded into a reservation at ReplayVABase.
+  virtual void checkReplayVABase(uintptr_t RecordedVABase,
+                                 uintptr_t ReplayVABase) const = 0;
+
+  // The device address at which replay maps Blob inside a VA reservation at
+  // ReplayVABase.
+  virtual void *replayBlobAddress(const MnemeMemoryBlob<VendorTypes> &Blob,
+                                  uintptr_t ReplayVABase) const = 0;
+};
+
+// Blobs carry an offset into the VA reservation, and pointer arguments are
+// stored as a blob id plus an offset, so replay can use any reservation base.
+template <DeviceVendors VendorTypes>
+class RelocatableSnapshot final : public Snapshot<VendorTypes> {
+public:
+  void checkReplayVABase(uintptr_t, uintptr_t) const override {}
+
+  void *replayBlobAddress(const MnemeMemoryBlob<VendorTypes> &Blob,
+                          uintptr_t ReplayVABase) const override {
+    return reinterpret_cast<void *>(ReplayVABase + Blob.getBlobOffset());
+  }
+};
+
+// Blob ids are the recorded device addresses, and pointer arguments are raw
+// bytes, so replay must map every blob at exactly its recorded address.
+template <DeviceVendors VendorTypes>
+class RecordedAddressSnapshot final : public Snapshot<VendorTypes> {
+public:
+  void checkReplayVABase(uintptr_t RecordedVABase,
+                         uintptr_t ReplayVABase) const override {
+    if (RecordedVABase == ReplayVABase)
+      return;
+    LOG_FATAL(
+        "Snapshot stores recorded device addresses and needs the "
+        "recorded address space at " +
+        util::pointerToHexString(reinterpret_cast<uint8_t *>(RecordedVABase)) +
+        ", but replay reserved " +
+        util::pointerToHexString(reinterpret_cast<uint8_t *>(ReplayVABase)));
+  }
+
+  void *replayBlobAddress(const MnemeMemoryBlob<VendorTypes> &Blob,
+                          uintptr_t) const override {
+    return reinterpret_cast<void *>(Blob.getBlobId());
+  }
 };
 
 namespace detail {
@@ -245,7 +289,7 @@ public:
   // True if read() needs a base snapshot to reconstruct the state.
   virtual bool requiresBaseSnapshot() const = 0;
 
-  virtual Snapshot<VendorTypes>
+  virtual std::unique_ptr<Snapshot<VendorTypes>>
   read(const std::string &KernelName,
        const BaseSnapshotSource<VendorTypes> &Base) const = 0;
 
@@ -273,7 +317,8 @@ public:
 
   bool empty() const { return Filename.empty(); }
 
-  Snapshot<VendorTypes> load(const std::string &KernelName) const;
+  std::unique_ptr<Snapshot<VendorTypes>>
+  load(const std::string &KernelName) const;
 
 private:
   std::string Filename;
@@ -317,16 +362,15 @@ public:
 
   bool requiresBaseSnapshot() const override { return false; }
 
-  Snapshot<VendorTypes>
+  std::unique_ptr<Snapshot<VendorTypes>>
   read(const std::string &KernelName,
        const BaseSnapshotSource<VendorTypes> &) const override {
-    Snapshot<VendorTypes> Snap;
-    Snap.KInfo = std::make_shared<KernelInfo>(KernelName);
-    Snap.RelocatableBlobs = false;
-    auto &KInfo = Snap.KInfo;
+    auto Snap = std::make_unique<RecordedAddressSnapshot<VendorTypes>>();
+    Snap->KInfo = std::make_shared<KernelInfo>(KernelName);
+    auto &KInfo = Snap->KInfo;
 
     auto *CurrentPtr = this->payload();
-    detail::readGlobalVarSection(CurrentPtr, Snap.GlobalVars);
+    detail::readGlobalVarSection(CurrentPtr, Snap->GlobalVars);
 
     size_t TotalMemBlobs = util::extractScalar<size_t>(CurrentPtr);
     LOG_DEBUG("Snapshot contains {} Memory Blobs", TotalMemBlobs);
@@ -342,7 +386,7 @@ public:
       Blob.setMetadata(metadata::fromBuffer(CurrentPtr));
       LOG_DEBUG("Read legacy memory blob at address {} SIZE: {} ActualSize:{}",
                 DevAddr, Size, ActualSize);
-      detail::insertBlob(Snap.DeviceMemory, BlobId, std::move(Blob));
+      detail::insertBlob(Snap->DeviceMemory, BlobId, std::move(Blob));
     }
 
     size_t TotalArguments = util::extractScalar<size_t>(CurrentPtr);
@@ -367,22 +411,22 @@ public:
 
   bool requiresBaseSnapshot() const override { return false; }
 
-  Snapshot<VendorTypes>
+  std::unique_ptr<Snapshot<VendorTypes>>
   read(const std::string &KernelName,
        const BaseSnapshotSource<VendorTypes> &) const override {
-    Snapshot<VendorTypes> Snap;
-    Snap.KInfo = std::make_shared<KernelInfo>(KernelName);
-    auto &KInfo = Snap.KInfo;
+    auto Snap = std::make_unique<RelocatableSnapshot<VendorTypes>>();
+    Snap->KInfo = std::make_shared<KernelInfo>(KernelName);
+    auto &KInfo = Snap->KInfo;
 
     auto *CurrentPtr = this->payload();
-    detail::readGlobalVarSection(CurrentPtr, Snap.GlobalVars);
+    detail::readGlobalVarSection(CurrentPtr, Snap->GlobalVars);
 
     size_t TotalMemBlobs = util::extractScalar<size_t>(CurrentPtr);
     LOG_DEBUG("Snapshot contains {} Memory Blobs", TotalMemBlobs);
     for (size_t M = 0; M < TotalMemBlobs; M++) {
       auto [BlobId, Blob] =
           MnemeMemoryBlob<VendorTypes>::fromBuffer(CurrentPtr);
-      detail::insertBlob(Snap.DeviceMemory, BlobId, std::move(Blob));
+      detail::insertBlob(Snap->DeviceMemory, BlobId, std::move(Blob));
     }
 
     size_t TotalArguments = util::extractScalar<size_t>(CurrentPtr);
@@ -459,7 +503,7 @@ public:
 
   bool requiresBaseSnapshot() const override { return true; }
 
-  Snapshot<VendorTypes>
+  std::unique_ptr<Snapshot<VendorTypes>>
   read(const std::string &KernelName,
        const BaseSnapshotSource<VendorTypes> &Base) const override {
     if (Base.empty())
@@ -468,12 +512,12 @@ public:
 
     // A diff stores only changed ranges, so reconstruct the full base prologue
     // first and then overlay the diff onto it.
-    Snapshot<VendorTypes> Snap = Base.load(KernelName);
+    auto Snap = Base.load(KernelName);
     const std::string &Filename = this->Filename;
-    auto &DeviceMemory = Snap.DeviceMemory;
+    auto &DeviceMemory = Snap->DeviceMemory;
 
     auto *CurrentPtr = this->payload();
-    detail::applyGlobalVarDiffs(CurrentPtr, Snap.GlobalVars, Filename);
+    detail::applyGlobalVarDiffs(CurrentPtr, Snap->GlobalVars, Filename);
 
     size_t TotalMemBlobs = util::extractScalar<size_t>(CurrentPtr);
     detail::expectDiffCount(TotalMemBlobs, DeviceMemory.size(), Filename,
@@ -517,19 +561,19 @@ public:
 
   bool requiresBaseSnapshot() const override { return true; }
 
-  Snapshot<VendorTypes>
+  std::unique_ptr<Snapshot<VendorTypes>>
   read(const std::string &KernelName,
        const BaseSnapshotSource<VendorTypes> &Base) const override {
     if (Base.empty())
       LOG_FATAL("Mneme diff snapshot " + this->Filename +
                 " requires a base prologue snapshot");
 
-    Snapshot<VendorTypes> Snap = Base.load(KernelName);
+    auto Snap = Base.load(KernelName);
     const std::string &Filename = this->Filename;
-    auto &DeviceMemory = Snap.DeviceMemory;
+    auto &DeviceMemory = Snap->DeviceMemory;
 
     auto *CurrentPtr = this->payload();
-    detail::applyGlobalVarDiffs(CurrentPtr, Snap.GlobalVars, Filename);
+    detail::applyGlobalVarDiffs(CurrentPtr, Snap->GlobalVars, Filename);
 
     size_t TotalMemBlobs = util::extractScalar<size_t>(CurrentPtr);
     detail::expectDiffCount(TotalMemBlobs, DeviceMemory.size(), Filename,
@@ -632,7 +676,7 @@ private:
 };
 
 template <DeviceVendors VendorTypes>
-Snapshot<VendorTypes>
+std::unique_ptr<Snapshot<VendorTypes>>
 BaseSnapshotSource<VendorTypes>::load(const std::string &KernelName) const {
   if (empty())
     LOG_FATAL("No base snapshot was provided");
