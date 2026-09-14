@@ -28,6 +28,10 @@ public:
 
 protected:
   Metadata PtrMD;
+  // Identifies the blob across snapshots independently of its device address.
+  uint64_t BlobId;
+  // Offset from the start of the recorded VA reservation.
+  uint64_t BlobOffset;
   uint64_t ActualSize;
   void *BlobAddr;
   uint64_t Size;
@@ -36,9 +40,11 @@ protected:
 
 public:
   MnemeMemoryBlob(uint64_t ActualSize = 0, void *BlobAddr = nullptr,
-                  uint64_t Size = 0)
-      : ActualSize(ActualSize), BlobAddr(BlobAddr), Size(Size),
-        HostData(new uint8_t[Size]), IsMapped(false) {}
+                  uint64_t Size = 0, uint64_t BlobId = 0,
+                  uint64_t BlobOffset = 0)
+      : PtrMD(), BlobId(BlobId), BlobOffset(BlobOffset), ActualSize(ActualSize),
+        BlobAddr(BlobAddr), Size(Size), HostData(new uint8_t[Size]),
+        IsMapped(false) {}
 
   DeviceError_t map(void *VA, uint64_t ActualSize, uint64_t Size) {
     this->Size = Size;
@@ -85,16 +91,18 @@ public:
     }
   }
 
-  static std::pair<void *, MnemeMemoryBlob<VendorTypes>>
+  static std::pair<uint64_t, MnemeMemoryBlob<VendorTypes>>
   fromBuffer(const char *&Buffer) {
     BlobHeader Header = BlobHeader::read(Buffer);
-    auto Blob = MnemeMemoryBlob<VendorTypes>(Header.ActualSize, 0, Header.Size);
+    auto Blob =
+        MnemeMemoryBlob<VendorTypes>(Header.ActualSize, nullptr, Header.Size,
+                                     Header.BlobId, Header.BlobOffset);
     std::memcpy(Blob.getHostData().get(), Buffer, Header.Size);
     Buffer += Header.Size;
-    LOG_DEBUG("Read memory blob at address {} SIZE: {} ActualSize:{}",
-              Header.DevAddr, Header.Size, Header.ActualSize);
+    LOG_DEBUG("Read memory blob id {} offset {} SIZE: {} ActualSize:{}",
+              Header.BlobId, Header.BlobOffset, Header.Size, Header.ActualSize);
     Blob.PtrMD = metadata::fromBuffer(Buffer);
-    return std::make_pair(Header.DevAddr, std::move(Blob));
+    return std::make_pair(Header.BlobId, std::move(Blob));
   }
 
   void *ptr() { return reinterpret_cast<void *>(BlobAddr); }
@@ -107,6 +115,8 @@ public:
       BlobAddr = other.BlobAddr;
       Size = other.Size;
       ActualSize = other.ActualSize;
+      BlobId = other.BlobId;
+      BlobOffset = other.BlobOffset;
       HostData = std::move(other.HostData);
       IsMapped = other.IsMapped;
       PtrMD = other.PtrMD;
@@ -117,9 +127,10 @@ public:
   }
 
   MnemeMemoryBlob(MnemeMemoryBlob &&other) noexcept
-      : BlobAddr(other.BlobAddr), Size(other.Size),
-        ActualSize(other.ActualSize), HostData(std::move(other.HostData)),
-        IsMapped(other.IsMapped), PtrMD(other.PtrMD) {
+      : PtrMD(other.PtrMD), BlobId(other.BlobId), BlobOffset(other.BlobOffset),
+        ActualSize(other.ActualSize), BlobAddr(other.BlobAddr),
+        Size(other.Size), HostData(std::move(other.HostData)),
+        IsMapped(other.IsMapped) {
     other.BlobAddr = 0;
     other.HostData = nullptr;
   }
@@ -129,9 +140,13 @@ public:
   operator<<(llvm::raw_ostream &OS, const MnemeMemoryBlob<VendorTypes_> &Blob);
 
   void *getBlobAddr() const { return BlobAddr; }
+  uint64_t getBlobId() const { return BlobId; }
+  uint64_t getBlobOffset() const { return BlobOffset; }
   uint64_t getActualSize() const { return ActualSize; }
   uint64_t getSize() const { return Size; }
   const std::unique_ptr<uint8_t[]> &getHostData() const { return HostData; }
+  void setBlobId(uint64_t NewBlobId) { BlobId = NewBlobId; }
+  void setBlobOffset(uint64_t NewBlobOffset) { BlobOffset = NewBlobOffset; }
 
   void setMetadata(Metadata Md) { PtrMD = Md; }
 
@@ -165,12 +180,13 @@ template <DeviceVendors VendorTypes>
 llvm::raw_ostream &operator<<(llvm::raw_ostream &OS,
                               const MnemeMemoryBlob<VendorTypes> &Blob) {
   // The format in the binary is the following:
-  // | Var Actual Size | Var-Size | Device Address | Var Data | Metadata
-  BlobHeader{Blob.ActualSize, Blob.Size, Blob.BlobAddr}.write(OS);
+  // | Var Actual Size | Var-Size | BlobId | BlobOffset | Var Data | Metadata
+  BlobHeader{Blob.ActualSize, Blob.Size, Blob.BlobId, Blob.BlobOffset}.write(
+      OS);
 
-  LOG_DEBUG("Serializing MemoryBlob, DevAddr:{} MirroredHostAddr:{} Size:{} "
-            "ActualSize:{}",
-            (void *)Blob.BlobAddr,
+  LOG_DEBUG("Serializing MemoryBlob id {} offset {} DevAddr:{} "
+            "MirroredHostAddr:{} Size:{} ActualSize:{}",
+            Blob.BlobId, Blob.BlobOffset, (void *)Blob.BlobAddr,
             reinterpret_cast<void *>(Blob.getHostData().get()), Blob.getSize(),
             Blob.getActualSize());
 

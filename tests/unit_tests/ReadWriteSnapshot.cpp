@@ -63,7 +63,9 @@ int main(int argc, char **argv) {
   auto BlobData = initializeDeviceData();
   auto GlobalData = initializeDeviceData();
 
-  MnemeMemoryBlobDevice Blob(128L, BlobData.first, 128L);
+  constexpr uint64_t BlobId = 7;
+  constexpr uint64_t BlobOffset = 4096;
+  MnemeMemoryBlobDevice Blob(128L, BlobData.first, 128L, BlobId, BlobOffset);
   mneme::Metadata Md;
   Md.builtin = BuiltinDType::F64;
   Md.norm = Norm::L2;
@@ -80,13 +82,20 @@ int main(int argc, char **argv) {
   std::shared_ptr<KernelInfo> TestKernel =
       std::make_shared<KernelInfo>(KernelName);
 
-  int NumArgs = 4;
-  llvm::SmallVector<size_t> ArgSizes(4);
+  // The last argument is a pointer 16 bytes into the blob and must round trip
+  // as a managed pointer rather than as raw bytes.
+  constexpr int PointerArg = 4;
+  constexpr uint64_t PointerArgOffset = 16;
+  int NumArgs = 5;
+  llvm::SmallVector<size_t> ArgSizes(NumArgs);
   initializeRandomBuffer(ArgSizes.data(), 4);
+  ArgSizes[PointerArg] = sizeof(void *);
   void **Args = new void *[NumArgs];
   for (auto A = 0; A < NumArgs; A++) {
     Args[A] = reinterpret_cast<void *>(new uint8_t[ArgSizes[A]]);
   }
+  void *PointerArgValue = BlobData.first + PointerArgOffset;
+  std::memcpy(Args[PointerArg], &PointerArgValue, sizeof(PointerArgValue));
 
   TestKernel->setArgSizes(ArgSizes);
 
@@ -131,15 +140,19 @@ int main(int argc, char **argv) {
   }();
 
   auto ValidateDeviceMem = [&]() {
+    if (!ReadSnap.RelocatableBlobs) {
+      std::cerr << "Bytes snapshot should have relocatable blobs\n";
+      return 1;
+    }
     for (auto &RKV : ReadDeviceMemMap) {
       auto &RBlob = RKV.second;
-      if (!DeviceMemMap.contains(RKV.first)) {
-        std::cerr << "Address does not exist in Device Map " << std::hex
-                  << RKV.first << std::dec << "\n";
+      if (RKV.first != BlobId || RBlob.getBlobId() != BlobId ||
+          RBlob.getBlobOffset() != BlobOffset) {
+        std::cerr << "Blob id or offset differs\n";
         return 1;
       }
 
-      auto &WBlob = DeviceMemMap[RKV.first];
+      auto &WBlob = DeviceMemMap[(void *)BlobData.first];
 
       if (RBlob.getActualSize() != WBlob.getActualSize()) {
         std::cerr << "Actual Sizes differ " << RBlob.getActualSize() << " "
@@ -210,14 +223,22 @@ int main(int argc, char **argv) {
       }
     }
 
-    auto WArgData = WKernel.getArgData();
     auto RArgData = RKernel.getArgData();
+    auto RKinds = RKernel.getArgEncodingKinds();
     for (auto A = 0; A < WKernel.getNumArgs(); A++) {
-      if (std::memcmp(Args[A], RArgData[A].get(), WArgSizes[A]) != 0) {
-        if (WArgSizes[A] != RArgSizes[A]) {
-          std::cerr << "The Memory of argument " << A << "differs \n";
+      if (A == PointerArg) {
+        if (RKinds[A] != KernelArgEncodingKind::ManagedPointer ||
+            RKernel.getManagedArgBlobId(A) != BlobId ||
+            RKernel.getManagedArgOffset(A) != PointerArgOffset) {
+          std::cerr << "Pointer argument was not stored as a managed pointer\n";
           return 4;
         }
+        continue;
+      }
+      if (RKinds[A] != KernelArgEncodingKind::RawBytes ||
+          std::memcmp(Args[A], RArgData[A].get(), WArgSizes[A]) != 0) {
+        std::cerr << "The Memory of argument " << A << " differs \n";
+        return 4;
       }
     }
     return 0;
@@ -276,9 +297,9 @@ int main(int argc, char **argv) {
   }();
 
   auto ValidateDiffDeviceMem = [&]() {
-    auto it = DiffDeviceMemMap.find((void *)BlobData.first);
+    auto it = DiffDeviceMemMap.find(BlobId);
     if (it == DiffDeviceMemMap.end()) {
-      std::cerr << "Diff device map is missing blob address\n";
+      std::cerr << "Diff device map is missing blob id\n";
       return 16;
     }
 
@@ -314,6 +335,8 @@ int main(int argc, char **argv) {
     auto RArgSizes = DiffKernel->getArgSizes();
     auto RArgData = DiffKernel->getArgData();
     for (auto A = 0; A < TestKernel->getNumArgs(); A++) {
+      if (A == PointerArg)
+        continue;
       if (WArgSizes[A] != RArgSizes[A] ||
           std::memcmp(Args[A], RArgData[A].get(), WArgSizes[A]) != 0) {
         std::cerr << "Diff snapshot argument " << A
@@ -325,7 +348,7 @@ int main(int argc, char **argv) {
   }();
 
   auto ResetBlobBase = [&]() {
-    auto PrologueBlobIt = ReadDeviceMemMap.find((void *)BlobData.first);
+    auto PrologueBlobIt = ReadDeviceMemMap.find(BlobId);
     auto HostData = std::unique_ptr<uint8_t[]>(new uint8_t[128]);
     std::memcpy(HostData.get(), PrologueBlobIt->second.getHostData().get(),
                 128);
@@ -348,7 +371,7 @@ int main(int argc, char **argv) {
     auto BestSparseSnap =
         SnapshotFormatRegistry<Vendor>::open(SparseBestSnapshotFN.string())
             ->read(KernelName, BaseSnapshotSource<Vendor>(SnapshotFN.string()));
-    auto It = BestSparseSnap.DeviceMemory.find((void *)BlobData.first);
+    auto It = BestSparseSnap.DeviceMemory.find(BlobId);
     if (It == BestSparseSnap.DeviceMemory.end() ||
         std::memcmp(BlobData.second, It->second.getHostData().get(), 128) !=
             0) {
@@ -358,7 +381,7 @@ int main(int argc, char **argv) {
     return 0;
   }();
 
-  auto PrologueBlobIt = ReadDeviceMemMap.find((void *)BlobData.first);
+  auto PrologueBlobIt = ReadDeviceMemMap.find(BlobId);
   auto PrologueGlobalIt = ReadGVars.find("Test");
   auto *PrologueBlob = PrologueBlobIt->second.getHostData().get();
   auto *PrologueGlobal =
@@ -397,7 +420,7 @@ int main(int argc, char **argv) {
     auto BestFragmentedSnap =
         SnapshotFormatRegistry<Vendor>::open(FragmentedBestSnapshotFN.string())
             ->read(KernelName, BaseSnapshotSource<Vendor>(SnapshotFN.string()));
-    auto It = BestFragmentedSnap.DeviceMemory.find((void *)BlobData.first);
+    auto It = BestFragmentedSnap.DeviceMemory.find(BlobId);
     if (It == BestFragmentedSnap.DeviceMemory.end() ||
         std::memcmp(BlobData.second, It->second.getHostData().get(), 128) !=
             0) {
@@ -469,16 +492,114 @@ int main(int argc, char **argv) {
 
     auto [PrologueHeader, PrologueOffset] = parseFilePrefix(SnapshotFN);
     if (PrologueHeader.Kind != SnapshotKind::Bytes ||
-        PrologueHeader.Version != 0 || PrologueOffset != 16) {
-      std::cerr << "Prologue file did not parse as {Bytes, 0, 16}\n";
+        PrologueHeader.Version != 1 || PrologueOffset != 16) {
+      std::cerr << "Prologue file did not parse as {Bytes, 1, 16}\n";
       return 256;
     }
 
     auto [DiffFileHeader, DiffFileOffset] = parseFilePrefix(DiffSnapshotFN);
     if (DiffFileHeader.Kind != SnapshotKind::Diff ||
-        DiffFileHeader.Version != 1 || DiffFileOffset != 16) {
-      std::cerr << "Diff file did not parse as {Diff, 1, 16}\n";
+        DiffFileHeader.Version != 2 || DiffFileOffset != 16) {
+      std::cerr << "Diff file did not parse as {Diff, 2, 16}\n";
       return 256;
+    }
+    return 0;
+  }();
+
+  // Recordings made before blobs had ids must still open. Build the old
+  // layouts by hand: a headerless bytes prologue keyed by device address with
+  // raw arguments, and a diff with the legacy magic on top of it.
+  auto ValidateLegacyLayouts = [&]() {
+    std::filesystem::path LegacyPrologueFN("./test.legacy.mneme");
+    std::filesystem::path LegacyDiffFN("./test.legacy.epilogue.mneme");
+    std::string GlobalName("Test");
+    size_t One = 1;
+    size_t Zero = 0;
+    uint64_t LegacyPointerArg = 0xdeadbeef;
+
+    {
+      std::error_code EC;
+      llvm::raw_fd_ostream OS(LegacyPrologueFN.string(), EC);
+      util::writeScalar(OS, One);
+      GlobalVarHeader{GlobalName, 128, GlobalData.first}.write(OS);
+      util::writeBytes(OS, llvm::ArrayRef<uint8_t>(PrologueGlobal, 128));
+      util::writeScalar(OS, One);
+      util::writeScalar(OS, size_t{128});
+      util::writeScalar(OS, size_t{128});
+      util::writeScalar(OS, BlobData.first);
+      util::writeBytes(OS, llvm::ArrayRef<uint8_t>(PrologueBlob, 128));
+      mneme::metadata::serialize(OS, Md);
+      util::writeScalar(OS, One);
+      util::writeScalar(OS, sizeof(LegacyPointerArg));
+      util::writeScalar(OS, LegacyPointerArg);
+    }
+
+    {
+      std::error_code EC;
+      llvm::raw_fd_ostream OS(LegacyDiffFN.string(), EC);
+      util::writeBytes(OS, llvm::StringRef("MNEME_DIFF_V1"));
+      util::writeScalar(OS, One);
+      GlobalVarHeader{GlobalName, 128, GlobalData.first}.write(OS);
+      util::writeScalar(OS, One);
+      util::writeScalar(OS, size_t{2});
+      util::writeScalar(OS, size_t{3});
+      util::writeBytes(OS, llvm::ArrayRef<uint8_t>(GlobalData.second + 2, 3));
+      util::writeScalar(OS, One);
+      util::writeScalar(OS, size_t{128});
+      util::writeScalar(OS, size_t{128});
+      util::writeScalar(OS, BlobData.first);
+      mneme::metadata::serialize(OS, Md);
+      util::writeScalar(OS, One);
+      util::writeScalar(OS, Zero);
+      util::writeScalar(OS, size_t{128});
+      util::writeBytes(OS, llvm::ArrayRef<uint8_t>(BlobData.second, 128));
+    }
+
+    auto LegacyId = reinterpret_cast<uint64_t>(BlobData.first);
+    auto LegacySnap =
+        SnapshotFormatRegistry<Vendor>::open(LegacyPrologueFN.string())
+            ->read(KernelName, BaseSnapshotSource<Vendor>());
+    if (LegacySnap.RelocatableBlobs) {
+      std::cerr << "Legacy bytes snapshot should not be relocatable\n";
+      return 1024;
+    }
+    auto LegacyBlobIt = LegacySnap.DeviceMemory.find(LegacyId);
+    if (LegacyBlobIt == LegacySnap.DeviceMemory.end() ||
+        LegacyBlobIt->second.getBlobAddr() != nullptr ||
+        std::memcmp(PrologueBlob, LegacyBlobIt->second.getHostData().get(),
+                    128) != 0 ||
+        LegacyBlobIt->second.getMetadata().tag.value() != "Test") {
+      std::cerr << "Legacy bytes snapshot did not key the blob by address\n";
+      return 1024;
+    }
+    auto &LegacyKernel = *LegacySnap.KInfo;
+    if (LegacyKernel.getNumArgs() != 1 ||
+        LegacyKernel.getArgEncodingKinds()[0] !=
+            KernelArgEncodingKind::RawBytes ||
+        std::memcmp(LegacyKernel.getArgData()[0].get(), &LegacyPointerArg,
+                    sizeof(LegacyPointerArg)) != 0) {
+      std::cerr << "Legacy bytes snapshot did not keep raw arguments\n";
+      return 1024;
+    }
+
+    auto LegacyDiffSnap =
+        SnapshotFormatRegistry<Vendor>::open(LegacyDiffFN.string())
+            ->read(KernelName,
+                   BaseSnapshotSource<Vendor>(LegacyPrologueFN.string()));
+    if (LegacyDiffSnap.RelocatableBlobs) {
+      std::cerr << "Legacy diff snapshot should not be relocatable\n";
+      return 1024;
+    }
+    auto LegacyDiffBlobIt = LegacyDiffSnap.DeviceMemory.find(LegacyId);
+    auto LegacyDiffGlobalIt = LegacyDiffSnap.GlobalVars.find(GlobalName);
+    if (LegacyDiffBlobIt == LegacyDiffSnap.DeviceMemory.end() ||
+        std::memcmp(BlobData.second,
+                    LegacyDiffBlobIt->second.getHostData().get(), 128) != 0 ||
+        LegacyDiffGlobalIt == LegacyDiffSnap.GlobalVars.end() ||
+        std::memcmp(GlobalData.second, LegacyDiffGlobalIt->second.HostAddr,
+                    128) != 0) {
+      std::cerr << "Legacy diff snapshot did not reconstruct epilogue data\n";
+      return 1024;
     }
     return 0;
   }();
@@ -486,7 +607,8 @@ int main(int argc, char **argv) {
   auto Ret = ValidateGlobalMem | ValidateDeviceMem | ValidateKernelArgs |
              ValidateDiffGlobalMem | ValidateDiffDeviceMem |
              ValidateDiffKernelArgs | ValidateBestSparse |
-             ValidateBestFragmented | ValidateMeasure | ValidateHeaderParse;
+             ValidateBestFragmented | ValidateMeasure | ValidateHeaderParse |
+             ValidateLegacyLayouts;
 
   delete[] GlobalData.second;
   delete[] BlobData.second;
