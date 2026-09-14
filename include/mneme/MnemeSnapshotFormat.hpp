@@ -75,6 +75,8 @@ template <DeviceVendors VendorTypes> struct Snapshot {
   bool RelocatableBlobs = true;
 };
 
+namespace detail {
+
 inline std::pair<std::string, ReplayGlobalVar>
 readGlobalVarRecord(const char *&Buffer) {
   GlobalVarHeader Header = GlobalVarHeader::read(Buffer);
@@ -177,6 +179,8 @@ inline void readKernelArgRecord(const char *&Buffer, KernelInfo &KInfo,
             std::to_string(static_cast<KernelArgEncodingRaw>(Kind)));
 }
 
+} // namespace detail
+
 // Host copies of the globals a prologue captured; the diff writer's base.
 using GlobalSnapshotData =
     std::unordered_map<std::string, std::vector<uint8_t>>;
@@ -275,6 +279,8 @@ private:
   std::string Filename;
 };
 
+namespace detail {
+
 // Reads the globals section shared by every bytes layout.
 inline void readGlobalVarSection(
     const char *&CurrentPtr,
@@ -297,6 +303,8 @@ void insertBlob(
               " found while reading Mneme snapshot");
 }
 
+} // namespace detail
+
 // Blobs carry their recorded device address, which becomes the blob id, and
 // kernel arguments are raw bytes, so this layout can only replay at the
 // recorded addresses.
@@ -318,7 +326,7 @@ public:
     auto &KInfo = Snap.KInfo;
 
     auto *CurrentPtr = this->payload();
-    readGlobalVarSection(CurrentPtr, Snap.GlobalVars);
+    detail::readGlobalVarSection(CurrentPtr, Snap.GlobalVars);
 
     size_t TotalMemBlobs = util::extractScalar<size_t>(CurrentPtr);
     LOG_DEBUG("Snapshot contains {} Memory Blobs", TotalMemBlobs);
@@ -334,7 +342,7 @@ public:
       Blob.setMetadata(metadata::fromBuffer(CurrentPtr));
       LOG_DEBUG("Read legacy memory blob at address {} SIZE: {} ActualSize:{}",
                 DevAddr, Size, ActualSize);
-      insertBlob(Snap.DeviceMemory, BlobId, std::move(Blob));
+      detail::insertBlob(Snap.DeviceMemory, BlobId, std::move(Blob));
     }
 
     size_t TotalArguments = util::extractScalar<size_t>(CurrentPtr);
@@ -367,14 +375,14 @@ public:
     auto &KInfo = Snap.KInfo;
 
     auto *CurrentPtr = this->payload();
-    readGlobalVarSection(CurrentPtr, Snap.GlobalVars);
+    detail::readGlobalVarSection(CurrentPtr, Snap.GlobalVars);
 
     size_t TotalMemBlobs = util::extractScalar<size_t>(CurrentPtr);
     LOG_DEBUG("Snapshot contains {} Memory Blobs", TotalMemBlobs);
     for (size_t M = 0; M < TotalMemBlobs; M++) {
       auto [BlobId, Blob] =
           MnemeMemoryBlob<VendorTypes>::fromBuffer(CurrentPtr);
-      insertBlob(Snap.DeviceMemory, BlobId, std::move(Blob));
+      detail::insertBlob(Snap.DeviceMemory, BlobId, std::move(Blob));
     }
 
     size_t TotalArguments = util::extractScalar<size_t>(CurrentPtr);
@@ -382,12 +390,14 @@ public:
     KInfo->KernelArgSizes.resize(TotalArguments);
     KInfo->initializeArgStorage(TotalArguments);
     for (size_t A = 0; A < TotalArguments; A++)
-      readKernelArgRecord(CurrentPtr, *KInfo, A);
+      detail::readKernelArgRecord(CurrentPtr, *KInfo, A);
 
     this->expectPayloadEnd(CurrentPtr);
     return Snap;
   }
 };
+
+namespace detail {
 
 // Diff payload pieces shared by every diff layout.
 inline void expectDiffCount(size_t Actual, size_t Expected,
@@ -438,6 +448,8 @@ inline void applyGlobalVarDiffs(
   }
 }
 
+} // namespace detail
+
 template <DeviceVendors VendorTypes>
 class DiffReaderV1 : public SnapshotReader<VendorTypes> {
 public:
@@ -461,11 +473,11 @@ public:
     auto &DeviceMemory = Snap.DeviceMemory;
 
     auto *CurrentPtr = this->payload();
-    applyGlobalVarDiffs(CurrentPtr, Snap.GlobalVars, Filename);
+    detail::applyGlobalVarDiffs(CurrentPtr, Snap.GlobalVars, Filename);
 
     size_t TotalMemBlobs = util::extractScalar<size_t>(CurrentPtr);
-    expectDiffCount(TotalMemBlobs, DeviceMemory.size(), Filename,
-                    "memory blob");
+    detail::expectDiffCount(TotalMemBlobs, DeviceMemory.size(), Filename,
+                            "memory blob");
 
     // A legacy prologue keys its blobs by recorded address.
     for (size_t I = 0; I < TotalMemBlobs; ++I) {
@@ -484,10 +496,10 @@ public:
       if (Blob.getActualSize() != ActualSize || Blob.getSize() != Size)
         LOG_FATAL("Mneme diff memory blob size mismatch");
       Blob.setMetadata(MD);
-      applyDiffRanges(CurrentPtr,
-                      llvm::MutableArrayRef<uint8_t>(Blob.getHostData().get(),
-                                                     Blob.getSize()),
-                      NumRanges);
+      detail::applyDiffRanges(CurrentPtr,
+                              llvm::MutableArrayRef<uint8_t>(
+                                  Blob.getHostData().get(), Blob.getSize()),
+                              NumRanges);
     }
 
     return Snap;
@@ -517,11 +529,11 @@ public:
     auto &DeviceMemory = Snap.DeviceMemory;
 
     auto *CurrentPtr = this->payload();
-    applyGlobalVarDiffs(CurrentPtr, Snap.GlobalVars, Filename);
+    detail::applyGlobalVarDiffs(CurrentPtr, Snap.GlobalVars, Filename);
 
     size_t TotalMemBlobs = util::extractScalar<size_t>(CurrentPtr);
-    expectDiffCount(TotalMemBlobs, DeviceMemory.size(), Filename,
-                    "memory blob");
+    detail::expectDiffCount(TotalMemBlobs, DeviceMemory.size(), Filename,
+                            "memory blob");
 
     for (size_t I = 0; I < TotalMemBlobs; ++I) {
       BlobHeader BH = BlobHeader::read(CurrentPtr);
@@ -539,10 +551,10 @@ public:
         LOG_FATAL("Mneme diff blob offset mismatch for blob id " +
                   std::to_string(BH.BlobId));
       Blob.setMetadata(MD);
-      applyDiffRanges(CurrentPtr,
-                      llvm::MutableArrayRef<uint8_t>(Blob.getHostData().get(),
-                                                     Blob.getSize()),
-                      NumRanges);
+      detail::applyDiffRanges(CurrentPtr,
+                              llvm::MutableArrayRef<uint8_t>(
+                                  Blob.getHostData().get(), Blob.getSize()),
+                              NumRanges);
     }
 
     this->expectPayloadEnd(CurrentPtr);
@@ -641,6 +653,8 @@ template <DeviceVendors VendorTypes> struct SnapshotInput {
   typename DeviceTraits<VendorTypes>::DeviceStream_t Stream;
 };
 
+namespace detail {
+
 // The on-disk record prefix describing a captured global variable.
 inline GlobalVarHeader
 globalVarHeader(const std::string &Name,
@@ -662,6 +676,8 @@ readGlobalFromDevice(const proteus::runtime::GlobalMetadata &GV) {
 
   return HostData;
 }
+
+} // namespace detail
 
 // Which writer is used is a config choice, not a property of any file.
 template <DeviceVendors VendorTypes> class SnapshotWriter {
@@ -753,7 +769,7 @@ public:
 
     Size += sizeof(size_t);
     for (const auto &[VarName, GV] : In.GlobalVars) {
-      Size += globalVarHeader(VarName, GV).serializedSize();
+      Size += detail::globalVarHeader(VarName, GV).serializedSize();
       Size += GV.VarSize;
     }
 
@@ -766,8 +782,8 @@ public:
 
     Size += sizeof(size_t);
     for (size_t I = 0; I < In.KernelArgSizes.size(); ++I)
-      Size += serializedKernelArgSize(In.KernelArgSizes[I], In.Args[I],
-                                      In.DeviceMemory);
+      Size += detail::serializedKernelArgSize(In.KernelArgSizes[I], In.Args[I],
+                                              In.DeviceMemory);
     return Size;
   }
 
@@ -792,9 +808,10 @@ protected:
               TotalGlobals, OutBC.tell());
 
     for (const auto &[VarName, GV] : GlobalVars) {
-      std::vector<uint8_t> HostData = readGlobalFromDevice<VendorTypes>(GV);
+      std::vector<uint8_t> HostData =
+          detail::readGlobalFromDevice<VendorTypes>(GV);
 
-      globalVarHeader(VarName, GV).write(OutBC);
+      detail::globalVarHeader(VarName, GV).write(OutBC);
       util::writeBytes(OutBC, llvm::ArrayRef<uint8_t>(HostData));
       if (CaptureGlobals)
         (*CaptureGlobals)[VarName] = std::move(HostData);
@@ -819,7 +836,8 @@ protected:
                              sizeof(NumArgs));
 
     for (size_t I = 0; I < NumArgs; I++)
-      writeKernelArgRecord(OutBC, KernelArgSizes[I], Args[I], DeviceMemory);
+      detail::writeKernelArgRecord(OutBC, KernelArgSizes[I], Args[I],
+                                   DeviceMemory);
   }
 
 private:
@@ -856,9 +874,10 @@ protected:
       if (BaseIt->second.size() != GV.VarSize)
         LOG_FATAL("Cannot diff global with size mismatch: " + VarName);
 
-      std::vector<uint8_t> Current = readGlobalFromDevice<VendorTypes>(GV);
+      std::vector<uint8_t> Current =
+          detail::readGlobalFromDevice<VendorTypes>(GV);
 
-      globalVarHeader(VarName, GV).write(OutBC);
+      detail::globalVarHeader(VarName, GV).write(OutBC);
 
       llvm::SmallVector<char, 0> DiffBytes;
       llvm::raw_svector_ostream DiffOS(DiffBytes);
