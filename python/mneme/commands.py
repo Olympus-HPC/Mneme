@@ -261,6 +261,12 @@ class Record:
                 "single-process runs always record."
             ),
         )
+        parser.add_argument(
+            "--copy-source",
+            dest="copy_source",
+            action="store_true",
+            help="Copy the source file that defines each recorded kernel into the record directory",
+        )
         parser.add_argument("cmd", nargs=argparse.REMAINDER)
         parser.set_defaults(func=Record.run, parser=parser)
 
@@ -300,6 +306,10 @@ class Record:
         if args.record_ranks is not None:
             logger.debug(f"MNEME_RECORD_RANKS={args.record_ranks}")
             record_env["MNEME_RECORD_RANKS"] = str(args.record_ranks)
+
+        if args.copy_source:
+            logger.debug("MNEME_COPY_SOURCE=1")
+            record_env["MNEME_COPY_SOURCE"] = "1"
 
         if verbosity is not None:
             logger.debug(f"MNEME_LOG_LEVEL={verbosity}")

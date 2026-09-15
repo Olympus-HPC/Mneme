@@ -423,7 +423,9 @@ results_dir: mneme-tune-results/vecadd-builtin
 Use `--space-module MODULE_OR_PATH:CLASS` to load a custom `SearchSpace` class.
 The class is constructed with the recorded kernel instance. Extra constructor
 arguments may be passed with repeated `--space-arg KEY=VALUE` options; values are
-decoded as JSON when possible.
+decoded as JSON when possible. The instance's `execution` attribute is the owning
+`RecordedExecution`, so `recorded_kernel.execution.kernel_source()` returns the
+kernel's source text and location when the record carries source information.
 
 Without `--space-module`, the built-in search space is used. Select its scope
 with `--space-preset`:
