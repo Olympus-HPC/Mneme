@@ -113,7 +113,7 @@ if(MNEME_ENABLE_LOGGER)
       GIT_REPOSITORY https://github.com/gabime/spdlog.git
       GIT_TAG        v1.15.0
       GIT_SHALLOW    TRUE
-      FIND_PACKAGE_ARGS 1.15.0 EXACT CONFIG
+      FIND_PACKAGE_ARGS
     )
     FetchContent_MakeAvailable(spdlog)
   endblock()
