@@ -479,10 +479,10 @@ public:
       return std::nullopt;
     }
 
-    auto IT = KernelRecords.try_emplace(
-        StaticHash, KernelInstancesCollection(getDir(), VAddr, VASize, KInfo,
-                                              MaxRecordings, CopySource));
-    LOG_INFO("Created instance");
+    auto IT = KernelRecords.try_emplace(StaticHash, getDir(), VAddr, VASize,
+                                        KInfo, MaxRecordings, CopySource);
+    if (IT.second)
+      LOG_INFO("Created instance");
     return IT.first->second.takeSnapshot<VendorTypes>(
         MnemeDirectory, KInfo.getGlobals(), DeviceMemory, GridDim, BlockDim,
         Args, SharedMem, Stream, StaticHash, EpilogueType);
