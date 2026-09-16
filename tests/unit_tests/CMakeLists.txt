@@ -54,9 +54,6 @@ add_test(NAME Config::Runtime COMMAND Config)
 BUILD_UNIT_TEST("SerializeGlobals" SerializeGlobals.cpp)
 add_test(NAME Serialize::Globals COMMAND SerializeGlobals)
 
-BUILD_UNIT_TEST("SerializeBlob" SerializeBlob.cpp)
-add_test(NAME Serialize::Blob COMMAND SerializeBlob)
-
 BUILD_UNIT_TEST("ReadWriteSnapshot" ReadWriteSnapshot.cpp)
 add_test(NAME Serialize::RWSnapshot COMMAND ReadWriteSnapshot)
 

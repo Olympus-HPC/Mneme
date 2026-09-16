@@ -380,6 +380,14 @@ inline void readGlobalVarSection(
   }
 }
 
+// Reads the blob data and metadata that follow a blob record prefix.
+template <DeviceVendors VendorTypes>
+void readBlobBody(const char *&Buffer, MnemeMemoryBlob<VendorTypes> &Blob) {
+  std::memcpy(Blob.getHostData().get(), Buffer, Blob.getSize());
+  Buffer += Blob.getSize();
+  Blob.setMetadata(metadata::fromBuffer(Buffer));
+}
+
 template <DeviceVendors VendorTypes>
 void insertBlob(
     llvm::DenseMap<uint64_t, MnemeMemoryBlob<VendorTypes>> &DeviceMemory,
@@ -423,9 +431,7 @@ public:
       void *DevAddr = util::extractScalar<void *>(CurrentPtr);
       auto BlobId = reinterpret_cast<uint64_t>(DevAddr);
       MnemeMemoryBlob<VendorTypes> Blob(ActualSize, nullptr, Size, BlobId, 0);
-      std::memcpy(Blob.getHostData().get(), CurrentPtr, Size);
-      CurrentPtr += Size;
-      Blob.setMetadata(metadata::fromBuffer(CurrentPtr));
+      detail::readBlobBody(CurrentPtr, Blob);
       LOG_DEBUG("Read legacy memory blob at address {} SIZE: {} ActualSize:{}",
                 DevAddr, Size, ActualSize);
       detail::insertBlob(Snap->DeviceMemory, BlobId, std::move(Blob));
@@ -466,9 +472,11 @@ public:
     size_t TotalMemBlobs = util::extractScalar<size_t>(CurrentPtr);
     LOG_DEBUG("Snapshot contains {} Memory Blobs", TotalMemBlobs);
     for (size_t M = 0; M < TotalMemBlobs; M++) {
-      auto [BlobId, Blob] =
-          MnemeMemoryBlob<VendorTypes>::fromBuffer(CurrentPtr);
-      detail::insertBlob(Snap->DeviceMemory, BlobId, std::move(Blob));
+      BlobHeader Header = BlobHeader::read(CurrentPtr);
+      MnemeMemoryBlob<VendorTypes> Blob(Header.ActualSize, nullptr, Header.Size,
+                                        Header.BlobId, Header.BlobOffset);
+      detail::readBlobBody(CurrentPtr, Blob);
+      detail::insertBlob(Snap->DeviceMemory, Header.BlobId, std::move(Blob));
     }
 
     size_t TotalArguments = util::extractScalar<size_t>(CurrentPtr);
@@ -914,9 +922,16 @@ protected:
     OutBC << llvm::StringRef(reinterpret_cast<const char *>(&TotalBlobs),
                              sizeof(size_t));
 
-    // Write the Device Memory
-    for (auto &[Ptr, Blob] : DeviceMemory)
-      OutBC << Blob;
+    for (auto &[Ptr, Blob] : DeviceMemory) {
+      Blob.copyFromDevice();
+      BlobHeader{Blob.getActualSize(), Blob.getSize(), Blob.getBlobId(),
+                 Blob.getBlobOffset()}
+          .write(OutBC);
+      util::writeBytes(OutBC, llvm::ArrayRef<uint8_t>(Blob.getHostData().get(),
+                                                      Blob.getSize()));
+      auto MD = Blob.getMetadata();
+      metadata::serialize(OutBC, MD);
+    }
     // Lastly write the arguments
     size_t NumArgs = KernelArgSizes.size();
     LOG_DEBUG("Number of Kernel Arguments in snapshot:{} stored at position:{}",
