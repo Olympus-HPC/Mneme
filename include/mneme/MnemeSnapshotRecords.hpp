@@ -12,6 +12,14 @@
 
 namespace mneme {
 
+// How a recorded kernel argument is stored in a snapshot. A pointer into a
+// Mneme-managed blob is stored as (blob id, offset) so that replay can rebase
+// it; everything else is stored verbatim.
+enum class KernelArgEncodingKind : uint8_t {
+  RawBytes = 0,
+  ManagedPointer = 1,
+};
+
 // Global-variable record prefix: | Name length | Name | Size | DevAddr |.
 struct GlobalVarHeader {
   std::string Name;

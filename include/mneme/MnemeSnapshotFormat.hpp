@@ -12,6 +12,7 @@
 
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/DenseMap.h>
+#include <llvm/ADT/STLFunctionalExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/MemoryBuffer.h>
@@ -81,6 +82,9 @@ public:
   // ReplayVABase.
   virtual void *replayBlobAddress(const MnemeMemoryBlob<VendorTypes> &Blob,
                                   uintptr_t ReplayVABase) const = 0;
+
+  // Requires every blob in DeviceMemory to have its replay address.
+  virtual void materializeArgs() = 0;
 };
 
 // Blobs carry an offset into the VA reservation, and pointer arguments are
@@ -88,12 +92,43 @@ public:
 template <DeviceVendors VendorTypes>
 class RelocatableSnapshot final : public Snapshot<VendorTypes> {
 public:
+  struct ManagedPointerArg {
+    size_t ArgIndex;
+    uint64_t BlobId;
+    uint64_t Offset;
+  };
+
   void checkReplayVABase(uintptr_t, uintptr_t) const override {}
 
   void *replayBlobAddress(const MnemeMemoryBlob<VendorTypes> &Blob,
                           uintptr_t ReplayVABase) const override {
     return reinterpret_cast<void *>(ReplayVABase + Blob.getBlobOffset());
   }
+
+  void addManagedPointerArg(size_t ArgIndex, uint64_t BlobId, uint64_t Offset) {
+    ManagedPointerArgs.push_back({ArgIndex, BlobId, Offset});
+  }
+
+  void materializeArgs() override {
+    for (const auto &[ArgIndex, BlobId, Offset] : ManagedPointerArgs) {
+      auto It = this->DeviceMemory.find(BlobId);
+      if (It == this->DeviceMemory.end())
+        LOG_FATAL("Kernel arg " + std::to_string(ArgIndex) +
+                  " references unknown blob id " + std::to_string(BlobId));
+
+      auto &Blob = It->second;
+      if (Offset >= Blob.getSize())
+        LOG_FATAL("Kernel arg " + std::to_string(ArgIndex) + " offset " +
+                  std::to_string(Offset) + " exceeds blob id " +
+                  std::to_string(BlobId) + " size");
+
+      auto Value = reinterpret_cast<uintptr_t>(Blob.getBlobAddr()) + Offset;
+      this->KInfo->setArgValue(ArgIndex, &Value, sizeof(Value));
+    }
+  }
+
+private:
+  llvm::SmallVector<ManagedPointerArg> ManagedPointerArgs;
 };
 
 // Blob ids are the recorded device addresses, and pointer arguments are raw
@@ -117,6 +152,8 @@ public:
                           uintptr_t) const override {
     return reinterpret_cast<void *>(Blob.getBlobId());
   }
+
+  void materializeArgs() override {}
 };
 
 namespace detail {
@@ -203,8 +240,9 @@ void writeKernelArgRecord(
       OS, llvm::StringRef(reinterpret_cast<const char *>(ArgData), ArgSize));
 }
 
-inline void readKernelArgRecord(const char *&Buffer, KernelInfo &KInfo,
-                                int ArgIndex) {
+inline void readKernelArgRecord(
+    const char *&Buffer, KernelInfo &KInfo, int ArgIndex,
+    llvm::function_ref<void(size_t, uint64_t, uint64_t)> OnManagedPointer) {
   KInfo.KernelArgSizes[ArgIndex] = util::extractScalar<size_t>(Buffer);
   auto Kind = static_cast<KernelArgEncodingKind>(
       util::extractScalar<KernelArgEncodingRaw>(Buffer));
@@ -215,7 +253,11 @@ inline void readKernelArgRecord(const char *&Buffer, KernelInfo &KInfo,
   case KernelArgEncodingKind::ManagedPointer: {
     uint64_t BlobId = util::extractScalar<uint64_t>(Buffer);
     uint64_t Offset = util::extractScalar<uint64_t>(Buffer);
-    KInfo.setManagedPointerArg(ArgIndex, BlobId, Offset);
+    if (KInfo.KernelArgSizes[ArgIndex] != sizeof(uintptr_t))
+      LOG_FATAL("Managed pointer arg " + std::to_string(ArgIndex) +
+                " does not have pointer-sized storage");
+    KInfo.setZeroArgData(ArgIndex);
+    OnManagedPointer(ArgIndex, BlobId, Offset);
     return;
   }
   }
@@ -434,7 +476,11 @@ public:
     KInfo->KernelArgSizes.resize(TotalArguments);
     KInfo->initializeArgStorage(TotalArguments);
     for (size_t A = 0; A < TotalArguments; A++)
-      detail::readKernelArgRecord(CurrentPtr, *KInfo, A);
+      detail::readKernelArgRecord(
+          CurrentPtr, *KInfo, A,
+          [&Snap](size_t ArgIndex, uint64_t BlobId, uint64_t Offset) {
+            Snap->addManagedPointerArg(ArgIndex, BlobId, Offset);
+          });
 
     this->expectPayloadEnd(CurrentPtr);
     return Snap;

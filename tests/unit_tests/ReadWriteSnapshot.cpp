@@ -229,22 +229,26 @@ int main(int argc, char **argv) {
     }
 
     auto RArgData = RKernel.getArgData();
-    auto RKinds = RKernel.getArgEncodingKinds();
     for (auto A = 0; A < WKernel.getNumArgs(); A++) {
-      if (A == PointerArg) {
-        if (RKinds[A] != KernelArgEncodingKind::ManagedPointer ||
-            RKernel.getManagedArgBlobId(A) != BlobId ||
-            RKernel.getManagedArgOffset(A) != PointerArgOffset) {
-          std::cerr << "Pointer argument was not stored as a managed pointer\n";
-          return 4;
-        }
+      if (A == PointerArg)
         continue;
-      }
-      if (RKinds[A] != KernelArgEncodingKind::RawBytes ||
-          std::memcmp(Args[A], RArgData[A].get(), WArgSizes[A]) != 0) {
+      if (std::memcmp(Args[A], RArgData[A].get(), WArgSizes[A]) != 0) {
         std::cerr << "The Memory of argument " << A << " differs \n";
         return 4;
       }
+    }
+
+    auto *PointerArgStorage = RArgData[PointerArg].get();
+    auto &RBlob = ReadDeviceMemMap.find(BlobId)->second;
+    auto *ReplayAddr = ReadSnap->replayBlobAddress(RBlob, OtherVABase);
+    RBlob.map(ReplayAddr, RBlob.getActualSize(), RBlob.getSize());
+    ReadSnap->materializeArgs();
+    RBlob.release();
+    uintptr_t Expected = OtherVABase + BlobOffset + PointerArgOffset;
+    if (RArgData[PointerArg].get() != PointerArgStorage ||
+        std::memcmp(PointerArgStorage, &Expected, sizeof(Expected)) != 0) {
+      std::cerr << "Pointer argument was not rebased onto the replay blob\n";
+      return 4;
     }
     return 0;
   }();
@@ -580,10 +584,9 @@ int main(int argc, char **argv) {
                    "address\n";
       return 1024;
     }
+    LegacySnap->materializeArgs();
     auto &LegacyKernel = *LegacySnap->KInfo;
     if (LegacyKernel.getNumArgs() != 1 ||
-        LegacyKernel.getArgEncodingKinds()[0] !=
-            KernelArgEncodingKind::RawBytes ||
         std::memcmp(LegacyKernel.getArgData()[0].get(), &LegacyPointerArg,
                     sizeof(LegacyPointerArg)) != 0) {
       std::cerr << "Legacy bytes snapshot did not keep raw arguments\n";

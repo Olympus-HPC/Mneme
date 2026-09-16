@@ -79,32 +79,6 @@ protected:
   // Distinguishes the two concrete roles for diagnostic logging.
   virtual bool isPrologue() const = 0;
 
-  // Fills in pointer arguments once every blob has a replay address.
-  void materializeManagedPointerArgs() {
-    auto &KInfo = *Snap->KInfo;
-    auto Kinds = KInfo.getArgEncodingKinds();
-    for (size_t I = 0; I < Kinds.size(); ++I) {
-      if (Kinds[I] != KernelArgEncodingKind::ManagedPointer)
-        continue;
-
-      auto BlobId = KInfo.getManagedArgBlobId(I);
-      auto It = Snap->DeviceMemory.find(BlobId);
-      if (It == Snap->DeviceMemory.end())
-        LOG_FATAL("Kernel arg " + std::to_string(I) +
-                  " references unknown blob id " + std::to_string(BlobId));
-
-      auto &Blob = It->second;
-      auto Offset = KInfo.getManagedArgOffset(I);
-      if (Offset >= Blob.getSize())
-        LOG_FATAL("Kernel arg " + std::to_string(I) + " offset " +
-                  std::to_string(Offset) + " exceeds blob id " +
-                  std::to_string(BlobId) + " size");
-
-      KInfo.materializeManagedPointerArg(
-          I, static_cast<uint8_t *>(Blob.getBlobAddr()) + Offset);
-    }
-  }
-
 private:
   std::unique_ptr<void *[]> copyOutArgs() const {
     void **Args = new void *[Snap->KInfo->getNumArgs()];
@@ -209,7 +183,7 @@ public:
         LOG_FATAL("Error raised during mapping prologue memeory:" + EC.value());
     }
 
-    this->materializeManagedPointerArgs();
+    Snap.materializeArgs();
     this->copyToDevice();
   }
 
@@ -236,6 +210,7 @@ public:
       if (EC)
         LOG_FATAL("Error raised during mapping prologue memeory:" + EC.value());
     }
+    this->Snap->materializeArgs();
     this->copyToDevice();
   }
 
