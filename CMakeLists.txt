@@ -101,13 +101,22 @@ endif()
 
 if(MNEME_ENABLE_LOGGER)
   include(FetchContent)
-  FetchContent_Declare(spdlog
-    GIT_REPOSITORY https://github.com/gabime/spdlog.git
-    GIT_TAG        v1.15.0
-    GIT_SHALLOW    TRUE
-    FIND_PACKAGE_ARGS
-  )
-  FetchContent_MakeAvailable(spdlog)
+  block()
+    if(MNEME_PYTHON_WHEEL)
+      # Installed spdlog targets may link shared fmt, which is not bundled in the wheel.
+      set(FETCHCONTENT_TRY_FIND_PACKAGE_MODE NEVER)
+      set(SPDLOG_FMT_EXTERNAL OFF)
+      set(SPDLOG_FMT_EXTERNAL_HO OFF)
+      set(SPDLOG_USE_STD_FORMAT OFF)
+    endif()
+    FetchContent_Declare(spdlog
+      GIT_REPOSITORY https://github.com/gabime/spdlog.git
+      GIT_TAG        v1.15.0
+      GIT_SHALLOW    TRUE
+      FIND_PACKAGE_ARGS
+    )
+    FetchContent_MakeAvailable(spdlog)
+  endblock()
 endif()
 
 message(STATUS "Installation prefix is ${CMAKE_INSTALL_PREFIX}")
