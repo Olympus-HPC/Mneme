@@ -18,15 +18,16 @@ CONTAINER_MAGIC = b"MNEMESNP"
 CONTAINER_SIZE = 16
 
 
-def _payload_offset(data: bytes) -> int:
-    if len(data) >= CONTAINER_SIZE and data[:8] == CONTAINER_MAGIC:
-        return CONTAINER_SIZE
-    return 0
+def _has_container(data: bytes) -> bool:
+    return len(data) >= CONTAINER_SIZE and data[:8] == CONTAINER_MAGIC
 
 
 def _parse_prologue_blob_metadata(prologue_path: Path):
     data = prologue_path.read_bytes()
-    off = _payload_offset(data)
+    version = struct.unpack_from("<I", data, 12)[0] if _has_container(data) else 0
+    off = CONTAINER_SIZE if _has_container(data) else 0
+    # v0: device address; v1: blob id and offset.
+    blob_prefix_size = 8 if version == 0 else 16
 
     def read_u64():
         nonlocal off
@@ -63,7 +64,7 @@ def _parse_prologue_blob_metadata(prologue_path: Path):
     for _ in range(read_u64()):
         read_u64()  # actual size
         blob_size = read_u64()
-        skip(8)  # dev addr
+        skip(blob_prefix_size)
         skip(blob_size)
 
         builtin = read_u8()

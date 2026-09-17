@@ -2,8 +2,6 @@
 
 #include <cstdint>
 #include <cstring>
-#include <llvm/ADT/StringRef.h>
-#include <llvm/Support/raw_ostream.h>
 #include <memory>
 #include <sys/types.h>
 #include <utility>
@@ -28,6 +26,10 @@ public:
 
 protected:
   Metadata PtrMD;
+  // Identifies the blob across snapshots independently of its device address.
+  uint64_t BlobId;
+  // Offset from the start of the recorded VA reservation.
+  uint64_t BlobOffset;
   uint64_t ActualSize;
   void *BlobAddr;
   uint64_t Size;
@@ -36,9 +38,11 @@ protected:
 
 public:
   MnemeMemoryBlob(uint64_t ActualSize = 0, void *BlobAddr = nullptr,
-                  uint64_t Size = 0)
-      : ActualSize(ActualSize), BlobAddr(BlobAddr), Size(Size),
-        HostData(new uint8_t[Size]), IsMapped(false) {}
+                  uint64_t Size = 0, uint64_t BlobId = 0,
+                  uint64_t BlobOffset = 0)
+      : PtrMD(), BlobId(BlobId), BlobOffset(BlobOffset), ActualSize(ActualSize),
+        BlobAddr(BlobAddr), Size(Size), HostData(new uint8_t[Size]),
+        IsMapped(false) {}
 
   DeviceError_t map(void *VA, uint64_t ActualSize, uint64_t Size) {
     this->Size = Size;
@@ -85,16 +89,13 @@ public:
     }
   }
 
-  static std::pair<void *, MnemeMemoryBlob<VendorTypes>>
-  fromBuffer(const char *&Buffer) {
-    BlobHeader Header = BlobHeader::read(Buffer);
-    auto Blob = MnemeMemoryBlob<VendorTypes>(Header.ActualSize, 0, Header.Size);
-    std::memcpy(Blob.getHostData().get(), Buffer, Header.Size);
-    Buffer += Header.Size;
-    LOG_DEBUG("Read memory blob at address {} SIZE: {} ActualSize:{}",
-              Header.DevAddr, Header.Size, Header.ActualSize);
-    Blob.PtrMD = metadata::fromBuffer(Buffer);
-    return std::make_pair(Header.DevAddr, std::move(Blob));
+  void copyFromDevice() const {
+    auto EC = MnemeDeviceRT::DeviceErrorCheck(MnemeDeviceRT::DeviceCopy(
+        static_cast<void *>(HostData.get()), BlobAddr, Size,
+        MnemeDeviceRT::MemcpyDeviceToHostKind()));
+    if (EC)
+      LOG_FATAL("Error copying blob data from device\nDevice Error Msg: " +
+                EC.value() + "\n");
   }
 
   void *ptr() { return reinterpret_cast<void *>(BlobAddr); }
@@ -107,6 +108,8 @@ public:
       BlobAddr = other.BlobAddr;
       Size = other.Size;
       ActualSize = other.ActualSize;
+      BlobId = other.BlobId;
+      BlobOffset = other.BlobOffset;
       HostData = std::move(other.HostData);
       IsMapped = other.IsMapped;
       PtrMD = other.PtrMD;
@@ -117,21 +120,22 @@ public:
   }
 
   MnemeMemoryBlob(MnemeMemoryBlob &&other) noexcept
-      : BlobAddr(other.BlobAddr), Size(other.Size),
-        ActualSize(other.ActualSize), HostData(std::move(other.HostData)),
-        IsMapped(other.IsMapped), PtrMD(other.PtrMD) {
+      : PtrMD(other.PtrMD), BlobId(other.BlobId), BlobOffset(other.BlobOffset),
+        ActualSize(other.ActualSize), BlobAddr(other.BlobAddr),
+        Size(other.Size), HostData(std::move(other.HostData)),
+        IsMapped(other.IsMapped) {
     other.BlobAddr = 0;
     other.HostData = nullptr;
   }
 
-  template <DeviceVendors VendorTypes_>
-  friend llvm::raw_ostream &
-  operator<<(llvm::raw_ostream &OS, const MnemeMemoryBlob<VendorTypes_> &Blob);
-
   void *getBlobAddr() const { return BlobAddr; }
+  uint64_t getBlobId() const { return BlobId; }
+  uint64_t getBlobOffset() const { return BlobOffset; }
   uint64_t getActualSize() const { return ActualSize; }
   uint64_t getSize() const { return Size; }
   const std::unique_ptr<uint8_t[]> &getHostData() const { return HostData; }
+  void setBlobId(uint64_t NewBlobId) { BlobId = NewBlobId; }
+  void setBlobOffset(uint64_t NewBlobOffset) { BlobOffset = NewBlobOffset; }
 
   void setMetadata(Metadata Md) { PtrMD = Md; }
 
@@ -161,33 +165,4 @@ public:
   }
 };
 
-template <DeviceVendors VendorTypes>
-llvm::raw_ostream &operator<<(llvm::raw_ostream &OS,
-                              const MnemeMemoryBlob<VendorTypes> &Blob) {
-  // The format in the binary is the following:
-  // | Var Actual Size | Var-Size | Device Address | Var Data | Metadata
-  BlobHeader{Blob.ActualSize, Blob.Size, Blob.BlobAddr}.write(OS);
-
-  LOG_DEBUG("Serializing MemoryBlob, DevAddr:{} MirroredHostAddr:{} Size:{} "
-            "ActualSize:{}",
-            (void *)Blob.BlobAddr,
-            reinterpret_cast<void *>(Blob.getHostData().get()), Blob.getSize(),
-            Blob.getActualSize());
-
-  auto EC = DeviceTraits<VendorTypes>::DeviceErrorCheck(
-      DeviceTraits<VendorTypes>::DeviceCopy(
-          static_cast<void *>(Blob.getHostData().get()),
-          reinterpret_cast<void *>(Blob.BlobAddr), Blob.getSize(),
-          DeviceTraits<VendorTypes>::MemcpyDeviceToHostKind()));
-  if (EC)
-    LOG_FATAL("Error in copying data from device when serializing context on "
-              "output stream\nDevice Error Msg: " +
-              EC.value() + "\n");
-  OS << llvm::StringRef(
-      reinterpret_cast<const char *>(Blob.getHostData().get()), Blob.Size);
-  auto MD = Blob.getMetadata();
-  mneme::metadata::serialize(OS, MD);
-
-  return OS;
-}
 } // namespace mneme
