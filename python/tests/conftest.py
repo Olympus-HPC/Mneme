@@ -240,8 +240,8 @@ def build_annotation_test_program(
     return build_cache[key]
 
 
-@pytest.fixture
-def recorded_execution(build_test_program, tmp_path):
+@pytest.fixture(params=["full", "reachable"])
+def recorded_execution(request, build_test_program, tmp_path):
     """
     Test that 'mneme record <binary>' correctly generates
     a JSON recording file and registers at least one kernel.
@@ -262,6 +262,8 @@ def recorded_execution(build_test_program, tmp_path):
         str(out_dir),
         "-vass",
         "2",
+        "--capture-mode",
+        request.param,
         "--",
         str(binary),
         "1024",
@@ -283,6 +285,9 @@ def recorded_execution(build_test_program, tmp_path):
         assert (
             len(recorded_execution.llvm_files) == 1
         ), "Mneme record should have 1 llvm file"
+        assert (
+            recorded_execution.capture_mode == request.param
+        ), "Recorded capture mode should match the CLI flag"
         assert recorded_execution.va_size == (
             2 * 1024 * 1024 * 1024
         ), "Recorded Virtual Address size should be 2 GB"

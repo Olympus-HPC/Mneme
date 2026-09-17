@@ -443,6 +443,7 @@ class RecordedExecution:
         va_addr: str,
         va_size: int,
         kernel_instances: Dict[str, KernelInstance],
+        capture_mode: str = "full",
     ):
         self.static_hash = static_hash
         self.kernel_name = kernel_name
@@ -453,6 +454,7 @@ class RecordedExecution:
         self.va_addr = va_addr
         self.va_size = va_size
         self.kernel_instances = kernel_instances
+        self.capture_mode = capture_mode
         self._link_mod = None
 
     def __str__(self):
@@ -524,6 +526,7 @@ class RecordedExecution:
         res["StaticHash"] = self.static_hash
         res["VASize"] = self.va_size
         res["VAddr"] = self.va_addr
+        res["CaptureMode"] = self.capture_mode
         res["instances"] = {}
         for k, v in self.items():
             res["instances"][k] = v.to_dict(base_dir)
@@ -623,4 +626,5 @@ class RecordedExecution:
             record_db["VAddr"],
             record_db["VASize"],
             instances,
+            capture_mode=record_db.get("CaptureMode", "full"),
         )

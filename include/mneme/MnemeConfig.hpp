@@ -21,6 +21,9 @@ namespace mneme {
 
 enum class LogLevel { Trace, Debug, Info, Warn, Error, Critical, Off };
 enum class EpilogueSnapshotType { Bytes, Diff, Best };
+// Full captures every tracked allocation; Reachable captures only the
+// allocations that pointer-typed kernel argument slots point into.
+enum class CaptureMode { Full, Reachable };
 
 namespace config_detail {
 
@@ -101,8 +104,9 @@ inline LogLevel getEnvOrDefaultLogLevel(const char *VarName, LogLevel Default) {
   return LogLevel::Info;
 }
 
-inline EpilogueSnapshotType getEnvOrDefaultEpilogueSnapshotType(
-    const char *VarName, EpilogueSnapshotType Default) {
+inline EpilogueSnapshotType
+getEnvOrDefaultEpilogueSnapshotType(const char *VarName,
+                                    EpilogueSnapshotType Default) {
   auto EnvValue = getEnvOrDefaultString(VarName);
   if (!EnvValue)
     return Default;
@@ -116,6 +120,21 @@ inline EpilogueSnapshotType getEnvOrDefaultEpilogueSnapshotType(
 
   throw std::runtime_error("Invalid MNEME_EPILOGUE_TYPE value '" + *EnvValue +
                            "'. Expected 'bytes', 'diff', or 'best'.");
+}
+
+inline CaptureMode getEnvOrDefaultCaptureMode(const char *VarName,
+                                              CaptureMode Default) {
+  auto EnvValue = getEnvOrDefaultString(VarName);
+  if (!EnvValue)
+    return Default;
+
+  if (*EnvValue == "full")
+    return CaptureMode::Full;
+  if (*EnvValue == "reachable")
+    return CaptureMode::Reachable;
+
+  throw std::runtime_error("Invalid MNEME_CAPTURE_MODE value '" + *EnvValue +
+                           "'. Expected 'full' or 'reachable'.");
 }
 
 inline bool defaultRecordingPolicy(const std::optional<int> &DistributedRank) {
@@ -187,6 +206,7 @@ public:
   const std::optional<long> PageSizeGiB;
   const LogLevel MnemeLogLevel;
   const EpilogueSnapshotType EpilogueType;
+  const CaptureMode Capture;
 
   bool isRecordingEnabledForCurrentRank() const {
     return RecordingEnabledThisRank;
@@ -230,6 +250,8 @@ private:
             "MNEME_LOG_LEVEL", LogLevel::Critical)),
         EpilogueType(config_detail::getEnvOrDefaultEpilogueSnapshotType(
             "MNEME_EPILOGUE_TYPE", EpilogueSnapshotType::Diff)),
+        Capture(config_detail::getEnvOrDefaultCaptureMode("MNEME_CAPTURE_MODE",
+                                                          CaptureMode::Full)),
         MnemeDataDir(config_detail::getEnvOrDefaultString("MNEME_DATA_DIR")),
         MnemeLogDir(config_detail::getEnvOrDefaultString("MNEME_LOG_DIR")),
         RecordingEnabledThisRank(
