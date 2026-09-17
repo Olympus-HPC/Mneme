@@ -240,8 +240,8 @@ public:
                                     std::to_string(StaticHash) + "." +
                                     std::to_string(DynamicHash) + ".mneme"));
 
-    // The epilogue reuses the prologue's selection so both snapshots describe
-    // the same allocations, which the diff format requires.
+    // Choose the allocations once; the epilogue closure reuses these keys since
+    // the diff writer pairs each blob with the prologue bytes saved here.
     llvm::SmallVector<void *> Selected =
         selectBlobs<VendorTypes>(DeviceMemory, Args, GlobalVars);
     auto Blobs = resolveBlobs<VendorTypes>(DeviceMemory, Selected);
