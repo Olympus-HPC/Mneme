@@ -37,6 +37,7 @@
 #include "mneme/MnemeLLVMUtils.hpp"
 #include "mneme/MnemeLogger.hpp"
 #include "mneme/MnemeMemory.hpp"
+#include "mneme/MnemeReachableBlobs.hpp"
 #include "mneme/MnemeSnapshotFormat.hpp"
 #include "mneme/MnemeSnapshotRecords.hpp"
 #include "mneme/MnemeUtils.hpp"
@@ -212,13 +213,15 @@ class KernelInstancesCollection {
   llvm::SmallVector<std::string> KernelArgNames;
   llvm::SmallVector<bool> KernelSpecializations;
   llvm::SmallVector<std::function<double(void *)>> ConvertArgToDouble;
+  llvm::SmallVector<llvm::SmallVector<size_t>> KernelArgPointerOffsets;
   llvm::SmallVector<std::string> ModuleFiles;
   const std::string KName;
   SourceFileInfo Source;
+  CaptureMode Capture;
 
 private:
   // Parse Proteus's serialized bitcode in a Mneme-owned LLVMContext and
-  // extract per-argument metadata. Operating on a Mneme-owned Module 
+  // extract per-argument metadata. Operating on a Mneme-owned Module
   // keeps Mneme's LLVM runtime from touching any
   // Proteus-owned LLVM C++ object across the DSO boundary.
   void extractArgInfoFromBitcode(llvm::StringRef Bitcode) {
@@ -239,6 +242,25 @@ private:
     KernelSpecializations = mneme::canSpecialize(*F);
     ConvertArgToDouble = mneme::convertToDouble(*F);
     Source = SourceFileInfo(*Mod, KName);
+    KernelArgPointerOffsets = mneme::getPointerOffsetsByArg(*F);
+  }
+
+  template <DeviceVendors VendorTypes>
+  llvm::SmallVector<void *> selectBlobs(
+      const llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &DeviceMemory,
+      void **Args, const proteus::runtime::GlobalMetadataMap &GlobalVars) {
+    if (Capture == CaptureMode::Full)
+      return allBlobKeys<VendorTypes>(DeviceMemory);
+
+    auto Selected = selectReachableBlobs<VendorTypes>(
+        DeviceMemory, KernelArgPointerOffsets, Args, GlobalVars, KName);
+    LOG_INFO("Kernel {} reaches {} of {} tracked allocations", KName,
+             Selected.size(), DeviceMemory.size());
+    return Selected;
+  }
+
+  static const char *captureModeName(CaptureMode Mode) {
+    return Mode == CaptureMode::Reachable ? "reachable" : "full";
   }
 
   std::string StoreModuleBytes(llvm::StringRef Bytes,
@@ -266,6 +288,7 @@ public:
   llvm::json::Object toJSON(uint64_t StaticHash) const {
     llvm::json::Object Collection;
     Collection["StaticHash"] = StaticHash;
+    Collection["CaptureMode"] = captureModeName(Capture);
     Collection["VAddr"] =
         util::pointerToHexString(reinterpret_cast<uint8_t *>(VAddr));
     Collection["VASize"] = VASize;
@@ -290,9 +313,10 @@ public:
   KernelInstancesCollection(const std::string &MnemeDirectory, void *VAddr,
                             uint64_t VASize,
                             const proteus::runtime::KernelMetadata &KInfo,
-                            int MaxRecordings, bool CopySource)
+                            int MaxRecordings, bool CopySource,
+                            CaptureMode Capture)
       : VAddr(VAddr), VASize(VASize), MaxRecordings(MaxRecordings),
-        NumRecords(0), KName(KInfo.getName()) {
+        NumRecords(0), KName(KInfo.getName()), Capture(Capture) {
     const auto &BitcodeBytes = KInfo.getBitcode();
     llvm::StringRef Bitcode(BitcodeBytes.data(), BitcodeBytes.size());
     if (Bitcode.empty())
@@ -354,9 +378,15 @@ public:
                                     std::to_string(StaticHash) + "." +
                                     std::to_string(DynamicHash) + ".mneme"));
 
+    // The epilogue reuses the prologue's selection so both snapshots describe
+    // the same allocations, which the diff format requires.
+    llvm::SmallVector<void *> Selected =
+        selectBlobs<VendorTypes>(DeviceMemory, Args, GlobalVars);
+    auto Blobs = resolveBlobs<VendorTypes>(DeviceMemory, Selected);
+
     auto PrologueGlobals = std::make_shared<GlobalSnapshotData>();
-    SnapshotInput<VendorTypes> In{GlobalVars, DeviceMemory, KernelArgSizes,
-                                  Args, Stream};
+    SnapshotInput<VendorTypes> In{GlobalVars, Blobs, KernelArgSizes, Args,
+                                  Stream};
     Instances[DynamicHash].PrologueFn =
         BytesWriter<VendorTypes>(PrologueGlobals).write(Filename, In).string();
 
@@ -368,7 +398,8 @@ public:
                        void **,
                        typename DeviceTraits<VendorTypes>::DeviceStream_t)>
         CaptureEpilogue =
-            [this, DynamicHash, StaticHash, MnemeDir, GlobalVars, Writer](
+            [this, DynamicHash, StaticHash, MnemeDir, GlobalVars, Writer,
+             Selected](
                 llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>>
                     &DeviceMemory,
                 void **Args,
@@ -378,8 +409,9 @@ public:
                               std::to_string(StaticHash) + "." +
                               std::to_string(DynamicHash) + ".mneme"));
 
-              SnapshotInput<VendorTypes> In{GlobalVars, DeviceMemory,
-                                            KernelArgSizes, Args, Stream};
+              auto Blobs = resolveBlobs<VendorTypes>(DeviceMemory, Selected);
+              SnapshotInput<VendorTypes> In{GlobalVars, Blobs, KernelArgSizes,
+                                            Args, Stream};
               Instances[DynamicHash].EpilogueFn =
                   Writer->write(Filename, In).string();
             };
@@ -398,6 +430,7 @@ class RecordDatabase {
   uint64_t SkipRecordings;
   EpilogueSnapshotType EpilogueType;
   bool CopySource;
+  CaptureMode Capture;
 
 public:
   RecordDatabase() : KernelWhiteList(""), HasRegex(false) {
@@ -413,15 +446,17 @@ public:
     SkipRecordings = Conf.SkipRecordings;
     EpilogueType = Conf.EpilogueType;
     CopySource = Conf.CopySource;
+    Capture = Conf.Capture;
   }
 
   void writeKernelJSON(uint64_t StaticHash) {
     auto It = KernelRecords.find(StaticHash);
     if (It == KernelRecords.end()) {
-      LOG_WARN("Attempted to write JSON for unrecorded kernel hash {}", StaticHash);
+      LOG_WARN("Attempted to write JSON for unrecorded kernel hash {}",
+               StaticHash);
       return;
     }
-    auto* RecordPtr = &It->second;
+    auto *RecordPtr = &It->second;
 
     auto JsonFilename = MnemeDirectory / (std::to_string(StaticHash) + ".json");
     auto JSONRecord = RecordPtr->toJSON(StaticHash);
@@ -429,7 +464,8 @@ public:
     std::error_code EC;
     llvm::raw_fd_ostream JsonOS(JsonFilename.string(), EC);
     if (EC) {
-      LOG_WARN("Failed to open JSON file for kernel {}: {}", StaticHash, EC.message());
+      LOG_WARN("Failed to open JSON file for kernel {}: {}", StaticHash,
+               EC.message());
       return;
     }
 
@@ -480,7 +516,8 @@ public:
     }
 
     auto IT = KernelRecords.try_emplace(StaticHash, getDir(), VAddr, VASize,
-                                        KInfo, MaxRecordings, CopySource);
+                                        KInfo, MaxRecordings, CopySource,
+                                        Capture);
     if (IT.second)
       LOG_INFO("Created instance");
     return IT.first->second.takeSnapshot<VendorTypes>(

@@ -21,6 +21,9 @@ namespace mneme {
 
 enum class LogLevel { Trace, Debug, Info, Warn, Error, Critical, Off };
 enum class EpilogueSnapshotType { Bytes, Diff, Best };
+// Full captures every tracked allocation; Reachable captures only the
+// allocations that pointer-typed kernel argument slots point into.
+enum class CaptureMode { Full, Reachable };
 
 namespace config_detail {
 
@@ -134,6 +137,21 @@ getEnvOrDefaultEpilogueSnapshotType(const char *VarName,
                            "'. Expected 'bytes', 'diff', or 'best'.");
 }
 
+inline CaptureMode getEnvOrDefaultCaptureMode(const char *VarName,
+                                              CaptureMode Default) {
+  auto EnvValue = getEnvOrDefaultString(VarName);
+  if (!EnvValue)
+    return Default;
+
+  if (*EnvValue == "full")
+    return CaptureMode::Full;
+  if (*EnvValue == "reachable")
+    return CaptureMode::Reachable;
+
+  throw std::runtime_error("Invalid MNEME_CAPTURE_MODE value '" + *EnvValue +
+                           "'. Expected 'full' or 'reachable'.");
+}
+
 inline bool defaultRecordingPolicy(const std::optional<int> &DistributedRank) {
   if (!DistributedRank)
     return true;
@@ -204,6 +222,7 @@ public:
   const LogLevel MnemeLogLevel;
   const EpilogueSnapshotType EpilogueType;
   const bool CopySource;
+  const CaptureMode Capture;
 
   bool isRecordingEnabledForCurrentRank() const {
     return RecordingEnabledThisRank;
@@ -249,6 +268,8 @@ private:
             "MNEME_EPILOGUE_TYPE", EpilogueSnapshotType::Diff)),
         CopySource(
             config_detail::getEnvOrDefaultBool("MNEME_COPY_SOURCE", false)),
+        Capture(config_detail::getEnvOrDefaultCaptureMode("MNEME_CAPTURE_MODE",
+                                                          CaptureMode::Full)),
         MnemeDataDir(config_detail::getEnvOrDefaultString("MNEME_DATA_DIR")),
         MnemeLogDir(config_detail::getEnvOrDefaultString("MNEME_LOG_DIR")),
         RecordingEnabledThisRank(

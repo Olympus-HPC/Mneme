@@ -123,6 +123,7 @@ for fn in sorted(glob.glob(os.path.join(data_dir, "*.json"))):
             print("SourceText:", source_lines[rr_data["SourceLine"] - 1].strip())
         if "SourceEndLine" in rr_data:
             print("SourceEndText:", source_lines[rr_data["SourceEndLine"] - 1].strip())
+    print("CaptureMode:", rr_data.get("CaptureMode", "full"))
     for k, instance in rr_data["instances"].items():
         print(
             "BlockDims:({0}, {1}, {2})".format(
@@ -150,6 +151,7 @@ for fn in sorted(glob.glob(os.path.join(data_dir, "*.json"))):
         # Parse the prologue binary to report any non-default blob metadata.
         try:
             mds = _parse_prologue_metadata(prologue_path)
+            print("NumBlobs:", len(mds))
             for md in mds:
                 if (md["threshold"] != 0.0 or md["builtin"] != 0
                         or md["norm"] != 0 or md["threshold_kind"] != 0
