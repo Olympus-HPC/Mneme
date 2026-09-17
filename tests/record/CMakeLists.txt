@@ -138,3 +138,10 @@ CREATE_GPU_TEST(test_annotation test_annotation.cpp)
 CREATE_RDC_GPU_TEST(test_annotation test_annotation.cpp)
 
 CREATE_GPU_TEST(test_crash_handling test_crash_handling.cpp)
+
+CREATE_GPU_TEST(test_source_file test_source_file.cpp)
+CREATE_RDC_GPU_TEST(test_source_file test_source_file.cpp)
+
+CREATE_GPU_TEST(test_source_file_no_debug test_source_file_no_debug.cpp)
+# Disable debug info to check that the missing-line-table warning prints.
+target_compile_options(test_source_file_no_debug PRIVATE -g0)
