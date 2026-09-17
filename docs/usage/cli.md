@@ -49,6 +49,7 @@ artifact.
 | `-vass`, `--virtual-address-space-size` | Size (in **GB**) of the virtual address space allocated by Mneme for recording                                            |
 | `-mr`, `--per-kernel-max-recordings`    | Maximum number of times the same GPU kernel may be recorded with different dynamic hashes                                 |
 | `--epilogue-format`                     | Store epilogue snapshots as `diff`, `bytes`, or `best`; defaults to `diff`                                                        |
+| `--capture-mode`                        | Snapshot `full` device memory (every tracked allocation) or only the allocations `reachable` from kernel arguments; defaults to `full`. See [Record → Choosing what to capture](record.md#choosing-what-to-capture) |
 | `-rr`, `--record-ranks`                 | Restrict recording to a comma-separated set of MPI ranks (e.g. `0`, `0,1,3`) or `all` for every rank. See *Multi-rank recording* below. |
 | `-h`, `--help`                          | Show help message and exit                                                                                                |
 

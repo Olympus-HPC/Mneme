@@ -30,6 +30,7 @@ void clearMnemeEnv() {
   unsetenv("MNEME_LOG_LEVEL");
   unsetenv("MNEME_LOG_DIR");
   unsetenv("MNEME_EPILOGUE_TYPE");
+  unsetenv("MNEME_CAPTURE_MODE");
   unsetenv("MNEME_RECORD_RANKS");
   unsetenv("FLUX_TASK_RANK");
   unsetenv("OMPI_COMM_WORLD_RANK");
@@ -158,6 +159,38 @@ int main() {
       Threw = true;
     }
     expect(Threw, "invalid MNEME_EPILOGUE_TYPE should throw");
+  }
+
+  clearMnemeEnv();
+
+  // MNEME_CAPTURE_MODE: default and both accepted values.
+  {
+    auto Conf = Config::createFromEnvironment();
+    expect(Conf.Capture == CaptureMode::Full,
+           "MNEME_CAPTURE_MODE should default to full");
+  }
+  setenv("MNEME_CAPTURE_MODE", "full", 1);
+  {
+    auto Conf = Config::createFromEnvironment();
+    expect(Conf.Capture == CaptureMode::Full,
+           "MNEME_CAPTURE_MODE should map full");
+  }
+  setenv("MNEME_CAPTURE_MODE", "reachable", 1);
+  {
+    auto Conf = Config::createFromEnvironment();
+    expect(Conf.Capture == CaptureMode::Reachable,
+           "MNEME_CAPTURE_MODE should map reachable");
+  }
+  setenv("MNEME_CAPTURE_MODE", "sparse", 1);
+  {
+    bool Threw = false;
+    try {
+      auto Conf = Config::createFromEnvironment();
+      (void)Conf;
+    } catch (const std::runtime_error &) {
+      Threw = true;
+    }
+    expect(Threw, "invalid MNEME_CAPTURE_MODE should throw");
   }
 
   clearMnemeEnv();

@@ -137,4 +137,7 @@ CREATE_RDC_GPU_TEST(multi_kernel_regex multi_kernel_regex.cpp)
 CREATE_GPU_TEST(test_annotation test_annotation.cpp)
 CREATE_RDC_GPU_TEST(test_annotation test_annotation.cpp)
 
+CREATE_GPU_TEST(test_reachable_capture test_reachable_capture.cpp)
+CREATE_RDC_GPU_TEST(test_reachable_capture test_reachable_capture.cpp)
+
 CREATE_GPU_TEST(test_crash_handling test_crash_handling.cpp)
