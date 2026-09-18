@@ -339,7 +339,7 @@ class TuningSession:
         options: TuneOptions,
         *,
         executor: Optional[AsyncReplayExecutor] = None,
-        ir: Optional[str | Path] = None,
+        ir: Optional[Union[str, Path]] = None,
     ):
         """Use ``ir`` for this session, optionally on a caller-owned executor.
 
