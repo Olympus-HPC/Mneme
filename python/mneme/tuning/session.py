@@ -11,7 +11,7 @@ import time
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Iterator, List, Mapping, Optional, Tuple
+from typing import Any, Dict, Iterator, List, Mapping, Optional, Tuple, Union
 
 import optuna
 
@@ -334,8 +334,22 @@ class TuningSession:
         is controlled by TuneOptions.
     """
 
-    def __init__(self, options: TuneOptions):
+    def __init__(
+        self,
+        options: TuneOptions,
+        *,
+        executor: Optional[AsyncReplayExecutor] = None,
+        ir: Optional[Union[str, Path]] = None,
+    ):
+        """Use ``ir`` for this session, optionally on a caller-owned executor.
+
+        A borrowed executor must target the same record, instance, worker count,
+        iterations, and warmup as ``options``. The caller remains responsible for
+        shutting it down.
+        """
         self.options = options
+        self._borrowed_executor = executor
+        self._ir = ir
         self.options.results_dir = self.options.resolved_results_dir()
         if self.options.proteus_enabled and self.options.proteus_output is None:
             self.options.proteus_output = str(Path(self.options.results_dir) / "proteus_tuned_kernels.json")
@@ -784,17 +798,22 @@ class TuningSession:
         self._print(f"  trials:          {self.options.trials}")
         self._print(f"  workers:         {self.options.workers}")
 
-        # initialize mneme executor
-        executor = AsyncReplayExecutor(
-            record_db=self.options.record_database,
-            record_id=self.options.record_id,
-            iterations=self.options.iterations,
-            results_db_dir=self.options.results_dir,
-            num_workers=self.options.workers,
-            warmup=self.options.warmup,
-        )
+        # A caller may reuse an executor across tuning sessions with different IR.
+        owns_executor = self._borrowed_executor is None
+        executor = self._borrowed_executor
+        if executor is None:
+            executor = AsyncReplayExecutor(
+                record_db=self.options.record_database,
+                record_id=self.options.record_id,
+                iterations=self.options.iterations,
+                results_db_dir=self.options.results_dir,
+                num_workers=self.options.workers,
+                warmup=self.options.warmup,
+            )
         # the main tuning phase
         try:
+            if self._ir is not None:
+                executor.set_ir(self._ir)
             # ensure baseline passes; collect its performance
             try:
                 baseline_result, baseline_metric = self._evaluate_baseline(executor, baseline_config)
@@ -952,7 +971,8 @@ class TuningSession:
             print(f"Internal tuner error: {type(exc).__name__}: {exc}")
             return EXIT_INTERNAL_ERROR
         finally:
-            executor.shutdown()
+            if owns_executor:
+                executor.shutdown()
 
         self._print("")
         self._print("Best verified configuration:")

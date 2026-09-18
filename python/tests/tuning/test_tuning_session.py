@@ -101,17 +101,24 @@ class RecordingExecutor:
         )
         self.evaluated = []
         self.submitted = []
+        self.events = []
+        self.shutdown_calls = 0
+
+    def set_ir(self, ir):
+        self.events.append(("set_ir", ir))
 
     def evaluate(self, config):
+        self.events.append(("evaluate", config))
         self.evaluated.append(config)
         return self.baseline_result
 
     def submit(self, config):
+        self.events.append(("submit", config))
         self.submitted.append(config)
         return DoneFuture(self.submitted_result)
 
     def shutdown(self):
-        pass
+        self.shutdown_calls += 1
 
 
 class GridSpace:
@@ -550,6 +557,73 @@ def test_run_reports_baseline_failure(monkeypatch, tmp_path, capsys):
     assert session.run() == EXIT_BASELINE_FAILED
     assert "Baseline replay did not verify" in capsys.readouterr().out
     assert executor.submitted == []
+    assert executor.shutdown_calls == 1
+
+
+def test_run_reuses_borrowed_executor_and_sets_ir_before_baseline(monkeypatch, tmp_path):
+    executor = RecordingExecutor()
+    monkeypatch.setattr(
+        tune_session.RecordedExecution,
+        "from_json",
+        staticmethod(lambda _: FakeRecorded()),
+    )
+    monkeypatch.setattr(
+        TuningSession,
+        "_build_space",
+        lambda self, kernel: (GridSpace(), {"kind": "fake-space"}),
+    )
+    monkeypatch.setattr(
+        tune_session,
+        "AsyncReplayExecutor",
+        lambda **kwargs: (_ for _ in ()).throw(AssertionError("created executor")),
+    )
+
+    first = TuningSession(
+        make_options(tmp_path / "first", proteus_enabled=False),
+        executor=executor,
+        ir="first candidate IR",
+    )
+    second = TuningSession(
+        make_options(tmp_path / "second", proteus_enabled=False),
+        executor=executor,
+        ir="second candidate IR",
+    )
+
+    assert first.run() == 0
+    assert second.run() == 0
+    assert [name for name, _ in executor.events] == [
+        "set_ir", "evaluate", "submit", "submit",
+        "set_ir", "evaluate", "submit", "submit",
+    ]
+    assert executor.events[0][1] == "first candidate IR"
+    assert executor.events[4][1] == "second candidate IR"
+    assert executor.shutdown_calls == 0
+    assert (tmp_path / "first" / "best.json").is_file()
+    assert (tmp_path / "second" / "best.json").is_file()
+
+
+def test_baseline_failure_does_not_shutdown_borrowed_executor(monkeypatch, tmp_path):
+    executor = RecordingExecutor(
+        baseline_result=ExperimentResult(verified=False, executed=True, exec_time=[10]),
+    )
+    monkeypatch.setattr(
+        tune_session.RecordedExecution,
+        "from_json",
+        staticmethod(lambda _: FakeRecorded()),
+    )
+    monkeypatch.setattr(
+        TuningSession,
+        "_build_space",
+        lambda self, kernel: (GridSpace(), {"kind": "fake-space"}),
+    )
+
+    session = TuningSession(
+        make_options(tmp_path, proteus_enabled=False), executor=executor, ir="bad candidate IR"
+    )
+
+    assert session.run() == EXIT_BASELINE_FAILED
+    assert executor.events[0] == ("set_ir", "bad candidate IR")
+    assert executor.shutdown_calls == 0
 
 
 def test_run_baseline_only_writes_baseline_as_best(monkeypatch, tmp_path):
