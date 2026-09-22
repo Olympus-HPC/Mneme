@@ -144,3 +144,24 @@ def test_tune_cli_wires_options(monkeypatch):
     assert captured["options"].space_preset == "compiler"
     assert captured["options"].trials == 3
     assert captured["options"].proteus_enabled is False
+
+
+def test_tune_config_round_trips_candidate_and_baseline_options(tmp_path):
+    from mneme.tuning import cli as tune_cli
+
+    config = {
+        "record_database": "db.json",
+        "record_id": "rid",
+        "sampler": "tpe",
+        "trials": 30,
+        "launch_candidates": [{"block": [128, 1, 1], "grid": [64, 1, 1]}],
+        "require_verified_baseline": False,
+    }
+    input_path, output_path = tmp_path / "input.json", tmp_path / "output.json"
+    input_path.write_text(json.dumps(config))
+    parser = tune_cli.argparse.ArgumentParser(prog="mneme tune")
+    tune_cli.add_tune_args(parser)
+    args = parser.parse_args(["--config", str(input_path), "--dump-config", str(output_path)])
+    assert tune_cli.run_tune(args, None) == 0
+    resolved = json.loads(output_path.read_text())
+    assert all(resolved[key] == value for key, value in config.items())

@@ -267,10 +267,15 @@ def test_validate_resume_loads_completed_hashes(tmp_path):
 
 
 def test_grid_candidates_skip_banned_and_constraint_failures(tmp_path):
-    session = TuningSession(make_options(tmp_path, sampler="exhaustive"))
-    session._banned_block_shapes.add("bad")
+    class LayoutSpace(GridSpace):
+        def derived(self, params):
+            return make_config(grid=dim3(1 if params["block_shape"] == "bad" else 2, 1, 1),
+                               codegen_opt=params["codegen_opt"])
 
-    candidates = list(session._iter_grid_candidates(GridSpace()))
+    session = TuningSession(make_options(tmp_path, sampler="exhaustive"))
+    session._banned_layouts.add("128x1x1/1x1x1")
+
+    candidates = list(session._iter_grid_candidates(LayoutSpace()))
 
     assert [candidate.params for candidate in candidates] == [
         {"block_shape": "ok", "codegen_opt": 2}
@@ -678,3 +683,203 @@ def test_merge_config_and_args_flattens_search_and_prefers_cli(tmp_path):
     assert merged["trials"] == 9
     assert merged["iterations"] == 4
     assert "command" not in merged
+
+
+@pytest.mark.parametrize("overrides, message", [
+    ({"sampler": "exhaustive", "trials": None}, "random or tpe"),
+    ({"sampler": "grid", "trials": None}, "random or tpe"),
+    ({"space_module": "custom:Space"}, "custom search space"),
+    ({"require_verified_baseline": False, "objective": "speedup"}, "objective='time'"),
+])
+def test_new_options_reject_unsupported_combinations(tmp_path, overrides, message):
+    values = dict(sampler="random", trials=2, launch_candidates=[{"block": [64, 1, 1]}])
+    values.update(overrides)
+    with pytest.raises(ValueError, match=message):
+        make_options(tmp_path, **values)
+
+
+@pytest.mark.parametrize("sampler", ["random", "tpe"])
+def test_augmented_session_runs_initial_layouts_then_full_budget_and_exports_winner(monkeypatch, tmp_path, sampler):
+    monkeypatch.setattr(TuningSession, "_load_record", lambda self: (FakeRecorded(), FakeKernel()))
+    measured = []
+    exported = []
+
+    class Executor(RecordingExecutor):
+        def submit(self, config):
+            self.submitted.append(config)
+            # Every measured configuration has a distinct timing; the export must
+            # retain the exact layout and compiler flags from the winning sample.
+            result = ExperimentResult(verified=True, executed=True, exec_time=[100 - len(self.submitted)])
+            measured.append((config.to_dict(), result.to_dict()))
+            return DoneFuture(result)
+
+    executor = Executor(baseline_result=ExperimentResult(verified=True, exec_time=[1000]))
+    monkeypatch.setattr(tune_session, "export_proteus_tuned_kernel",
+                        lambda filename, recorded, kernel, config, **kwargs: exported.append(config.to_dict()))
+    options = make_options(
+        tmp_path, sampler=sampler, trials=30, workers=3, seed=7,
+        space_preset="compiler", specialize_space="on-off", launch_bounds_space="on-off",
+        launch_candidates=[
+            {"block": [128, 1, 1]},
+            {"block": [128, 1, 1], "grid": [8, 1, 1]},
+            {"block": [128, 1, 1], "grid": [9, 1, 1]},
+            {"block": [513, 1, 1]},
+        ],
+    )
+    assert TuningSession(options, executor=executor).run() == 0
+    assert len(executor.evaluated) == 1
+    assert len(executor.submitted) == 33
+    baseline = executor.evaluated[0].to_dict()
+    for config, expected in zip(executor.submitted[:3], [(128, 8), (128, 9), (513, 2)]):
+        assert (config.block.x, config.grid.x) == expected
+        assert {k: v for k, v in config.to_dict().items() if k not in {"block", "grid"}} == {
+            k: v for k, v in baseline.items() if k not in {"block", "grid"}
+        }
+    automatic = executor.submitted[3:]
+    supplied_samples = [c for c in automatic if c.grid.x != 8]
+    assert supplied_samples
+    assert any(c.passes != baseline["passes"] for c in supplied_samples)
+    assert any(c.codegen_opt != baseline["codegen_opt"] for c in supplied_samples)
+    assert any(c.specialize or c.set_launch_bounds for c in supplied_samples)
+    best = json.loads((tmp_path / "best.json").read_text())
+    assert best["config"] == measured[-1][0] == exported[0]
+    assert best["result"] == measured[-1][1]
+    assert best["best_metric"] == 67
+    records = [json.loads(line) for line in (tmp_path / "trials.jsonl").read_text().splitlines()]
+    assert [r["trial"] for r in records] == list(range(33))
+    assert records[best["trial"]]["config"] == best["config"]
+    config = json.loads((tmp_path / "config.json").read_text())
+    assert config["launch_candidates"] == options.launch_candidates
+    assert config["require_verified_baseline"] is True
+    domain = json.loads((tmp_path / "search_space.json").read_text())["metadata"]["launch_layouts"]
+    assert len(domain) == 3
+    summary = json.loads((tmp_path / "summary.json").read_text())
+    assert summary["num_trials_requested"] == 30
+    assert summary["num_trials_completed"] == 33
+
+
+@pytest.mark.parametrize("sampler", ["random", "tpe"])
+def test_invalid_launch_bans_only_full_layout(monkeypatch, tmp_path, sampler):
+    monkeypatch.setattr(TuningSession, "_load_record", lambda self: (FakeRecorded(), FakeKernel()))
+
+    class Executor(RecordingExecutor):
+        def submit(self, config):
+            self.submitted.append(config)
+            if config.grid.x == 8:
+                return DoneFuture(ExperimentResult(failed=True, error="invalid launch"))
+            return DoneFuture(ExperimentResult(verified=True, exec_time=[5]))
+
+    executor = Executor()
+    session = TuningSession(make_options(
+        tmp_path, sampler=sampler, trials=10, space_preset="compiler", seed=1,
+        proteus_enabled=False,
+        launch_candidates=[{"block": [128, 1, 1]}, {"block": [128, 1, 1], "grid": [9, 1, 1]}],
+    ), executor=executor)
+    assert session.run() == 0
+    assert session._banned_layouts == {"128x1x1/8x1x1"}
+    assert len(executor.submitted) == 12
+    assert all(c.block.x == 128 and c.grid.x == 9 for c in executor.submitted[1:])
+
+
+@pytest.mark.parametrize("sampler", ["random", "tpe"])
+@pytest.mark.parametrize("successful", [True, False])
+def test_baseline_failure_continuation_and_complete_failure(monkeypatch, tmp_path, sampler, successful):
+    monkeypatch.setattr(TuningSession, "_load_record", lambda self: (FakeRecorded(), FakeKernel()))
+    failed = ExperimentResult(executed=True, exec_time=[1], error="mismatch")
+    executor = RecordingExecutor(baseline_result=failed, submitted_result=(
+        ExperimentResult(verified=True, executed=True, exec_time=[20]) if successful else failed
+    ))
+    session = TuningSession(make_options(
+        tmp_path, sampler=sampler, trials=3, require_verified_baseline=False, proteus_enabled=False,
+        launch_candidates=[{"block": [256, 1, 1]}],
+    ), executor=executor)
+    assert session.run() == (0 if successful else EXIT_BASELINE_FAILED)
+    assert len(executor.submitted) == 4
+    baseline = json.loads((tmp_path / "baseline.json").read_text())
+    assert baseline["result"]["verified"] is False
+    assert baseline["config"]["block"]["x"] == 128
+    assert baseline["result"]["metric"] == 1
+    records = [json.loads(line) for line in (tmp_path / "trials.jsonl").read_text().splitlines()]
+    assert all(r["baseline_metric"] is None and r["speedup"] is None for r in records)
+    if successful:
+        best = json.loads((tmp_path / "best.json").read_text())
+        assert best["config"]["block"]["x"] == 256
+        assert best["baseline_metric"] is None and best["speedup"] is None
+        assert best["params"].get("baseline") is not True
+    else:
+        assert not (tmp_path / "best.json").exists()
+        assert json.loads((tmp_path / "summary.json").read_text())["status"] == "failed"
+
+
+@pytest.mark.parametrize("verified", [True, False])
+def test_timeout_drains_initial_evaluation_and_keeps_best_verified(monkeypatch, tmp_path, verified):
+    monkeypatch.setattr(TuningSession, "_load_record", lambda self: (FakeRecorded(), FakeKernel()))
+    now = [0.0]
+    monkeypatch.setattr(tune_session.time, "monotonic", lambda: now[0])
+
+    class Executor(RecordingExecutor):
+        def submit(self, config):
+            now[0] = 2.0
+            return super().submit(config)
+
+    executor = Executor(
+        baseline_result=ExperimentResult(executed=True),
+        submitted_result=ExperimentResult(verified=verified, executed=True, exec_time=[5]),
+    )
+    options = make_options(
+        tmp_path, sampler="random", trials=30, timeout=1, require_verified_baseline=False,
+        proteus_enabled=False, launch_candidates=[{"block": [256, 1, 1]}, {"block": [512, 1, 1]}],
+    )
+    assert TuningSession(options, executor=executor).run() == (0 if verified else EXIT_BASELINE_FAILED)
+    assert len(executor.submitted) == 1
+    if verified:
+        assert json.loads((tmp_path / "best.json").read_text())["config"]["block"]["x"] == 256
+    else:
+        assert not (tmp_path / "best.json").exists()
+
+
+def test_failed_resumed_baseline_obeys_policy(tmp_path):
+    session = TuningSession(make_options(tmp_path, resume=True))
+    session.store.write_baseline({"result": ExperimentResult(failed=True, error="compile error").to_dict()})
+    executor = RecordingExecutor()
+    with pytest.raises(BaselineVerificationError):
+        session._evaluate_baseline(executor, make_config())
+    session.options.require_verified_baseline = False
+    result, metric = session._evaluate_baseline(executor, make_config())
+    assert result.failed and metric is None
+    assert not executor.evaluated
+
+
+@pytest.mark.parametrize("sampler", ["random", "tpe"])
+def test_configuration_and_execution_exceptions_reject_samples_and_continue(monkeypatch, tmp_path, sampler):
+    monkeypatch.setattr(TuningSession, "_load_record", lambda self: (FakeRecorded(), FakeKernel()))
+
+    class Space(GridSpace):
+        calls = 0
+
+        def derived(self, params):
+            self.calls += 1
+            if self.calls == 1:
+                raise ValueError("bad configuration")
+            return make_config()
+
+        def constraints(self, params):
+            return True
+
+    monkeypatch.setattr(TuningSession, "_build_space", lambda self, kernel: (Space(), {}))
+
+    class Executor(RecordingExecutor):
+        def submit(self, config):
+            self.submitted.append(config)
+            if len(self.submitted) == 1:
+                raise RuntimeError("compile failed")
+            if len(self.submitted) == 2:
+                return DoneFuture(RuntimeError("device error"))
+            return DoneFuture(ExperimentResult(verified=True, exec_time=[5]))
+
+    executor = Executor()
+    assert TuningSession(make_options(
+        tmp_path, sampler=sampler, trials=4, proteus_enabled=False,
+    ), executor=executor).run() == 0
+    records = [json.loads(line) for line in (tmp_path / "trials.jsonl").read_text().splitlines()]
+    assert [r["status"] for r in records] == ["invalid_config", "compile_error", "runtime_error", "verified"]
