@@ -8,6 +8,13 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 from mneme.mneme_types import ExperimentConfiguration, dim3
 from mneme.recorded_execution import RecordedExecution
+from mneme.tuning.launch_candidates import (
+    MAX_THREADS_PER_BLOCK,
+    MAX_BLOCK_DIMS,
+    MAX_GRID_DIMS,
+    launch_layout_key,
+    normalize_launch_candidates,
+)
 from mneme.tuning.search_space import (
     BaseParam,
     BoolParam,
@@ -29,10 +36,6 @@ DEFAULT_PIPELINES = [
 
 # for 'quick' default only search these pipelines
 QUICK_PIPELINES = ["default<O3>", "default<O2>"]
-
-MAX_THREADS_PER_BLOCK = 1024
-MAX_BLOCK_DIMS = (1024, 1024, 64)
-MAX_GRID_DIMS = ((1 << 31) - 1, 65535, 65535)
 
 
 def parse_range(spec: str) -> Tuple[int, int, int]:
@@ -288,6 +291,7 @@ class BuiltinTuneSearchSpace(SearchSpace):
         max_threads_range: Optional[str] = None,
         max_threads_policy: str = "block-threads",
         codegen_method: Optional[str] = None,
+        launch_candidates: Optional[List[dict]] = None,
     ):
         if preset not in {"quick", "standard", "launch", "compiler", "full"}:
             raise ValueError(f"Unknown tuning preset {preset!r}")
@@ -328,6 +332,25 @@ class BuiltinTuneSearchSpace(SearchSpace):
         else:
             self._dimensions["block_shape"] = FixedParam("block_shape", dim3_to_shape(recorded_kernel.block_dim))
 
+        self.launch_candidates = normalize_launch_candidates(
+            [] if launch_candidates is None else launch_candidates, recorded_kernel=recorded_kernel
+        )
+        self.launch_layouts = {}
+        if self.launch_candidates:
+            defaults = []
+            for shape in finite_param_values(self._dimensions.pop("block_shape")):
+                block = shape_to_dim3(shape)
+                grid = self._derive_grid(block)
+                defaults.append({
+                    "block": [block.x, block.y, block.z],
+                    "grid": [grid.x, grid.y, grid.z],
+                })
+            for layout in defaults + self.launch_candidates:
+                self.launch_layouts[launch_layout_key(layout["block"], layout["grid"])] = layout
+            self._dimensions["launch_layout"] = CategoricalParam(
+                "launch_layout", list(self.launch_layouts)
+            )
+
         if self._passes_choices is None:
             self._dimensions["passes"] = FixedParam("passes", self._baseline_passes)
         else:
@@ -366,6 +389,8 @@ class BuiltinTuneSearchSpace(SearchSpace):
             "baseline_codegen_opt": self._baseline_codegen_opt,
             "codegen_method": self.codegen_method,
         }
+        if self.launch_candidates:
+            self.metadata["launch_layouts"] = list(self.launch_layouts.values())
 
     def dimensions(self) -> Dict[str, BaseParam]:
         return dict(self._dimensions)
@@ -401,13 +426,18 @@ class BuiltinTuneSearchSpace(SearchSpace):
         return block_threads
 
     def derived(self, params: Dict[str, Any]) -> ExperimentConfiguration:
-        block = shape_to_dim3(params["block_shape"])
+        if "launch_layout" in params:
+            layout = self.launch_layouts[params["launch_layout"]]
+            block, grid = dim3(*layout["block"]), dim3(*layout["grid"])
+        else:
+            block = shape_to_dim3(params["block_shape"])
+            grid = self._derive_grid(block)
         set_launch_bounds = bool(params.get("set_launch_bounds", False))
         max_threads = self._max_threads(params, block)
         min_blocks_per_sm = int(params.get("min_blocks_per_sm", 0) or 0) if set_launch_bounds else 0
 
         config = ExperimentConfiguration(
-            grid=self._derive_grid(block),
+            grid=grid,
             block=block,
             shared_mem=int(self.recorded_kernel.shared_mem),
             specialize=bool(params.get("specialize", False)),
