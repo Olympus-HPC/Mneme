@@ -1,5 +1,7 @@
 import json
 
+import pytest
+
 from mneme.mneme_types import ExperimentResult, dim3
 from mneme.tuning import session as tune_session
 from mneme.tuning.session import TuneOptions, TuningSession
@@ -165,3 +167,41 @@ def test_tune_config_round_trips_candidate_and_baseline_options(tmp_path):
     assert tune_cli.run_tune(args, None) == 0
     resolved = json.loads(output_path.read_text())
     assert all(resolved[key] == value for key, value in config.items())
+
+
+@pytest.mark.parametrize("configured, flag, expected", [
+    (None, None, True),
+    (None, "--require-verified-baseline", True),
+    (None, "--no-require-verified-baseline", False),
+    (False, None, False),
+    (True, None, True),
+    (False, "--require-verified-baseline", True),
+    (True, "--no-require-verified-baseline", False),
+])
+def test_tune_cli_baseline_policy_precedence(tmp_path, configured, flag, expected):
+    from mneme.tuning import cli as tune_cli
+
+    config = {"record_database": "db.json", "record_id": "rid", "trials": 3}
+    if configured is not None:
+        config["require_verified_baseline"] = configured
+    input_path, output_path = tmp_path / "input.json", tmp_path / "output.json"
+    input_path.write_text(json.dumps(config))
+    parser = tune_cli.argparse.ArgumentParser(prog="mneme tune")
+    tune_cli.add_tune_args(parser)
+    argv = ["--config", str(input_path), "--dump-config", str(output_path)]
+    if flag:
+        argv.append(flag)
+    assert tune_cli.run_tune(parser.parse_args(argv), None) == 0
+    assert json.loads(output_path.read_text())["require_verified_baseline"] is expected
+
+
+def test_tune_cli_rejects_baseline_continuation_with_speedup():
+    from mneme.tuning import cli as tune_cli
+
+    parser = tune_cli.argparse.ArgumentParser(prog="mneme tune")
+    tune_cli.add_tune_args(parser)
+    args = parser.parse_args([
+        "-rdb", "db.json", "-rid", "rid", "--trials", "3",
+        "--no-require-verified-baseline", "--objective", "speedup",
+    ])
+    assert tune_cli.run_tune(args, None) == 3
