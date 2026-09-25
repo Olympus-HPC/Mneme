@@ -1,10 +1,12 @@
 #pragma once
 #include <dlfcn.h>
 #include <optional>
+#include <vector>
 
 #include "mneme/MnemeConfig.hpp"
 #include "mneme/MnemeLogger.hpp"
 #include "mneme/MnemeUtils.hpp"
+#include "mneme/MnemeVASpace.hpp"
 
 #ifdef MNEME_ENABLE_HIP
 #include <hip/amd_detail/amd_hip_runtime.h>
@@ -291,7 +293,10 @@ template <> struct DeviceTraits<DeviceVendors::HIP> {
     return hipStreamDestroy(Stream);
   }
 
-  static constexpr uintptr_t getSuggestedAddr() { return 0x1534f7e00000; }
+  static std::vector<uintptr_t> getCandidateAddrs(uint64_t Size,
+                                                  uint64_t Alignment) {
+    return util::suggestVAddrs(Size, Alignment);
+  }
 
   static hipError_t deviceLaunchKernel(const void *function_address,
                                        dim3 numBlocks, dim3 dimBlocks,
@@ -648,6 +653,10 @@ template <> struct DeviceTraits<DeviceVendors::CUDA> {
   }
 
   static constexpr uintptr_t getSuggestedAddr() { return 0x153940000000; }
+
+  static std::vector<uintptr_t> getCandidateAddrs(uint64_t, uint64_t) {
+    return {getSuggestedAddr()};
+  }
 
   static DeviceError_t deviceLaunchKernel(const void *kernelFunc, dim3 gridDim,
                                           dim3 blockDim, void **kernelArgs,
