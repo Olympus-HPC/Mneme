@@ -260,8 +260,6 @@ def recorded_execution(build_test_program, tmp_path):
         "record",
         "--record-db-dir",
         str(out_dir),
-        "-vass",
-        "2",
         "--",
         str(binary),
         "1024",
