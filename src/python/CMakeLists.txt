@@ -6,7 +6,7 @@ file(GLOB MNEME_SRC "./*.cpp")
 file(GLOB TRANSFORMS "transforms/*.cpp")
 
 
-add_library(mneme SHARED ${LLVM_SRC} ${PROTEUS_SRC} ${MNEME_SRC} ${TRANSFORMS} ${MnemeCoreSrcDir}/MnemePageManager.cpp ${MnemeCoreSrcDir}/MnemeDeviceCode.cpp ${MnemeCoreSrcDir}/MnemeAnnotationInternal.cpp)
+add_library(mneme SHARED ${LLVM_SRC} ${PROTEUS_SRC} ${MNEME_SRC} ${TRANSFORMS} ${MnemeCoreSrcDir}/MnemeDeviceCode.cpp ${MnemeCoreSrcDir}/MnemeAnnotationInternal.cpp)
 if (MNEME_ENABLE_HIP)
   set_source_files_properties(${MnemeCoreSrcDir}/MnemeDeviceCode.cpp PROPERTIES LANGUAGE HIP)
   set_target_properties(mneme PROPERTIES LINKER_LANGUAGE HIP)

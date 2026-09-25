@@ -15,17 +15,6 @@ MODULE_PATH = "mneme.replay_executor"
 # --------------------------
 
 
-class FakePageManager:
-    def __init__(self, device_id, va_addr, va_size):
-        self.device_id = device_id
-        self.va_addr = va_addr
-        self.va_size = va_size
-        self.closed = False
-
-    def close(self):
-        self.closed = True
-
-
 class FakeSnapshot:
     """
     Snapshot returned by kernel_descr.prologue.open() / epilogue.open().
@@ -319,7 +308,6 @@ def test_open_close_context_manager_opens_and_closes_resources(monkeypatch):
     monkeypatch.setattr(
         mod.RecordedExecution, "from_json", staticmethod(lambda _: rec), raising=True
     )
-    monkeypatch.setattr(mod, "PageManagerRef", FakePageManager, raising=True)
     monkeypatch.setattr(mod, "set_device", lambda _: None, raising=True)
     monkeypatch.setattr(mod, "get_device_arch", lambda: "sm", raising=True)
     monkeypatch.setattr(mod, "get_device_count", lambda: 1, raising=True)
@@ -327,15 +315,10 @@ def test_open_close_context_manager_opens_and_closes_resources(monkeypatch):
     ex = mod.BaseExecutor(record_db="x", record_id="rid", device_id=0)
 
     with ex as opened:
-        assert opened._page_manager is not None
         assert opened.prologue._state == "P"
         assert opened.epilogue._state == "E"
-        assert opened._page_manager.device_id == 0
-        assert opened._page_manager.va_addr == rec.va_addr
-        assert opened._page_manager.va_size == rec.va_size
 
     # After context exit
-    assert ex._page_manager is None
     assert ex._prologue is None
     assert ex._epilogue is None
 
@@ -454,7 +437,6 @@ def test_preprocess_ir_calls_jit_hooks_based_on_config(monkeypatch):
     monkeypatch.setattr(mod, "set_device", lambda _: None, raising=True)
     monkeypatch.setattr(mod, "get_device_arch", lambda: "sm", raising=True)
     monkeypatch.setattr(mod, "get_device_count", lambda: 1, raising=True)
-    monkeypatch.setattr(mod, "PageManagerRef", FakePageManager, raising=True)
 
     calls = []
 
@@ -611,7 +593,6 @@ def test_execute_orchestrates_verification_and_tracked_run(monkeypatch):
     monkeypatch.setattr(mod, "set_device", lambda _: None, raising=True)
     monkeypatch.setattr(mod, "get_device_arch", lambda: "sm", raising=True)
     monkeypatch.setattr(mod, "get_device_count", lambda: 1, raising=True)
-    monkeypatch.setattr(mod, "PageManagerRef", FakePageManager, raising=True)
 
     # transform.remove_auto_initialize should be called on ir.clone()
     transform_calls = []
