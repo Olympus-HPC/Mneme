@@ -1,6 +1,7 @@
 #pragma once
 #include <dlfcn.h>
 #include <optional>
+#include <unordered_map>
 #include <vector>
 
 #include "mneme/MnemeLogger.hpp"
@@ -242,6 +243,16 @@ template <> struct DeviceTraits<DeviceVendors::HIP> {
     return getPageSize(DeviceID, hipMemAllocationGranularityMinimum);
   }
 
+  // hipMemRelease never returns memory to the device (ROCm 6.4-7.2), so
+  // unmapped handles are kept and reused for mappings of the same size.
+  // Leaked so blobs released during static destruction can still use it.
+  static std::vector<hipMemGenericAllocationHandle_t> &
+  freeHandles(uint64_t Size) {
+    static auto *Pool = new std::unordered_map<
+        uint64_t, std::vector<hipMemGenericAllocationHandle_t>>();
+    return (*Pool)[Size];
+  }
+
   // The driver treats Addr as a hint, so a reservation elsewhere is Occupied.
   static MapStatus mapFixed(void *Addr, uint64_t Size, uint64_t Alignment,
                             int DeviceID, hipMemGenericAllocationHandle_t &H) {
@@ -253,13 +264,19 @@ template <> struct DeviceTraits<DeviceVendors::HIP> {
       return MapStatus::Occupied;
     }
 
-    hipMemAllocationProp Prop = {};
-    Prop.type = hipMemAllocationTypePinned;
-    Prop.location.type = hipMemLocationTypeDevice;
-    Prop.location.id = DeviceID;
-    if (hipMemCreate(&H, Size, &Prop, 0) != hipSuccess) {
-      (void)hipMemAddressFree(Addr, Size);
-      return MapStatus::OutOfMemory;
+    auto &Free = freeHandles(Size);
+    if (!Free.empty()) {
+      H = Free.back();
+      Free.pop_back();
+    } else {
+      hipMemAllocationProp Prop = {};
+      Prop.type = hipMemAllocationTypePinned;
+      Prop.location.type = hipMemLocationTypeDevice;
+      Prop.location.id = DeviceID;
+      if (hipMemCreate(&H, Size, &Prop, 0) != hipSuccess) {
+        (void)hipMemAddressFree(Addr, Size);
+        return MapStatus::OutOfMemory;
+      }
     }
 
     hipMemAccessDesc ADesc = {};
@@ -271,7 +288,7 @@ template <> struct DeviceTraits<DeviceVendors::HIP> {
         return MapStatus::Mapped;
       (void)hipMemUnmap(Addr, Size);
     }
-    (void)hipMemRelease(H);
+    Free.push_back(H);
     (void)hipMemAddressFree(Addr, Size);
     return MapStatus::OutOfMemory;
   }
@@ -279,10 +296,10 @@ template <> struct DeviceTraits<DeviceVendors::HIP> {
   static void unmapFixed(void *Addr, uint64_t Size,
                          hipMemGenericAllocationHandle_t H) {
     auto EC = DeviceErrorCheck(hipMemUnmap(Addr, Size));
-    if (!EC)
-      EC = DeviceErrorCheck(hipMemRelease(H));
-    if (!EC)
+    if (!EC) {
+      freeHandles(Size).push_back(H);
       EC = DeviceErrorCheck(hipMemAddressFree(Addr, Size));
+    }
     if (EC)
       LOG_WARN("Could not unmap {}: {}", Addr, *EC);
   }
