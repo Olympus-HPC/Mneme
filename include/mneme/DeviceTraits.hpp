@@ -3,7 +3,6 @@
 #include <optional>
 #include <vector>
 
-#include "mneme/MnemeConfig.hpp"
 #include "mneme/MnemeLogger.hpp"
 #include "mneme/MnemeUtils.hpp"
 #include "mneme/MnemeVASpace.hpp"
@@ -239,23 +238,6 @@ template <> struct DeviceTraits<DeviceVendors::HIP> {
     return hipMemcpyDeviceToHost;
   }
 
-  static void mmap(hipMemGenericAllocationHandle_t &MHandle, void *Addr,
-                   uint64_t Size, int DeviceID) {
-    hipMemAllocationProp Prop = {};
-    Prop.type = hipMemAllocationTypePinned;
-    Prop.location.type = hipMemLocationTypeDevice;
-    Prop.location.id = DeviceID;
-    hipErrCheck(hipMemCreate(&MHandle, Size, &Prop, 0));
-    hipErrCheck(hipMemMap((void *)Addr, Size, 0, MHandle, 0));
-
-    hipMemAccessDesc ADesc = {};
-    ADesc.location.type = hipMemLocationTypeDevice;
-    ADesc.location.id = DeviceID;
-    ADesc.flags = hipMemAccessFlagsProtReadWrite;
-
-    hipErrCheck(hipMemSetAccess(Addr, Size, &ADesc, 1));
-  }
-
   static uint64_t getMinPageSize(int DeviceID) {
     return getPageSize(DeviceID, hipMemAllocationGranularityMinimum);
   }
@@ -303,34 +285,6 @@ template <> struct DeviceTraits<DeviceVendors::HIP> {
       EC = DeviceErrorCheck(hipMemAddressFree(Addr, Size));
     if (EC)
       LOG_WARN("Could not unmap {}: {}", Addr, *EC);
-  }
-
-  static void *getVirtualAddress(uint64_t Size, void *VA, uint64_t Alignment) {
-    hipDeviceptr_t devPtr = 0;
-
-    hipErrCheck(hipMemAddressReserve(&devPtr, Size, Alignment,
-                                     reinterpret_cast<hipDeviceptr_t>(VA), 0));
-    return (void *)devPtr;
-  }
-
-  static void unmap(hipMemGenericAllocationHandle_t &MHandle, void *Addr,
-                    uintptr_t Size) {
-    LOG_DEBUG("Unmapping Addr:{} SIZE:{}", Addr, Size);
-    hipErrCheck(hipMemUnmap(Addr, Size));
-    hipErrCheck(hipMemRelease(MHandle));
-  }
-
-  static size_t getFixedMemorySize() {
-    static uint64_t PageSize{Config::get().getPageSizeBytesOrDefault(64)};
-    return PageSize;
-  }
-
-  static void freeVirtualAddress(void *Addr, size_t Size) {
-    LOG_DEBUG("Releasing Device Virtual Address Pages:{} Size:{}", Addr, Size);
-    auto EC = DeviceErrorCheck(hipMemAddressFree(Addr, Size));
-    if (EC) {
-      LOG_FATAL("Could not release VA addresses " + EC.value());
-    }
   }
 
   static hipError_t DeviceStreamCreate(hipStream_t *Stream) {
@@ -628,29 +582,6 @@ template <> struct DeviceTraits<DeviceVendors::CUDA> {
     return cudaMemcpyDeviceToHost;
   }
 
-  static void mmap(MemoryAllocationHandle_t &MHandle, void *Addr,
-                   uintptr_t Size, int DeviceID) {
-    CUmemAllocationProp Prop = {};
-    Prop.type = CU_MEM_ALLOCATION_TYPE_PINNED;
-    Prop.location.type = CU_MEM_LOCATION_TYPE_DEVICE;
-    Prop.location.id = DeviceID;
-    auto EC = DeviceErrorCheck(cuMemCreate(&MHandle, Size, &Prop, 0));
-    if (EC)
-      LOG_FATAL("Cannot create memory handle\nEC:" + EC.value());
-    EC = DeviceErrorCheck(cuMemMap((DevicePtr_t)Addr, Size, 0, MHandle, 0));
-    if (EC)
-      LOG_FATAL("Cannot map memory handle\nEC:" + EC.value());
-
-    CUmemAccessDesc ADesc = {};
-    ADesc.location.type = CU_MEM_LOCATION_TYPE_DEVICE;
-    ADesc.location.id = DeviceID;
-    ADesc.flags = CU_MEM_ACCESS_FLAGS_PROT_READWRITE;
-
-    EC = DeviceErrorCheck(cuMemSetAccess((DevicePtr_t)Addr, Size, &ADesc, 1));
-    if (EC)
-      LOG_FATAL("Cannot set memory Access\nEC:" + EC.value());
-  }
-
   static uint64_t getMinPageSize(int DeviceID) {
     return getPageSize(DeviceID, CU_MEM_ALLOC_GRANULARITY_MINIMUM);
   }
@@ -700,41 +631,6 @@ template <> struct DeviceTraits<DeviceVendors::CUDA> {
       EC = DeviceErrorCheck(cuMemAddressFree(Ptr, Size));
     if (EC)
       LOG_WARN("Could not unmap {}: {}", Addr, *EC);
-  }
-
-  static void *getVirtualAddress(uint64_t Size, void *VA, uint64_t Alignment) {
-    DevicePtr_t devPtr = 0;
-
-    cuErrCheck(cuMemAddressReserve(&devPtr, Size, Alignment,
-                                   reinterpret_cast<DevicePtr_t>(VA), 0));
-    return (void *)devPtr;
-  }
-
-  static void unmap(MemoryAllocationHandle_t &MHandle, void *Addr,
-                    uintptr_t Size) {
-    LOG_DEBUG("Unmapping Addr:{} SIZE:{}", Addr, Size);
-    auto EC = DeviceErrorCheck(cuMemUnmap((DevicePtr_t)Addr, Size));
-    if (EC)
-      LOG_FATAL("Cannot set unmap memory\nEC:" + EC.value());
-
-    EC = DeviceErrorCheck(cuMemRelease(MHandle));
-    if (EC)
-      LOG_FATAL("Cannot set cuMemRelease Handle\nEC:" + EC.value());
-  }
-
-  static size_t getFixedMemorySize() {
-    static uint64_t PageSize{Config::get().getPageSizeBytesOrDefault(2)};
-    return PageSize;
-  }
-
-  static void freeVirtualAddress(void *Addr, size_t Size) {
-    LOG_DEBUG("Releasing Device Virtual Address Pages:{} Size:{}", Addr, Size);
-    auto Ret = cuMemAddressFree((DevicePtr_t)Addr, Size);
-    LOG_DEBUG("Done from driver call ({} {})", Addr, Size);
-    auto EC = DeviceErrorCheck(Ret);
-    if (EC) {
-      LOG_FATAL("Could not release VA addresses " + EC.value());
-    }
   }
 
   static bool compareDeviceBlobs(const char *Blob1, const char *Blob2,
