@@ -68,8 +68,8 @@ use the corresponding Proteus release to avoid incompatibilities.
 #### Tested Proteus release
 
 - Repository: https://github.com/Olympus-HPC/Proteus
-- Release: `v2026.05.0`
-- Commit: `1f1e0307a0a340b42947be600bb7be0a61745c0a`
+- Release: `v2026.10.0`
+- Commit: `4c63534db17312b755f0526fd489c560f8e97218`
 - Tested with: Mneme `develop`
 
 Proteus must be configured with:
@@ -262,7 +262,7 @@ external Proteus installation:
 - `PROTEUS_DIR`: Path to an existing Proteus installation prefix.
   This directory must allow `find_package(proteus)` to succeed.
 
-External Proteus installations must use release `v2026.05.0` and must be
+External Proteus installations must use release `v2026.10.0` and must be
 built with `-DBUILD_SHARED=On -DPROTEUS_INSTALL_IMPL_HEADERS=On`.
 
 When either of these variables is set, Mneme will use the specified
