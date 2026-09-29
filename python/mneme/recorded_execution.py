@@ -30,10 +30,18 @@ from typing import Dict, List, Optional
 
 from .llvm import ffi
 from .mneme_types import dim3
+from .page_manager import c_uintptr_t
 from .proteus import jit
 
 MnemeRecordStateRef = ffi._make_opaque_ref("MnemeRecordState")
-ffi.lib.MnemePy_initializeMemState.argtypes = [c_char_p, c_char_p, c_char_p, c_bool]
+ffi.lib.MnemePy_initializeMemState.argtypes = [
+    c_char_p,
+    c_char_p,
+    c_char_p,
+    c_bool,
+    c_uintptr_t,
+    c_uintptr_t,
+]
 ffi.lib.MnemePy_initializeMemState.restype = MnemeRecordStateRef
 
 ffi.lib.MnemePy_DisposeMemState.argtypes = [MnemeRecordStateRef]
@@ -135,7 +143,9 @@ class MemStateRef:
          validate correctness.
 
     Instances are context managers. Entering the context loads the snapshot
-    into the native handle; leaving the context disposes it.
+    into the native handle; leaving the context disposes it. The first
+    :meth:`open` needs the recorded and replay VA bases so that the native
+    layer can place the snapshot's blobs.
 
     Parameters
     ----------
@@ -169,6 +179,7 @@ class MemStateRef:
         self.kernel_name = kernel_name
         self.s_type = snap_type
         self.base_prologue_fn = base_prologue_fn
+        self._va_bases = None
         self._state = None
         self._load = False
         self._num_args = None
@@ -184,22 +195,49 @@ class MemStateRef:
                 self._args = None
                 self._num_args = None
 
-    def open(self):
+    def open(
+        self,
+        recorded_va_addr: Optional[int] = None,
+        replay_va_addr: Optional[int] = None,
+    ):
         """
         Initialize and load the snapshot into the native handle.
+
+        Parameters
+        ----------
+        recorded_va_addr : int, optional
+            Base of the VA reservation the recording used.
+        replay_va_addr : int, optional
+            Base of the VA reservation this replay holds. Both bases are
+            required the first time the native handle is created and are
+            remembered for later calls.
 
         Returns
         -------
         MemStateRef
             Returns self for convenient chaining / context-manager usage.
         """
+        if recorded_va_addr is not None or replay_va_addr is not None:
+            if recorded_va_addr is None or replay_va_addr is None:
+                raise ValueError(
+                    "MemStateRef.open needs both the recorded and replay VA base"
+                )
+            self._va_bases = (recorded_va_addr, replay_va_addr)
+
         if self._state is None:
+            if self._va_bases is None:
+                raise RuntimeError(
+                    "MemStateRef.open requires the recorded and replay VA bases "
+                    "on first use"
+                )
             base_fn = self.base_prologue_fn or ""
             self._state = ffi.lib.MnemePy_initializeMemState(
                 c_char_p(self.kernel_name.encode("utf-8")),
                 c_char_p(self.fn.encode("utf-8")),
                 c_char_p(base_fn.encode("utf-8")),
                 c_bool(self.s_type == SnapshotType.PROLOGUE),
+                self._va_bases[0],
+                self._va_bases[1],
             )
 
         ffi.lib.MnemePy_LoadMemState(self._state)
@@ -256,7 +294,8 @@ class MemStateRef:
         self._dispose()
 
     def __enter__(self):
-        self.open()
+        if not self._load:
+            self.open()
         return self
 
     def __exit__(self, exc_type, exc_value, traceback):

@@ -28,10 +28,35 @@ def test_memstate_open_initializes_and_loads():
             fake.MnemePy_initializeMemState.return_value = "STATE"
 
             m = MemStateRef("snap.pro", "kernelA", SnapshotType.PROLOGUE)
-            m.open()
+            m.open(0x100, 0x1000)
 
             fake.MnemePy_initializeMemState.assert_called_once()
             fake.MnemePy_LoadMemState.assert_called_once_with("STATE")
+
+
+def test_memstate_open_requires_va_bases_on_first_use():
+    with patch("mneme.recorded_execution.Path.exists", return_value=True):
+        m = MemStateRef("snap.pro", "kernelA", SnapshotType.PROLOGUE)
+        with pytest.raises(RuntimeError, match="recorded and replay VA bases"):
+            m.open()
+        with pytest.raises(ValueError, match="both"):
+            m.open(replay_va_addr=0x1000)
+
+
+def test_memstate_open_remembers_va_bases():
+    with patch("mneme.recorded_execution.Path.exists", return_value=True):
+        with patch("mneme.recorded_execution.ffi.lib") as fake:
+            fake.MnemePy_initializeMemState.return_value = "STATE"
+
+            m = MemStateRef("snap.pro", "kernelA", SnapshotType.PROLOGUE)
+            m.open(0x100, 0x1000)
+            m.close()
+            m.open()
+
+            assert fake.MnemePy_initializeMemState.call_count == 2
+            for call in fake.MnemePy_initializeMemState.call_args_list:
+                assert call.args[4] == 0x100
+                assert call.args[5] == 0x1000
 
 
 def test_epilogue_memstate_without_base_passes_empty_path_to_ffi():
@@ -40,11 +65,13 @@ def test_epilogue_memstate_without_base_passes_empty_path_to_ffi():
             fake.MnemePy_initializeMemState.return_value = "STATE"
 
             m = MemStateRef("snap.epi", "kernelA", SnapshotType.EPILOGUE)
-            m.open()
+            m.open(0x100, 0x1000)
 
             args, _ = fake.MnemePy_initializeMemState.call_args
             assert args[2].value == b""
             assert args[3].value is False
+            assert args[4] == 0x100
+            assert args[5] == 0x1000
 
 
 def test_epilogue_memstate_passes_base_prologue_to_ffi():
@@ -58,12 +85,14 @@ def test_epilogue_memstate_passes_base_prologue_to_ffi():
                 SnapshotType.EPILOGUE,
                 base_prologue_fn="snap.pro",
             )
-            m.open()
+            m.open(0x100, 0x1000)
 
             args, _ = fake.MnemePy_initializeMemState.call_args
             assert args[1].value == b"snap.epi"
             assert args[2].value == b"snap.pro"
             assert args[3].value is False
+            assert args[4] == 0x100
+            assert args[5] == 0x1000
 
 
 @pytest.mark.parametrize("epilogue_fn", ["snap.bytes.epi", "snap.diff.epi"])
@@ -78,12 +107,14 @@ def test_epilogue_formats_share_base_prologue_interface(epilogue_fn):
                 SnapshotType.EPILOGUE,
                 base_prologue_fn="snap.pro",
             )
-            m.open()
+            m.open(0x100, 0x1000)
 
             args, _ = fake.MnemePy_initializeMemState.call_args
             assert args[1].value == epilogue_fn.encode("utf-8")
             assert args[2].value == b"snap.pro"
             assert args[3].value is False
+            assert args[4] == 0x100
+            assert args[5] == 0x1000
 
 
 def test_memstate_args_lazy_loaded_once():
@@ -93,7 +124,7 @@ def test_memstate_args_lazy_loaded_once():
             fake.MnemePy_getArgs.return_value = ["A", "B"]
 
             m = MemStateRef("snap.pro", "kernel", SnapshotType.PROLOGUE)
-            m.open()
+            m.open(0x100, 0x1000)
 
             a1 = m.args
             a2 = m.args
@@ -109,7 +140,7 @@ def test_memstate_num_args_lazy_loaded_once():
             fake.MnemePy_getNumArgs.return_value = 7
 
             m = MemStateRef("snap.pro", "kernel", SnapshotType.PROLOGUE)
-            m.open()
+            m.open(0x100, 0x1000)
 
             n1 = m.num_args
             n2 = m.num_args
@@ -132,7 +163,7 @@ def test_memstate_context_manager_calls_open_and_close():
 
             m = MemStateRef("snap.pro", "kernel", SnapshotType.PROLOGUE)
 
-            with m:
+            with m.open(0x100, 0x1000):
                 fake.MnemePy_LoadMemState.assert_called_once_with("ST")
 
             fake.MnemePy_DisposeMemState.assert_called_once_with("ST")
@@ -144,8 +175,8 @@ def test_memstate_equality_uses_ffi_compare():
             fake.MnemePy_initializeMemState.side_effect = ["A", "B"]
             fake.MnemePy_CompareMemState.return_value = True
 
-            m1 = MemStateRef("p1.pro", "k", SnapshotType.PROLOGUE).open()
-            m2 = MemStateRef("p2.pro", "k", SnapshotType.PROLOGUE).open()
+            m1 = MemStateRef("p1.pro", "k", SnapshotType.PROLOGUE).open(0x100, 0x1000)
+            m2 = MemStateRef("p2.pro", "k", SnapshotType.PROLOGUE).open(0x100, 0x1000)
 
             assert m1 == m2
             fake.MnemePy_CompareMemState.assert_called_once_with("A", "B")

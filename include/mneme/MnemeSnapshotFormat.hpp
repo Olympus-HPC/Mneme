@@ -5,12 +5,14 @@
 #include <filesystem>
 #include <memory>
 #include <string>
+#include <type_traits>
 #include <unordered_map>
 #include <utility>
 #include <vector>
 
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/DenseMap.h>
+#include <llvm/ADT/STLFunctionalExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/MemoryBuffer.h>
@@ -62,12 +64,99 @@ struct ReplayGlobalVar {
 };
 
 // The in-memory contents of a snapshot, as produced by the snapshot readers
-// and consumed by the replay memory state constructors.
-template <DeviceVendors VendorTypes> struct Snapshot {
+// and consumed by the replay memory states. DeviceMemory is keyed by blob id.
+template <DeviceVendors VendorTypes> class Snapshot {
+public:
   std::shared_ptr<KernelInfo> KInfo;
   std::unordered_map<std::string, ReplayGlobalVar> GlobalVars;
-  llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> DeviceMemory;
+  llvm::DenseMap<uint64_t, MnemeMemoryBlob<VendorTypes>> DeviceMemory;
+
+  virtual ~Snapshot() = default;
+
+  // Stops replay if this snapshot, recorded in a VA reservation at
+  // RecordedVABase, cannot be loaded into a reservation at ReplayVABase.
+  virtual void checkReplayVABase(uintptr_t RecordedVABase,
+                                 uintptr_t ReplayVABase) const = 0;
+
+  // The device address at which replay maps Blob inside a VA reservation at
+  // ReplayVABase.
+  virtual void *replayBlobAddress(const MnemeMemoryBlob<VendorTypes> &Blob,
+                                  uintptr_t ReplayVABase) const = 0;
+
+  // Requires every blob in DeviceMemory to have its replay address.
+  virtual void materializeArgs() = 0;
 };
+
+// Blobs carry an offset into the VA reservation, and pointer arguments are
+// stored as a blob id plus an offset, so replay can use any reservation base.
+template <DeviceVendors VendorTypes>
+class RelocatableSnapshot final : public Snapshot<VendorTypes> {
+public:
+  struct ManagedPointerArg {
+    size_t ArgIndex;
+    uint64_t BlobId;
+    uint64_t Offset;
+  };
+
+  void checkReplayVABase(uintptr_t, uintptr_t) const override {}
+
+  void *replayBlobAddress(const MnemeMemoryBlob<VendorTypes> &Blob,
+                          uintptr_t ReplayVABase) const override {
+    return reinterpret_cast<void *>(ReplayVABase + Blob.getBlobOffset());
+  }
+
+  void addManagedPointerArg(size_t ArgIndex, uint64_t BlobId, uint64_t Offset) {
+    ManagedPointerArgs.push_back({ArgIndex, BlobId, Offset});
+  }
+
+  void materializeArgs() override {
+    for (const auto &[ArgIndex, BlobId, Offset] : ManagedPointerArgs) {
+      auto It = this->DeviceMemory.find(BlobId);
+      if (It == this->DeviceMemory.end())
+        LOG_FATAL("Kernel arg " + std::to_string(ArgIndex) +
+                  " references unknown blob id " + std::to_string(BlobId));
+
+      auto &Blob = It->second;
+      if (Offset >= Blob.getSize())
+        LOG_FATAL("Kernel arg " + std::to_string(ArgIndex) + " offset " +
+                  std::to_string(Offset) + " exceeds blob id " +
+                  std::to_string(BlobId) + " size");
+
+      auto Value = reinterpret_cast<uintptr_t>(Blob.getBlobAddr()) + Offset;
+      this->KInfo->setArgValue(ArgIndex, &Value, sizeof(Value));
+    }
+  }
+
+private:
+  llvm::SmallVector<ManagedPointerArg> ManagedPointerArgs;
+};
+
+// Blob ids are the recorded device addresses, and pointer arguments are raw
+// bytes, so replay must map every blob at exactly its recorded address.
+template <DeviceVendors VendorTypes>
+class RecordedAddressSnapshot final : public Snapshot<VendorTypes> {
+public:
+  void checkReplayVABase(uintptr_t RecordedVABase,
+                         uintptr_t ReplayVABase) const override {
+    if (RecordedVABase == ReplayVABase)
+      return;
+    LOG_FATAL(
+        "Snapshot stores recorded device addresses and needs the "
+        "recorded address space at " +
+        util::pointerToHexString(reinterpret_cast<uint8_t *>(RecordedVABase)) +
+        ", but replay reserved " +
+        util::pointerToHexString(reinterpret_cast<uint8_t *>(ReplayVABase)));
+  }
+
+  void *replayBlobAddress(const MnemeMemoryBlob<VendorTypes> &Blob,
+                          uintptr_t) const override {
+    return reinterpret_cast<void *>(Blob.getBlobId());
+  }
+
+  void materializeArgs() override {}
+};
+
+namespace detail {
 
 inline std::pair<std::string, ReplayGlobalVar>
 readGlobalVarRecord(const char *&Buffer) {
@@ -80,6 +169,103 @@ readGlobalVarRecord(const char *&Buffer) {
   return std::pair<std::string, ReplayGlobalVar>(std::move(Header.Name),
                                                  std::move(RGV));
 }
+
+// The blob a recorded pointer value falls into, if any, and its offset within
+// that blob.
+template <DeviceVendors VendorTypes>
+const MnemeMemoryBlob<VendorTypes> *findBlobForRecordedPointer(
+    const llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &DeviceMemory,
+    uintptr_t PointerValue, uint64_t &Offset) {
+  for (const auto &[BasePtr, Blob] : DeviceMemory) {
+    auto Base = reinterpret_cast<uintptr_t>(BasePtr);
+    if (PointerValue < Base || PointerValue - Base >= Blob.getSize())
+      continue;
+
+    Offset = PointerValue - Base;
+    return &Blob;
+  }
+  return nullptr;
+}
+
+// Kernel argument record: | ArgSize | Kind | followed by the raw bytes or, for
+// a pointer into a Mneme-managed blob, | BlobId | Offset |.
+using KernelArgEncodingRaw = std::underlying_type_t<KernelArgEncodingKind>;
+
+template <DeviceVendors VendorTypes>
+size_t serializedKernelArgSize(
+    size_t ArgSize, const void *ArgData,
+    const llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &DeviceMemory) {
+  size_t Size = sizeof(size_t) + sizeof(KernelArgEncodingRaw);
+  if (ArgSize != sizeof(uintptr_t) || !ArgData)
+    return Size + ArgSize;
+
+  uintptr_t PointerValue = 0;
+  std::memcpy(&PointerValue, ArgData, sizeof(PointerValue));
+  uint64_t Offset = 0;
+  if (!findBlobForRecordedPointer(DeviceMemory, PointerValue, Offset))
+    return Size + ArgSize;
+
+  return Size + 2 * sizeof(uint64_t);
+}
+
+template <DeviceVendors VendorTypes>
+void writeKernelArgRecord(
+    llvm::raw_ostream &OS, size_t ArgSize, const void *ArgData,
+    const llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> &DeviceMemory) {
+  util::writeScalar(OS, ArgSize);
+  // A pointer-sized argument whose value lies inside a recorded blob is taken
+  // to be a device pointer and stored structurally so that replay can rebase
+  // it. Everything else is stored verbatim.
+  if (ArgSize == sizeof(uintptr_t) && ArgData) {
+    uintptr_t PointerValue = 0;
+    std::memcpy(&PointerValue, ArgData, sizeof(PointerValue));
+    uint64_t Offset = 0;
+    if (const auto *Blob =
+            findBlobForRecordedPointer(DeviceMemory, PointerValue, Offset)) {
+      util::writeScalar(OS, static_cast<KernelArgEncodingRaw>(
+                                KernelArgEncodingKind::ManagedPointer));
+      util::writeScalar(OS, Blob->getBlobId());
+      util::writeScalar(OS, Offset);
+      return;
+    }
+  }
+
+  util::writeScalar(
+      OS, static_cast<KernelArgEncodingRaw>(KernelArgEncodingKind::RawBytes));
+  if (ArgSize == 0)
+    return;
+  if (!ArgData)
+    LOG_FATAL("Cannot serialize null kernel arg with non-zero size");
+  util::writeBytes(
+      OS, llvm::StringRef(reinterpret_cast<const char *>(ArgData), ArgSize));
+}
+
+inline void readKernelArgRecord(
+    const char *&Buffer, KernelInfo &KInfo, int ArgIndex,
+    llvm::function_ref<void(size_t, uint64_t, uint64_t)> OnManagedPointer) {
+  KInfo.KernelArgSizes[ArgIndex] = util::extractScalar<size_t>(Buffer);
+  auto Kind = static_cast<KernelArgEncodingKind>(
+      util::extractScalar<KernelArgEncodingRaw>(Buffer));
+  switch (Kind) {
+  case KernelArgEncodingKind::RawBytes:
+    KInfo.setRawArgData(Buffer, ArgIndex);
+    return;
+  case KernelArgEncodingKind::ManagedPointer: {
+    uint64_t BlobId = util::extractScalar<uint64_t>(Buffer);
+    uint64_t Offset = util::extractScalar<uint64_t>(Buffer);
+    if (KInfo.KernelArgSizes[ArgIndex] != sizeof(uintptr_t))
+      LOG_FATAL("Managed pointer arg " + std::to_string(ArgIndex) +
+                " does not have pointer-sized storage");
+    KInfo.setZeroArgData(ArgIndex);
+    OnManagedPointer(ArgIndex, BlobId, Offset);
+    return;
+  }
+  }
+  LOG_FATAL("Unsupported Mneme kernel arg encoding kind " +
+            std::to_string(static_cast<KernelArgEncodingRaw>(Kind)));
+}
+
+} // namespace detail
 
 // Host copies of the globals a prologue captured; the diff writer's base.
 using GlobalSnapshotData =
@@ -145,13 +331,18 @@ public:
   // True if read() needs a base snapshot to reconstruct the state.
   virtual bool requiresBaseSnapshot() const = 0;
 
-  virtual Snapshot<VendorTypes>
+  virtual std::unique_ptr<Snapshot<VendorTypes>>
   read(const std::string &KernelName,
        const BaseSnapshotSource<VendorTypes> &Base) const = 0;
 
 protected:
   const char *payload() const {
     return Buffer->getBufferStart() + PayloadOffset;
+  }
+
+  void expectPayloadEnd(const char *CurrentPtr) const {
+    if (CurrentPtr != Buffer->getBufferEnd())
+      LOG_FATAL("Unexpected trailing bytes in Mneme snapshot " + Filename);
   }
 
   std::string Filename;
@@ -168,12 +359,50 @@ public:
 
   bool empty() const { return Filename.empty(); }
 
-  Snapshot<VendorTypes> load(const std::string &KernelName) const;
+  std::unique_ptr<Snapshot<VendorTypes>>
+  load(const std::string &KernelName) const;
 
 private:
   std::string Filename;
 };
 
+namespace detail {
+
+// Reads the globals section shared by every bytes layout.
+inline void readGlobalVarSection(
+    const char *&CurrentPtr,
+    std::unordered_map<std::string, ReplayGlobalVar> &GlobalVars) {
+  size_t TotalGlobals = util::extractScalar<size_t>(CurrentPtr);
+  LOG_DEBUG("Snapshot contains {} Globals", TotalGlobals);
+  for (size_t I = 0; I < TotalGlobals; I++) {
+    auto [Name, RGV] = readGlobalVarRecord(CurrentPtr);
+    GlobalVars.try_emplace(Name, std::move(RGV));
+  }
+}
+
+// Reads the blob data and metadata that follow a blob record prefix.
+template <DeviceVendors VendorTypes>
+void readBlobBody(const char *&Buffer, MnemeMemoryBlob<VendorTypes> &Blob) {
+  std::memcpy(Blob.getHostData().get(), Buffer, Blob.getSize());
+  Buffer += Blob.getSize();
+  Blob.setMetadata(metadata::fromBuffer(Buffer));
+}
+
+template <DeviceVendors VendorTypes>
+void insertBlob(
+    llvm::DenseMap<uint64_t, MnemeMemoryBlob<VendorTypes>> &DeviceMemory,
+    uint64_t BlobId, MnemeMemoryBlob<VendorTypes> Blob) {
+  auto [It, Inserted] = DeviceMemory.try_emplace(BlobId, std::move(Blob));
+  if (!Inserted)
+    LOG_FATAL("Duplicate blob id " + std::to_string(BlobId) +
+              " found while reading Mneme snapshot");
+}
+
+} // namespace detail
+
+// Blobs carry their recorded device address, which becomes the blob id, and
+// kernel arguments are raw bytes, so this layout can only replay at the
+// recorded addresses.
 template <DeviceVendors VendorTypes>
 class BytesReaderV0 : public SnapshotReader<VendorTypes> {
 public:
@@ -183,49 +412,141 @@ public:
 
   bool requiresBaseSnapshot() const override { return false; }
 
-  Snapshot<VendorTypes>
+  std::unique_ptr<Snapshot<VendorTypes>>
   read(const std::string &KernelName,
        const BaseSnapshotSource<VendorTypes> &) const override {
-    Snapshot<VendorTypes> Snap;
-    Snap.KInfo = std::make_shared<KernelInfo>(KernelName);
+    auto Snap = std::make_unique<RecordedAddressSnapshot<VendorTypes>>();
+    Snap->KInfo = std::make_shared<KernelInfo>(KernelName);
+    auto &KInfo = Snap->KInfo;
 
-    auto &GlobalVars = Snap.GlobalVars;
-    auto &DeviceMemory = Snap.DeviceMemory;
-    auto &KInfo = Snap.KInfo;
+    auto *CurrentPtr = this->payload();
+    detail::readGlobalVarSection(CurrentPtr, Snap->GlobalVars);
 
-    auto *Start = this->payload();
-    auto *CurrentPtr = Start;
-    size_t TotalGlobals = util::extractScalar<size_t>(CurrentPtr);
-    LOG_DEBUG("Snapshot contains {} Globals at location {}", TotalGlobals,
-              (uintptr_t)CurrentPtr - (uintptr_t)Start);
-    for (auto I = 0; I < TotalGlobals; I++) {
-      auto [Name, RGV] = readGlobalVarRecord(CurrentPtr);
-      GlobalVars.try_emplace(Name, std::move(RGV));
+    size_t TotalMemBlobs = util::extractScalar<size_t>(CurrentPtr);
+    LOG_DEBUG("Snapshot contains {} Memory Blobs", TotalMemBlobs);
+    for (size_t M = 0; M < TotalMemBlobs; M++) {
+      // Blob record: | ActualSize | Size | DevAddr | Data | Metadata |
+      size_t ActualSize = util::extractScalar<size_t>(CurrentPtr);
+      size_t Size = util::extractScalar<size_t>(CurrentPtr);
+      void *DevAddr = util::extractScalar<void *>(CurrentPtr);
+      auto BlobId = reinterpret_cast<uint64_t>(DevAddr);
+      MnemeMemoryBlob<VendorTypes> Blob(ActualSize, nullptr, Size, BlobId, 0);
+      detail::readBlobBody(CurrentPtr, Blob);
+      LOG_DEBUG("Read legacy memory blob at address {} SIZE: {} ActualSize:{}",
+                DevAddr, Size, ActualSize);
+      detail::insertBlob(Snap->DeviceMemory, BlobId, std::move(Blob));
     }
 
-    auto TotalMemBlobs = util::extractScalar<size_t>(CurrentPtr);
-
-    LOG_DEBUG("Snapshot contains {} Memory Blobs starting at location {}",
-              TotalMemBlobs, (uintptr_t)CurrentPtr - (uintptr_t)Start);
-
-    for (auto M = 0; M < TotalMemBlobs; M++) {
-      DeviceMemory.insert(MnemeMemoryBlob<VendorTypes>::fromBuffer(CurrentPtr));
-    }
-
-    // Get kernel arguments.
-    auto TotalArguments = util::extractScalar<size_t>(CurrentPtr);
-    LOG_DEBUG("Snapshot contains {} total arguments starting at location {}",
-              TotalArguments, (uintptr_t)CurrentPtr - (uintptr_t)Start);
+    size_t TotalArguments = util::extractScalar<size_t>(CurrentPtr);
+    LOG_DEBUG("Snapshot contains {} total arguments", TotalArguments);
     KInfo->KernelArgSizes.resize(TotalArguments);
-    KInfo->ArgData.resize(TotalArguments);
-    for (auto A = 0; A < TotalArguments; A++) {
+    KInfo->initializeArgStorage(TotalArguments);
+    for (size_t A = 0; A < TotalArguments; A++) {
       KInfo->KernelArgSizes[A] = util::extractScalar<size_t>(CurrentPtr);
-      KInfo->setArgData(CurrentPtr, A);
+      KInfo->setRawArgData(CurrentPtr, A);
     }
 
     return Snap;
   }
 };
+
+template <DeviceVendors VendorTypes>
+class BytesReaderV1 : public SnapshotReader<VendorTypes> {
+public:
+  using SnapshotReader<VendorTypes>::SnapshotReader;
+
+  static constexpr SnapshotHeader Layout{SnapshotKind::Bytes, 1};
+
+  bool requiresBaseSnapshot() const override { return false; }
+
+  std::unique_ptr<Snapshot<VendorTypes>>
+  read(const std::string &KernelName,
+       const BaseSnapshotSource<VendorTypes> &) const override {
+    auto Snap = std::make_unique<RelocatableSnapshot<VendorTypes>>();
+    Snap->KInfo = std::make_shared<KernelInfo>(KernelName);
+    auto &KInfo = Snap->KInfo;
+
+    auto *CurrentPtr = this->payload();
+    detail::readGlobalVarSection(CurrentPtr, Snap->GlobalVars);
+
+    size_t TotalMemBlobs = util::extractScalar<size_t>(CurrentPtr);
+    LOG_DEBUG("Snapshot contains {} Memory Blobs", TotalMemBlobs);
+    for (size_t M = 0; M < TotalMemBlobs; M++) {
+      BlobHeader Header = BlobHeader::read(CurrentPtr);
+      MnemeMemoryBlob<VendorTypes> Blob(Header.ActualSize, nullptr, Header.Size,
+                                        Header.BlobId, Header.BlobOffset);
+      detail::readBlobBody(CurrentPtr, Blob);
+      detail::insertBlob(Snap->DeviceMemory, Header.BlobId, std::move(Blob));
+    }
+
+    size_t TotalArguments = util::extractScalar<size_t>(CurrentPtr);
+    LOG_DEBUG("Snapshot contains {} total arguments", TotalArguments);
+    KInfo->KernelArgSizes.resize(TotalArguments);
+    KInfo->initializeArgStorage(TotalArguments);
+    for (size_t A = 0; A < TotalArguments; A++)
+      detail::readKernelArgRecord(
+          CurrentPtr, *KInfo, A,
+          [&Snap](size_t ArgIndex, uint64_t BlobId, uint64_t Offset) {
+            Snap->addManagedPointerArg(ArgIndex, BlobId, Offset);
+          });
+
+    this->expectPayloadEnd(CurrentPtr);
+    return Snap;
+  }
+};
+
+namespace detail {
+
+// Diff payload pieces shared by every diff layout.
+inline void expectDiffCount(size_t Actual, size_t Expected,
+                            const std::string &Filename, const char *What) {
+  if (Actual != Expected)
+    LOG_FATAL("Mneme diff " + Filename + " does not match prologue " + What +
+              " count");
+}
+
+inline void applyDiffRanges(const char *&Buffer,
+                            llvm::MutableArrayRef<uint8_t> Target,
+                            size_t NumRanges) {
+  for (size_t R = 0; R < NumRanges; ++R) {
+    size_t Offset = util::extractScalar<size_t>(Buffer);
+    size_t Size = util::extractScalar<size_t>(Buffer);
+    if (Offset > Target.size() || Size > Target.size() - Offset)
+      LOG_FATAL("Malformed Mneme diff range: offset " + std::to_string(Offset) +
+                " size " + std::to_string(Size) + " exceeds target size " +
+                std::to_string(Target.size()));
+    std::memcpy(Target.data() + Offset, Buffer, Size);
+    Buffer += Size;
+  }
+}
+
+inline void applyGlobalVarDiffs(
+    const char *&CurrentPtr,
+    std::unordered_map<std::string, ReplayGlobalVar> &GlobalVars,
+    const std::string &Filename) {
+  size_t TotalGlobals = util::extractScalar<size_t>(CurrentPtr);
+  expectDiffCount(TotalGlobals, GlobalVars.size(), Filename, "global");
+
+  for (size_t I = 0; I < TotalGlobals; ++I) {
+    GlobalVarHeader GVH = GlobalVarHeader::read(CurrentPtr);
+    size_t NumRanges = util::extractScalar<size_t>(CurrentPtr);
+
+    auto It = GlobalVars.find(GVH.Name);
+    if (It == GlobalVars.end())
+      LOG_FATAL("Mneme diff references global missing from prologue: " +
+                GVH.Name);
+    if (It->second.VarSize != GVH.Size)
+      LOG_FATAL("Mneme diff global size mismatch for: " + GVH.Name);
+    It->second.DevAddr = GVH.DevAddr;
+    applyDiffRanges(
+        CurrentPtr,
+        llvm::MutableArrayRef<uint8_t>(
+            static_cast<uint8_t *>(It->second.HostAddr), It->second.VarSize),
+        NumRanges);
+  }
+}
+
+} // namespace detail
 
 template <DeviceVendors VendorTypes>
 class DiffReaderV1 : public SnapshotReader<VendorTypes> {
@@ -236,7 +557,7 @@ public:
 
   bool requiresBaseSnapshot() const override { return true; }
 
-  Snapshot<VendorTypes>
+  std::unique_ptr<Snapshot<VendorTypes>>
   read(const std::string &KernelName,
        const BaseSnapshotSource<VendorTypes> &Base) const override {
     if (Base.empty())
@@ -245,79 +566,97 @@ public:
 
     // A diff stores only changed ranges, so reconstruct the full base prologue
     // first and then overlay the diff onto it.
-    Snapshot<VendorTypes> Snap = Base.load(KernelName);
+    auto Snap = Base.load(KernelName);
     const std::string &Filename = this->Filename;
-    auto &GlobalVars = Snap.GlobalVars;
-    auto &DeviceMemory = Snap.DeviceMemory;
+    auto &DeviceMemory = Snap->DeviceMemory;
 
     auto *CurrentPtr = this->payload();
-    size_t TotalGlobals = util::extractScalar<size_t>(CurrentPtr);
-    expectCount(TotalGlobals, GlobalVars.size(), Filename, "global");
-
-    for (size_t I = 0; I < TotalGlobals; ++I) {
-      GlobalVarHeader GVH = GlobalVarHeader::read(CurrentPtr);
-      size_t NumRanges = util::extractScalar<size_t>(CurrentPtr);
-
-      auto It = GlobalVars.find(GVH.Name);
-      if (It == GlobalVars.end())
-        LOG_FATAL("Mneme diff references global missing from prologue: " +
-                  GVH.Name);
-      if (It->second.VarSize != GVH.Size)
-        LOG_FATAL("Mneme diff global size mismatch for: " + GVH.Name);
-      It->second.DevAddr = GVH.DevAddr;
-      applyDiffRanges(
-          CurrentPtr,
-          llvm::MutableArrayRef<uint8_t>(
-              static_cast<uint8_t *>(It->second.HostAddr), It->second.VarSize),
-          NumRanges);
-    }
+    detail::applyGlobalVarDiffs(CurrentPtr, Snap->GlobalVars, Filename);
 
     size_t TotalMemBlobs = util::extractScalar<size_t>(CurrentPtr);
-    expectCount(TotalMemBlobs, DeviceMemory.size(), Filename, "memory blob");
+    detail::expectDiffCount(TotalMemBlobs, DeviceMemory.size(), Filename,
+                            "memory blob");
+
+    // A legacy prologue keys its blobs by recorded address.
+    for (size_t I = 0; I < TotalMemBlobs; ++I) {
+      // Blob record: | ActualSize | Size | DevAddr | Metadata | Ranges |
+      size_t ActualSize = util::extractScalar<size_t>(CurrentPtr);
+      size_t Size = util::extractScalar<size_t>(CurrentPtr);
+      void *DevAddr = util::extractScalar<void *>(CurrentPtr);
+      auto MD = metadata::fromBuffer(CurrentPtr);
+      size_t NumRanges = util::extractScalar<size_t>(CurrentPtr);
+
+      auto It = DeviceMemory.find(reinterpret_cast<uint64_t>(DevAddr));
+      if (It == DeviceMemory.end())
+        LOG_FATAL("Mneme diff references device allocation missing from "
+                  "prologue");
+      auto &Blob = It->second;
+      if (Blob.getActualSize() != ActualSize || Blob.getSize() != Size)
+        LOG_FATAL("Mneme diff memory blob size mismatch");
+      Blob.setMetadata(MD);
+      detail::applyDiffRanges(CurrentPtr,
+                              llvm::MutableArrayRef<uint8_t>(
+                                  Blob.getHostData().get(), Blob.getSize()),
+                              NumRanges);
+    }
+
+    return Snap;
+  }
+};
+
+// Same as version 1 except that blob records carry a blob id and offset
+// instead of a device address.
+template <DeviceVendors VendorTypes>
+class DiffReaderV2 : public SnapshotReader<VendorTypes> {
+public:
+  using SnapshotReader<VendorTypes>::SnapshotReader;
+
+  static constexpr SnapshotHeader Layout{SnapshotKind::Diff, 2};
+
+  bool requiresBaseSnapshot() const override { return true; }
+
+  std::unique_ptr<Snapshot<VendorTypes>>
+  read(const std::string &KernelName,
+       const BaseSnapshotSource<VendorTypes> &Base) const override {
+    if (Base.empty())
+      LOG_FATAL("Mneme diff snapshot " + this->Filename +
+                " requires a base prologue snapshot");
+
+    auto Snap = Base.load(KernelName);
+    const std::string &Filename = this->Filename;
+    auto &DeviceMemory = Snap->DeviceMemory;
+
+    auto *CurrentPtr = this->payload();
+    detail::applyGlobalVarDiffs(CurrentPtr, Snap->GlobalVars, Filename);
+
+    size_t TotalMemBlobs = util::extractScalar<size_t>(CurrentPtr);
+    detail::expectDiffCount(TotalMemBlobs, DeviceMemory.size(), Filename,
+                            "memory blob");
 
     for (size_t I = 0; I < TotalMemBlobs; ++I) {
       BlobHeader BH = BlobHeader::read(CurrentPtr);
       auto MD = metadata::fromBuffer(CurrentPtr);
       size_t NumRanges = util::extractScalar<size_t>(CurrentPtr);
 
-      auto It = DeviceMemory.find(BH.DevAddr);
+      auto It = DeviceMemory.find(BH.BlobId);
       if (It == DeviceMemory.end())
-        LOG_FATAL("Mneme diff references device allocation missing from "
-                  "prologue");
+        LOG_FATAL("Mneme diff references blob id " + std::to_string(BH.BlobId) +
+                  " missing from prologue");
       auto &Blob = It->second;
       if (Blob.getActualSize() != BH.ActualSize || Blob.getSize() != BH.Size)
         LOG_FATAL("Mneme diff memory blob size mismatch");
+      if (Blob.getBlobOffset() != BH.BlobOffset)
+        LOG_FATAL("Mneme diff blob offset mismatch for blob id " +
+                  std::to_string(BH.BlobId));
       Blob.setMetadata(MD);
-      applyDiffRanges(CurrentPtr,
-                      llvm::MutableArrayRef<uint8_t>(Blob.getHostData().get(),
-                                                     Blob.getSize()),
-                      NumRanges);
+      detail::applyDiffRanges(CurrentPtr,
+                              llvm::MutableArrayRef<uint8_t>(
+                                  Blob.getHostData().get(), Blob.getSize()),
+                              NumRanges);
     }
 
+    this->expectPayloadEnd(CurrentPtr);
     return Snap;
-  }
-
-private:
-  static void expectCount(size_t Actual, size_t Expected,
-                          const std::string &Filename, const char *What) {
-    if (Actual != Expected)
-      LOG_FATAL("Mneme diff " + Filename + " does not match prologue " + What +
-                " count");
-  }
-
-  static void applyDiffRanges(const char *&Buffer,
-                              llvm::MutableArrayRef<uint8_t> Target,
-                              size_t NumRanges) {
-    for (size_t R = 0; R < NumRanges; ++R) {
-      size_t Offset = util::extractScalar<size_t>(Buffer);
-      size_t Size = util::extractScalar<size_t>(Buffer);
-      if (Offset > Target.size() || Size > Target.size() - Offset)
-        LOG_FATAL("Malformed Mneme diff range: offset " +
-                  std::to_string(Offset) + " size " + std::to_string(Size) +
-                  " exceeds target size " + std::to_string(Target.size()));
-      std::memcpy(Target.data() + Offset, Buffer, Size);
-      Buffer += Size;
-    }
   }
 };
 
@@ -368,7 +707,9 @@ private:
   static const Entry *table(size_t &Count) {
     static const Entry Table[] = {
         entry<BytesReaderV0<VendorTypes>>(),
+        entry<BytesReaderV1<VendorTypes>>(),
         entry<DiffReaderV1<VendorTypes>>(),
+        entry<DiffReaderV2<VendorTypes>>(),
     };
     Count = sizeof(Table) / sizeof(Table[0]);
     return Table;
@@ -389,7 +730,7 @@ private:
 };
 
 template <DeviceVendors VendorTypes>
-Snapshot<VendorTypes>
+std::unique_ptr<Snapshot<VendorTypes>>
 BaseSnapshotSource<VendorTypes>::load(const std::string &KernelName) const {
   if (empty())
     LOG_FATAL("No base snapshot was provided");
@@ -409,6 +750,8 @@ template <DeviceVendors VendorTypes> struct SnapshotInput {
   void **Args;
   typename DeviceTraits<VendorTypes>::DeviceStream_t Stream;
 };
+
+namespace detail {
 
 // The on-disk record prefix describing a captured global variable.
 inline GlobalVarHeader
@@ -431,6 +774,8 @@ readGlobalFromDevice(const proteus::runtime::GlobalMetadata &GV) {
 
   return HostData;
 }
+
+} // namespace detail
 
 // Which writer is used is a config choice, not a property of any file.
 template <DeviceVendors VendorTypes> class SnapshotWriter {
@@ -522,7 +867,7 @@ public:
 
     Size += sizeof(size_t);
     for (const auto &[VarName, GV] : In.GlobalVars) {
-      Size += globalVarHeader(VarName, GV).serializedSize();
+      Size += detail::globalVarHeader(VarName, GV).serializedSize();
       Size += GV.VarSize;
     }
 
@@ -534,16 +879,15 @@ public:
     }
 
     Size += sizeof(size_t);
-    for (size_t ArgSize : In.KernelArgSizes) {
-      Size += sizeof(size_t);
-      Size += ArgSize;
-    }
+    for (size_t I = 0; I < In.KernelArgSizes.size(); ++I)
+      Size += detail::serializedKernelArgSize(In.KernelArgSizes[I], In.Args[I],
+                                              In.DeviceMemory);
     return Size;
   }
 
 protected:
   SnapshotHeader header() const override {
-    return BytesReaderV0<VendorTypes>::Layout;
+    return BytesReaderV1<VendorTypes>::Layout;
   }
 
   void writePayload(llvm::raw_ostream &OutBC,
@@ -562,9 +906,10 @@ protected:
               TotalGlobals, OutBC.tell());
 
     for (const auto &[VarName, GV] : GlobalVars) {
-      std::vector<uint8_t> HostData = readGlobalFromDevice<VendorTypes>(GV);
+      std::vector<uint8_t> HostData =
+          detail::readGlobalFromDevice<VendorTypes>(GV);
 
-      globalVarHeader(VarName, GV).write(OutBC);
+      detail::globalVarHeader(VarName, GV).write(OutBC);
       util::writeBytes(OutBC, llvm::ArrayRef<uint8_t>(HostData));
       if (CaptureGlobals)
         (*CaptureGlobals)[VarName] = std::move(HostData);
@@ -577,9 +922,16 @@ protected:
     OutBC << llvm::StringRef(reinterpret_cast<const char *>(&TotalBlobs),
                              sizeof(size_t));
 
-    // Write the Device Memory
-    for (auto &[Ptr, Blob] : DeviceMemory)
-      OutBC << Blob;
+    for (auto &[Ptr, Blob] : DeviceMemory) {
+      Blob.copyFromDevice();
+      BlobHeader{Blob.getActualSize(), Blob.getSize(), Blob.getBlobId(),
+                 Blob.getBlobOffset()}
+          .write(OutBC);
+      util::writeBytes(OutBC, llvm::ArrayRef<uint8_t>(Blob.getHostData().get(),
+                                                      Blob.getSize()));
+      auto MD = Blob.getMetadata();
+      metadata::serialize(OutBC, MD);
+    }
     // Lastly write the arguments
     size_t NumArgs = KernelArgSizes.size();
     LOG_DEBUG("Number of Kernel Arguments in snapshot:{} stored at position:{}",
@@ -588,12 +940,9 @@ protected:
     OutBC << llvm::StringRef(reinterpret_cast<const char *>(&NumArgs),
                              sizeof(NumArgs));
 
-    for (int I = 0; I < NumArgs; I++) {
-      OutBC << llvm::StringRef(
-          reinterpret_cast<const char *>(&KernelArgSizes[I]), sizeof(size_t));
-      OutBC << llvm::StringRef(reinterpret_cast<const char *>(Args[I]),
-                               KernelArgSizes[I]);
-    }
+    for (size_t I = 0; I < NumArgs; I++)
+      detail::writeKernelArgRecord(OutBC, KernelArgSizes[I], Args[I],
+                                   DeviceMemory);
   }
 
 private:
@@ -612,7 +961,7 @@ public:
 
 protected:
   SnapshotHeader header() const override {
-    return DiffReaderV1<VendorTypes>::Layout;
+    return DiffReaderV2<VendorTypes>::Layout;
   }
 
   void writePayload(llvm::raw_ostream &OutBC,
@@ -630,9 +979,10 @@ protected:
       if (BaseIt->second.size() != GV.VarSize)
         LOG_FATAL("Cannot diff global with size mismatch: " + VarName);
 
-      std::vector<uint8_t> Current = readGlobalFromDevice<VendorTypes>(GV);
+      std::vector<uint8_t> Current =
+          detail::readGlobalFromDevice<VendorTypes>(GV);
 
-      globalVarHeader(VarName, GV).write(OutBC);
+      detail::globalVarHeader(VarName, GV).write(OutBC);
 
       llvm::SmallVector<char, 0> DiffBytes;
       llvm::raw_svector_ostream DiffOS(DiffBytes);
@@ -643,7 +993,8 @@ protected:
     size_t TotalBlobs = DeviceMemory.size();
     util::writeScalar(OutBC, TotalBlobs);
     for (auto &[Ptr, Blob] : DeviceMemory) {
-      BlobHeader{Blob.getActualSize(), Blob.getSize(), Blob.getBlobAddr()}
+      BlobHeader{Blob.getActualSize(), Blob.getSize(), Blob.getBlobId(),
+                 Blob.getBlobOffset()}
           .write(OutBC);
       auto MD = Blob.getMetadata();
       mneme::metadata::serialize(OutBC, MD);

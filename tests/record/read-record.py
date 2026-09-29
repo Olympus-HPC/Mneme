@@ -11,35 +11,41 @@ from pathlib import Path
 #
 # On-disk format (all integers little-endian, pointer-sized = 8 bytes):
 #   SnapshotHeader: char[8] "MNEMESNP"; uint32 Kind; uint32 Version (absent in
-#     older recordings)
+#     older recordings, which are version 0)
 #   uint64  TotalGlobals
 #   for each global:
 #     uint64 StrLen; char[StrLen] name; uint64 VarSize; void* DevAddr; char[VarSize] data
 #   uint64  TotalBlobs
 #   for each blob:
-#     uint64 ActualSize; uint64 Size; void* DevAddr; char[Size] data
+#     version 0: uint64 ActualSize; uint64 Size; void* DevAddr; char[Size] data
+#     version 1: uint64 ActualSize; uint64 Size; uint64 BlobId; uint64 BlobOffset;
+#                char[Size] data
 #     Metadata: uint8 builtin; double threshold; uint8 threshold_kind;
 #               uint8 norm; uint64 tag_len; char[tag_len] tag
 #   uint64  NumArgs
-#   for each arg: uint64 ArgSize; char[ArgSize] data
+#   for each arg:
+#     version 0: uint64 ArgSize; char[ArgSize] data
+#     version 1: uint64 ArgSize; uint8 EncodingKind;
+#                either char[ArgSize] data or uint64 BlobId; uint64 Offset
 # ---------------------------------------------------------------------------
 
 _CONTAINER_MAGIC = b"MNEMESNP"
 _CONTAINER_SIZE = 16
 
 
-def _payload_offset(data):
-    """Byte offset of the payload of a bytes snapshot."""
+def _parse_header(data):
+    """Return (version, payload offset) of a bytes snapshot."""
     if len(data) >= _CONTAINER_SIZE and data[:8] == _CONTAINER_MAGIC:
-        return _CONTAINER_SIZE
-    return 0
+        version = struct.unpack_from("<I", data, 12)[0]
+        return version, _CONTAINER_SIZE
+    return 0, 0
 
 
 def _parse_prologue_metadata(filename):
     """Return a list of Metadata dicts for every blob in a prologue file."""
     with open(filename, "rb") as f:
         data = f.read()
-    off = _payload_offset(data)
+    version, off = _parse_header(data)
 
     def u64():
         nonlocal off
@@ -76,7 +82,10 @@ def _parse_prologue_metadata(filename):
     for _ in range(u64()):
         u64()                   # actual_size
         size = u64()
-        skip(8)                 # dev_addr
+        if version == 0:
+            skip(8)             # dev_addr
+        else:
+            skip(16)            # blob_id, blob_offset
         skip(size)              # blob data
         builtin       = u8()
         threshold     = dbl()

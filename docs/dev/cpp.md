@@ -63,6 +63,53 @@ container existed. A file that starts with `MNEME_DIFF_V1` is `Diff`
 version 1. A file with no magic is `Bytes` version 0. These two mappings
 are fixed. Do not change them.
 
+### Layout versions
+
+| Kind    | Version | Blob record                              | Kernel arguments                    |
+|---------|---------|------------------------------------------|-------------------------------------|
+| `Bytes` | 0       | `ActualSize`, `Size`, recorded `DevAddr` | raw bytes                           |
+| `Bytes` | 1       | `BlobHeader`: `BlobId` and `BlobOffset`  | `KernelArgEncodingKind` plus payload |
+| `Diff`  | 1       | `ActualSize`, `Size`, recorded `DevAddr` | inherited from the base prologue    |
+| `Diff`  | 2       | `BlobHeader`: `BlobId` and `BlobOffset`  | inherited from the base prologue    |
+
+`BlobHeader` lives in `mneme/MnemeSnapshotRecords.hpp`. The version 0 and
+version 1 readers decode their blob record fields inline.
+
+`BlobId` is assigned by the recorder per allocation and `BlobOffset` is the
+blob's offset from the start of the recorded VA reservation. A kernel
+argument whose value points into a recorded blob is stored as
+`ManagedPointer` with the blob id and the offset into that blob; the
+snapshot resolves it after the blobs are mapped. Because nothing in
+these layouts depends on the recorded device addresses, replay can place
+the blobs at whatever VA base it manages to reserve.
+
+The version 0 and version 1 layouts store recorded device addresses and
+raw pointer arguments. Their readers key `Snapshot::DeviceMemory` by the
+recorded address.
+
+Replay never tests a layout version. Each reader returns a subclass of
+`Snapshot` that knows how its blob ids relate to device addresses and how
+its kernel arguments are encoded:
+
+- `RelocatableSnapshot` for the current layouts. Its
+  `replayBlobAddress()` adds the blob offset to the replay VA base, and
+  its `checkReplayVABase()` accepts any base. It keeps the list of
+  `ManagedPointer` arguments, and its `materializeArgs()` writes each
+  resolved device pointer into `KernelInfo::ArgData`.
+- `RecordedAddressSnapshot` for the version 0 and version 1 layouts. Its
+  `replayBlobAddress()` returns the recorded address, and its
+  `checkReplayVABase()` fails if the replay VA base differs from the
+  recorded one, because the raw pointer arguments cannot be rebased. Its
+  `materializeArgs()` does nothing.
+
+`KernelInfo` holds only the final argument bytes. It does not know how a
+layout encoded them. The replay states call the three virtual functions
+and have one code path for every layout. `materializeArgs()` writes into
+storage that already exists, so the argument pointers that the replay state
+captured stay valid. A diff reader returns whichever snapshot class its
+base prologue produced. A new on-disk layout only needs a new snapshot
+class if it changes what the blob ids, offsets, or argument records mean.
+
 ### How versions are owned
 
 One reader class decodes one on-disk layout. The reader class holds its

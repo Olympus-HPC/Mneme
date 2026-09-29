@@ -1,5 +1,6 @@
 #pragma once
 #include <cstddef>
+#include <cstdint>
 #include <string>
 #include <utility>
 
@@ -10,6 +11,14 @@
 #include "mneme/MnemeUtils.hpp"
 
 namespace mneme {
+
+// How a recorded kernel argument is stored in a snapshot. A pointer into a
+// Mneme-managed blob is stored as (blob id, offset) so that replay can rebase
+// it; everything else is stored verbatim.
+enum class KernelArgEncodingKind : uint8_t {
+  RawBytes = 0,
+  ManagedPointer = 1,
+};
 
 // Global-variable record prefix: | Name length | Name | Size | DevAddr |.
 struct GlobalVarHeader {
@@ -36,28 +45,33 @@ struct GlobalVarHeader {
   }
 };
 
-// Device-memory blob record prefix: | ActualSize | Size | DevAddr |. Metadata
-// is excluded because the bytes and diff layouts place it differently.
+// Device-memory blob record prefix: | ActualSize | Size | BlobId | BlobOffset
+// |. BlobOffset is relative to the recorded VA reservation so that replay can
+// place the blob at any reservation base. Metadata is excluded because the
+// bytes and diff layouts place it differently.
 struct BlobHeader {
   size_t ActualSize;
   size_t Size;
-  void *DevAddr;
+  uint64_t BlobId;
+  uint64_t BlobOffset;
 
   void write(llvm::raw_ostream &OS) const {
     util::writeScalar(OS, ActualSize);
     util::writeScalar(OS, Size);
-    util::writeScalar(OS, DevAddr);
+    util::writeScalar(OS, BlobId);
+    util::writeScalar(OS, BlobOffset);
   }
 
   static BlobHeader read(const char *&Buffer) {
     size_t ActualSize = util::extractScalar<size_t>(Buffer);
     size_t Size = util::extractScalar<size_t>(Buffer);
-    void *DevAddr = util::extractScalar<void *>(Buffer);
-    return BlobHeader{ActualSize, Size, DevAddr};
+    uint64_t BlobId = util::extractScalar<uint64_t>(Buffer);
+    uint64_t BlobOffset = util::extractScalar<uint64_t>(Buffer);
+    return BlobHeader{ActualSize, Size, BlobId, BlobOffset};
   }
 
   static constexpr size_t serializedSize() {
-    return 2 * sizeof(size_t) + sizeof(void *);
+    return 2 * sizeof(size_t) + 2 * sizeof(uint64_t);
   }
 };
 

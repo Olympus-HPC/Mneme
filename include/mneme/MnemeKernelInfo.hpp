@@ -1,12 +1,12 @@
 #pragma once
 
-#include <llvm/ADT/DenseMap.h>
-#include <llvm/ADT/SmallVector.h>
-#include <llvm/ADT/StringRef.h>
+#include <cstdint>
+#include <cstring>
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StableHashing.h>
+#include <llvm/ADT/StringRef.h>
 #include <llvm/Support/raw_ostream.h>
 
 namespace mneme {
@@ -36,7 +36,10 @@ public:
     KernelSpecializations = llvm::SmallVector<bool>(Specializations);
   }
 
-  void setArgData(const char *&Data, int Index) {
+  void initializeArgStorage(size_t NumArgs) { ArgData.resize(NumArgs); }
+
+  // Advances Data past the copied bytes.
+  void setRawArgData(const char *&Data, int Index) {
     if (Index >= KernelArgSizes.size() || Index >= ArgData.size())
       LOG_FATAL("Setting argument data out of range");
 
@@ -45,6 +48,26 @@ public:
     std::memcpy(static_cast<void *>(ArgData[Index].get()),
                 static_cast<const void *>(Data), MemSize);
     Data += KernelArgSizes[Index];
+  }
+
+  void setZeroArgData(int Index) {
+    if (Index >= KernelArgSizes.size() || Index >= ArgData.size())
+      LOG_FATAL("Setting argument data out of range");
+
+    ArgData[Index] = std::make_unique<uint8_t[]>(KernelArgSizes[Index]);
+  }
+
+  // Writes in place so pointers into ArgData stay valid.
+  void setArgValue(int Index, const void *Value, size_t Size) {
+    if (Index >= KernelArgSizes.size() || Index >= ArgData.size() ||
+        !ArgData[Index])
+      LOG_FATAL("Setting the value of an argument without storage");
+    if (Size != KernelArgSizes[Index])
+      LOG_FATAL("Argument value size " + std::to_string(Size) +
+                " does not match the argument size " +
+                std::to_string(KernelArgSizes[Index]));
+
+    std::memcpy(static_cast<void *>(ArgData[Index].get()), Value, Size);
   }
 
   void setToDoubleFunc(llvm::ArrayRef<std::function<double(void *)>> convert) {

@@ -28,6 +28,7 @@ class RecordingBackend final : public RecorderBackend<VendorTypes> {
   RecordDatabase DB;
   llvm::DenseMap<void *, MnemeMemoryBlob<VendorTypes>> AllocatedBlobs;
   std::unique_ptr<PageManager<VendorTypes>> PM;
+  uint64_t NextBlobId = 1;
 
   // NOTE: We only keep track of the first time we set the device id. Once we
   // create the allocator we assume that the allocations go to the same device.
@@ -89,8 +90,11 @@ public:
     initializePageManagerIfNeeded();
 
     auto [Addr, ReservedSize] = PM->allocateAddr(size, nullptr);
+    uint64_t BlobOffset = reinterpret_cast<uintptr_t>(Addr) -
+                          reinterpret_cast<uintptr_t>(PM->getVAStart());
     MnemeMemoryBlob<VendorTypes> MemBlob(ReservedSize,
-                                         reinterpret_cast<void *>(Addr), size);
+                                         reinterpret_cast<void *>(Addr), size,
+                                         NextBlobId++, BlobOffset);
     auto ret = MemBlob.map(reinterpret_cast<void *>(Addr), ReservedSize, size);
     *ptr = MemBlob.ptr();
     AllocatedBlobs.insert({*ptr, std::move(MemBlob)});
