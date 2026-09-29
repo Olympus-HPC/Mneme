@@ -27,8 +27,9 @@ inline std::vector<VARange> getFreeVARanges(uintptr_t Lo, uintptr_t Hi) {
     uintptr_t E = std::stoull(Line.substr(Dash + 1), nullptr, 16);
     Mapped.push_back({S, E});
   }
-  std::sort(Mapped.begin(), Mapped.end(),
-            [](const VARange &A, const VARange &B) { return A.Start < B.Start; });
+  std::sort(
+      Mapped.begin(), Mapped.end(),
+      [](const VARange &A, const VARange &B) { return A.Start < B.Start; });
 
   std::vector<VARange> Free;
   uintptr_t Cur = Lo;
@@ -61,8 +62,8 @@ inline std::vector<uintptr_t> suggestVAddrs(uint64_t Size, uint64_t Alignment) {
     if (G.size() < Size + 2 * Alignment)
       continue;
     uintptr_t Mid = G.Start + (G.size() - Size) / 2;
-    uint64_t Align = G.size() >= Size + 2 * PreferredAlign ? PreferredAlign
-                                                           : Alignment;
+    uint64_t Align =
+        G.size() >= Size + 2 * PreferredAlign ? PreferredAlign : Alignment;
     uintptr_t Addr = Mid & ~(Align - 1);
     if (Addr < G.Start)
       Addr += Align;

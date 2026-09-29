@@ -8,6 +8,7 @@
 #include "mneme/DeviceTraits.hpp"
 #include "mneme/MnemeLogger.hpp"
 #include "mneme/MnemeUtils.hpp"
+#include "mneme/MnemeVASpace.hpp"
 
 struct ContiguousAddrBlock {
   // Starting address of the free block
@@ -225,15 +226,14 @@ initializePageManager(int DeviceID, void *ReqAddr = nullptr,
   using DT = mneme::DeviceTraits<VendorTypes>;
   auto MinPageSize = DT::getMinPageSize(DeviceID);
   if (ActualSize == -1)
-    ActualSize =
-        mneme::util::roundUp(DT::getFixedMemorySize(), MinPageSize);
+    ActualSize = mneme::util::roundUp(DT::getFixedMemorySize(), MinPageSize);
 
   // Replay must get the recorded address; record picks one.
   std::vector<uintptr_t> Candidates;
   if (ReqAddr)
     Candidates.push_back(reinterpret_cast<uintptr_t>(ReqAddr));
   else
-    Candidates = DT::getCandidateAddrs(ActualSize, MinPageSize);
+    Candidates = mneme::util::suggestVAddrs(ActualSize, MinPageSize);
   if (Candidates.empty())
     Candidates.push_back(0);
 
