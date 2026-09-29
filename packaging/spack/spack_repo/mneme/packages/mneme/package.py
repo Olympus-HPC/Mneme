@@ -45,7 +45,7 @@ class Mneme(CMakePackage, CudaPackage, ROCmPackage, PythonExtension):
 
     depends_on("cuda@12:", when="+cuda")
     depends_on("hip@6.2:", when="+rocm")
-    depends_on("proteus@=2026.10.0+impl_headers+shared")
+    depends_on("proteus@main+impl_headers+shared")
     depends_on("proteus+cuda", when="+cuda")
     depends_on("proteus+rocm", when="+rocm")
 
