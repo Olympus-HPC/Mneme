@@ -30,6 +30,7 @@ void clearMnemeEnv() {
   unsetenv("MNEME_LOG_LEVEL");
   unsetenv("MNEME_LOG_DIR");
   unsetenv("MNEME_EPILOGUE_TYPE");
+  unsetenv("MNEME_COPY_SOURCE");
   unsetenv("MNEME_RECORD_RANKS");
   unsetenv("FLUX_TASK_RANK");
   unsetenv("OMPI_COMM_WORLD_RANK");
@@ -76,6 +77,7 @@ int main() {
     expect(!Conf.getLogDirectory(), "MNEME_LOG_DIR should default to unset");
     expect(Conf.EpilogueType == EpilogueSnapshotType::Diff,
            "MNEME_EPILOGUE_TYPE should default to diff");
+    expect(!Conf.CopySource, "MNEME_COPY_SOURCE should default to false");
   }
 
   auto TempDir = makeTempDir();
@@ -87,6 +89,7 @@ int main() {
   setenv("MNEME_LOG_LEVEL", "debug", 1);
   setenv("MNEME_LOG_DIR", TempDir.c_str(), 1);
   setenv("MNEME_EPILOGUE_TYPE", "diff", 1);
+  setenv("MNEME_COPY_SOURCE", "1", 1);
   {
     auto Conf = Config::createFromEnvironment();
     expect(Conf.KernelRegex && *Conf.KernelRegex == "_two",
@@ -107,12 +110,14 @@ int main() {
            "MNEME_LOG_DIR should use the configured directory");
     expect(Conf.EpilogueType == EpilogueSnapshotType::Diff,
            "MNEME_EPILOGUE_TYPE should map diff");
+    expect(Conf.CopySource, "MNEME_COPY_SOURCE should map 1 to true");
   }
 
   setenv("MNEME_MAX_RECORDINGS", "12abc", 1);
   setenv("MNEME_SKIP_RECORDINGS", "6abc", 1);
   setenv("MNEME_PAGE_SIZE", "5abc", 1);
   setenv("MNEME_LOG_LEVEL", "verbose", 1);
+  setenv("MNEME_COPY_SOURCE", "0", 1);
   {
     auto Conf = Config::createFromEnvironment();
     expect(Conf.MaxRecordings == 12,
@@ -123,12 +128,14 @@ int main() {
            "MNEME_PAGE_SIZE should keep atol-style parsing");
     expect(Conf.MnemeLogLevel == LogLevel::Info,
            "invalid MNEME_LOG_LEVEL should fall back to info");
+    expect(!Conf.CopySource, "MNEME_COPY_SOURCE should map 0 to false");
   }
 
   setenv("MNEME_MAX_RECORDINGS", "abc", 1);
   setenv("MNEME_SKIP_RECORDINGS", "abc", 1);
   setenv("MNEME_PAGE_SIZE", "abc", 1);
   setenv("MNEME_EPILOGUE_TYPE", "bytes", 1);
+  setenv("MNEME_COPY_SOURCE", "maybe", 1);
   {
     auto Conf = Config::createFromEnvironment();
     expect(Conf.MaxRecordings == 0,
@@ -139,6 +146,8 @@ int main() {
            "invalid MNEME_PAGE_SIZE should parse to 0");
     expect(Conf.EpilogueType == EpilogueSnapshotType::Bytes,
            "MNEME_EPILOGUE_TYPE should map bytes");
+    expect(!Conf.CopySource,
+           "invalid MNEME_COPY_SOURCE should fall back to false");
   }
 
   setenv("MNEME_EPILOGUE_TYPE", "best", 1);
