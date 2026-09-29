@@ -37,8 +37,15 @@ spack external find
 spack external find cuda
 
 # Add repo and package.
+# Use the proteus recipe and source pinned in PROTEUS_VERSION (tag or commit).
+PROTEUS_SRC=/tmp/proteus-${CI_JOB_ID}
+git init --quiet ${PROTEUS_SRC}
+git -C ${PROTEUS_SRC} fetch --quiet --depth 1 https://github.com/Olympus-HPC/proteus.git "$(cat ${CI_PROJECT_DIR}/PROTEUS_VERSION)"
+git -C ${PROTEUS_SRC} checkout --quiet FETCH_HEAD
+PROTEUS_SHA=$(git -C ${PROTEUS_SRC} rev-parse HEAD)
+spack repo add ${PROTEUS_SRC}/packaging/spack/spack_repo/proteus
 spack repo add ${CI_PROJECT_DIR}/packaging/spack/spack_repo/mneme
-spack add mneme@git.${CI_COMMIT_SHA} ~python +cuda cuda_arch=${MNEME_CI_CUDA_ARCH} ^cuda@${MNEME_CI_CUDA_VERSION} ^llvm@${MNEME_CI_LLVM_VERSION}
+spack add mneme@git.${CI_COMMIT_SHA} ~python +cuda cuda_arch=${MNEME_CI_CUDA_ARCH} ^cuda@${MNEME_CI_CUDA_VERSION} ^llvm@${MNEME_CI_LLVM_VERSION} ^proteus@git.${PROTEUS_SHA}=main
 
 # Concretize and install.
 spack concretize -f
@@ -48,3 +55,4 @@ spack install -v
 rm -rf ${SPACK_USER_CACHE_PATH}
 rm -rf /tmp/mneme-spack-env-${CI_JOB_ID}
 rm -rf /tmp/spack-${CI_JOB_ID}
+rm -rf ${PROTEUS_SRC}
