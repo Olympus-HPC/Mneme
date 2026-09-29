@@ -90,6 +90,25 @@ ffi.lib.ProteusPY_setLaunchBounds.restype = c_uint64
 ffi.lib.ProteusPY_getCodegenMethod.argtypes = []
 ffi.lib.ProteusPY_getCodegenMethod.restype = c_char_p
 
+ffi.lib.ProteusPY_registerJITPassPlugin.argtypes = [c_char_p]
+
+
+def register_pass_plugin(path: str):
+    """
+    Register an LLVM pass plugin shared library with Proteus.
+
+    Uses the load-only registration mode: the plugin's pass names become
+    parseable in pipeline strings passed to :func:`optimize`, but nothing is
+    added to the pipeline automatically. Registration is idempotent; Proteus
+    deduplicates by resolved path.
+
+    Parameters
+    ----------
+    path : str
+        Filesystem path to the plugin shared library.
+    """
+    ffi.lib.ProteusPY_registerJITPassPlugin(_encode_string(path))
+
 
 def pruneIR(mod: ModuleRef):
     """

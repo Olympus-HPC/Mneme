@@ -48,3 +48,4 @@ endif()
 
 add_subdirectory(unit_tests)
 add_subdirectory(record)
+add_subdirectory(pass)
