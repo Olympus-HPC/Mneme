@@ -45,6 +45,9 @@ ffi.lib.MnemePy_LoadMemState.argtypes = [MnemeRecordStateRef]
 ffi.lib.MnemePy_CompareMemState.argtypes = [MnemeRecordStateRef, MnemeRecordStateRef]
 ffi.lib.MnemePy_CompareMemState.restype = c_bool
 
+ffi.lib.MnemePy_MatchesUnlaunched.argtypes = [MnemeRecordStateRef, MnemeRecordStateRef]
+ffi.lib.MnemePy_MatchesUnlaunched.restype = c_bool
+
 ffi.lib.MnemePy_ResetMemState.argtypes = [MnemeRecordStateRef]
 
 ffi.lib.MnemePy_getNumArgs.argtypes = [MnemeRecordStateRef]
@@ -304,6 +307,22 @@ class MemStateRef:
             True if the native layer considers the states different.
         """
         return not bool(ffi.lib.MnemePy_CompareMemState(self._state, other._state))
+
+    def matches_unlaunched(self, other):
+        """
+        Check whether the recorded input already satisfies the recorded output.
+
+        One snapshot must be a prologue and the other an epilogue. The check uses
+        the same comparison as verification, so it answers whether a kernel that
+        writes nothing would verify. Call it before any kernel launch writes to
+        the prologue's device buffers.
+
+        Returns
+        -------
+        bool
+            True if the unmodified prologue matches the epilogue.
+        """
+        return bool(ffi.lib.MnemePy_MatchesUnlaunched(self._state, other._state))
 
     def __del__(self):
         try:

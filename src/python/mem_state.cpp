@@ -3,11 +3,26 @@
 #include <mneme/MnemePython.hpp>
 #include <mneme/MnemeUtils.hpp>
 #include <string>
+#include <utility>
 
 using namespace mneme;
 using namespace mneme::python;
 using namespace llvm;
 // namespace
+
+// The prologue and epilogue may be passed in either argument order.
+static std::pair<PrologueState<Vendor> *, EpilogueState<Vendor> *>
+prologueAndEpilogue(MnemeDeviceMemStateRef v1, MnemeDeviceMemStateRef v2) {
+  auto *S1 = unwrap(v1);
+  auto *S2 = unwrap(v2);
+
+  auto *Prologue = S1->asPrologue() ? S1->asPrologue() : S2->asPrologue();
+  auto *Epilogue = S1->asEpilogue() ? S1->asEpilogue() : S2->asEpilogue();
+  if (!Prologue || !Epilogue)
+    LOG_FATAL("Comparing memory states expects one prologue and one epilogue");
+
+  return {Prologue, Epilogue};
+}
 
 extern "C" {
 API_EXPORT(MnemeDeviceMemStateRef)
@@ -36,16 +51,15 @@ API_EXPORT(void) MnemePy_LoadMemState(MnemeDeviceMemStateRef MemState) {
 
 API_EXPORT(bool)
 MnemePy_CompareMemState(MnemeDeviceMemStateRef v1, MnemeDeviceMemStateRef v2) {
-  // The prologue and epilogue may be passed in either argument order.
-  auto *S1 = unwrap(v1);
-  auto *S2 = unwrap(v2);
-
-  auto *Prologue = S1->asPrologue() ? S1->asPrologue() : S2->asPrologue();
-  auto *Epilogue = S1->asEpilogue() ? S1->asEpilogue() : S2->asEpilogue();
-  if (!Prologue || !Epilogue)
-    LOG_FATAL("CompareMemState expects one prologue and one epilogue");
-
+  auto [Prologue, Epilogue] = prologueAndEpilogue(v1, v2);
   return Epilogue->matches(*Prologue);
+}
+
+API_EXPORT(bool)
+MnemePy_MatchesUnlaunched(MnemeDeviceMemStateRef v1,
+                          MnemeDeviceMemStateRef v2) {
+  auto [Prologue, Epilogue] = prologueAndEpilogue(v1, v2);
+  return Epilogue->matchesUnlaunched(*Prologue);
 }
 
 API_EXPORT(void)

@@ -212,6 +212,24 @@ public:
   // Verifies a replayed prologue against this expected-output epilogue. At call
   // time the prologue's device buffers hold the kernel's actual output.
   virtual bool matches(const PrologueState<VendorTypes> &Prologue) const {
+    return compare(Prologue, /*GlobalsOnDevice=*/true);
+  }
+
+  // True if the prologue's recorded input already satisfies this epilogue, so
+  // a kernel that writes nothing would verify. Must be called before any launch
+  // writes to the prologue's device buffers.
+  bool matchesUnlaunched(const PrologueState<VendorTypes> &Prologue) const {
+    return compare(Prologue, /*GlobalsOnDevice=*/false);
+  }
+
+protected:
+  bool isPrologue() const override { return false; }
+
+private:
+  // Globals reach the device only when a replay module is loaded, so before any
+  // launch the prologue's input globals are read from their host copies.
+  bool compare(const PrologueState<VendorTypes> &Prologue,
+               bool GlobalsOnDevice) const {
     LOG_DEBUG("Comparing memory states");
     bool Correct = true;
 
@@ -245,6 +263,12 @@ public:
       }
 
       auto &EpiGV = It->second;
+      if (!GlobalsOnDevice) {
+        if (memcmp(EpiGV.HostAddr, ProGV.HostAddr, ProGV.VarSize) != 0)
+          Correct = false;
+        continue;
+      }
+
       std::unique_ptr<uint8_t[]> ProData(new uint8_t[ProGV.VarSize]);
       auto CEC = DeviceTraits<VendorTypes>::DeviceErrorCheck(
           DeviceTraits<VendorTypes>::DeviceCopy(
@@ -261,9 +285,6 @@ public:
     LOG_DEBUG("Memory States {}", Correct ? "are the same" : "differ");
     return Correct;
   }
-
-protected:
-  bool isPrologue() const override { return false; }
 };
 
 template <DeviceVendors VendorTypes>

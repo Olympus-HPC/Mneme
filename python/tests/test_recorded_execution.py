@@ -152,6 +152,19 @@ def test_memstate_equality_uses_ffi_compare():
             fake.MnemePy_CompareMemState.assert_called_once_with("A", "B")
 
 
+def test_memstate_matches_unlaunched_uses_ffi():
+    with patch("mneme.recorded_execution.Path.exists", return_value=True):
+        with patch("mneme.recorded_execution.ffi.lib") as fake:
+            fake.MnemePy_initializeMemState.side_effect = ["P", "E"]
+            fake.MnemePy_MatchesUnlaunched.return_value = True
+
+            pro = MemStateRef("p.pro", "k", SnapshotType.PROLOGUE).open()
+            epi = MemStateRef("e.epi", "k", SnapshotType.EPILOGUE).open()
+
+            assert pro.matches_unlaunched(epi)
+            fake.MnemePy_MatchesUnlaunched.assert_called_once_with("P", "E")
+
+
 # ======================================================================
 #                      RecordedExecution Tests
 # ======================================================================

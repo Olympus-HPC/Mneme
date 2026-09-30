@@ -32,14 +32,18 @@ class FakeSnapshot:
     Must have: .close(), .args, .num_args, ._state
     """
 
-    def __init__(self, state="STATE", args=None, num_args=0):
+    def __init__(self, state="STATE", args=None, num_args=0, noop_verifies=False):
         self._state = state
         self.args = args if args is not None else []
         self.num_args = num_args
+        self.noop_verifies = noop_verifies
         self.closed = False
 
     def close(self):
         self.closed = True
+
+    def matches_unlaunched(self, other):
+        return self.noop_verifies
 
 
 class FakePrologueDescr:
@@ -307,11 +311,14 @@ def test_baseexecutor_uses_explicit_record_id_with_multiple_instances(monkeypatc
     assert ex.kernel_descr is selected
 
 
-def test_open_close_context_manager_opens_and_closes_resources(monkeypatch):
+@pytest.mark.parametrize("noop_verifies", [False, True])
+def test_open_close_context_manager_opens_and_closes_resources(
+    monkeypatch, noop_verifies
+):
     mod = _reload_with_identity_decorators(monkeypatch)
 
     kernel = FakeKernelDescr(
-        prologue=FakeSnapshot(state="P"),
+        prologue=FakeSnapshot(state="P", noop_verifies=noop_verifies),
         epilogue=FakeSnapshot(state="E"),
     )
     rec = FakeRecordedExecution(kernel)
@@ -330,6 +337,7 @@ def test_open_close_context_manager_opens_and_closes_resources(monkeypatch):
         assert opened._page_manager is not None
         assert opened.prologue._state == "P"
         assert opened.epilogue._state == "E"
+        assert opened.noop_verifies is noop_verifies
         assert opened._page_manager.device_id == 0
         assert opened._page_manager.va_addr == rec.va_addr
         assert opened._page_manager.va_size == rec.va_size
@@ -589,9 +597,11 @@ def test_run_records_resource_usage_when_track_true(monkeypatch):
     prologue = FakeMemStateRef()
     epilogue = FakeMemStateRef()
 
+    ex.noop_verifies = True
     ex._run(res, cfg, mb, prologue, epilogue, verify=True, track=True, iterations=7)
 
     assert run_kernel_calls == [("K", 7, True)]
+    assert res.noop_verifies is True
     assert res.reg_usage == device_func.reg_usage
     assert res.const_mem_usage == device_func.const_mem
     assert res.local_mem_usage == device_func.local_mem

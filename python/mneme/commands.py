@@ -23,6 +23,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 from mneme.llvm import utils
@@ -31,7 +32,7 @@ from mneme.mneme_types import ExperimentConfiguration, ExperimentResult, dim3
 from mneme.pipeline import PipelineManager
 from mneme.profile import init_profiler
 from mneme.recorded_execution import RecordedExecution
-from mneme.replay_executor import BaseExecutor
+from mneme.replay_executor import BaseExecutor, noop_verifies_warning
 from mneme.tuning.cli import add_tune_args, run_tune
 from mneme.utils import MnemeEncoder
 
@@ -699,6 +700,8 @@ class Replay(BaseExecutor):
         root_ir = executor.link_ir()
 
         with executor as Memory:
+            if executor.noop_verifies:
+                print(noop_verifies_warning(executor.record_id), file=sys.stderr)
             exp = executor.get_mneme_config(executor.passes)
             res = executor.execute(
                 exp,
