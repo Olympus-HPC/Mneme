@@ -472,6 +472,7 @@ class RecordedExecution:
         source_md5: Optional[str] = None,
         source_line: Optional[int] = None,
         source_end_line: Optional[int] = None,
+        capture_mode: str = "full",
     ):
         self.static_hash = static_hash
         self.kernel_name = kernel_name
@@ -489,6 +490,7 @@ class RecordedExecution:
         self.source_md5 = source_md5
         self.source_line = source_line
         self.source_end_line = source_end_line
+        self.capture_mode = capture_mode
         self._link_mod = None
 
     def __str__(self):
@@ -615,6 +617,7 @@ class RecordedExecution:
             res["SourceEndLine"] = self.source_end_line
         res["VASize"] = self.va_size
         res["VAddr"] = self.va_addr
+        res["CaptureMode"] = self.capture_mode
         res["instances"] = {}
         for k, v in self.items():
             res["instances"][k] = v.to_dict(base_dir)
@@ -724,4 +727,5 @@ class RecordedExecution:
             source_md5=record_db.get("SourceMD5"),
             source_line=record_db.get("SourceLine"),
             source_end_line=record_db.get("SourceEndLine"),
+            capture_mode=record_db.get("CaptureMode", "full"),
         )

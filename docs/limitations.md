@@ -61,6 +61,24 @@ If you need this:
 - Please open a GitHub issue with a minimal reproducer.
 - RDC support is planned but not yet prioritized.
 
+## 4. Reachable Capture Follows Argument Pointers Only
+
+`mneme record --capture-mode reachable` derives pointer slots from the
+kernel's argument types and captures the allocations they point into.
+
+Implications:
+
+- Integer-typed arguments that carry a device address are not followed.
+- Buffers reachable only through pointers stored in device memory are not
+  captured.
+- Pointers into managed memory or other untracked allocations are reported
+  with a `[mneme]` warning and skipped.
+
+Workaround:
+
+- Record with the default `--capture-mode full` for kernels that rely on
+  these patterns.
+
 ## Reporting Issues or Requesting Support
 
 If any of these limitations block your use case, please:
