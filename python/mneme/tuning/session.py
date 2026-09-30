@@ -2,6 +2,7 @@
 
 """
 
+import hashlib
 import json
 import logging
 import math
@@ -442,6 +443,7 @@ class TuningSession:
         # fix here -- we cant change some things from a previous tuning session
         # be safe and error if they're different
         immutable = [
+            "ir_hash",
             "record_database",
             "record_id",
             "space_preset",
@@ -829,6 +831,13 @@ class TuningSession:
         # validate and save out the config
         try:
             resolved_config = self.options.to_config_dict()
+            if self._ir is not None:
+                ir = self._ir
+                if isinstance(ir, Path) or ir.endswith((".ll", ".bc")):
+                    ir = Path(ir).read_bytes()
+                else:
+                    ir = ir.encode()
+                resolved_config["ir_hash"] = hashlib.sha256(ir).hexdigest()
             self._validate_resume(resolved_config)
             self.store.write_config(resolved_config)
         except Exception as exc:
