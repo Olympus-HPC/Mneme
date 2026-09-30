@@ -10,7 +10,7 @@ recent features.
 
 Mneme depends on a small set of external components.
 Compatibility is defined in terms of supported ROCm versions,
-CUDA/LLVM versions, Python versions, and a specific Proteus release.
+CUDA/LLVM versions, Python versions, and a specific Proteus commit.
 
 ### Compatibility matrix
 
@@ -53,11 +53,11 @@ but are not part of the tested matrix.
 
 Mneme depends on the Proteus JIT and LLVM transformation infrastructure.
 Compatibility between Mneme and Proteus is defined by the tested Proteus
-release and commit.
+commit.
 
-Mneme is regularly tested against a specific Proteus release known to be
+Mneme is regularly tested against a specific Proteus commit known to be
 compatible. Users building Mneme from source are strongly encouraged to
-use the corresponding Proteus release to avoid incompatibilities.
+use that commit to avoid incompatibilities.
 
 !!! note
     Mneme requires Proteus to be built and installed as a **shared library**.
@@ -65,12 +65,19 @@ use the corresponding Proteus release to avoid incompatibilities.
     record and replay functionality, which is not possible with a
     static-only Proteus build.
 
-#### Tested Proteus release
+#### Tested Proteus commit
 
 - Repository: https://github.com/Olympus-HPC/Proteus
-- Release: `v2026.05.0`
-- Commit: `1f1e0307a0a340b42947be600bb7be0a61745c0a`
+- Commit: the full SHA in the `PROTEUS_VERSION` file at the root of the
+  Mneme source tree
 - Tested with: Mneme `develop`
+
+To check out the tested commit in an existing Proteus clone:
+
+```bash
+git -C /path/to/proteus fetch origin "$(cat /path/to/mneme/PROTEUS_VERSION)"
+git -C /path/to/proteus checkout FETCH_HEAD
+```
 
 Proteus must be configured with:
 
@@ -83,7 +90,7 @@ Proteus must be configured with:
     Proteus is under active development, and changes to core components may
     temporarily break compatibility with Mneme.
 
-    Users are strongly encouraged to use the tested Proteus release listed above.
+    Users are strongly encouraged to use the tested Proteus commit listed above.
 
 ### spdlog dependency and compatibility
 
@@ -262,8 +269,8 @@ external Proteus installation:
 - `PROTEUS_DIR`: Path to an existing Proteus installation prefix.
   This directory must allow `find_package(proteus)` to succeed.
 
-External Proteus installations must use release `v2026.05.0` and must be
-built with `-DBUILD_SHARED=On -DPROTEUS_INSTALL_IMPL_HEADERS=On`.
+External Proteus installations must use the commit in `PROTEUS_VERSION`
+and must be built with `-DBUILD_SHARED=On -DPROTEUS_INSTALL_IMPL_HEADERS=On`.
 
 When either of these variables is set, Mneme will use the specified
 Proteus installation instead of the internally managed one.

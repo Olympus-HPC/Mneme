@@ -101,8 +101,24 @@ inline LogLevel getEnvOrDefaultLogLevel(const char *VarName, LogLevel Default) {
   return LogLevel::Info;
 }
 
-inline EpilogueSnapshotType getEnvOrDefaultEpilogueSnapshotType(
-    const char *VarName, EpilogueSnapshotType Default) {
+inline bool getEnvOrDefaultBool(const char *VarName, bool Default) {
+  auto EnvValue = getEnvOrDefaultString(VarName);
+  if (!EnvValue)
+    return Default;
+
+  if (*EnvValue == "1")
+    return true;
+  if (*EnvValue == "0")
+    return false;
+
+  warnMalformedEnvironmentValue("environment variable", VarName, *EnvValue,
+                                "; expected 0 or 1");
+  return Default;
+}
+
+inline EpilogueSnapshotType
+getEnvOrDefaultEpilogueSnapshotType(const char *VarName,
+                                    EpilogueSnapshotType Default) {
   auto EnvValue = getEnvOrDefaultString(VarName);
   if (!EnvValue)
     return Default;
@@ -187,6 +203,7 @@ public:
   const std::optional<long> PageSizeGiB;
   const LogLevel MnemeLogLevel;
   const EpilogueSnapshotType EpilogueType;
+  const bool CopySource;
 
   bool isRecordingEnabledForCurrentRank() const {
     return RecordingEnabledThisRank;
@@ -230,6 +247,8 @@ private:
             "MNEME_LOG_LEVEL", LogLevel::Critical)),
         EpilogueType(config_detail::getEnvOrDefaultEpilogueSnapshotType(
             "MNEME_EPILOGUE_TYPE", EpilogueSnapshotType::Diff)),
+        CopySource(
+            config_detail::getEnvOrDefaultBool("MNEME_COPY_SOURCE", false)),
         MnemeDataDir(config_detail::getEnvOrDefaultString("MNEME_DATA_DIR")),
         MnemeLogDir(config_detail::getEnvOrDefaultString("MNEME_LOG_DIR")),
         RecordingEnabledThisRank(

@@ -30,10 +30,17 @@ if(NOT proteus_FOUND)
     FetchContent_Declare(proteus SOURCE_DIR "${PROTEUS_SRC}")
   else()
     message(STATUS "proteus not found -- fetching ${_proteus_tag} via FetchContent")
+    # shallow clones only work for tags/branches, not commit SHAs
+    string(LENGTH "${_proteus_tag}" _proteus_tag_length)
+    if(_proteus_tag MATCHES "^[0-9a-f]+$" AND _proteus_tag_length EQUAL 40)
+      set(_proteus_shallow FALSE)
+    else()
+      set(_proteus_shallow TRUE)
+    endif()
     FetchContent_Declare(proteus
       GIT_REPOSITORY https://github.com/Olympus-HPC/proteus.git
       GIT_TAG        ${_proteus_tag}
-      GIT_SHALLOW    TRUE
+      GIT_SHALLOW    ${_proteus_shallow}
     )
   endif()
   
