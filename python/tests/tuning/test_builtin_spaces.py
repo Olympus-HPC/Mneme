@@ -3,6 +3,7 @@ import json
 import pytest
 
 import mneme.tuning.builtin_spaces as mod
+from mneme.tuning import normalize_launch_candidates
 from mneme.mneme_types import ExperimentConfiguration, dim3
 from mneme.tuning.search_space import (
     BoolParam,
@@ -328,3 +329,80 @@ def test_finite_param_values_and_iter_finite_params():
         {"x": 1, "y": "a"},
         {"x": 1, "y": "b"},
     ]
+
+
+@pytest.mark.parametrize("candidates", [
+    None, {}, [None], [{}], [{"grid": [1, 1, 1]}],
+    [{"block": [1, 1]}], [{"block": [True, 1, 1]}],
+    [{"block": [1.0, 1, 1]}], [{"block": ["1", 1, 1]}],
+    [{"block": [0, 1, 1]}], [{"block": [1024, 2, 1]}],
+    [{"block": [1, 1, 65]}], [{"block": [1, 1, 1], "grid": [1, 65536, 1]}],
+    [{"block": [1, 1, 1], "grid": None}],
+    [{"block": [1, 1, 1], "shared_mem": 0}],
+])
+def test_normalize_launch_candidates_rejects_malformed_and_illegal_layouts(candidates):
+    with pytest.raises(ValueError):
+        normalize_launch_candidates(candidates)
+
+
+def test_normalize_launch_candidates_resolves_and_deduplicates_without_mutation():
+    candidates = [
+        {"block": (256, 1, 1)},
+        {"block": [256, 1, 1], "grid": [4, 8, 1]},
+        {"block": [256, 1, 1], "grid": [5, 8, 1]},
+        {"block": [256, 1, 1]},
+    ]
+    normalized = normalize_launch_candidates(candidates)
+    assert len(normalized) == 3
+    assert normalized[0] == {"block": [256, 1, 1]}
+    resolved = normalize_launch_candidates(normalized, recorded_kernel=FakeKernel())
+    assert resolved == [
+        {"block": [256, 1, 1], "grid": [4, 8, 1]},
+        {"block": [256, 1, 1], "grid": [5, 8, 1]},
+    ]
+    assert json.loads(json.dumps(resolved)) == resolved
+    assert "grid" not in candidates[0]
+    assert normalize_launch_candidates(
+        [{"block": [192, 1, 1]}], recorded_kernel=FakeKernel()
+    )[0]["grid"] == [6, 8, 1]
+
+
+def test_candidate_resolution_rejects_derived_grid_overflow():
+    kernel = FakeKernel()
+    kernel.grid_dim = dim3(mod.MAX_GRID_DIMS[0], 1, 1)
+    with pytest.raises(ValueError, match="after resolution"):
+        normalize_launch_candidates([{"block": [1, 1, 1]}], recorded_kernel=kernel)
+
+
+@pytest.mark.parametrize("preset", ["quick", "standard", "launch", "compiler", "full"])
+def test_augmented_space_preserves_defaults_and_compiler_dimensions(preset):
+    defaults = mod.BuiltinTuneSearchSpace(FakeKernel(), preset=preset)
+    augmented = mod.BuiltinTuneSearchSpace(FakeKernel(), preset=preset, launch_candidates=[
+        {"block": [128, 2, 1]},
+        {"block": [128, 2, 1], "grid": [8, 4, 1]},
+        {"block": [128, 2, 1], "grid": [9, 4, 1]},
+        {"block": [513, 1, 1]},  # Beyond preset heuristic shapes/budgets.
+    ])
+    default_layouts = set()
+    for shape in mod.finite_param_values(defaults.dimensions()["block_shape"]):
+        config = defaults.derived({"block_shape": shape})
+        default_layouts.add(mod.launch_layout_key(
+            [config.block.x, config.block.y, config.block.z],
+            [config.grid.x, config.grid.y, config.grid.z],
+        ))
+    choices = augmented.dimensions()["launch_layout"].choices
+    assert set(choices) == default_layouts | {"128x2x1/9x4x1", "513x1x1/2x8x1"}
+    assert len(choices) == len(set(choices))
+    for name, param in defaults.dimensions().items():
+        if name != "block_shape":
+            assert mod.param_to_description(param) == mod.param_to_description(augmented.dimensions()[name])
+    config = augmented.derived({
+        "launch_layout": "128x2x1/9x4x1", "passes": "default<O1>",
+        "codegen_opt": 1, "specialize": True,
+    })
+    assert config.grid.to_dict() == {"x": 9, "y": 4, "z": 1}
+    assert config.block.to_dict() == FakeKernel.block_dim.to_dict()
+    assert config.shared_mem == FakeKernel.shared_mem
+    assert config.passes == "default<O1>"
+    assert config.specialize
+    assert mod.describe_search_space(augmented)["metadata"]["launch_layouts"] == list(augmented.launch_layouts.values())

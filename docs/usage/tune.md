@@ -459,6 +459,11 @@ The ranking metric is selected with `--metric` (`mean`, `median`, `min`, or
 `max`). `--objective time` minimizes the selected time metric, while
 `--objective speedup` maximizes speedup relative to the baseline.
 
+The tuner will run the baseline version of a kernel first, so it 
+can compute speedups later. By default it will early exit if the baseline
+execution fails execution or verification. Use `--require-verified-baseline` 
+(default) and `--no-require-verified-baseline` to toggle this behavior.
+
 ### Outputs and resuming
 
 If `--results-dir` is not provided, Mneme creates a timestamped directory under

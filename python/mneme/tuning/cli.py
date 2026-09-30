@@ -121,6 +121,15 @@ def add_tune_args(parser: argparse.ArgumentParser) -> None:
         help="Resume from an existing results directory and skip completed trial configurations.",
     )
     output.add_argument(
+        "--require-verified-baseline",
+        action=_none_bool_action(),
+        default=None,
+        help=(
+            "Require the recorded baseline to verify (default: enabled). "
+            "Use --no-require-verified-baseline to continue after failure with --objective time."
+        ),
+    )
+    output.add_argument(
         "--rerun-baseline",
         action="store_true",
         default=None,

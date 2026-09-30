@@ -1,0 +1,1 @@
+from .launch_candidates import normalize_launch_candidates

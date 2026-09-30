@@ -2,23 +2,24 @@
 
 """
 
+import hashlib
 import json
 import logging
 import math
 import random
 import statistics
 import time
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Iterator, List, Mapping, Optional, Tuple
+from typing import Any, Dict, Iterator, List, Mapping, Optional, Tuple, Union
 
 import optuna
 
 from mneme.async_executor import AsyncReplayExecutor
 from mneme.convert import export_proteus_tuned_kernel
 from mneme.futures import EvalFuture
-from mneme.mneme_types import ExperimentConfiguration, ExperimentResult
+from mneme.mneme_types import ExperimentConfiguration, ExperimentResult, dim3
 from mneme.recorded_execution import RecordedExecution
 from mneme.tuning.builtin_spaces import (
     BuiltinTuneSearchSpace,
@@ -27,6 +28,7 @@ from mneme.tuning.builtin_spaces import (
     load_custom_space,
     parse_key_value_args,
 )
+from mneme.tuning.launch_candidates import launch_layout_key, normalize_launch_candidates
 from mneme.tuning.result_store import ResultStore
 from mneme.tuning.search_space import (
     BaseParam,
@@ -91,6 +93,8 @@ class TuneOptions:
     launch_dim: str = "auto"
     launch_safety: Optional[str] = None
     adaptive_invalid_ban: bool = True
+    launch_candidates: list[dict] = field(default_factory=list)
+    require_verified_baseline: bool = True
 
     # Compiler-space controls.
     passes: Optional[List[str]] = None
@@ -138,6 +142,16 @@ class TuneOptions:
     def _validate(self) -> None:
         """ an early, quick check to validate some settings before any tuning is started """
 
+        self.launch_candidates = normalize_launch_candidates(self.launch_candidates)
+        if self.launch_candidates:
+            if self.space_module:
+                raise ValueError("launch_candidates are not supported with a custom search space")
+            if self.sampler not in {"random", "tpe"}:
+                raise ValueError("launch_candidates require the random or tpe sampler")
+
+        if not self.require_verified_baseline and self.objective != "time":
+            raise ValueError("require_verified_baseline=False requires objective='time'")
+
         # check trials is positive and compatible with sampler choice
         if self.trials is not None and self.trials <= 0:
             raise ValueError("--trials must be a positive integer")
@@ -168,6 +182,7 @@ class Candidate:
     config: ExperimentConfiguration
     optuna_trial: Any = None
     optuna_study: Any = None
+    error: Optional[str] = None
 
 
 @dataclass
@@ -334,8 +349,22 @@ class TuningSession:
         is controlled by TuneOptions.
     """
 
-    def __init__(self, options: TuneOptions):
+    def __init__(
+        self,
+        options: TuneOptions,
+        *,
+        executor: Optional[AsyncReplayExecutor] = None,
+        ir: Optional[Union[str, Path]] = None,
+    ):
+        """Use ``ir`` for this session, optionally on a caller-owned executor.
+
+        A borrowed executor must target the same record, instance, worker count,
+        iterations, and warmup as ``options``. The caller remains responsible for
+        shutting it down.
+        """
         self.options = options
+        self._borrowed_executor = executor
+        self._ir = ir
         self.options.results_dir = self.options.resolved_results_dir()
         if self.options.proteus_enabled and self.options.proteus_output is None:
             self.options.proteus_output = str(Path(self.options.results_dir) / "proteus_tuned_kernels.json")
@@ -343,7 +372,7 @@ class TuningSession:
         self.store = ResultStore(self.options.results_dir)
         self.rng = random.Random(self.options.seed)
         self._completed_hashes = set()
-        self._banned_block_shapes = set()
+        self._banned_layouts = set()
 
     def _print(self, message: str) -> None:
         if not self.options.quiet:
@@ -384,6 +413,7 @@ class TuningSession:
             fixed_min_blocks_per_sm=self.options.fixed_min_blocks_per_sm,
             max_threads_range=self.options.max_threads_range,
             max_threads_policy=self.options.max_threads_policy,
+            launch_candidates=self.options.launch_candidates,
         )
         return space, describe_search_space(space, preset=self.options.space_preset)
 
@@ -413,6 +443,7 @@ class TuningSession:
         # fix here -- we cant change some things from a previous tuning session
         # be safe and error if they're different
         immutable = [
+            "ir_hash",
             "record_database",
             "record_id",
             "space_preset",
@@ -428,7 +459,11 @@ class TuningSession:
             "specialize_space",
             "specialize_dims_space",
             "launch_bounds_space",
+            "launch_candidates",
+            "require_verified_baseline",
         ]
+        existing.setdefault("launch_candidates", [])
+        existing.setdefault("require_verified_baseline", True)
         mismatched = [
             key for key in immutable if existing.get(key) != resolved_config.get(key)
         ]
@@ -437,6 +472,19 @@ class TuningSession:
 
         # finally save any check any completed trial hashes to avoid re-running them
         self._completed_hashes = self.store.completed_hashes()
+
+    def _resolve_candidate(self, space: Any, trial: int, params: Dict[str, Any]) -> Optional[Candidate]:
+        config = ExperimentConfiguration()
+        try:
+            config = space.derived(params)
+            if self._layout_key(config) in self._banned_layouts or not _constraints_ok(space, params, config):
+                return None
+        except Exception as exc:
+            if self.options.fail_fast:
+                raise
+            return Candidate(trial, params, config, error=str(exc))
+            
+        return Candidate(trial, params, config)
 
     def _iter_random_candidates(self, space: Any) -> Iterator[Candidate]:
         """ helper generator for looping over search space """
@@ -458,15 +506,11 @@ class TuningSession:
                 name: _sample_random_param(param, self.rng)
                 for name, param in dims.items()
             }
-            if params.get("block_shape") in self._banned_block_shapes:
-                # avoid shapes we don't want to launch on
+            candidate = self._resolve_candidate(space, produced, params)
+            if candidate is None:
                 continue
 
-            config = space.derived(params)
-            if not _constraints_ok(space, params, config):
-                continue
-
-            yield Candidate(produced, params, config)
+            yield candidate
             produced += 1
 
     def _iter_grid_candidates(self, space: Any) -> Iterator[Candidate]:
@@ -474,14 +518,11 @@ class TuningSession:
         limit = self.options.trials
         produced = 0
         for params in iter_finite_params(space):
-            if params.get("block_shape") in self._banned_block_shapes:
+            candidate = self._resolve_candidate(space, produced, params)
+            if candidate is None:
                 continue
 
-            config = space.derived(params)
-            if not _constraints_ok(space, params, config):
-                continue
-
-            yield Candidate(produced, params, config)
+            yield candidate
             produced += 1
 
             if limit is not None and produced >= limit:
@@ -533,16 +574,14 @@ class TuningSession:
                 for name, param in dims.items()
             }
 
-            if params.get("block_shape") in self._banned_block_shapes:
-                study.tell(trial, _objective_value("invalid_launch", None, None, self.options.objective))
-                continue
-
-            config = space.derived(params)
-            if not _constraints_ok(space, params, config):
+            candidate = self._resolve_candidate(space, produced, params)
+            if candidate is None:
                 study.tell(trial, _objective_value("invalid_config", None, None, self.options.objective))
                 continue
 
-            yield Candidate(produced, params, config, optuna_trial=trial, optuna_study=study)
+            candidate.optuna_trial = trial
+            candidate.optuna_study = study
+            yield candidate
             produced += 1
 
     def _candidate_iter(self, space: Any) -> Iterator[Candidate]:
@@ -553,6 +592,22 @@ class TuningSession:
         if self.options.sampler == "tpe":
             return self._iter_optuna_candidates(space)
         raise RuntimeError(f"Unknown sampler {self.options.sampler!r}")
+
+    @staticmethod
+    def _layout_key(config: ExperimentConfiguration) -> str:
+        return launch_layout_key(
+            [config.block.x, config.block.y, config.block.z],
+            [config.grid.x, config.grid.y, config.grid.z],
+        )
+
+    def _initial_candidates(self, space: Any, baseline: ExperimentConfiguration) -> Iterator[Candidate]:
+        for trial, layout in enumerate(space.launch_candidates):
+            config = replace(baseline, block=dim3(*layout["block"]), grid=dim3(*layout["grid"]))
+            params = config.to_dict()
+            params.pop("block")
+            params.pop("grid")
+            params["launch_layout"] = self._layout_key(config)
+            yield Candidate(trial, params, config)
 
     def _tell_optuna(self, candidate: Candidate, status: str, metric: Optional[float], speedup: Optional[float]) -> None:
         if candidate.optuna_trial is None:
@@ -566,9 +621,13 @@ class TuningSession:
         result: ExperimentResult,
         status: str,
         candidate_metric: Optional[float],
-        baseline_metric: float,
+        baseline_metric: Optional[float],
     ) -> Dict[str, Any]:
-        speedup = baseline_metric / candidate_metric if candidate_metric and candidate_metric > 0 else None
+        speedup = (
+            baseline_metric / candidate_metric
+            if baseline_metric is not None and candidate_metric and candidate_metric > 0
+            else None
+        )
         return {
             "trial": candidate.trial,
             "status": status,
@@ -583,7 +642,7 @@ class TuningSession:
     def _record_invalid_candidate(
         self,
         candidate: Candidate,
-        baseline_metric: float,
+        baseline_metric: Optional[float],
         error: str,
     ) -> CompletedCandidate:
         result = ExperimentResult(error=error, failed=True, executed=False)
@@ -597,8 +656,8 @@ class TuningSession:
         self,
         baseline_config: ExperimentConfiguration,
         baseline_result: ExperimentResult,
-        baseline_metric: float,
-    ) -> Tuple[CompletedCandidate, Dict[str, int], int]:
+        baseline_metric: Optional[float],
+    ) -> Tuple[Optional[CompletedCandidate], Dict[str, int], int]:
         """ helper for loading the best candidate from previously saved session
             Also counts the number of completed trials and their status for reporting purposes.
         """
@@ -611,7 +670,7 @@ class TuningSession:
             "verified",
             baseline_metric,
             1.0,
-        )
+        ) if baseline_result.verified and baseline_metric is not None else None
         counts: Dict[str, int] = {}
         completed = 0
 
@@ -625,7 +684,7 @@ class TuningSession:
 
             result, metric = stored_result_and_metric(trial.get("result", {}))
             config = ExperimentConfiguration.from_dict(trial["config"])
-            speedup = trial.get("speedup")
+            speedup = baseline_metric / metric if baseline_metric is not None and metric and metric > 0 else None
 
             current = CompletedCandidate(
                 int(trial["trial"]),
@@ -636,7 +695,7 @@ class TuningSession:
                 metric,
                 speedup,
             )
-            if metric is not None and (best.metric is None or metric < best.metric):
+            if metric is not None and (best is None or best.metric is None or metric < best.metric):
                 best = current
         
         return best, counts, completed
@@ -645,15 +704,35 @@ class TuningSession:
         self,
         recorded: RecordedExecution,
         kernel: RecordedExecution.KernelInstance,
-        baseline_metric: float,
-        best: CompletedCandidate,
+        baseline_metric: Optional[float],
+        best: Optional[CompletedCandidate],
         counts: Dict[str, int],
         completed_trials: int,
         num_requested: Optional[int],
     ) -> Dict[str, Any]:
         """ helper to write out the final results """
 
-        speedup = baseline_metric / best.metric if best.metric and best.metric > 0 else 1.0
+        if best is None:
+            summary = {
+                "status": "failed",
+                "num_trials_requested": num_requested,
+                "num_trials_completed": completed_trials,
+                "baseline_metric": baseline_metric,
+                "best_metric": None,
+                "best_speedup": None,
+                "best_trial": None,
+                "error": "No configuration verified",
+                **{f"num_{status}": counts.get(status, 0) for status in (
+                    "verified", "failed_verification", "invalid_launch", "compile_error",
+                    "runtime_error", "invalid_config", "internal_error",
+                )},
+            }
+            self.store.write_summary(summary)
+            return summary
+
+        speedup = None
+        if baseline_metric is not None:
+            speedup = baseline_metric / best.metric if best.metric and best.metric > 0 else 1.0
         best_doc = {
             "status": "success",
             "trial": best.trial,
@@ -706,7 +785,7 @@ class TuningSession:
         self,
         executor: AsyncReplayExecutor,
         baseline_config: ExperimentConfiguration,
-    ) -> Tuple[ExperimentResult, float]:
+    ) -> Tuple[ExperimentResult, Optional[float]]:
         """ helper for the baseline since sometimes we want to 
             load it from a previous session.    
         """
@@ -718,12 +797,14 @@ class TuningSession:
 
                 if metric is None:
                     metric = metric_value(result, self.options.metric, self.options.iterations)
-                if metric is None:
-                    raise RuntimeError("Resumed baseline has no timing samples")
-                
-                return result, float(metric)
+                return self._checked_baseline(result, metric)
 
-        result = executor.evaluate(baseline_config)
+        try:
+            result = executor.evaluate(baseline_config)
+        except Exception as exc:
+            if self.options.fail_fast:
+                raise
+            result = ExperimentResult(error=str(exc), failed=True, executed=False)
         baseline_metric = metric_value(result, self.options.metric, self.options.iterations)
         self.store.write_baseline(
             {
@@ -732,10 +813,16 @@ class TuningSession:
             }
         )
 
-        if not result.verified or baseline_metric is None:
-            raise BaselineVerificationError("Baseline replay did not verify")
-        
-        return result, baseline_metric
+        return self._checked_baseline(result, baseline_metric)
+
+    def _checked_baseline(
+        self, result: ExperimentResult, metric: Optional[float]
+    ) -> Tuple[ExperimentResult, Optional[float]]:
+        if not result.verified or metric is None:
+            if self.options.require_verified_baseline:
+                raise BaselineVerificationError("Baseline replay did not verify")
+            return result, None
+        return result, metric
 
     def run(self) -> int:
         """ Main entry point for tuning. Returns an exit code indicating success or failure.
@@ -744,6 +831,13 @@ class TuningSession:
         # validate and save out the config
         try:
             resolved_config = self.options.to_config_dict()
+            if self._ir is not None:
+                ir = self._ir
+                if isinstance(ir, Path) or ir.endswith((".ll", ".bc")):
+                    ir = Path(ir).read_bytes()
+                else:
+                    ir = ir.encode()
+                resolved_config["ir_hash"] = hashlib.sha256(ir).hexdigest()
             self._validate_resume(resolved_config)
             self.store.write_config(resolved_config)
         except Exception as exc:
@@ -787,17 +881,22 @@ class TuningSession:
         self._print(f"  trials:          {self.options.trials}")
         self._print(f"  workers:         {self.options.workers}")
 
-        # initialize mneme executor
-        executor = AsyncReplayExecutor(
-            record_db=self.options.record_database,
-            record_id=self.options.record_id,
-            iterations=self.options.iterations,
-            results_db_dir=self.options.results_dir,
-            num_workers=self.options.workers,
-            warmup=self.options.warmup,
-        )
+        # A caller may reuse an executor across tuning sessions with different IR.
+        owns_executor = self._borrowed_executor is None
+        executor = self._borrowed_executor
+        if executor is None:
+            executor = AsyncReplayExecutor(
+                record_db=self.options.record_database,
+                record_id=self.options.record_id,
+                iterations=self.options.iterations,
+                results_db_dir=self.options.results_dir,
+                num_workers=self.options.workers,
+                warmup=self.options.warmup,
+            )
         # the main tuning phase
         try:
+            if self._ir is not None:
+                executor.set_ir(self._ir)
             # ensure baseline passes; collect its performance
             try:
                 baseline_result, baseline_metric = self._evaluate_baseline(executor, baseline_config)
@@ -806,8 +905,11 @@ class TuningSession:
                 return EXIT_BASELINE_FAILED
 
             self._print("")
-            self._print("Baseline verified:")
-            self._print(f"  {self.options.metric} time: {baseline_metric:.6g}")
+            if baseline_metric is not None:
+                self._print("Baseline verified:")
+                self._print(f"  {self.options.metric} time: {baseline_metric:.6g}")
+            else:
+                self._print("Baseline did not verify; continuing search.")
 
             best, counts, completed_trials = self._load_resume_best(
                 baseline_config, baseline_result, baseline_metric
@@ -823,9 +925,13 @@ class TuningSession:
                     completed_trials,
                     self.options.trials,
                 )
-                return 0
+                return 0 if best is not None else EXIT_BASELINE_FAILED
 
-            candidates = self._candidate_iter(space)
+            initial_phase = bool(self.options.launch_candidates)
+            candidates = (
+                self._initial_candidates(space, baseline_config)
+                if initial_phase else self._candidate_iter(space)
+            )
             in_flight: List[Tuple[Candidate, EvalFuture]] = []
             start_time = time.monotonic()
             submitted = 0
@@ -844,6 +950,13 @@ class TuningSession:
                     try:
                         candidate = next(candidates)
                     except StopIteration:
+                        if initial_phase:
+                            # Finish supplied layouts before asking the sampler for trials.
+                            if in_flight:
+                                break
+                            initial_phase = False
+                            candidates = self._candidate_iter(space)
+                            continue
                         exhausted = True
                         break
                     except Exception as exc:
@@ -851,22 +964,32 @@ class TuningSession:
                             raise
                         dummy = Candidate(submitted, {}, baseline_config)
                         self._record_invalid_candidate(dummy, baseline_metric, str(exc))
+                        counts["invalid_config"] = counts.get("invalid_config", 0) + 1
+                        completed_trials += 1
                         submitted += 1
                         continue
 
+                    candidate.trial = submitted
                     config_hash = candidate.config.hash()
                     if self.options.resume and config_hash in self._completed_hashes:
                         continue
 
-                    if not candidate.config.is_valid():
+                    if candidate.error is not None or not candidate.config.is_valid():
                         completed = self._record_invalid_candidate(
-                            candidate, baseline_metric, "ExperimentConfiguration.is_valid() returned false"
+                            candidate, baseline_metric, candidate.error or "ExperimentConfiguration.is_valid() returned false"
                         )
                         counts[completed.status] = counts.get(completed.status, 0) + 1
                         completed_trials += 1
                         submitted += 1
                         continue
-                    in_flight.append((candidate, executor.submit(candidate.config)))
+                    try:
+                        future = executor.submit(candidate.config)
+                    except Exception as exc:
+                        if self.options.fail_fast:
+                            raise
+                        future = EvalFuture(candidate.trial, candidate.config)
+                        future.set_error(str(exc))
+                    in_flight.append((candidate, future))
                     submitted += 1
 
                 # check on in-flight trials and record any that have completed
@@ -892,9 +1015,8 @@ class TuningSession:
                     if (
                         self.options.adaptive_invalid_ban
                         and status == "invalid_launch"
-                        and "block_shape" in candidate.params
                     ):
-                        self._banned_block_shapes.add(candidate.params["block_shape"])
+                        self._banned_layouts.add(self._layout_key(candidate.config))
                     
                     candidate_metric = (
                         metric_value(result, self.options.metric, self.options.iterations)
@@ -903,7 +1025,7 @@ class TuningSession:
                     )
                     speedup = (
                         baseline_metric / candidate_metric
-                        if candidate_metric and candidate_metric > 0
+                        if baseline_metric is not None and candidate_metric and candidate_metric > 0
                         else None
                     )
                     record = self._trial_record(
@@ -916,9 +1038,8 @@ class TuningSession:
                     completed_trials += 1
 
                     if status == "verified" and candidate_metric is not None:
-                        self._print(
-                            f"Trial {candidate.trial} verified: {candidate_metric:.6g}, speedup {speedup:.3f}x"
-                        )
+                        relative = f", speedup {speedup:.3f}x" if speedup is not None else ""
+                        self._print(f"Trial {candidate.trial} verified: {candidate_metric:.6g}{relative}")
                         current = CompletedCandidate(
                             candidate.trial,
                             candidate.params,
@@ -928,7 +1049,7 @@ class TuningSession:
                             candidate_metric,
                             speedup,
                         )
-                        if best.metric is None or candidate_metric < best.metric:
+                        if best is None or best.metric is None or candidate_metric < best.metric:
                             best = current
                     else:
                         self._print(f"Trial {candidate.trial} {status}")
@@ -955,14 +1076,19 @@ class TuningSession:
             print(f"Internal tuner error: {type(exc).__name__}: {exc}")
             return EXIT_INTERNAL_ERROR
         finally:
-            executor.shutdown()
+            if owns_executor:
+                executor.shutdown()
 
         self._print("")
+        if best is None:
+            self._print("No configuration verified")
+            return EXIT_BASELINE_FAILED
         self._print("Best verified configuration:")
         self._print(f"  trial:        {best.trial}")
         self._print(f"  {self.options.metric} time: {best.metric:.6g}")
-        self._print(f"  baseline:     {baseline_metric:.6g}")
-        self._print(f"  speedup:      {summary['best_speedup']:.3f}x")
+        if baseline_metric is not None:
+            self._print(f"  baseline:     {baseline_metric:.6g}")
+            self._print(f"  speedup:      {summary['best_speedup']:.3f}x")
         self._print("")
         self._print("Wrote:")
         self._print(f"  results:       {self.options.results_dir}")
