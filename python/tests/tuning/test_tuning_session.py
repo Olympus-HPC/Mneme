@@ -1,6 +1,7 @@
 """ Tests for the main TuningSession class that handles tuning for the tune CLI.
 """
 
+import hashlib
 import json
 from types import SimpleNamespace
 
@@ -264,6 +265,50 @@ def test_validate_resume_loads_completed_hashes(tmp_path):
     session._validate_resume(config)
 
     assert session._completed_hashes == {"abc"}
+
+
+def test_resume_rejects_changed_ir_hash(monkeypatch, tmp_path, capsys):
+    monkeypatch.setattr(TuningSession, "_load_record", lambda self: (FakeRecorded(), FakeKernel()))
+    monkeypatch.setattr(TuningSession, "_build_space", lambda self, kernel: (GridSpace(), {}))
+
+    first = TuningSession(make_options(tmp_path, print_space=True), ir="first IR")
+    assert first.run() == 0
+    assert first.store.load_config()["ir_hash"] == hashlib.sha256(b"first IR").hexdigest()
+
+    same = TuningSession(make_options(tmp_path, resume=True, print_space=True), ir="first IR")
+    assert same.run() == 0
+
+    changed = TuningSession(make_options(tmp_path, resume=True, print_space=True), ir="second IR")
+    assert changed.run() == EXIT_INVALID_CONFIGURATION
+    assert "ir_hash" in capsys.readouterr().out
+
+
+def test_run_rejects_legacy_checkpoint_with_new_ir(tmp_path, capsys):
+    # check that we reject when checkpoint is missing ir
+    session = TuningSession(make_options(tmp_path, resume=True), ir="new IR")
+    config = session.options.to_config_dict()
+    session.store.write_config(config)
+
+    assert session.run() == EXIT_INVALID_CONFIGURATION
+    assert "ir_hash" in capsys.readouterr().out
+    assert session.store.load_config() == config
+
+
+def test_run_hashes_ir_file_contents_and_rejects_changed_file(monkeypatch, tmp_path, capsys):
+    monkeypatch.setattr(TuningSession, "_load_record", lambda self: (FakeRecorded(), FakeKernel()))
+    monkeypatch.setattr(TuningSession, "_build_space", lambda self, kernel: (GridSpace(), {}))
+    ir_path = tmp_path / "kernel.ll"
+    ir_path.write_text("first IR")
+
+    first = TuningSession(make_options(tmp_path, print_space=True), ir=ir_path)
+    assert first.run() == 0
+    assert first.store.load_config()["ir_hash"] == hashlib.sha256(b"first IR").hexdigest()
+
+    ir_path.write_text("second IR")
+    resumed = TuningSession(make_options(tmp_path, resume=True, print_space=True), ir=ir_path)
+    assert resumed.run() == EXIT_INVALID_CONFIGURATION
+    assert "ir_hash" in capsys.readouterr().out
+    assert resumed.store.load_config()["ir_hash"] == hashlib.sha256(b"first IR").hexdigest()
 
 
 def test_grid_candidates_skip_banned_and_constraint_failures(tmp_path):
