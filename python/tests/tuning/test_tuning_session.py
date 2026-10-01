@@ -503,6 +503,7 @@ def test_write_final_outputs_skips_proteus_when_disabled(tmp_path, monkeypatch):
         counts={"verified": 3, "runtime_error": 1},
         completed_trials=4,
         num_requested=5,
+        noop_verifies=False,
     )
 
     assert called is False
@@ -683,9 +684,17 @@ def test_baseline_failure_does_not_shutdown_borrowed_executor(monkeypatch, tmp_p
     assert executor.shutdown_calls == 0
 
 
-def test_run_baseline_only_writes_baseline_as_best(monkeypatch, tmp_path, capsys):
+@pytest.mark.parametrize("noop_verifies", [False, True])
+def test_run_baseline_only_writes_baseline_as_best(
+    monkeypatch, tmp_path, capsys, noop_verifies
+):
     executor = RecordingExecutor(
-        baseline_result=ExperimentResult(verified=True, executed=True, exec_time=[100])
+        baseline_result=ExperimentResult(
+            verified=True,
+            noop_verifies=noop_verifies,
+            executed=True,
+            exec_time=[100],
+        )
     )
     source = KernelSource("/src/k.cu", 11, 14, "")
     monkeypatch.setattr(
@@ -705,10 +714,14 @@ def test_run_baseline_only_writes_baseline_as_best(monkeypatch, tmp_path, capsys
     )
 
     assert session.run() == 0
-    assert "  source:          /src/k.cu:11-14" in capsys.readouterr().out
+    captured = capsys.readouterr()
+    assert "  source:          /src/k.cu:11-14" in captured.out
+    assert ("a kernel that does nothing would pass verification" in captured.err) is noop_verifies
     assert executor.submitted == []
     best = json.loads((tmp_path / "best.json").read_text())
     assert best["params"] == {"baseline": True}
+    summary = json.loads((tmp_path / "summary.json").read_text())
+    assert summary["noop_verifies"] is noop_verifies
     assert best["best_metric"] == 100
 
 

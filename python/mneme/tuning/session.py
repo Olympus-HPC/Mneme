@@ -8,6 +8,7 @@ import logging
 import math
 import random
 import statistics
+import sys
 import time
 from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime
@@ -21,6 +22,7 @@ from mneme.convert import export_proteus_tuned_kernel
 from mneme.futures import EvalFuture
 from mneme.mneme_types import ExperimentConfiguration, ExperimentResult, dim3
 from mneme.recorded_execution import RecordedExecution
+from mneme.replay_executor import noop_verifies_warning
 from mneme.tuning.builtin_spaces import (
     BuiltinTuneSearchSpace,
     describe_search_space,
@@ -709,6 +711,7 @@ class TuningSession:
         counts: Dict[str, int],
         completed_trials: int,
         num_requested: Optional[int],
+        noop_verifies: bool,
     ) -> Dict[str, Any]:
         """ helper to write out the final results """
 
@@ -722,6 +725,7 @@ class TuningSession:
                 "best_speedup": None,
                 "best_trial": None,
                 "error": "No configuration verified",
+                "noop_verifies": noop_verifies,
                 **{f"num_{status}": counts.get(status, 0) for status in (
                     "verified", "failed_verification", "invalid_launch", "compile_error",
                     "runtime_error", "invalid_config", "internal_error",
@@ -766,6 +770,7 @@ class TuningSession:
             "best_metric": best.metric,
             "best_speedup": speedup,
             "best_trial": best.trial,
+            "noop_verifies": noop_verifies,
         }
         self.store.write_summary(summary)
 
@@ -910,6 +915,8 @@ class TuningSession:
                 self._print(f"  {self.options.metric} time: {baseline_metric:.6g}")
             else:
                 self._print("Baseline did not verify; continuing search.")
+            if baseline_result.noop_verifies:
+                print(noop_verifies_warning(self.options.record_id), file=sys.stderr)
 
             best, counts, completed_trials = self._load_resume_best(
                 baseline_config, baseline_result, baseline_metric
@@ -924,6 +931,7 @@ class TuningSession:
                     counts,
                     completed_trials,
                     self.options.trials,
+                    baseline_result.noop_verifies,
                 )
                 return 0 if best is not None else EXIT_BASELINE_FAILED
 
@@ -1069,6 +1077,7 @@ class TuningSession:
                 counts,
                 completed_trials,
                 self.options.trials,
+                baseline_result.noop_verifies,
             )
         except Exception as exc:
             if self.options.fail_fast:

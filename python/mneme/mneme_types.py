@@ -226,6 +226,9 @@ class ExperimentResult:
         Execution time measurements for the replayed kernel, one entry per run.
     verified: bool
         Whether the experiment matched the results of the recorded execution.
+    noop_verifies : bool
+        Whether the recorded input alone matches the recorded output, meaning a
+        kernel that does nothing would also verify.
     executed : bool
         Whether the experiment was executed at least once (without a crash).
     failed : bool
@@ -253,6 +256,7 @@ class ExperimentResult:
     obj_size: int = 0
     exec_time: List[int] = field(default_factory=list)
     verified: bool = False
+    noop_verifies: bool = False
     executed: bool = False
     failed: bool = False
     start_time: str = ""

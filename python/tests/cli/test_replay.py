@@ -1,3 +1,7 @@
+import json
+
+import pytest
+
 from mneme.recorded_execution import RecordedExecution
 from mneme.mneme_types import ExperimentConfiguration
 from mneme.async_executor import AsyncReplayExecutor
@@ -39,10 +43,16 @@ def test_tune(recorded_execution, has_amd_gpu, has_nvidia_gpu):
     )
     executor.shutdown()
     assert baseline_result.verified, "Replay run was not verified"
+    assert not baseline_result.noop_verifies
     assert len(baseline_result.exec_time) == 7, "Did not execute 5 experiments"
 
 
-def test_replay(recorded_execution, has_amd_gpu, has_nvidia_gpu):
+@pytest.mark.parametrize(
+    "recorded_execution, noop_verifies",
+    [(1024, False), (1, True)],
+    indirect=["recorded_execution"],
+)
+def test_replay(recorded_execution, noop_verifies, has_amd_gpu, has_nvidia_gpu, capsys):
     result = mneme_main(
         [
             "replay",
@@ -53,3 +63,9 @@ def test_replay(recorded_execution, has_amd_gpu, has_nvidia_gpu):
     )
 
     assert result == 0
+    captured = capsys.readouterr()
+    out = captured.out
+    report, _ = json.JSONDecoder().raw_decode(out[out.index('{\n  "Replay-config"'):])
+    assert report["Result"]["verified"]
+    assert report["Result"]["noop_verifies"] is noop_verifies
+    assert ("a kernel that does nothing would pass verification" in captured.err) is noop_verifies

@@ -241,11 +241,15 @@ def build_annotation_test_program(
 
 
 @pytest.fixture
-def recorded_execution(build_test_program, tmp_path):
+def recorded_execution(request, build_test_program, tmp_path):
     """
     Test that 'mneme record <binary>' correctly generates
     a JSON recording file and registers at least one kernel.
+
+    Indirect parametrization sets the vector length; a length of 1 records a
+    launch that leaves device memory unchanged.
     """
+    num_elements = getattr(request, "param", 1024)
 
     binary = build_test_program["binary"]
     assert binary.exists(), "vecAdd binary must exist"
@@ -264,7 +268,7 @@ def recorded_execution(build_test_program, tmp_path):
         "2",
         "--",
         str(binary),
-        "1024",
+        str(num_elements),
     ]
 
     result = mneme_main(args)

@@ -57,6 +57,16 @@ from mneme.recorded_execution import RecordedExecution, MemStateRef
 from mneme.utils import cond_gpu_time, cond_time
 
 
+def noop_verifies_warning(record_id: str) -> str:
+    """Warning shown to users when a do-nothing kernel would pass verification."""
+    return (
+        f"Warning: the recorded input of record {record_id} already matches its "
+        "recorded output, so a kernel that does nothing would pass verification. "
+        "Consider re-recording with --per-kernel-skip-recordings or using a "
+        "different record id."
+    )
+
+
 class BaseExecutor:
     """
     Base class for executing Mneme record–replay experiments.
@@ -133,6 +143,7 @@ class BaseExecutor:
         self.device_arch = get_device_arch()
         self._epilogue = None
         self._prologue = None
+        self.noop_verifies = False
         self._page_manager = None
         self._iterations = iterations
         self._warmup = warmup
@@ -150,6 +161,8 @@ class BaseExecutor:
         )
         self._prologue = self.kernel_descr.prologue.open()
         self._epilogue = self.kernel_descr.epilogue.open()
+        # No kernel has run yet, so this asks whether doing nothing would verify.
+        self.noop_verifies = self._prologue.matches_unlaunched(self._epilogue)
         return self
 
     @property
@@ -564,6 +577,7 @@ class BaseExecutor:
             )
             if verify:
                 result.verified = prologue == epilogue
+                result.noop_verifies = self.noop_verifies
             if track:
                 result.reg_usage = device_func.reg_usage
                 result.const_mem_usage = device_func.const_mem
