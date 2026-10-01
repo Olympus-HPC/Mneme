@@ -129,6 +129,8 @@ meta-only:
 .build-and-test:
   stage: build-and-test
   interruptible: true
+  variables:
+    PIPELINE_KIND: build-and-test
   trigger:
     include:
       - local: '.gitlab/custom-jobs-and-variables.yml'
@@ -149,6 +151,8 @@ meta-only:
 .test-spack:
   stage: test-spack
   interruptible: true
+  variables:
+    PIPELINE_KIND: test-spack
   trigger:
     include:
       - local: '.gitlab/custom-jobs-and-variables.yml'
@@ -163,6 +167,8 @@ meta-only:
 .test-python-cov:
   stage: test-python-cov
   interruptible: true
+  variables:
+    PIPELINE_KIND: test-python-cov
   trigger:
     include:
       - local: '.gitlab/custom-jobs-and-variables.yml'
@@ -180,4 +186,3 @@ include:
     file: 'id_tokens.yml'
   # pipelines subscribed by the project
   - local: '.gitlab/subscribed-pipelines.yml'
-

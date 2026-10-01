@@ -5,6 +5,10 @@
 # SPDX-License-Identifier: (MIT)
 ###############################################################################
 
+# Hubcast names each child pipeline's GitHub check after the pipeline name.
+workflow:
+  name: "${CI_MACHINE}-${PIPELINE_KIND}"
+
 # We define the following GitLab pipeline variables:
 variables:
 # In some pipelines we create only one allocation shared among jobs in
