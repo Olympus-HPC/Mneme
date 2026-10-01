@@ -3,12 +3,11 @@
 namespace mneme {
 
 namespace detail {
-// Internal launch-time query; state is owned by the shared mnemert runtime.
+// Internal function used by launcher to check if recording is allowed
+// state is owned by the shared mnemert runtime.
 bool scopeAllowsRecording(const void *Kernel) noexcept;
 } // namespace detail
 
-// Controls eligibility in scoped filtering mode on the calling host thread.
-// Scopes must be destroyed in reverse construction order on that same thread.
 class record_scope {
 public:
   explicit record_scope(bool Enabled) noexcept;

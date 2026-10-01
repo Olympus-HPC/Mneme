@@ -141,7 +141,7 @@ inline FilterMode getFilterMode() {
     return FilterMode::Default;
   if (*Value == "scoped")
     return FilterMode::Scoped;
-  
+
   throw std::runtime_error("Invalid MNEME_FILTER_MODE value '" + *Value +
                            "'. Expected 'default' or 'scoped'.");
 }
@@ -156,6 +156,7 @@ inline void warnDeprecatedScopedControls() {
       Controls += Name;
     }
   }
+  
   if (!Controls.empty())
     std::cerr << "[mneme] Warning: " << Controls
               << " still apply, but their use with scoped filtering is "
