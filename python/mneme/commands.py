@@ -231,18 +231,27 @@ class Record:
         )
 
         parser.add_argument(
+            "--filter-mode",
+            choices=["default", "scoped"],
+            default=None,
+            help=(
+                "Filter kernel launches automatically or using application record_scope objects; "
+                "inherits MNEME_FILTER_MODE, defaulting to 'default'"
+            ),
+        )
+        parser.add_argument(
             "-mr",
             "--per-kernel-max-recordings",
             type=int,
-            default=4,
-            help="The maximum number of times to record the same GPU kernel (function) with different dynamic hashes",
+            default=None,
+            help="Maximum recordings per kernel with different dynamic hashes (default: 4); explicit use in scoped mode is deprecated",
         )
         parser.add_argument(
             "-sr",
             "--per-kernel-skip-recordings",
             type=int,
-            default=0,
-            help="The number of matching GPU kernel launches to skip before recording each kernel",
+            default=None,
+            help="Matching eligible launches to skip before recording each kernel (default: 0); explicit use in scoped mode is deprecated",
         )
         parser.add_argument(
             "--epilogue-format",
@@ -285,15 +294,30 @@ class Record:
 
         cmd = args.cmd[idx + 1 :]
         record_env = os.environ.copy()
+        filter_mode = args.filter_mode
+        if filter_mode is None:
+            filter_mode = record_env.get("MNEME_FILTER_MODE", "default")
+        if filter_mode not in ("default", "scoped"):
+            parser.error(
+                f"Invalid MNEME_FILTER_MODE value {filter_mode!r}; expected default or scoped"
+            )
+        
+        record_env["MNEME_FILTER_MODE"] = filter_mode
         librecord_path = utils.get_mneme_record_library_name()
         logger.debug(f"LD_PRELOAD={librecord_path}")
         record_env["LD_PRELOAD"] = librecord_path
         logger.debug(f"MNEME_PAGE_SIZE={args.virtual_address_space_size}")
         record_env["MNEME_PAGE_SIZE"] = str(args.virtual_address_space_size)
-        logger.debug(f"MNEME_MAX_RECORDINGS={args.per_kernel_max_recordings}")
-        record_env["MNEME_MAX_RECORDINGS"] = str(args.per_kernel_max_recordings)
-        logger.debug(f"MNEME_SKIP_RECORDINGS={args.per_kernel_skip_recordings}")
-        record_env["MNEME_SKIP_RECORDINGS"] = str(args.per_kernel_skip_recordings)
+
+        # TODO(daniel): set defaults for now, remove once config|default filter modes are added
+        for name, value, default in (
+            ("MNEME_MAX_RECORDINGS", args.per_kernel_max_recordings, 4),
+            ("MNEME_SKIP_RECORDINGS", args.per_kernel_skip_recordings, 0),
+        ):
+            if value is not None or filter_mode == "default":
+                record_env[name] = str(default if value is None else value)
+                logger.debug(f"{name}={record_env[name]}")
+        
         record_db_dir = Path(args.record_db_dir).resolve()
         if record_db_dir.exists() and not record_db_dir.is_dir():
             raise NotADirectoryError(f"Path '{args.record_db_dir}' is not a directory")

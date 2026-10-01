@@ -21,6 +21,7 @@ namespace mneme {
 
 enum class LogLevel { Trace, Debug, Info, Warn, Error, Critical, Off };
 enum class EpilogueSnapshotType { Bytes, Diff, Best };
+enum class FilterMode { Default, Scoped };
 
 namespace config_detail {
 
@@ -134,6 +135,33 @@ getEnvOrDefaultEpilogueSnapshotType(const char *VarName,
                            "'. Expected 'bytes', 'diff', or 'best'.");
 }
 
+inline FilterMode getFilterMode() {
+  auto Value = getEnvOrDefaultString("MNEME_FILTER_MODE");
+  if (!Value || *Value == "default")
+    return FilterMode::Default;
+  if (*Value == "scoped")
+    return FilterMode::Scoped;
+  
+  throw std::runtime_error("Invalid MNEME_FILTER_MODE value '" + *Value +
+                           "'. Expected 'default' or 'scoped'.");
+}
+
+inline void warnDeprecatedScopedControls() {
+  std::string Controls;
+  for (const char *Name : {"MNEME_RR_KERNELS", "MNEME_SKIP_RECORDINGS",
+                           "MNEME_MAX_RECORDINGS"}) {
+    if (std::getenv(Name)) {
+      if (!Controls.empty())
+        Controls += ", ";
+      Controls += Name;
+    }
+  }
+  if (!Controls.empty())
+    std::cerr << "[mneme] Warning: " << Controls
+              << " still apply, but their use with scoped filtering is "
+                 "deprecated and will be removed in a future release.\n";
+}
+
 inline bool defaultRecordingPolicy(const std::optional<int> &DistributedRank) {
   if (!DistributedRank)
     return true;
@@ -198,6 +226,7 @@ public:
   static Config createFromEnvironment() { return Config(); }
 
   const std::optional<std::string> KernelRegex;
+  const FilterMode RecordingFilterMode;
   const uint64_t MaxRecordings;
   const uint64_t SkipRecordings;
   const std::optional<long> PageSizeGiB;
@@ -237,6 +266,7 @@ private:
 
   Config()
       : KernelRegex(config_detail::getEnvOrDefaultString("MNEME_RR_KERNELS")),
+        RecordingFilterMode(config_detail::getFilterMode()),
         MaxRecordings(config_detail::getEnvOrDefaultIntLenient(
             "MNEME_MAX_RECORDINGS", 4)),
         SkipRecordings(config_detail::getEnvOrDefaultIntLenient(
@@ -252,7 +282,13 @@ private:
         MnemeDataDir(config_detail::getEnvOrDefaultString("MNEME_DATA_DIR")),
         MnemeLogDir(config_detail::getEnvOrDefaultString("MNEME_LOG_DIR")),
         RecordingEnabledThisRank(
-            config_detail::computeRecordingEnabledForCurrentRank()) {}
+            config_detail::computeRecordingEnabledForCurrentRank()) {
+    
+    // TODO(daniel): remove this once default|config modes are fully added
+    if (RecordingFilterMode == FilterMode::Scoped) {
+      config_detail::warnDeprecatedScopedControls();
+    }
+  }
 };
 
 } // namespace mneme
