@@ -15,8 +15,8 @@ from spack.package import *
 class Mneme(CMakePackage, CudaPackage, ROCmPackage, PythonExtension):
     """Mneme is a framework for recording and replaying GPU kernel executions (CUDA / HIP) as standalone, reproducible executables."""
 
-    homepage = "https://github.com/Olympus-HPC/Mneme"
-    git = "https://github.com/Olympus-HPC/Mneme.git"
+    homepage = "https://github.com/LLNL/Mneme"
+    git = "https://github.com/LLNL/Mneme.git"
 
     license("Apache-2.0 WITH LLVM-exception")
 

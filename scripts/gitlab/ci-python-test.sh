@@ -114,7 +114,7 @@ if [[ "${MNEME_CI_PYTHON_VERSION}" == "3.10" && "${MNEME_CI_ROCM_VERSION}" == "7
       -B "$CI_COMMIT_BRANCH" \
       --insecure \
       --disable-ci-detection \
-      --slug=gh/Olympus-HPC/Mneme || echo "Codecov upload failed"
+      --slug=gh/LLNL/Mneme || echo "Codecov upload failed"
   else
     echo "No CODECOV_TOKEN set, skipping upload."
   fi
