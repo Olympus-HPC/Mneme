@@ -131,6 +131,7 @@ meta-only:
   interruptible: true
   variables:
     PIPELINE_KIND: build-and-test
+    MACHINE_DOWN: $MACHINE_DOWN
   trigger:
     include:
       - local: '.gitlab/custom-jobs-and-variables.yml'
@@ -153,6 +154,7 @@ meta-only:
   interruptible: true
   variables:
     PIPELINE_KIND: test-spack
+    MACHINE_DOWN: $MACHINE_DOWN
   trigger:
     include:
       - local: '.gitlab/custom-jobs-and-variables.yml'
@@ -169,6 +171,7 @@ meta-only:
   interruptible: true
   variables:
     PIPELINE_KIND: test-python-cov
+    MACHINE_DOWN: $MACHINE_DOWN
   trigger:
     include:
       - local: '.gitlab/custom-jobs-and-variables.yml'
