@@ -7,6 +7,8 @@
 
 # The template job to test whether a machine is up.
 # Expects CI_MACHINE defined to machine name.
+# It passes so the sub-pipelines still start and report a down machine as a
+# failed GitHub check.
 .machine-check:
   stage: prerequisites
   interruptible: true
@@ -18,12 +20,13 @@
       if [[ $(jq '.[env.CI_MACHINE].total_nodes_up' /usr/global/tools/lorenz/data/loginnodeStatus) == 0 ]]
       then
         echo -e "\e[31mNo node available on ${CI_MACHINE}\e[0m"
-        curl --url "https://api.github.com/repos/${GITHUB_PROJECT_ORG}/${GITHUB_PROJECT_NAME}/statuses/${CI_COMMIT_SHA}" \
-             --header 'Content-Type: application/json' \
-             --header "authorization: Bearer ${GITHUB_TOKEN}" \
-             --data "{ \"state\": \"failure\", \"target_url\": \"${CI_PIPELINE_URL}\", \"description\": \"GitLab ${CI_MACHINE} down\", \"context\": \"ci/gitlab/${CI_MACHINE}\" }"
-        exit 1
+        echo "MACHINE_DOWN=true" > machine.env
+      else
+        echo "MACHINE_DOWN=false" > machine.env
       fi
+  artifacts:
+    reports:
+      dotenv: machine.env
 
 .pipeline-trigger-rules:
   rules:

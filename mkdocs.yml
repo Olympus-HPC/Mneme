@@ -1,6 +1,6 @@
 site_name: Mneme
-repo_url: https://github.com/Olympus-HPC/Mneme
-repo_name: Olympus-HPC/Mneme 
+repo_url: https://github.com/LLNL/Mneme
+repo_name: LLNL/Mneme 
 theme:
   name: material
   logo: assets/images/MnemeLogoNotext.svg

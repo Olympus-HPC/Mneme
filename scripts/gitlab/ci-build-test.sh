@@ -41,7 +41,7 @@ build_proteus() {
   if [[ ! -d proteus ]]; then
     # fetch by ref so PROTEUS_VERSION can be a tag or a commit
     git init --quiet proteus
-    git -C proteus fetch --quiet --depth 1 git@github.com:Olympus-HPC/proteus.git "${PROTEUS_VERSION}"
+    git -C proteus fetch --quiet --depth 1 https://github.com/Olympus-HPC/proteus.git "${PROTEUS_VERSION}"
     git -C proteus checkout --quiet FETCH_HEAD
   fi
   pushd proteus

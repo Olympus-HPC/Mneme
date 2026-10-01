@@ -28,12 +28,6 @@
 # We define the following GitLab pipeline variables:
 variables:
 ##### LC GITLAB CONFIGURATION
-# Use an LLNL service user to run CI. This prevents from running pipelines as
-# an actual user.
-  LLNL_SERVICE_USER: "fink12"
-# Use the service user workspace. Solves permission issues, stores everything
-# at the same location whoever triggers a pipeline.
-  CUSTOM_CI_BUILDS_DIR: "/usr/workspace/LExperts/mneme-gitlab-runner"
 # Tells Gitlab to recursively update the submodules when cloning the project.
 #  GIT_SUBMODULE_STRATEGY: recursive
 
@@ -46,17 +40,13 @@ variables:
 ##### SHARED_CI CONFIGURATION
 # Required information about GitHub repository
   GITHUB_PROJECT_NAME: "Mneme"
-  GITHUB_PROJECT_ORG: "Olympus-HPC"
+  GITHUB_PROJECT_ORG: "LLNL"
 # Set the build-and-test command.
 # Nested variables are allowed and useful to customize the job command. We
 # prevent variable expansion so that you can define them at job level.
   JOB_CMD:
     value: "scripts/gitlab/ci-build-test.sh"
     expand: false
-# Override the pattern describing branches that will skip the "draft PR filter
-# test".  Add protected branches here. See default value in
-# preliminary-ignore-draft-pr.yml.
-#  ALWAYS_RUN_PATTERN: ""
 
 # We organize the build-and-test stage with sub-pipelines. Each sub-pipeline
 # corresponds to a test batch on a given machine.
@@ -139,6 +129,9 @@ meta-only:
 .build-and-test:
   stage: build-and-test
   interruptible: true
+  variables:
+    PIPELINE_KIND: build-and-test
+    MACHINE_DOWN: $MACHINE_DOWN
   trigger:
     include:
       - local: '.gitlab/custom-jobs-and-variables.yml'
@@ -159,6 +152,9 @@ meta-only:
 .test-spack:
   stage: test-spack
   interruptible: true
+  variables:
+    PIPELINE_KIND: test-spack
+    MACHINE_DOWN: $MACHINE_DOWN
   trigger:
     include:
       - local: '.gitlab/custom-jobs-and-variables.yml'
@@ -173,6 +169,9 @@ meta-only:
 .test-python-cov:
   stage: test-python-cov
   interruptible: true
+  variables:
+    PIPELINE_KIND: test-python-cov
+    MACHINE_DOWN: $MACHINE_DOWN
   trigger:
     include:
       - local: '.gitlab/custom-jobs-and-variables.yml'
@@ -188,9 +187,5 @@ include:
   # Sets ID tokens for every job using `default:`
   - project: 'lc-templates/id_tokens'
     file: 'id_tokens.yml'
-  # [Optional] checks preliminary to running the actual CI test
-  - project: 'radiuss/radiuss-shared-ci'
-    ref: 'v2025.12.1'
-    file: 'utilities/preliminary-ignore-draft-pr.yml'
   # pipelines subscribed by the project
   - local: '.gitlab/subscribed-pipelines.yml'

@@ -134,7 +134,7 @@ to record and replay kernels.
 
 ### AMD Systems
 ```bash
-git clone https://github.com/Olympus-HPC/Mneme.git
+git clone https://github.com/LLNL/Mneme.git
 cd Mneme
 export LLVM_INSTALL_DIR=${ROCM_PATH}
 MNEME_GPU_BACKEND=hip pip install -e .
@@ -162,7 +162,7 @@ conda activate mneme
 
 Once you have LLVM installed you can install Mneme as:
 ```bash
-git clone https://github.com/Olympus-HPC/Mneme.git
+git clone https://github.com/LLNL/Mneme.git
 cd Mneme
 export LLVM_INSTALL_DIR=$(llvm-config --prefix)
 MNEME_GPU_BACKEND=cuda pip install -e .
