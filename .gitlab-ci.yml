@@ -180,3 +180,4 @@ include:
     file: 'id_tokens.yml'
   # pipelines subscribed by the project
   - local: '.gitlab/subscribed-pipelines.yml'
+
